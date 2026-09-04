@@ -118,6 +118,57 @@ final class SvAmazonTenantReturnsOutbox
         }
     }
 
+    public function countPendingProcessing(): int
+    {
+        $stmt=$this->prepare(
+            "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id AND status IN ('PENDING','PROCESSING')"
+        );
+        $stmt->execute($this->scopeParams());
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
+    public function countDeadLetters(): int
+    {
+        $stmt=$this->prepare(
+            'SELECT COUNT(*) FROM amazon_return_dead_letters WHERE tenant_id=:tenant_id '
+            . 'AND amazon_connection_id=:amazon_connection_id'
+        );
+        $stmt->execute($this->scopeParams());
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
+    public function hasActive(int $caseId,string $kind): bool
+    {
+        $stmt=$this->prepare(
+            'SELECT id FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
+            . 'AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id AND kind=:kind '
+            . "AND status IN ('PENDING','PROCESSING') LIMIT 1"
+        );
+        $stmt->execute($this->scopeParams([
+            ':case_id'=>$this->positiveId($caseId,'case ID'),
+            ':kind'=>$this->kind($kind),
+        ]));
+        return $stmt->fetchColumn()!==false;
+    }
+
+    public function defer(int $id,DateTimeImmutable $availableAt,string $error,bool $refundAttempt=false): void
+    {
+        $id=$this->positiveId($id,'outbox ID');
+        $attempt=$refundAttempt?',attempt_count=GREATEST(attempt_count-1,0)':'';
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_outbox SET status='PENDING'{$attempt},available_at=:available_at,"
+            . 'locked_at=NULL,last_error=:last_error,updated_at=UTC_TIMESTAMP() WHERE id=:id '
+            . "AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status='PROCESSING'"
+        );
+        $stmt->execute($this->scopeParams([
+            ':id'=>$id,
+            ':available_at'=>$availableAt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+            ':last_error'=>$this->errorMessage($error),
+        ]));
+        if($stmt->rowCount()!==1)throw new RuntimeException('Scoped outbox defer failed.');
+    }
+
     /** @return array<string,mixed>|null */
     public function findOwned(int $id): ?array
     {

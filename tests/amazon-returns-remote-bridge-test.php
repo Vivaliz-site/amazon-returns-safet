@@ -56,6 +56,8 @@ rbSame(
 
 $row = [
     'id' => 41,
+    'tenant_id' => 1,
+    'amazon_connection_id' => 10,
     'case_id' => 77,
     'kind' => 'SAFE_T_SUBMIT',
     'idempotency_key' => str_repeat('a', 64),
@@ -77,6 +79,8 @@ $case = [
 ];
 $job = SvAmazonReturnsRemoteBridge::jobEnvelope($row, $case, ['SAFE_T_SUBMIT' => true]);
 rbSame('SAFE_T_SUBMIT', $job['action'], 'Bridge job must preserve approved action.');
+rbSame(1, $job['tenant_id'] ?? null, 'Bridge job must carry server-bound tenant identity.');
+rbSame(10, $job['amazon_connection_id'] ?? null, 'Bridge job must carry server-bound connection identity.');
 rbSame('702-1234567-7654321', $job['case']['order_id'], 'Bridge job must expose only required order identity.');
 rbSame(true, $job['write_enabled'], 'Server write flag must travel with the job.');
 
@@ -151,7 +155,14 @@ $endpointSource = (string)file_get_contents($endpoint);
 $statusEndpointSource = (string)file_get_contents($statusEndpoint);
 rbAssert(str_contains($endpointSource, 'SELLER_CENTRAL_BRIDGE_TOKEN'), 'Bridge endpoint must require server-side token.');
 rbAssert(str_contains($statusEndpointSource, 'SELLER_CENTRAL_BRIDGE_TOKEN'), 'Status bridge must require the same protected server-side token.');
-rbAssert(str_contains($statusEndpointSource, "kind='SAFE_T_READ'"), 'Status bridge may claim SAFE_T_READ jobs only.');
+foreach([$endpointSource,$statusEndpointSource] as $endpointContract){
+    rbAssert(str_contains($endpointContract,'TenantRegistry'),'Bridge endpoint must resolve server-side tenant ownership.');
+    rbAssert(str_contains($endpointContract,'TenantPersistence'),'Bridge endpoint must use scoped persistence.');
+    foreach(['amazon_return_cases','amazon_return_events','amazon_return_outbox'] as $table){
+        rbAssert(!str_contains($endpointContract,$table),'Thin bridge endpoint must not contain tenant-table SQL.');
+    }
+}
+rbAssert(str_contains((string)file_get_contents(__DIR__.'/../includes/amazon-returns/StatusBridgeService.php'), "'SAFE_T_READ'"), 'Status service may claim SAFE_T_READ jobs only.');
 rbAssert(str_contains($endpointSource, 'apache_request_headers'), 'Bridge endpoint must fall back to apache_request_headers() for Authorization (Apache mod_php does not reliably populate $_SERVER[HTTP_AUTHORIZATION]).');
 rbAssert(str_contains($statusEndpointSource, 'apache_request_headers'), 'Status bridge must preserve Apache Authorization fallback.');
 rbAssert(!str_contains($endpointSource, "\$_GET['token']"), 'Bridge token must never be accepted from query string.');

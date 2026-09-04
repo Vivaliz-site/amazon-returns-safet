@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Enums.php';
-require_once __DIR__ . '/EventStore.php';
 require_once __DIR__ . '/CaseRepository.php';
 require_once __DIR__ . '/TenantEventStore.php';
 
@@ -10,56 +9,28 @@ final class SvAmazonReturnProjector
 {
     /** @return array<string,mixed> */
     public static function project(
-        SvAmazonReturnCaseRepository|PDO $casesOrDb,
-        SvAmazonTenantReturnEventStore|int $eventsOrCaseId,
-        ?int $caseId = null
+        SvAmazonReturnCaseRepository $cases,
+        SvAmazonTenantReturnEventStore $events,
+        int $caseId
     ): array {
-        if ($casesOrDb instanceof PDO) {
-            if (!is_int($eventsOrCaseId)) {
-                throw new InvalidArgumentException('Legacy projection requires a positive case ID.');
-            }
-            return self::projectLegacy($casesOrDb, $eventsOrCaseId);
-        }
-        if (!$eventsOrCaseId instanceof SvAmazonTenantReturnEventStore || $caseId === null) {
-            throw new InvalidArgumentException('Scoped projection requires case and event repositories.');
-        }
-        if ($caseId < 1) throw new InvalidArgumentException('Amazon return case ID must be positive.');
-        $case = $casesOrDb->find($caseId);
-        if (!is_array($case)) throw new OutOfBoundsException("Amazon return case {$caseId} was not found.");
-        $facts = self::initialFacts($case);
-        foreach ($eventsOrCaseId->eventsForCase($caseId) as $event) self::applyEvent($facts, $event);
-        self::finalize($facts);
-        self::writeProjectionScoped($casesOrDb, $caseId, $facts);
-        return array_replace($case, $facts);
+        if($caseId<1)throw new InvalidArgumentException('Amazon return case ID must be positive.');
+        $case=$cases->find($caseId);
+        if(!is_array($case))throw new OutOfBoundsException("Amazon return case {$caseId} was not found.");
+        $projected=self::projectFrom($case,$events->eventsForCase($caseId));
+        self::writeProjectionScoped($cases,$caseId,$projected);
+        return $projected;
     }
 
-    /** @return array<string,mixed> */
-    private static function projectLegacy(PDO $db, int $caseId): array
+    /** @param list<array<string,mixed>> $events @return array<string,mixed> */
+    public static function projectFrom(array $case,array $events): array
     {
-        if ($caseId < 1) throw new InvalidArgumentException('Amazon return case ID must be positive.');
-        $case = self::loadCase($db, $caseId);
-        $facts = self::initialFacts($case);
-        foreach (SvAmazonReturnEventStore::eventsForCase($db, $caseId) as $event) {
-            self::applyEvent($facts, $event);
+        $facts=self::initialFacts($case);
+        foreach($events as $event){
+            if(!is_array($event))throw new InvalidArgumentException('Projection event must be an array.');
+            self::applyEvent($facts,$event);
         }
         self::finalize($facts);
-        self::writeProjection($db, $caseId, $facts);
-        return array_replace($case, $facts);
-    }
-
-    /** @return array<string,mixed> */
-    private static function loadCase(PDO $db, int $caseId): array
-    {
-        $statement = $db->prepare('SELECT * FROM `amazon_return_cases` WHERE `id` = :case_id LIMIT 1');
-        if (!$statement instanceof PDOStatement) {
-            throw new RuntimeException('Could not prepare Amazon return case projection query.');
-        }
-        $statement->execute([':case_id' => $caseId]);
-        $case = $statement->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($case)) {
-            throw new OutOfBoundsException("Amazon return case {$caseId} was not found.");
-        }
-        return $case;
+        return array_replace($case,$facts);
     }
 
     /** @return array<string,mixed> */
@@ -249,39 +220,6 @@ final class SvAmazonReturnProjector
             'state'=>$facts['state'],
             'terminal_reason'=>$facts['terminal_reason'],
             'closed_at'=>$facts['closed_at'],
-        ]);
-    }
-
-    /** @param array<string,mixed> $facts */
-    private static function writeProjection(PDO $db, int $caseId, array $facts): void
-    {
-        $statement = $db->prepare(
-            'UPDATE `amazon_return_cases` SET '
-            . '`quantity_ordered` = :quantity_ordered, `quantity_refunded` = :quantity_refunded, '
-            . '`quantity_received` = :quantity_received, `program` = :program, '
-            . '`refund_initiator` = :refund_initiator, `refund_at` = :refund_at, '
-            . '`seller_debit_at` = :seller_debit_at, `refund_amount` = :refund_amount, '
-            . '`physical_status` = :physical_status, `state` = :state, '
-            . '`terminal_reason` = :terminal_reason, `closed_at` = :closed_at '
-            . 'WHERE `id` = :case_id'
-        );
-        if (!$statement instanceof PDOStatement) {
-            throw new RuntimeException('Could not prepare Amazon return case projection update.');
-        }
-        $statement->execute([
-            ':quantity_ordered' => $facts['quantity_ordered'],
-            ':quantity_refunded' => $facts['quantity_refunded'],
-            ':quantity_received' => $facts['quantity_received'],
-            ':program' => $facts['program'],
-            ':refund_initiator' => $facts['refund_initiator'],
-            ':refund_at' => $facts['refund_at'],
-            ':seller_debit_at' => $facts['seller_debit_at'],
-            ':refund_amount' => $facts['refund_amount'],
-            ':physical_status' => $facts['physical_status'],
-            ':state' => $facts['state'],
-            ':terminal_reason' => $facts['terminal_reason'],
-            ':closed_at' => $facts['closed_at'],
-            ':case_id' => $caseId,
         ]);
     }
 

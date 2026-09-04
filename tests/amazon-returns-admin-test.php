@@ -12,12 +12,20 @@ foreach($files as $file){
 $intakeApi=source('admin/amazon-returns/api/intake.php');
 adAssert(str_contains($intakeApi,'SvAmazonReturnsCsrf::valid'),'Physical intake write must validate standalone CSRF.');
 adAssert(str_contains($intakeApi,'amazon_returns_pdo()'),'Physical intake must use standalone DB.');
-adAssert(str_contains($intakeApi,'SvAmazonReturnEventStore::append'),'Physical intake must append immutable event.');
+adAssert(str_contains($intakeApi,'$p->events->append'),'Physical intake must append through the scoped event store.');
 adAssert(str_contains($intakeApi,'SvAmazonReturnProjector::project'),'Physical intake must reproject after event append.');
+adAssert(str_contains($intakeApi,'$p->evidence->record'),'Physical intake must persist scoped evidence.');
+adAssert(str_contains($intakeApi,'tenant-'),'Evidence storage path must include tenant scope.');
 adAssert(str_contains($intakeApi,'operation_id'),'Intake must use client operation id for retry idempotency.');
 adAssert(str_contains($intakeApi,'WAREHOUSE_PHOTO'),'Discrepancy photos must be protected evidence.');
 adAssert(!str_contains($intakeApi,'CARRIER_DELIVERED'),'Intake must not infer physical receipt from carrier state.');
 
+foreach(['admin/amazon-returns/api/case.php','admin/amazon-returns/api/intake.php','admin/amazon-returns/api/summary.php'] as $api){
+    $src=source($api);
+    adAssert(str_contains($src,'TenantRegistry'),$api.' must resolve tenant context.');
+    adAssert(str_contains($src,'TenantPersistence'),$api.' must use scoped persistence.');
+    adAssert(!str_contains($src,'EventStore.php'),$api.' must not use the global event store.');
+}
 $summary=source('admin/amazon-returns/api/summary.php');
 foreach(['unclassified','eligible_without_action','expired_without_treatment','credit_without_reconciliation'] as $gate)adAssert(str_contains($summary,$gate),'Summary must expose '.$gate);
 foreach(['at_risk','eligible_now','safe_t_submitted','denied','appeal','support','approved_awaiting_credit','recovered','loss'] as $bucket)adAssert(str_contains($summary,$bucket),'Summary bucket '.$bucket);

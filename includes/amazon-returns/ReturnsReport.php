@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Enums.php';
-require_once __DIR__ . '/EventStore.php';
 require_once __DIR__ . '/TenantPersistence.php';
 
 final class SvAmazonReturnsReport
@@ -105,79 +104,34 @@ final class SvAmazonReturnsReport
         return ['from'=>$from, 'to'=>$maxTo < $now ? $maxTo : $now];
     }
 
-    public static function earliestCaseDate(SvAmazonTenantPersistence|PDO $target): ?string
+    public static function earliestCaseDate(SvAmazonTenantPersistence $target): ?string
     {
-        if ($target instanceof SvAmazonTenantPersistence) return $target->cases->earliestObservedDate();
-        $value = $target->query('SELECT MIN(COALESCE(refund_at,seller_debit_at,created_at)) FROM amazon_return_cases')?->fetchColumn();
-        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+        return $target->cases->earliestObservedDate();
     }
 
     /** @return array{value:string,metadata:array<string,mixed>}|null */
-    public static function loadCursor(SvAmazonTenantPersistence|PDO $target, string $key): ?array
+    public static function loadCursor(SvAmazonTenantPersistence $target, string $key): ?array
     {
-        $key = self::cursorKey($key);
-        if ($target instanceof SvAmazonTenantPersistence) return $target->cursors->load(self::SOURCE, $key);
-        $stmt = $target->prepare('SELECT cursor_value,metadata_json FROM amazon_return_source_cursors WHERE source=:source AND cursor_key=:cursor_key LIMIT 1');
-        $stmt->execute([':source'=>self::SOURCE, ':cursor_key'=>$key]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($row)) return null;
-        $metadata = json_decode((string)($row['metadata_json'] ?? '{}'), true);
-        return ['value'=>(string)$row['cursor_value'], 'metadata'=>is_array($metadata) ? $metadata : []];
+        return $target->cursors->load(self::SOURCE, self::cursorKey($key));
     }
 
     /** @param array<string,mixed> $metadata */
-    public static function saveCursor(SvAmazonTenantPersistence|PDO $target, string $key, string $value, array $metadata = []): void
+    public static function saveCursor(SvAmazonTenantPersistence $target, string $key, string $value, array $metadata = []): void
     {
-        $value = trim($value);
-        if ($value === '') throw new InvalidArgumentException('Amazon report cursor value cannot be empty.');
-        $key = self::cursorKey($key);
-        if ($target instanceof SvAmazonTenantPersistence) {
-            $target->cursors->save(self::SOURCE, $key, $value, $metadata);
-            return;
-        }
-        $stmt = $target->prepare(
-            'INSERT INTO amazon_return_source_cursors (source,cursor_key,cursor_value,metadata_json,observed_at) '
-            . 'VALUES (:source,:cursor_key,:cursor_value,:metadata_json,UTC_TIMESTAMP()) '
-            . 'ON DUPLICATE KEY UPDATE cursor_value=VALUES(cursor_value),metadata_json=VALUES(metadata_json),observed_at=UTC_TIMESTAMP()'
-        );
-        $stmt->execute([
-            ':source'=>self::SOURCE,
-            ':cursor_key'=>$key,
-            ':cursor_value'=>$value,
-            ':metadata_json'=>json_encode($metadata, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-        ]);
+        $value=trim($value);
+        if($value==='')throw new InvalidArgumentException('Amazon report cursor value cannot be empty.');
+        $target->cursors->save(self::SOURCE,self::cursorKey($key),$value,$metadata);
     }
 
-    public static function clearCursor(SvAmazonTenantPersistence|PDO $target, string $key): void
+    public static function clearCursor(SvAmazonTenantPersistence $target, string $key): void
     {
-        $key = self::cursorKey($key);
-        if ($target instanceof SvAmazonTenantPersistence) {
-            $target->cursors->clear(self::SOURCE, $key);
-            return;
-        }
-        $stmt = $target->prepare('DELETE FROM amazon_return_source_cursors WHERE source=:source AND cursor_key=:cursor_key');
-        $stmt->execute([':source'=>self::SOURCE, ':cursor_key'=>$key]);
+        $target->cursors->clear(self::SOURCE,self::cursorKey($key));
     }
 
     /** @param list<array<string,mixed>> $rows @return array{rows:int,matched:int,created:int,events:int,classified:int} */
-    public static function persistRows(SvAmazonTenantPersistence|PDO $target, array $rows, string $documentId, string $evidenceSha256): array
+    public static function persistRows(SvAmazonTenantPersistence $target, array $rows, string $documentId, string $evidenceSha256): array
     {
-        if ($target instanceof SvAmazonTenantPersistence) {
-            return self::persistRowsScoped($target, $rows, $documentId, $evidenceSha256);
-        }
-        $db = $target;
-        $result = ['rows'=>count($rows),'matched'=>0,'created'=>0,'events'=>0,'classified'=>0];
-        foreach ($rows as $row) {
-            if (!is_array($row)) continue;
-            $resolved = self::resolveCase($db, $row);
-            if ($resolved === null) continue;
-            $result['matched']++;
-            if ($resolved['created']) $result['created']++;
-            SvAmazonReturnEventStore::append($db, self::eventForCase($resolved['id'], $row, $documentId, $evidenceSha256));
-            $result['events']++;
-            if (self::applyPatch($db, $resolved['id'], $row)) $result['classified']++;
-        }
-        return $result;
+        return self::persistRowsScoped($target,$rows,$documentId,$evidenceSha256);
     }
 
     /** @param list<array<string,mixed>> $rows @return array{rows:int,matched:int,created:int,events:int,classified:int} */
@@ -274,82 +228,6 @@ final class SvAmazonReturnsReport
         }
         if ($patch !== []) $cases->update($caseId, $patch);
         return isset($sourcePatch['refund_initiator']);
-    }
-
-    /** @return array{id:int,created:bool}|null */
-    private static function resolveCase(PDO $db, array $row): ?array
-    {
-        $orderId = trim((string)($row['order_id'] ?? ''));
-        $itemId = trim((string)($row['order_item_id'] ?? ''));
-        if ($orderId === '') return null;
-        if ($itemId !== '') {
-            $find = $db->prepare('SELECT id FROM amazon_return_cases WHERE amazon_order_id=:order_id AND amazon_order_item_id=:item_id LIMIT 1');
-            $find->execute([':order_id'=>$orderId, ':item_id'=>$itemId]);
-            $id = (int)$find->fetchColumn();
-            if ($id > 0) return ['id'=>$id,'created'=>false];
-        } else {
-            $find = $db->prepare('SELECT id FROM amazon_return_cases WHERE amazon_order_id=:order_id ORDER BY id LIMIT 2');
-            $find->execute([':order_id'=>$orderId]);
-            $ids = $find->fetchAll(PDO::FETCH_COLUMN);
-            if (count($ids) === 1) return ['id'=>(int)$ids[0],'created'=>false];
-            return null;
-        }
-
-        $patch = self::casePatch($row);
-        $quantity = max(1, (int)($row['order_quantity'] ?? $row['return_quantity'] ?? 1));
-        $physical = ($row['return_delivery_at'] ?? null) !== null
-            ? SvAmazonReturnPhysicalStatuses::CARRIER_DELIVERED_PENDING_PHYSICAL
-            : SvAmazonReturnPhysicalStatuses::NOT_RECEIVED;
-        $state = (string)($patch['state'] ?? SvAmazonReturnStates::POLICY_REVIEW_REQUIRED);
-        $stmt = $db->prepare(
-            'INSERT INTO amazon_return_cases '
-            . '(amazon_order_id,amazon_order_item_id,marketplace_id,sku,asin,quantity_ordered,program,refund_initiator,physical_status,state,safe_t_id,created_at,updated_at) '
-            . "VALUES (:order_id,:item_id,:marketplace_id,:sku,:asin,:quantity,'UNKNOWN',:initiator,:physical_status,:state,:safe_t_id,UTC_TIMESTAMP(),UTC_TIMESTAMP()) "
-            . 'ON DUPLICATE KEY UPDATE id=id'
-        );
-        $stmt->execute([
-            ':order_id'=>$orderId,
-            ':item_id'=>$itemId,
-            ':marketplace_id'=>self::BR_MARKETPLACE_ID,
-            ':sku'=>self::nullable($row['sku'] ?? null),
-            ':asin'=>self::nullable($row['asin'] ?? null),
-            ':quantity'=>$quantity,
-            ':initiator'=>(string)($patch['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN),
-            ':physical_status'=>$physical,
-            ':state'=>$state,
-            ':safe_t_id'=>$patch['safe_t_id'] ?? null,
-        ]);
-        $find = $db->prepare('SELECT id FROM amazon_return_cases WHERE amazon_order_id=:order_id AND amazon_order_item_id=:item_id LIMIT 1');
-        $find->execute([':order_id'=>$orderId, ':item_id'=>$itemId]);
-        $id = (int)$find->fetchColumn();
-        return $id > 0 ? ['id'=>$id,'created'=>true] : null;
-    }
-
-    private static function applyPatch(PDO $db, int $caseId, array $row): bool
-    {
-        $patch = self::casePatch($row);
-        $sets = [];
-        $params = [':id'=>$caseId];
-        if (isset($patch['refund_initiator'])) {
-            $sets[] = "refund_initiator=CASE WHEN refund_initiator='UNKNOWN' THEN :initiator ELSE refund_initiator END";
-            $params[':initiator'] = $patch['refund_initiator'];
-        }
-        if (isset($patch['safe_t_id'])) {
-            $sets[] = 'safe_t_id=COALESCE(safe_t_id,:safe_t_id)';
-            $params[':safe_t_id'] = $patch['safe_t_id'];
-        }
-        if (($row['return_delivery_at'] ?? null) !== null) {
-            $sets[] = "physical_status=CASE WHEN physical_status IN ('NOT_RECEIVED','IN_TRANSIT') THEN 'CARRIER_DELIVERED_PENDING_PHYSICAL' ELSE physical_status END";
-        }
-        if (isset($patch['state'])) {
-            $sets[] = "state=CASE WHEN state IN ('POLICY_REVIEW_REQUIRED','REFUND_DETECTED','AWAITING_RETURN','SAFE_T_SUBMITTED') THEN :report_state ELSE state END";
-            $params[':report_state'] = $patch['state'];
-        }
-        if ($sets === []) return false;
-        $sets[] = 'updated_at=UTC_TIMESTAMP()';
-        $stmt = $db->prepare('UPDATE amazon_return_cases SET ' . implode(',', $sets) . ' WHERE id=:id');
-        $stmt->execute($params);
-        return isset($patch['refund_initiator']);
     }
 
     private static function cursorKey(string $key): string

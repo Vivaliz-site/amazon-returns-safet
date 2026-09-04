@@ -46,6 +46,26 @@ final class SvAmazonTenantReturnEventStore
         return $id;
     }
 
+    public function findIdByIdempotencyKey(string $key): ?int
+    {
+        $key=strtolower(trim($key));
+        if(preg_match('/^[a-f0-9]{64}$/',$key)!==1){
+            throw new InvalidArgumentException('Event idempotency key must be a SHA-256 digest.');
+        }
+        $stmt=$this->prepare(
+            'SELECT id FROM amazon_return_events WHERE tenant_id=:tenant_id '
+            . 'AND amazon_connection_id=:amazon_connection_id AND idempotency_key=:key LIMIT 1'
+        );
+        $stmt->execute($this->scopeParams([':key'=>$key]));
+        $id=$stmt->fetchColumn();
+        return $id===false?null:(int)$id;
+    }
+
+    public function existsByIdempotencyKey(string $key): bool
+    {
+        return $this->findIdByIdempotencyKey($key)!==null;
+    }
+
     /** @return list<array<string,mixed>> */
     public function eventsForCase(int $caseId): array
     {

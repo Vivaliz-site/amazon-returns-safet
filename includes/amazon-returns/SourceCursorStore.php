@@ -16,13 +16,24 @@ final class SvAmazonSourceCursorStore
     ) {
     }
 
+    public function count(): int
+    {
+        $stmt=$this->db->prepare(
+            'SELECT COUNT(*) FROM amazon_return_source_cursors WHERE tenant_id=:tenant_id '
+            . 'AND amazon_connection_id=:amazon_connection_id'
+        );
+        if(!$stmt instanceof PDOStatement) throw new RuntimeException('Could not prepare tenant cursor count.');
+        $stmt->execute($this->scopeParams());
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
     /** @return array{value:string,metadata:array<string,mixed>,observed_at:?string}|null */
     public function load(string $source, string $key): ?array
     {
         [$source, $key] = $this->identity($source, $key);
         $stmt = $this->db->prepare(
             'SELECT cursor_value,metadata_json,observed_at FROM amazon_return_source_cursors '
-            . 'WHERE tenant_id=:tenant_id AND amazon_connection_id=:connection_id '
+            . 'WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
             . 'AND source=:source AND cursor_key=:cursor_key LIMIT 1'
         );
         if (!$stmt instanceof PDOStatement) {
@@ -73,7 +84,7 @@ final class SvAmazonSourceCursorStore
         $stmt = $this->db->prepare(
             'INSERT INTO amazon_return_source_cursors '
             . '(tenant_id,amazon_connection_id,source,cursor_key,cursor_value,metadata_json,observed_at,created_at,updated_at) '
-            . 'VALUES (:tenant_id,:connection_id,:source,:cursor_key,:cursor_value,:metadata_json,UTC_TIMESTAMP(),UTC_TIMESTAMP(),UTC_TIMESTAMP()) '
+            . 'VALUES (:tenant_id,:amazon_connection_id,:source,:cursor_key,:cursor_value,:metadata_json,UTC_TIMESTAMP(),UTC_TIMESTAMP(),UTC_TIMESTAMP()) '
             . 'ON DUPLICATE KEY UPDATE cursor_value=VALUES(cursor_value),metadata_json=VALUES(metadata_json),'
             . 'observed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()'
         );
@@ -93,7 +104,7 @@ final class SvAmazonSourceCursorStore
         [$source, $key] = $this->identity($source, $key);
         $stmt = $this->db->prepare(
             'DELETE FROM amazon_return_source_cursors '
-            . 'WHERE tenant_id=:tenant_id AND amazon_connection_id=:connection_id '
+            . 'WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
             . 'AND source=:source AND cursor_key=:cursor_key'
         );
         if (!$stmt instanceof PDOStatement) {
@@ -126,7 +137,7 @@ final class SvAmazonSourceCursorStore
     {
         return [
             ':tenant_id'=>$this->context->tenantId(),
-            ':connection_id'=>$this->context->amazonConnectionId(),
+            ':amazon_connection_id'=>$this->context->amazonConnectionId(),
         ] + $extra;
     }
 

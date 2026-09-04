@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/amazon-returns/Enums.php';
 require_once __DIR__ . '/../includes/amazon-returns/Schema.php';
-require_once __DIR__ . '/../includes/amazon-returns/EventStore.php';
 
 function assertTrue(bool $condition, string $message): void
 {
@@ -268,44 +267,6 @@ assertSameValue(
     $schemaDb->ddlExecutions[0],
     $schemaDb->ddlExecutions[12],
     'Repeated schema generation must be deterministic.'
-);
-
-$db = new AmazonReturnsMemoryPdo();
-$baseEvent = [
-    'case_id' => 42,
-    'event_type' => 'REFUND_DETECTED',
-    'source' => 'SP_API_FINANCES',
-    'source_event_id' => 'txn-123',
-    'idempotency_key' => hash('sha256', 'finances|txn-123|order-item-9'),
-    'occurred_at' => '2026-09-01 10:00:00',
-    'payload' => ['amount' => '49.90', 'currency' => 'BRL'],
-    'evidence_sha256' => hash('sha256', 'sanitized evidence'),
-];
-$firstId = SvAmazonReturnEventStore::append($db, $baseEvent);
-$duplicateId = SvAmazonReturnEventStore::append($db, array_replace($baseEvent, ['payload' => ['amount' => '999.99']]));
-assertSameValue(1, $firstId, 'First append must return the inserted event ID.');
-assertSameValue($firstId, $duplicateId, 'Duplicate append must resolve to the existing logical event.');
-assertSameValue(1, count($db->events), 'Duplicate idempotency key must not create a second event.');
-assertSameValue(2, $db->insertAttempts, 'Duplicate behavior must be exercised at the unique insert boundary.');
-assertSameValue(0, $db->updateAttempts, 'Event store must never update or delete an event.');
-
-$secondEvent = $baseEvent;
-$secondEvent['event_type'] = 'CARRIER_DELIVERED';
-$secondEvent['source'] = 'EXTERNAL_CARRIER';
-$secondEvent['source_event_id'] = 'tracking-7';
-$secondEvent['idempotency_key'] = hash('sha256', 'carrier|tracking-7|delivered');
-$secondEvent['occurred_at'] = '2026-09-01 09:00:00';
-SvAmazonReturnEventStore::append($db, $secondEvent);
-
-$events = SvAmazonReturnEventStore::eventsForCase($db, 42);
-assertSameValue(2, count($events), 'Case timeline must return all events for the case.');
-assertSameValue('CARRIER_DELIVERED', $events[0]['event_type'], 'Case events must be ordered by occurrence then ID.');
-assertSameValue(['amount' => '49.90', 'currency' => 'BRL'], $events[1]['payload'], 'Stored JSON must be decoded.');
-
-assertSameValue(
-    hash('sha256', 'finances|txn-123|order-item-9'),
-    SvAmazonReturnEventStore::deterministicKey('finances', 'txn-123', 'order-item-9'),
-    'Idempotency key helper must be deterministic.'
 );
 
 echo "amazon-returns-domain-test: OK\n";

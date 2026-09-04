@@ -18,42 +18,9 @@ final class SvAmazonReturnPolicySeeder
         ];
     }
 
-    public static function ensure(PDO|SvAmazonReturnPolicyRepository $target): int
+    public static function ensure(SvAmazonReturnPolicyRepository $target): int
     {
-        if ($target instanceof SvAmazonReturnPolicyRepository) {
-            return $target->seed(self::definitions());
-        }
-        return self::legacyEnsure($target);
-    }
-
-    /** Temporary compatibility for pre-tenant callers; removed in Task 8. */
-    private static function legacyEnsure(PDO $db): int
-    {
-        $stmt=$db->prepare(
-            'INSERT INTO amazon_return_policies '
-            . '(policy_key,marketplace_id,program,effective_from,effective_to,eligibility_days,basis,source_url,source_hash,status,created_at) '
-            . "VALUES (:policy_key,:marketplace_id,:program,:effective_from,NULL,:eligibility_days,:basis,:source_url,:source_hash,'ACTIVE',UTC_TIMESTAMP()) "
-            . 'ON DUPLICATE KEY UPDATE eligibility_days=VALUES(eligibility_days),basis=VALUES(basis),'
-            . 'source_url=VALUES(source_url),source_hash=VALUES(source_hash),status=VALUES(status)'
-        );
-        if (!$stmt instanceof PDOStatement) {
-            throw new RuntimeException('Could not prepare legacy policy seed.');
-        }
-        $count = 0;
-        foreach (self::definitions() as $row) {
-            $stmt->execute([
-                ':policy_key'=>$row['policy_key'],
-                ':marketplace_id'=>$row['marketplace_id'],
-                ':program'=>$row['program'],
-                ':effective_from'=>$row['effective_from'],
-                ':eligibility_days'=>$row['eligibility_days'],
-                ':basis'=>$row['basis'],
-                ':source_url'=>$row['source_url'],
-                ':source_hash'=>$row['source_hash'],
-            ]);
-            $count++;
-        }
-        return $count;
+        return $target->seed(self::definitions());
     }
 
     /** @return array<string,mixed> */

@@ -30,9 +30,13 @@ rtAssert(str_contains($installer,'amazon-returns-safet.service'),'Installer must
 rtAssert(!str_contains($installer,'SHOPVIVALIZ_DEPLOY_ROOT'),'Installer cannot use website deploy root.');
 
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
-rtAssert(str_contains($daemon,"claimBatch(\$this->db,10,['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY'])"),'Gmail worker must claim only email writes.');
-rtAssert(str_contains($daemon,"['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE']"),'Seller Central worker must not claim Gmail writes.');
+rtAssert(str_contains($daemon,'SvAmazonTenantRegistry::resolveCurrent'),'Daemon must resolve a tenant connection.');
+rtAssert(str_contains($daemon,'SvAmazonTenantPersistence'),'Daemon must use scoped persistence.');
+rtAssert(str_contains($daemon,'$this->persistence->outbox->claimBatch'),'Daemon must claim only through the scoped outbox.');
+rtAssert(str_contains($daemon,"['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE']"),'Seller Central worker action allowlist.');
 rtAssert(str_contains($daemon,'amazon_returns_pdo()'),'Daemon must use standalone DB bootstrap.');
+rtAssert(!str_contains($daemon,'EventStore.php'),'Daemon cannot load global EventStore.');
+rtAssert(!str_contains($daemon,'Outbox.php'),'Daemon cannot load global Outbox.');
 rtAssert(!str_contains($daemon,'config/constants.php'),'Daemon cannot load website constants.');
 rtAssert(!str_contains($daemon,'includes/pdo-database.php'),'Daemon cannot load website DB layer.');
 

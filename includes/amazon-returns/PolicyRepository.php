@@ -41,6 +41,20 @@ final class SvAmazonReturnPolicyRepository
         return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
     }
 
+    /** @return list<array<string,mixed>> */
+    public function allActive(): array
+    {
+        $stmt=$this->db->prepare(
+            "SELECT * FROM amazon_return_policies WHERE tenant_id=:tenant_id AND status='ACTIVE' "
+            . 'ORDER BY effective_from DESC,id DESC'
+        );
+        if(!$stmt instanceof PDOStatement) {
+            throw new RuntimeException('Could not prepare active tenant policies.');
+        }
+        $stmt->execute([':tenant_id'=>$this->context->tenantId()]);
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+    }
+
     /** @param list<array<string,mixed>> $definitions */
     public function seed(array $definitions): int
     {

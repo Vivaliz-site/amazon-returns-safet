@@ -136,76 +136,105 @@ foreach (['access_token','refresh_token','client_secret','x-amz-access-token'] a
     spAssert(!str_contains(strtolower($serialized), $secretKey), 'Normalized outputs must not expose secrets: ' . $secretKey);
 }
 
-// persistReturnsReportRow: matches an existing case by (order_id, order_item_id)
-// and only appends an event when the initiator is confidently derived.
+// persistReturnsReportRow: matches only an owned case and remains idempotent.
 final class SpApiReturnsReportMemoryPdo extends PDO {
-    /** @var array<int,array{amazon_order_id:string,amazon_order_item_id:string}> */
-    public array $cases = [];
-    /** @var array<string,true> */
-    public array $eventIdempotencyKeys = [];
-    public int $nextEventId = 1;
+    /** @var array<int,array<string,mixed>> */
+    public array $cases=[];
+    /** @var array<string,int> */
+    public array $eventIds=[];
+    public int $nextEventId=1;
+    public int $lastId=0;
     public function __construct() {}
-    public function prepare(string $query, array $options = []): PDOStatement|false { return new SpApiReturnsReportMemoryStatement($this, $query); }
-    public function lastInsertId(?string $name = null): string|false { return (string)($this->nextEventId - 1); }
+    public function prepare(string $query,array $options=[]):PDOStatement|false {
+        return new SpApiReturnsReportMemoryStatement($this,$query);
+    }
+    public function lastInsertId(?string $name=null):string|false { return (string)$this->lastId; }
 }
 final class SpApiReturnsReportMemoryStatement extends PDOStatement {
-    private array $result = [];
-    public function __construct(private SpApiReturnsReportMemoryPdo $db, private string $query) {}
-    public function execute(?array $params = null): bool {
-        $params ??= [];
-        $sql = strtoupper($this->query);
-        if (str_contains($sql, 'SELECT ID FROM AMAZON_RETURN_CASES')) {
-            $this->result = [];
-            foreach ($this->db->cases as $id => $case) {
-                if ($case['amazon_order_id'] !== $params[':order_id']) continue;
-                if (isset($params[':item_id']) && $case['amazon_order_item_id'] !== $params[':item_id']) continue;
-                $this->result[] = $id;
+    private array $rows=[];
+    public function __construct(private SpApiReturnsReportMemoryPdo $db,private string $query) {}
+    public function execute(?array $params=null):bool {
+        $params??=[];
+        $sql=strtoupper($this->query);
+        $this->rows=[];
+        if(str_contains($sql,'FROM AMAZON_RETURN_CASES')){
+            foreach($this->db->cases as $id=>$case){
+                if((int)($case['tenant_id']??0)!==(int)($params[':tenant_id']??0))continue;
+                if((int)($case['amazon_connection_id']??0)!==(int)($params[':amazon_connection_id']??0))continue;
+                if(isset($params[':case_id']) && $id!==(int)$params[':case_id'])continue;
+                if(isset($params[':id']) && $id!==(int)$params[':id'])continue;
+                if(isset($params[':order_id']) && $case['amazon_order_id']!==$params[':order_id'])continue;
+                if(isset($params[':item_id']) && $case['amazon_order_item_id']!==$params[':item_id'])continue;
+                $this->rows[]=$case+['id'=>$id];
             }
             return true;
         }
-        if (str_starts_with(ltrim($sql), 'INSERT INTO `AMAZON_RETURN_EVENTS`')) {
-            $key = $params[':idempotency_key'];
-            if (isset($this->db->eventIdempotencyKeys[$key])) throw new PDOException('Duplicate entry', 23000);
-            $this->db->eventIdempotencyKeys[$key] = true;
-            $this->db->nextEventId++;
+        if(str_starts_with(ltrim($sql),'INSERT INTO AMAZON_RETURN_EVENTS')){
+            $key=(string)$params[':idempotency_key'];
+            if(isset($this->db->eventIds[$key]))throw new PDOException('Duplicate entry',23000);
+            $id=$this->db->nextEventId++;
+            $this->db->eventIds[$key]=$id;
+            $this->db->lastId=$id;
             return true;
         }
-        if (str_contains($sql, 'SELECT `ID` FROM `AMAZON_RETURN_EVENTS`') && str_contains($sql, 'IDEMPOTENCY_KEY')) {
-            $key = $params[':idempotency_key'];
-            $this->result = isset($this->db->eventIdempotencyKeys[$key]) ? [1] : [];
+        if(str_contains($sql,'FROM AMAZON_RETURN_EVENTS') && str_contains($sql,'IDEMPOTENCY_KEY')){
+            $key=(string)($params[':idempotency_key']??$params[':key']??'');
+            if(isset($this->db->eventIds[$key]))$this->rows[]=['id'=>$this->db->eventIds[$key]];
             return true;
         }
-        throw new LogicException('Unexpected SQL in persistReturnsReportRow test: ' . $this->query);
+        throw new LogicException('Unexpected scoped report SQL: '.$this->query);
     }
-    public function fetchColumn(int $column = 0): mixed {
-        return $this->result === [] ? false : $this->result[0];
+    public function fetch(int $mode=PDO::FETCH_DEFAULT,int $orientation=PDO::FETCH_ORI_NEXT,int $offset=0):mixed {
+        return array_shift($this->rows)??false;
     }
-    public function fetch(int $mode = PDO::FETCH_DEFAULT, int $cursorOrientation = PDO::FETCH_ORI_NEXT, int $cursorOffset = 0): mixed {
-        return $this->result === [] ? false : ['id' => $this->result[0]];
+    public function fetchAll(int $mode=PDO::FETCH_DEFAULT,mixed ...$args):array { return $this->rows; }
+    public function fetchColumn(int $column=0):mixed {
+        $row=array_shift($this->rows);
+        return is_array($row)?(array_values($row)[$column]??false):false;
     }
 }
 
-$reportDb = new SpApiReturnsReportMemoryPdo();
-$reportDb->cases[501] = ['amazon_order_id'=>'701-9999999-1111111','amazon_order_item_id'=>'item-a'];
-
-$autoScanRow = ['Order ID'=>'701-9999999-1111111','Order Item ID'=>'item-a','A-to-Z Claim'=>'N','Resolution'=>'RefundAtFirstScan'];
-$outcome = SvAmazonSpApiEventSink::persistReturnsReportRow($reportDb, $autoScanRow, 'RPT-1');
-spSame(true, $outcome['matched'], 'A matching order+item must be reported as matched.');
-spSame(true, $outcome['applied'], 'A confidently classified row must be applied.');
-spSame(1, count($reportDb->eventIdempotencyKeys), 'Matched row must append exactly one event.');
-
-$again = SvAmazonSpApiEventSink::persistReturnsReportRow($reportDb, $autoScanRow, 'RPT-1');
-spSame(true, $again['matched'], 'Re-ingesting the same row must still report matched.');
-spSame(1, count($reportDb->eventIdempotencyKeys), 'Re-ingesting the same row must be idempotent (no duplicate event).');
-
-$unmatchedRow = ['Order ID'=>'701-0000000-0000000','Order Item ID'=>'item-x','A-to-Z Claim'=>'N','Resolution'=>'RefundAtFirstScan'];
-$unmatchedOutcome = SvAmazonSpApiEventSink::persistReturnsReportRow($reportDb, $unmatchedRow, 'RPT-1');
-spSame(false, $unmatchedOutcome['matched'], 'A row for an unknown order must not match any case.');
-spSame(1, count($reportDb->eventIdempotencyKeys), 'An unmatched row must not append an event.');
-
-$ambiguousRow = ['Order ID'=>'701-9999999-1111111','Order Item ID'=>'item-a','A-to-Z Claim'=>'N','Resolution'=>'ManualRefund'];
-$ambiguousOutcome = SvAmazonSpApiEventSink::persistReturnsReportRow($reportDb, $ambiguousRow, 'RPT-1');
-spSame(false, $ambiguousOutcome['applied'], 'An ambiguous (unclassifiable) initiator must not be applied, even for a matching case.');
-spSame(1, count($reportDb->eventIdempotencyKeys), 'An ambiguous row must not append an event.');
+$reportDb=new SpApiReturnsReportMemoryPdo();
+$reportDb->cases[501]=[
+    'tenant_id'=>1,'amazon_connection_id'=>10,
+    'amazon_order_id'=>'701-9999999-1111111','amazon_order_item_id'=>'item-a',
+];
+$reportDb->cases[502]=[
+    'tenant_id'=>2,'amazon_connection_id'=>20,
+    'amazon_order_id'=>'701-9999999-1111111','amazon_order_item_id'=>'item-a',
+];
+$reportPersistence=SvAmazonTenantPersistence::create(
+    $reportDb,new SvAmazonTenantContext(1,10)
+);
+$autoScanRow=[
+    'Order ID'=>'701-9999999-1111111','Order Item ID'=>'item-a',
+    'A-to-Z Claim'=>'N','Resolution'=>'RefundAtFirstScan',
+];
+$outcome=SvAmazonSpApiEventSink::persistReturnsReportRow(
+    $reportPersistence,$autoScanRow,'RPT-1'
+);
+spSame(true,$outcome['matched'],'Owned order+item must match.');
+spSame(true,$outcome['applied'],'Confidently classified row must apply.');
+spSame(1,count($reportDb->eventIds),'Matched row appends one scoped event.');
+$again=SvAmazonSpApiEventSink::persistReturnsReportRow(
+    $reportPersistence,$autoScanRow,'RPT-1'
+);
+spSame(true,$again['matched'],'Repeated owned row remains matched.');
+spSame(1,count($reportDb->eventIds),'Repeated row remains idempotent.');
+$unmatched=[
+    'Order ID'=>'701-0000000-0000000','Order Item ID'=>'item-x',
+    'A-to-Z Claim'=>'N','Resolution'=>'RefundAtFirstScan',
+];
+spSame(false,SvAmazonSpApiEventSink::persistReturnsReportRow(
+    $reportPersistence,$unmatched,'RPT-1'
+)['matched'],'Unknown order must not match.');
+$ambiguous=[
+    'Order ID'=>'701-9999999-1111111','Order Item ID'=>'item-a',
+    'A-to-Z Claim'=>'N','Resolution'=>'ManualRefund',
+];
+spSame(false,SvAmazonSpApiEventSink::persistReturnsReportRow(
+    $reportPersistence,$ambiguous,'RPT-1'
+)['applied'],'Ambiguous initiator must not apply.');
+spSame(1,count($reportDb->eventIds),'Ambiguous row cannot append an event.');
 
 echo "amazon-returns-spapi-test: OK\n";

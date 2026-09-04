@@ -51,8 +51,8 @@ foreach ($contracts as [$class,$method,$parameter,$expectedType]) {
 }
 
 foreach ([
-    'includes/amazon-returns/GmailEventSink.php'=>'persistScoped',
-    'includes/amazon-returns/SpApiEventSink.php'=>'persistScoped',
+    'includes/amazon-returns/GmailEventSink.php'=>'$p->events->append',
+    'includes/amazon-returns/SpApiEventSink.php'=>'$p->events->append',
     'includes/amazon-returns/ReturnsReport.php'=>'persistRowsScoped',
     'includes/amazon-returns/Projector.php'=>'writeProjectionScoped',
 ] as $relative=>$needle) {

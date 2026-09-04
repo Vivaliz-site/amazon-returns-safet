@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../includes/amazon-returns/SafeTDecisionEngine.php';
-require_once __DIR__ . '/../../includes/amazon-returns/Outbox.php';
 require_once __DIR__ . '/../../includes/amazon-returns/TenantOutbox.php';
 
 final class SvAmazonReturnsScheduler
@@ -21,7 +20,7 @@ final class SvAmazonReturnsScheduler
     }
 
     public function schedule(
-        SvAmazonTenantReturnsOutbox|PDO $target,
+        SvAmazonTenantReturnsOutbox $target,
         array $case,
         array $timeline,
         array $policy
@@ -38,9 +37,9 @@ final class SvAmazonReturnsScheduler
             'decision'=>$decision,
         ];
         if (isset($case['appeal_deadline_at'])) $payload['deadline_at'] = $case['appeal_deadline_at'];
-        $outboxId = $target instanceof PDO
-            ? SvAmazonReturnsOutbox::enqueue($target, (string)$decision['action'], $caseId, $payload, $key)
-            : $target->enqueue((string)$decision['action'], $caseId, $payload, $key);
+        $outboxId=$target->enqueue(
+            (string)$decision['action'],$caseId,$payload,$key
+        );
         return ['decision'=>$decision,'outbox_id'=>$outboxId];
     }
 }

@@ -36,44 +36,26 @@ final class SvAmazonGmailIngestor
         ];
     }
 
-    public static function saveCursor(SvAmazonSourceCursorStore|PDO $target, string $cursorKey, string $cursorValue, array $metadata = []): void
-    {
-        $cursorKey = trim($cursorKey);
-        $cursorValue = trim($cursorValue);
-        if ($cursorKey === '' || $cursorValue === '') {
+    public static function saveCursor(
+        SvAmazonSourceCursorStore $target,
+        string $cursorKey,
+        string $cursorValue,
+        array $metadata=[]
+    ): void {
+        $cursorKey=trim($cursorKey);
+        $cursorValue=trim($cursorValue);
+        if($cursorKey==='' || $cursorValue===''){
             throw new InvalidArgumentException('Gmail cursor key/value cannot be empty.');
         }
-        if ($target instanceof SvAmazonSourceCursorStore) {
-            $target->save('GMAIL', $cursorKey, $cursorValue, $metadata);
-            return;
-        }
-        $db = $target;
-        $stmt = $db->prepare(
-            'INSERT INTO amazon_return_source_cursors '
-            . '(source, cursor_key, cursor_value, metadata_json, observed_at) '
-            . 'VALUES (:source, :cursor_key, :cursor_value, :metadata_json, UTC_TIMESTAMP()) '
-            . 'ON DUPLICATE KEY UPDATE cursor_value = VALUES(cursor_value), metadata_json = VALUES(metadata_json), observed_at = VALUES(observed_at)'
-        );
-        $stmt->execute([
-            ':source' => 'GMAIL',
-            ':cursor_key' => $cursorKey,
-            ':cursor_value' => $cursorValue,
-            ':metadata_json' => $metadata === [] ? null : json_encode($metadata, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-        ]);
+        $target->save('GMAIL',$cursorKey,$cursorValue,$metadata);
     }
 
-    public static function loadCursor(SvAmazonSourceCursorStore|PDO $target, string $cursorKey): ?string
-    {
-        if ($target instanceof SvAmazonSourceCursorStore) {
-            $row = $target->load('GMAIL', trim($cursorKey));
-            return is_array($row) ? (string)$row['value'] : null;
-        }
-        $db = $target;
-        $stmt = $db->prepare('SELECT cursor_value FROM amazon_return_source_cursors WHERE source = :source AND cursor_key = :cursor_key LIMIT 1');
-        $stmt->execute([':source' => 'GMAIL', ':cursor_key' => trim($cursorKey)]);
-        $value = $stmt->fetchColumn();
-        if (!is_scalar($value)) return null;
-        $value = trim((string)$value);
-        return $value === '' ? null : $value;
+    public static function loadCursor(
+        SvAmazonSourceCursorStore $target,
+        string $cursorKey
+    ): ?string {
+        $row=$target->load('GMAIL',trim($cursorKey));
+        return is_array($row)?(string)$row['value']:null;
     }
+
 }

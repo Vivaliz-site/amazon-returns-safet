@@ -59,7 +59,7 @@ final class CursorPolicyMemoryStatement extends PDOStatement
             $key = $this->cursorKey($params);
             $this->db->cursors[$key] = [
                 'tenant_id'=>(int)$params[':tenant_id'],
-                'amazon_connection_id'=>(int)$params[':connection_id'],
+                'amazon_connection_id'=>(int)$params[':amazon_connection_id'],
                 'source'=>(string)$params[':source'],
                 'cursor_key'=>(string)$params[':cursor_key'],
                 'cursor_value'=>(string)$params[':cursor_value'],
@@ -143,7 +143,7 @@ final class CursorPolicyMemoryStatement extends PDOStatement
     {
         return implode('|', [
             $params[':tenant_id'],
-            $params[':connection_id'],
+            $params[':amazon_connection_id'],
             $params[':source'],
             $params[':cursor_key'],
         ]);
