@@ -1,0 +1,25 @@
+[Unit]
+Description=ShopVivaliz Amazon Returns and SAFE-T Recovery
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/home/ubuntu/shopvivaliz-deploy/current
+EnvironmentFile=-/home/ubuntu/shopvivaliz-deploy/shared/.env
+Environment=AMAZON_RETURNS_RUNTIME_STATE_FILE=/home/ubuntu/shopvivaliz-deploy/shared/amazon-returns/runtime-state.json
+Environment=AMAZON_RETURN_EVIDENCE_DIR=/home/ubuntu/shopvivaliz-deploy/shared/amazon-returns/evidence
+ExecStart=/usr/bin/php /home/ubuntu/shopvivaliz-deploy/current/workers/amazon-returns/daemon.php
+Restart=always
+RestartSec=15
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/home/ubuntu/shopvivaliz-deploy/shared
+
+[Install]
+WantedBy=multi-user.target
