@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/amazon-returns/Enums.php';
-require_once __DIR__ . '/../includes/amazon-returns/EventStore.php';
 require_once __DIR__ . '/../includes/amazon-returns/Projector.php';
 require_once __DIR__ . '/../includes/amazon-returns/PolicyEngine.php';
 
@@ -233,6 +232,18 @@ final class AmazonPolicyProjectionStatement extends PDOStatement
     }
 }
 
+/** @return array<string,mixed> */
+function policyProject(AmazonPolicyProjectionPdo $db): array
+{
+    $events=[];
+    foreach($db->events as $event){
+        $event['payload']=json_decode((string)($event['payload_json'] ?? '{}'),true,512,JSON_THROW_ON_ERROR);
+        unset($event['payload_json']);
+        $events[]=$event;
+    }
+    return SvAmazonReturnProjector::projectFrom($db->case,$events);
+}
+
 $projectionDb = new AmazonPolicyProjectionPdo(
     [
         'id' => 77,
@@ -285,19 +296,13 @@ $projectionDb = new AmazonPolicyProjectionPdo(
         ],
     ]
 );
-$projected = SvAmazonReturnProjector::project($projectionDb, 77);
+$projected = policyProject($projectionDb);
 policyAssertSame(2, $projected['quantity_refunded'], 'Projector must derive refunded quantity from events.');
 policyAssertSame(1, $projected['quantity_received'], 'Projector must derive physical intake quantity from events.');
 policyAssertSame(1, $projected['exposed_quantity'], 'Projection must retain only unresolved quantity exposure.');
 policyAssertSame('RECEIVED_DISCREPANT', $projected['physical_status'], 'Partial physical intake must remain discrepant.');
-policyAssertSame(1, count($projectionDb->writes), 'Projection must perform exactly one projection-table write.');
-policyAssertTrue(
-    str_contains(strtoupper($projectionDb->writes[0]), 'UPDATE `AMAZON_RETURN_CASES`'),
-    'Projector may write only amazon_return_cases.'
-);
-$projectedAgain = SvAmazonReturnProjector::project($projectionDb, 77);
+$projectedAgain = policyProject($projectionDb);
 policyAssertSame($projected, $projectedAgain, 'Replaying the same append-only timeline must produce identical facts.');
-policyAssertSame(2, count($projectionDb->writes), 'Each deterministic replay must make one projection-table write.');
 
 $receivedOkEvents = $projectionDb->events;
 $receivedOkEvents[0]['payload_json'] = json_encode([
@@ -315,7 +320,7 @@ $receivedOkDb = new AmazonPolicyProjectionPdo(
         return $event;
     }, $receivedOkEvents)
 );
-$receivedOkProjection = SvAmazonReturnProjector::project($receivedOkDb, 78);
+$receivedOkProjection = policyProject($receivedOkDb);
 policyAssertSame('RECEIVED_OK', $receivedOkProjection['state'], 'Explicit physical RECEIVED_OK must stop non-return handling.');
 policyAssertSame(0, $receivedOkProjection['exposed_quantity'], 'Explicit RECEIVED_OK must resolve the refunded quantity.');
 
@@ -326,7 +331,7 @@ $damagedDb = new AmazonPolicyProjectionPdo(
     array_replace($receivedOkDb->case, ['id' => 79, 'quantity_ordered' => 1]),
     array_map(static function (array $event): array { $event['case_id'] = 79; return $event; }, $damagedEvents)
 );
-$damagedProjection = SvAmazonReturnProjector::project($damagedDb, 79);
+$damagedProjection = policyProject($damagedDb);
 policyAssertSame('RECEIVED_DISCREPANT', $damagedProjection['state'], 'Full quantity returned damaged must not close as RECEIVED_OK.');
 policyAssertSame('RECEIVED_DISCREPANT', $damagedProjection['physical_status'], 'Damaged physical intake must remain a discrepancy path.');
 
@@ -337,7 +342,7 @@ $wrongItemDb = new AmazonPolicyProjectionPdo(
     array_replace($receivedOkDb->case, ['id' => 80, 'quantity_ordered' => 1]),
     array_map(static function (array $event): array { $event['case_id'] = 80; return $event; }, $wrongItemEvents)
 );
-$wrongItemProjection = SvAmazonReturnProjector::project($wrongItemDb, 80);
+$wrongItemProjection = policyProject($wrongItemDb);
 policyAssertSame('RECEIVED_DISCREPANT', $wrongItemProjection['state'], 'Wrong item/package evidence must create discrepancy even when correct quantity received is zero.');
 policyAssertSame(1, $wrongItemProjection['exposed_quantity'], 'Wrong item must leave expected refunded unit unresolved.');
 
@@ -354,7 +359,7 @@ $advancedDb = new AmazonPolicyProjectionPdo(
         'evidence_sha256'=>null,'created_at'=>'2026-07-01 12:00:01',
     ]]
 );
-$advancedProjection = SvAmazonReturnProjector::project($advancedDb,79);
+$advancedProjection = policyProject($advancedDb);
 policyAssertSame('SAFE_T_DENIED',$advancedProjection['state'],'Projection must not downgrade advanced SAFE-T state during replay.');
 
 $reviewDb = new AmazonPolicyProjectionPdo(
@@ -364,7 +369,7 @@ $reviewDb = new AmazonPolicyProjectionPdo(
     ],
     []
 );
-$reviewProjection = SvAmazonReturnProjector::project($reviewDb,80);
+$reviewProjection = policyProject($reviewDb);
 policyAssertSame('POLICY_REVIEW_REQUIRED',$reviewProjection['state'],'Projection must preserve an explicit safety review gate.');
 
 echo "amazon-returns-policy-test: OK\n";

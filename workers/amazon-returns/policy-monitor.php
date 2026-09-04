@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../../includes/amazon-returns/PolicyRepository.php';
+
 final class SvAmazonReturnPolicyMonitor
 {
     /** @return array{status:string,candidate:?array,existing_id:?int} */
@@ -20,13 +22,15 @@ final class SvAmazonReturnPolicyMonitor
         return ['status'=>'NEW_VERSION_CANDIDATE','candidate'=>$this->normalize($observation,'CANDIDATE'),'existing_id'=>null];
     }
 
-    public function persistCandidate(PDO $db, array $decision): ?int
-    {
-        if (($decision['status'] ?? '')!=='NEW_VERSION_CANDIDATE' || !is_array($decision['candidate'] ?? null)) return null;
-        $c=$decision['candidate'];
-        $stmt=$db->prepare('INSERT INTO amazon_return_policies (policy_key,marketplace_id,program,effective_from,effective_to,eligibility_days,basis,source_url,source_hash,status,created_at) VALUES (:policy_key,:marketplace_id,:program,:effective_from,:effective_to,:eligibility_days,:basis,:source_url,:source_hash,\'CANDIDATE\',UTC_TIMESTAMP())');
-        $stmt->execute([':policy_key'=>$c['policy_key'],':marketplace_id'=>$c['marketplace_id'],':program'=>$c['program'],':effective_from'=>$c['effective_from'],':effective_to'=>$c['effective_to'],':eligibility_days'=>$c['eligibility_days'],':basis'=>$c['basis'],':source_url'=>$c['source_url'],':source_hash'=>$c['source_hash']]);
-        return (int)$db->lastInsertId();
+    public function persistCandidate(
+        SvAmazonReturnPolicyRepository $policies,
+        array $decision
+    ): ?int {
+        if(($decision['status'] ?? '')!=='NEW_VERSION_CANDIDATE'
+            || !is_array($decision['candidate'] ?? null)){
+            return null;
+        }
+        return $policies->insertCandidate($decision['candidate']);
     }
 
     private function normalize(array $o, string $status): array

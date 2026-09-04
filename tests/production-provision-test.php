@@ -7,11 +7,14 @@ function ppAssert(bool $condition, string $message): void {
 
 $scriptPath=__DIR__.'/../scripts/provision-production.sh';
 $vhostPath=__DIR__.'/../deploy/apache/returns.shopvivaliz.com.br.conf';
+$runbookPath=__DIR__.'/../docs/runbooks/tenant-foundation-migration.md';
 ppAssert(is_file($scriptPath),'Production provision script must exist.');
 ppAssert(is_file($vhostPath),'Dedicated Apache vhost must exist.');
+ppAssert(is_file($runbookPath),'Tenant migration runbook must exist.');
 
 $script=(string)file_get_contents($scriptPath);
 $vhost=(string)file_get_contents($vhostPath);
+$runbook=(string)file_get_contents($runbookPath);
 ppAssert(str_contains($script,'amazon_returns_safet'),'Provisioning must create the dedicated database.');
 ppAssert(str_contains($script,'amazon_returns_app'),'Provisioning must create the dedicated DB user.');
 ppAssert(str_contains($script,'/home/ubuntu/amazon-returns-deploy'),'Provisioning must own the isolated deploy root.');
@@ -19,6 +22,25 @@ ppAssert(str_contains($script,'AMAZON_RETURNS_SAFE_T_WRITE=0'),'New runtime must
 ppAssert(str_contains($script,'AMAZON_RETURNS_APPEAL_WRITE=0'),'New runtime must start with appeal writes disabled.');
 ppAssert(str_contains($script,'AMAZON_RETURNS_EMAIL_REVIEW_WRITE=0'),'New runtime must start with email writes disabled.');
 ppAssert(str_contains($script,'AMAZON_RETURNS_SUPPORT_WRITE=0'),'New runtime must start with support writes disabled.');
+foreach([
+    "ensure_env_key 'AMAZON_RETURNS_TENANT_SLUG' 'shopvivaliz'",
+    "ensure_env_key 'AMAZON_RETURNS_TENANT_NAME' 'ShopVivaliz'",
+    "ensure_env_key 'AMAZON_RETURNS_CONNECTION_KEY' 'amazon-br-primary'",
+    "ensure_env_key 'AMAZON_RETURNS_CONNECTION_LABEL' 'Amazon Brasil principal'",
+    "ensure_env_key 'AMAZON_SP_API_REGION' 'NA'",
+] as $identityLine){
+    ppAssert(str_contains($script,$identityLine),'Provisioning must install identity without overwriting: '.$identityLine);
+}
+$dryRunPos=strpos($script,'migrate-single-tenant-to-multitenant.php --dry-run');
+$applyPos=strpos($script,'apply_cmd=');
+$swapPos=strpos($script,'ln -sfn');
+ppAssert($dryRunPos!==false,'Provisioning must execute migration dry-run preflight.');
+ppAssert($applyPos!==false && $dryRunPos<$applyPos,'Dry-run must precede the printed apply command.');
+ppAssert($swapPos!==false && $applyPos<$swapPos,'Release symlink must not switch before migration preflight gate.');
+foreach(['backup_cmd=','apply_cmd=','verify_cmd=','rollback_cmd=','migration_preflight_required=true'] as $needle){
+    ppAssert(str_contains($script,$needle),'Provisioning must print operator command '.$needle);
+}
+ppAssert(str_contains($script,'AMAZON_RETURNS_IMPORT_SOURCE:-0')===false,'Provisioning must not retain destructive automatic source import.');
 ppAssert(str_contains($script,'amazon_return_cases'),'Provisioning must migrate existing subsystem state.');
 ppAssert(str_contains($script,'amazon-returns-deploy.timer'),'Provisioning must install the independent deploy timer.');
 ppAssert(str_contains($script,'verify-migration.sh'),'Source import must be verified before cutover.');
@@ -32,9 +54,12 @@ ppAssert(str_contains($script,'-o www-data -g www-data -m 0750 "$shared/evidence
 ppAssert(str_contains($script,'-o root -g root -m 0700 "$shared/private"'),'Private bootstrap secrets must remain root-only.');
 ppAssert(substr_count($script,'runuser -u ubuntu -- git -C "$repo"') >= 2,'Root provisioning must run repository git reads as the checkout owner.');
 ppAssert(!str_contains($script,'--webroot'),'TLS issuance must not depend on public origin port 80.');
-ppAssert(substr_count($script,'SvAmazonReturnsRuntime::bootstrap') >= 2,'Provisioning must bootstrap once before import and again after import to enforce D+75 policy.');
+ppAssert(str_contains($script,'SvAmazonReturnsRuntime::bootstrap($db,$context)'),'Provisioning must bootstrap only after resolving tenant context.');
 ppAssert(str_contains($vhost,'ServerName returns.shopvivaliz.com.br'),'Vhost must own the isolated hostname.');
 ppAssert(str_contains($vhost,'/home/ubuntu/amazon-returns-deploy/current'),'Vhost must serve the isolated release.');
 ppAssert(!str_contains($vhost,'shopvivaliz-deploy/current'),'Vhost must not serve website code.');
+foreach(['--dry-run','mysqldump','--apply','verify-migration.sh','rollback','37/37','ownership_nulls=0','cross_tenant_mismatch_count=0','processing_jobs=0','write_flags_disabled=true','shadow','SAFE_T_READ'] as $runbookNeedle){
+    ppAssert(str_contains($runbook,$runbookNeedle),'Runbook missing '.$runbookNeedle);
+}
 
 echo "production-provision-test: OK\n";

@@ -68,8 +68,15 @@ final class SvAmazonReturnsRemoteBridge
         if (!in_array($kind, self::KINDS, true)) {
             throw new InvalidArgumentException('Unsupported Seller Central bridge action.');
         }
+        $tenantId=(int)($row['tenant_id'] ?? 0);
+        $connectionId=(int)($row['amazon_connection_id'] ?? 0);
+        if($tenantId<1 || $connectionId<1){
+            throw new InvalidArgumentException('Seller Central bridge job lacks server-bound ownership.');
+        }
         $payload = is_array($row['payload'] ?? null) ? $row['payload'] : [];
         return [
+            'tenant_id'=>$tenantId,
+            'amazon_connection_id'=>$connectionId,
             'job_id' => (int)($row['id'] ?? 0),
             'case_id' => (int)($row['case_id'] ?? 0),
             'action' => $kind,

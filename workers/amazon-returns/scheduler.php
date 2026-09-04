@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../includes/amazon-returns/SafeTDecisionEngine.php';
-require_once __DIR__ . '/../../includes/amazon-returns/Outbox.php';
+require_once __DIR__ . '/../../includes/amazon-returns/TenantOutbox.php';
 
 final class SvAmazonReturnsScheduler
 {
@@ -19,14 +19,27 @@ final class SvAmazonReturnsScheduler
         return in_array(strtoupper(trim($action)), ['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY'], true) ? 'gmail' : 'seller_central_bridge';
     }
 
-    public function schedule(PDO $db, array $case, array $timeline, array $policy): array
-    {
+    public function schedule(
+        SvAmazonTenantReturnsOutbox $target,
+        array $case,
+        array $timeline,
+        array $policy
+    ): array {
         $decision = $this->engine->nextAction($case, $timeline, $policy);
         if (!self::isWriteAction($decision)) return ['decision'=>$decision,'outbox_id'=>null];
         $key = (string)($decision['idempotency_key'] ?? '');
         if ($key === '') throw new LogicException('Write decision missing idempotency key.');
-        $payload = ['case_id'=>(int)$case['id'],'order_id'=>(string)$case['amazon_order_id'],'safe_t_id'=>$case['safe_t_id'] ?? null,'decision'=>$decision];
+        $caseId = (int)($case['id'] ?? 0);
+        $payload = [
+            'case_id'=>$caseId,
+            'order_id'=>(string)($case['amazon_order_id'] ?? ''),
+            'safe_t_id'=>$case['safe_t_id'] ?? null,
+            'decision'=>$decision,
+        ];
         if (isset($case['appeal_deadline_at'])) $payload['deadline_at'] = $case['appeal_deadline_at'];
-        return ['decision'=>$decision,'outbox_id'=>SvAmazonReturnsOutbox::enqueue($db,(string)$decision['action'],(int)$case['id'],$payload,$key)];
+        $outboxId=$target->enqueue(
+            (string)$decision['action'],$caseId,$payload,$key
+        );
+        return ['decision'=>$decision,'outbox_id'=>$outboxId];
     }
 }

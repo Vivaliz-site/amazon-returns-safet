@@ -14,6 +14,7 @@ env_file="$shared/.env"
 sha="$(runuser -u ubuntu -- git -C "$repo" rev-parse --short=12 HEAD)"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 release="$releases/$stamp-$sha"
+previous_release="$(readlink -f "$root/current" 2>/dev/null || true)"
 
 [[ -d "$repo/.git" ]] || { echo 'target repository missing' >&2; exit 2; }
 install -d -o ubuntu -g www-data -m 0750 "$root" "$releases"
@@ -23,12 +24,20 @@ install -d -o root -g root -m 0700 "$shared/private"
 install -d -o ubuntu -g www-data -m 0750 "$release"
 rsync -a --delete --exclude=.git --exclude=.env "$repo/" "$release/"
 printf '%s\n' "$(runuser -u ubuntu -- git -C "$repo" rev-parse HEAD)" > "$release/.release-sha"
-ln -sfn "releases/$(basename "$release")" "$root/current.next"
-mv -Tf "$root/current.next" "$root/current"
 
 copy_source_key() {
     local key="$1" destination="$2"
     grep -m1 -E "^${key}=" "$source_env" >> "$destination" || true
+}
+
+ensure_env_key() {
+    local key="$1" value="$2" tmp
+    if grep -q -E "^${key}=" "$env_file"; then return 0; fi
+    tmp="$(mktemp "$shared/.env.identity.XXXXXX")"
+    cp "$env_file" "$tmp"
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
+    install -o root -g www-data -m 0640 "$tmp" "$env_file"
+    rm -f "$tmp"
 }
 
 if [[ ! -f "$env_file" ]]; then
@@ -71,6 +80,13 @@ else
     [[ -n "$db_pass" ]] || { echo 'target DB password missing from env' >&2; exit 2; }
 fi
 
+ensure_env_key 'AMAZON_RETURNS_TENANT_SLUG' 'shopvivaliz'
+ensure_env_key 'AMAZON_RETURNS_TENANT_NAME' 'ShopVivaliz'
+ensure_env_key 'AMAZON_RETURNS_CONNECTION_KEY' 'amazon-br-primary'
+ensure_env_key 'AMAZON_RETURNS_CONNECTION_LABEL' 'Amazon Brasil principal'
+ensure_env_key 'AMAZON_SP_API_REGION' 'NA'
+ensure_env_key 'AMAZON_MARKETPLACE_ID' 'A2Q3Y263D00KWC'
+
 mysql --protocol=socket -uroot <<SQL
 CREATE DATABASE IF NOT EXISTS \`$target_db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '$target_user'@'localhost' IDENTIFIED BY '$db_pass';
@@ -78,35 +94,65 @@ ALTER USER '$target_user'@'localhost' IDENTIFIED BY '$db_pass';
 GRANT ALL PRIVILEGES ON \`$target_db\`.* TO '$target_user'@'localhost';
 FLUSH PRIVILEGES;
 SQL
-AMAZON_RETURNS_ENV_FILE="$env_file" php -r '
-require $argv[1]."/includes/Database.php";
-require $argv[1]."/includes/amazon-returns/Runtime.php";
-$db=amazon_returns_require_pdo();
-SvAmazonReturnsRuntime::bootstrap($db);
-' "$root/current"
+for test in "$release"/tests/*.php; do php "$test" >/dev/null; done
+php "$release/scripts/audit-tenant-sql.php" >/dev/null
+find "$release/includes" "$release/api" "$release/admin" "$release/workers" "$release/scripts" \
+    -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null
 
-if [[ "${AMAZON_RETURNS_IMPORT_SOURCE:-0}" == 1 ]]; then
-    [[ -n "$source_env" && -r "$source_env" ]] || { echo 'source environment required for source import' >&2; exit 2; }
-    tables=(
-        amazon_return_overrides amazon_return_source_cursors amazon_return_dead_letters
-        amazon_return_outbox amazon_return_evidence amazon_return_events
-        amazon_return_policies amazon_return_cases
-    )
-    for table in "${tables[@]}"; do
-        mysql --protocol=socket -uroot "$target_db" -e "TRUNCATE TABLE \`$table\`"
-    done
-    mysqldump --protocol=socket -uroot --single-transaction --quick --skip-lock-tables \
-        --no-create-info --skip-triggers --complete-insert --hex-blob \
-        "$source_db" "${tables[@]}" | mysql --protocol=socket -uroot "$target_db"
-
-    AMAZON_RETURNS_ENV_FILE="$env_file" php -r '
-require $argv[1]."/includes/Database.php";
-require $argv[1]."/includes/amazon-returns/Runtime.php";
-$db=amazon_returns_require_pdo();
-SvAmazonReturnsRuntime::bootstrap($db);
-' "$root/current"
-    AMAZON_RETURNS_SOURCE_DB="$source_db" AMAZON_RETURNS_TARGET_DB="$target_db" "$root/current/scripts/verify-migration.sh"
+case_table_exists="$(mysql --protocol=socket -uroot -Nse \
+    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$target_db' AND table_name='amazon_return_cases'")"
+[[ "$case_table_exists" -eq 1 ]] || {
+    echo 'empty_database_requires_onboarding=true' >&2
+    echo 'No existing Amazon Returns cases were found; use the approved onboarding workflow.' >&2
+    exit 4
+}
+tenant_column_exists="$(mysql --protocol=socket -uroot -Nse \
+    "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='$target_db' AND table_name='amazon_return_cases' AND column_name='tenant_id'")"
+if [[ "$tenant_column_exists" -eq 0 ]]; then
+    AMAZON_RETURNS_ENV_FILE="$env_file" \
+        php "$release/scripts/migrate-single-tenant-to-multitenant.php" --dry-run
+    backup_file="$shared/private/tenant-foundation-$stamp.sql.gz"
+    verification_file="$shared/private/tenant-foundation-verification-$stamp.txt"
+    dry_run_cmd="sudo env AMAZON_RETURNS_ENV_FILE=$env_file php $release/scripts/migrate-single-tenant-to-multitenant.php --dry-run"
+    backup_cmd="sudo mysqldump --protocol=socket -uroot --single-transaction --routines --triggers $target_db | gzip -9 > $backup_file"
+    apply_cmd="sudo env AMAZON_RETURNS_ENV_FILE=$env_file php $release/scripts/migrate-single-tenant-to-multitenant.php --apply"
+    verify_cmd="sudo env AMAZON_RETURNS_ENV_FILE=$env_file AMAZON_RETURNS_SOURCE_DB=$source_db AMAZON_RETURNS_TARGET_DB=$target_db AMAZON_RETURNS_EXPECTED_CASES=37 AMAZON_RETURNS_VERIFICATION_OUTPUT=$verification_file $release/scripts/verify-migration.sh"
+    rollback_target="${previous_release:-<previous-release>}"
+    rollback_cmd="sudo systemctl stop amazon-returns-safet.service && sudo gunzip -c $backup_file | sudo mysql --protocol=socket -uroot $target_db && sudo ln -sfn releases/$(basename "$rollback_target") $root/current && sudo systemctl start amazon-returns-safet.service"
+    printf 'dry_run_cmd=%s\n' "$dry_run_cmd"
+    printf 'backup_cmd=%s\n' "$backup_cmd"
+    printf 'apply_cmd=%s\n' "$apply_cmd"
+    printf 'verify_cmd=%s\n' "$verify_cmd"
+    printf 'rollback_cmd=%s\n' "$rollback_cmd"
+    echo 'migration_preflight_required=true'
+    echo 'No release symlink or service was changed.'
+    exit 3
 fi
+
+AMAZON_RETURNS_ENV_FILE="$env_file" php -r '
+$release=$argv[1];
+require $release."/includes/Database.php";
+require $release."/includes/amazon-returns/Runtime.php";
+require $release."/includes/amazon-returns/TenantRegistry.php";
+$db=amazon_returns_require_pdo();
+$config=new SvAmazonReturnsConfig();
+$context=SvAmazonTenantRegistry::resolveCurrent($db,$config);
+$result=SvAmazonReturnsRuntime::bootstrap($db,$context);
+if(($result["status"]??"")!=="OK")throw new RuntimeException("bootstrap failed");
+' "$release"
+
+verification_file="$shared/private/tenant-foundation-verification-$stamp.txt"
+AMAZON_RETURNS_ENV_FILE="$env_file" \
+AMAZON_RETURNS_SOURCE_DB="$source_db" \
+AMAZON_RETURNS_TARGET_DB="$target_db" \
+AMAZON_RETURNS_EXPECTED_CASES=37 \
+AMAZON_RETURNS_VERIFICATION_OUTPUT="$verification_file" \
+    "$release/scripts/verify-migration.sh"
+grep -q '^migration_verification=ok$' "$verification_file"
+
+ln -sfn "releases/$(basename "$release")" "$root/current.next"
+mv -Tf "$root/current.next" "$root/current"
+
 install -m 0644 "$root/current/deploy/apache/returns-http.conf" /etc/apache2/sites-available/amazon-returns-safet.conf
 a2enmod ssl rewrite >/dev/null
 a2ensite amazon-returns-safet.conf >/dev/null

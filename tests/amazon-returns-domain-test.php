@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/amazon-returns/Enums.php';
 require_once __DIR__ . '/../includes/amazon-returns/Schema.php';
-require_once __DIR__ . '/../includes/amazon-returns/EventStore.php';
 
 function assertTrue(bool $condition, string $message): void
 {
@@ -178,6 +177,10 @@ assertSameValue(
 
 $ddl = implode("\n", SvAmazonReturnsSchema::statements());
 $tables = [
+    'amazon_return_tenants',
+    'amazon_return_tenant_users',
+    'amazon_return_connections',
+    'amazon_return_feature_flags',
     'amazon_return_cases',
     'amazon_return_events',
     'amazon_return_policies',
@@ -192,7 +195,7 @@ foreach ($tables as $table) {
 }
 $requiredColumns = [
     'amazon_return_cases' => [
-        'id', 'amazon_order_id', 'amazon_order_item_id', 'marketplace_id', 'sku', 'asin',
+        'id', 'tenant_id', 'amazon_connection_id', 'amazon_order_id', 'amazon_order_item_id', 'marketplace_id', 'sku', 'asin',
         'quantity_ordered', 'quantity_refunded', 'quantity_received', 'program', 'refund_initiator',
         'refund_at', 'seller_debit_at', 'refund_amount', 'expected_reimbursement_amount',
         'reconciled_credit_amount', 'physical_status', 'state', 'policy_version_id', 'eligibility_at',
@@ -200,30 +203,30 @@ $requiredColumns = [
         'last_denial_fingerprint', 'appeal_deadline_at', 'terminal_reason', 'closed_at', 'created_at', 'updated_at',
     ],
     'amazon_return_events' => [
-        'id', 'case_id', 'event_type', 'source', 'source_event_id', 'idempotency_key', 'occurred_at',
+        'id', 'tenant_id', 'amazon_connection_id', 'case_id', 'event_type', 'source', 'source_event_id', 'idempotency_key', 'occurred_at',
         'payload_json', 'evidence_sha256', 'created_at',
     ],
     'amazon_return_policies' => [
-        'id', 'policy_key', 'marketplace_id', 'program', 'effective_from', 'effective_to',
+        'id', 'tenant_id', 'policy_key', 'marketplace_id', 'program', 'effective_from', 'effective_to',
         'eligibility_days', 'basis', 'source_url', 'source_hash', 'status', 'created_at',
     ],
     'amazon_return_evidence' => [
-        'id', 'case_id', 'kind', 'source', 'external_id', 'content_sha256', 'storage_ref',
+        'id', 'tenant_id', 'amazon_connection_id', 'case_id', 'kind', 'source', 'external_id', 'content_sha256', 'storage_ref',
         'metadata_json', 'captured_at', 'created_at',
     ],
     'amazon_return_outbox' => [
-        'id', 'case_id', 'kind', 'idempotency_key', 'payload_json', 'status', 'attempt_count',
+        'id', 'tenant_id', 'amazon_connection_id', 'case_id', 'kind', 'idempotency_key', 'payload_json', 'status', 'attempt_count',
         'available_at', 'locked_at', 'last_error', 'created_at', 'updated_at',
     ],
     'amazon_return_dead_letters' => [
-        'id', 'outbox_id', 'case_id', 'kind', 'idempotency_key', 'payload_sha256', 'payload_json',
+        'id', 'tenant_id', 'amazon_connection_id', 'outbox_id', 'case_id', 'kind', 'idempotency_key', 'payload_sha256', 'payload_json',
         'error_class', 'error_message', 'attempt_count', 'first_attempt_at', 'failed_at', 'created_at',
     ],
     'amazon_return_source_cursors' => [
-        'id', 'source', 'cursor_key', 'cursor_value', 'metadata_json', 'observed_at', 'created_at', 'updated_at',
+        'id', 'tenant_id', 'amazon_connection_id', 'source', 'cursor_key', 'cursor_value', 'metadata_json', 'observed_at', 'created_at', 'updated_at',
     ],
     'amazon_return_overrides' => [
-        'id', 'case_id', 'actor_id', 'reason', 'before_json', 'after_json', 'created_at',
+        'id', 'tenant_id', 'amazon_connection_id', 'case_id', 'actor_id', 'reason', 'before_json', 'after_json', 'created_at',
     ],
 ];
 foreach (SvAmazonReturnsSchema::statements() as $statement) {
@@ -237,71 +240,33 @@ foreach (SvAmazonReturnsSchema::statements() as $statement) {
     }
 }
 foreach ([
-    'UNIQUE KEY `uq_amazon_return_case_order_item` (`amazon_order_id`, `amazon_order_item_id`)',
-    'KEY `idx_amazon_return_cases_state_action` (`state`, `next_action_at`)',
-    'KEY `idx_amazon_return_cases_safe_t` (`safe_t_id`)',
-    'KEY `idx_amazon_return_cases_support_case` (`support_case_id`)',
-    'KEY `idx_amazon_return_cases_eligibility` (`eligibility_at`)',
-    'KEY `idx_amazon_return_cases_seller_debit` (`seller_debit_at`)',
+    'UNIQUE KEY `uq_amazon_return_case_order_item` (`tenant_id`, `amazon_connection_id`, `amazon_order_id`, `amazon_order_item_id`)',
+    'KEY `idx_amazon_return_cases_state_action` (`tenant_id`, `amazon_connection_id`, `state`, `next_action_at`)',
+    'KEY `idx_amazon_return_cases_safe_t` (`tenant_id`, `amazon_connection_id`, `safe_t_id`)',
+    'KEY `idx_amazon_return_cases_support_case` (`tenant_id`, `amazon_connection_id`, `support_case_id`)',
+    'KEY `idx_amazon_return_cases_eligibility` (`tenant_id`, `amazon_connection_id`, `eligibility_at`)',
+    'KEY `idx_amazon_return_cases_seller_debit` (`tenant_id`, `amazon_connection_id`, `seller_debit_at`)',
     '`idempotency_key` CHAR(64) NOT NULL',
-    'UNIQUE KEY `uq_amazon_return_events_idempotency` (`idempotency_key`)',
-    'KEY `idx_amazon_return_events_case_time` (`case_id`, `occurred_at`, `id`)',
-    'UNIQUE KEY `uq_amazon_return_policy_version` (`policy_key`, `marketplace_id`, `program`, `effective_from`)',
-    'UNIQUE KEY `uq_amazon_return_evidence_content` (`case_id`, `kind`, `content_sha256`)',
-    'UNIQUE KEY `uq_amazon_return_outbox_idempotency` (`idempotency_key`)',
-    'KEY `idx_amazon_return_outbox_available` (`status`, `available_at`)',
-    'KEY `idx_amazon_return_outbox_case_kind` (`case_id`, `kind`)',
+    'UNIQUE KEY `uq_amazon_return_events_idempotency` (`tenant_id`, `amazon_connection_id`, `idempotency_key`)',
+    'KEY `idx_amazon_return_events_case_time` (`tenant_id`, `amazon_connection_id`, `case_id`, `occurred_at`, `id`)',
+    'UNIQUE KEY `uq_amazon_return_policy_version` (`tenant_id`, `policy_key`, `marketplace_id`, `program`, `effective_from`)',
+    'UNIQUE KEY `uq_amazon_return_evidence_content` (`tenant_id`, `amazon_connection_id`, `case_id`, `kind`, `content_sha256`)',
+    'UNIQUE KEY `uq_amazon_return_outbox_idempotency` (`tenant_id`, `amazon_connection_id`, `idempotency_key`)',
+    'KEY `idx_amazon_return_outbox_available` (`tenant_id`, `amazon_connection_id`, `status`, `available_at`)',
+    'KEY `idx_amazon_return_outbox_case_kind` (`tenant_id`, `amazon_connection_id`, `case_id`, `kind`)',
 ] as $requiredSql) {
     assertTrue(str_contains($ddl, $requiredSql), "DDL is missing required definition: {$requiredSql}");
 }
-assertSameValue(8, count(SvAmazonReturnsSchema::statements()), 'Schema generation must be deterministic: one statement per table.');
-assertTrue(substr_count($ddl, 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci') === 8, 'Every table must use InnoDB/utf8mb4.');
+assertSameValue(12, count(SvAmazonReturnsSchema::statements()), 'Schema generation must be deterministic: one statement per table.');
+assertTrue(substr_count($ddl, 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci') === 12, 'Every table must use InnoDB/utf8mb4.');
 $schemaDb = new AmazonReturnsMemoryPdo();
 SvAmazonReturnsSchema::ensure($schemaDb);
 SvAmazonReturnsSchema::ensure($schemaDb);
-assertSameValue(16, count($schemaDb->ddlExecutions), 'Calling ensure twice must safely replay all CREATE TABLE IF NOT EXISTS statements.');
+assertSameValue(24, count($schemaDb->ddlExecutions), 'Calling ensure twice must safely replay all CREATE TABLE IF NOT EXISTS statements.');
 assertSameValue(
     $schemaDb->ddlExecutions[0],
-    $schemaDb->ddlExecutions[8],
+    $schemaDb->ddlExecutions[12],
     'Repeated schema generation must be deterministic.'
-);
-
-$db = new AmazonReturnsMemoryPdo();
-$baseEvent = [
-    'case_id' => 42,
-    'event_type' => 'REFUND_DETECTED',
-    'source' => 'SP_API_FINANCES',
-    'source_event_id' => 'txn-123',
-    'idempotency_key' => hash('sha256', 'finances|txn-123|order-item-9'),
-    'occurred_at' => '2026-09-01 10:00:00',
-    'payload' => ['amount' => '49.90', 'currency' => 'BRL'],
-    'evidence_sha256' => hash('sha256', 'sanitized evidence'),
-];
-$firstId = SvAmazonReturnEventStore::append($db, $baseEvent);
-$duplicateId = SvAmazonReturnEventStore::append($db, array_replace($baseEvent, ['payload' => ['amount' => '999.99']]));
-assertSameValue(1, $firstId, 'First append must return the inserted event ID.');
-assertSameValue($firstId, $duplicateId, 'Duplicate append must resolve to the existing logical event.');
-assertSameValue(1, count($db->events), 'Duplicate idempotency key must not create a second event.');
-assertSameValue(2, $db->insertAttempts, 'Duplicate behavior must be exercised at the unique insert boundary.');
-assertSameValue(0, $db->updateAttempts, 'Event store must never update or delete an event.');
-
-$secondEvent = $baseEvent;
-$secondEvent['event_type'] = 'CARRIER_DELIVERED';
-$secondEvent['source'] = 'EXTERNAL_CARRIER';
-$secondEvent['source_event_id'] = 'tracking-7';
-$secondEvent['idempotency_key'] = hash('sha256', 'carrier|tracking-7|delivered');
-$secondEvent['occurred_at'] = '2026-09-01 09:00:00';
-SvAmazonReturnEventStore::append($db, $secondEvent);
-
-$events = SvAmazonReturnEventStore::eventsForCase($db, 42);
-assertSameValue(2, count($events), 'Case timeline must return all events for the case.');
-assertSameValue('CARRIER_DELIVERED', $events[0]['event_type'], 'Case events must be ordered by occurrence then ID.');
-assertSameValue(['amount' => '49.90', 'currency' => 'BRL'], $events[1]['payload'], 'Stored JSON must be decoded.');
-
-assertSameValue(
-    hash('sha256', 'finances|txn-123|order-item-9'),
-    SvAmazonReturnEventStore::deterministicKey('finances', 'txn-123', 'order-item-9'),
-    'Idempotency key helper must be deterministic.'
 );
 
 echo "amazon-returns-domain-test: OK\n";
