@@ -47,6 +47,9 @@ ppAssert(str_contains($script,'verify-migration.sh'),'Source import must be veri
 ppAssert(str_contains($script,'expected_cases="$(mysql --protocol=socket -uroot -Nse'),'Provisioning must snapshot the live eligible case count at preflight instead of hard-coding 37.');
 ppAssert(str_contains($script,'SELECT COUNT(*) FROM amazon_return_cases'),'Provisioning live case-count snapshot must query the target cases.');
 ppAssert(!str_contains($script,'AMAZON_RETURNS_EXPECTED_CASES=37'),'Provisioning must not freeze a historical case count while live ingestion continues.');
+ppAssert(str_contains($script,'expected_cases" -eq 0'),'A zero live case snapshot must route to the explicit onboarding gate.');
+ppAssert(str_contains($script,'printf -v verify_cmd'),'Operator migration commands must be shell-quoted before printing.');
+ppAssert(str_contains($script,'%q'),'Operator migration command values must use shell-safe quoting.');
 ppAssert(str_contains($script,'.release-sha'),'Provisioning must record the deployed target commit.');
 ppAssert(str_contains($script,'python3-certbot-dns-cloudflare'),'Provisioning must support Cloudflare DNS-01 instead of relying on origin port 80.');
 ppAssert(str_contains($script,'--dns-cloudflare'),'TLS issuance must use Cloudflare DNS validation.');
