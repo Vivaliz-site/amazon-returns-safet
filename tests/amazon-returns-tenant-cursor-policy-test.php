@@ -28,6 +28,7 @@ final class CursorPolicyMemoryPdo extends PDO
     public array $policies = [];
     /** @var list<string> */
     public array $prepared = [];
+    public int $lastId = 0;
 
     public function __construct() {}
 
@@ -35,6 +36,10 @@ final class CursorPolicyMemoryPdo extends PDO
     {
         $this->prepared[] = $query;
         return new CursorPolicyMemoryStatement($this, $query);
+    }
+    public function lastInsertId(?string $name=null): string|false
+    {
+        return (string)$this->lastId;
     }
 }
 
@@ -90,7 +95,7 @@ final class CursorPolicyMemoryStatement extends PDOStatement
                 $params[':program'], $params[':effective_from'],
             ]);
             $this->db->policies[$key] = [
-                'id'=>count($this->db->policies) + 1,
+                'id'=>++$this->db->lastId,
                 'tenant_id'=>(int)$params[':tenant_id'],
                 'policy_key'=>(string)$params[':policy_key'],
                 'marketplace_id'=>(string)$params[':marketplace_id'],
@@ -211,6 +216,11 @@ catch (InvalidArgumentException) { $thrown = true; }
 cpAssert($thrown, 'Policy repository accepted caller-supplied ownership.');
 
 cpSame(3, SvAmazonReturnPolicySeeder::ensure($policies1), 'Policy seeder must delegate all approved definitions.');
+$candidate=array_replace($basePolicy,[
+    'effective_from'=>'2026-10-01','source_hash'=>hash('sha256','candidate-v1'),'status'=>'CANDIDATE',
+]);
+$expectedCandidateId=$db->lastId+1;
+cpSame($expectedCandidateId,$policies1->insertCandidate($candidate),'Candidate insert must return the tenant-local row ID.');
 foreach (SvAmazonReturnPolicySeeder::definitions() as $definition) {
     cpSame(75, $definition['eligibility_days'], 'Current approved policy must remain D+75.');
 }

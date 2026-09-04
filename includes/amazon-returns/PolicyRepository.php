@@ -55,6 +55,42 @@ final class SvAmazonReturnPolicyRepository
         return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
     }
 
+    /** @param array<string,mixed> $definition */
+    public function insertCandidate(array $definition): int
+    {
+        $definition['status']='CANDIDATE';
+        $row=self::normalize($definition);
+        $stmt=$this->db->prepare(
+            'INSERT INTO amazon_return_policies '
+            . '(tenant_id,policy_key,marketplace_id,program,effective_from,effective_to,'
+            . 'eligibility_days,basis,source_url,source_hash,status,created_at) '
+            . 'VALUES (:tenant_id,:policy_key,:marketplace_id,:program,:effective_from,'
+            . ':effective_to,:eligibility_days,:basis,:source_url,:source_hash,:status,UTC_TIMESTAMP()) '
+            . 'ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id),effective_to=VALUES(effective_to),'
+            . 'eligibility_days=VALUES(eligibility_days),basis=VALUES(basis),'
+            . 'source_url=VALUES(source_url),source_hash=VALUES(source_hash),status=VALUES(status)'
+        );
+        if(!$stmt instanceof PDOStatement){
+            throw new RuntimeException('Could not prepare tenant policy candidate.');
+        }
+        $stmt->execute([
+            ':tenant_id'=>$this->context->tenantId(),
+            ':policy_key'=>$row['policy_key'],
+            ':marketplace_id'=>$row['marketplace_id'],
+            ':program'=>$row['program'],
+            ':effective_from'=>$row['effective_from'],
+            ':effective_to'=>$row['effective_to'],
+            ':eligibility_days'=>$row['eligibility_days'],
+            ':basis'=>$row['basis'],
+            ':source_url'=>$row['source_url'],
+            ':source_hash'=>$row['source_hash'],
+            ':status'=>'CANDIDATE',
+        ]);
+        $id=(int)$this->db->lastInsertId();
+        if($id<1)throw new RuntimeException('Tenant policy candidate did not return an ID.');
+        return $id;
+    }
+
     /** @param list<array<string,mixed>> $definitions */
     public function seed(array $definitions): int
     {

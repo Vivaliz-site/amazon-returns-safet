@@ -24,10 +24,12 @@ jobs:
         run: |
           set -e
           for test in tests/*.php; do php "$test"; done
+          php scripts/audit-tenant-sql.php
+          php tests/amazon-returns-tenant-isolation-test.php
       - name: Syntax
         run: |
           set -e
-          find includes api admin workers -name '*.php' -print0 | xargs -0 -n1 php -l
+          find includes api admin workers scripts -name '*.php' -print0 | xargs -0 -n1 php -l
           node --check scripts/amazon-returns/safe-t-status-parser.mjs
           node --check scripts/amazon-returns/seller-central-safe-t-read-worker.mjs
           node --check scripts/amazon-returns/seller-central-bridge-worker.mjs
