@@ -111,10 +111,11 @@ $sentCreated = false;
 $transport = static function(string $method, string $url, array $headers, ?array $body = null) use (&$calls, &$sentCreated): array {
     $calls[] = [$method, $url, $headers, $body];
     if (str_contains($url, '/profile')) return ['status'=>200,'json'=>['historyId'=>'200']];
-    if (str_contains($url, '/history?')) return ['status'=>200,'json'=>['history'=>[['messagesAdded'=>[['message'=>['id'=>'m-api-1']]]]]]];
+    if (str_contains($url, '/history?')) return ['status'=>200,'json'=>['history'=>[['messagesAdded'=>[['message'=>['id'=>'m-api-1']],['message'=>['id'=>'m-api-gone']]]]]]];
     if (str_contains($url, '/messages?') && str_contains($url, 'rfc822msgid')) return ['status'=>200,'json'=>$sentCreated ? ['messages'=>[['id'=>'sent-1','threadId'=>'sent-thread-1']]] : []];
     if (str_contains($url, '/messages?')) return ['status'=>200,'json'=>['messages'=>[]]];
     if (str_contains($url, '/messages/send')) { $sentCreated = true; return ['status'=>200,'json'=>['id'=>'sent-1','threadId'=>'sent-thread-1']]; }
+    if (str_contains($url, '/messages/m-api-gone?')) return ['status'=>404,'json'=>[]];
     if (str_contains($url, '/messages/m-api-1?')) return ['status'=>200,'json'=>[
         'id'=>'m-api-1','threadId'=>'t-api-1','internalDate'=>'1788283827000',
         'payload'=>['headers'=>[

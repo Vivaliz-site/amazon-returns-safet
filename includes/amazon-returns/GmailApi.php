@@ -90,7 +90,12 @@ final class SvAmazonGmailApiClient
 
         $messages = [];
         foreach (array_values(array_unique($ids)) as $id) {
-            $message = $this->request('GET', '/messages/' . rawurlencode($id), ['format'=>'full']);
+            try {
+                $message = $this->request('GET', '/messages/' . rawurlencode($id), ['format'=>'full']);
+            } catch (RuntimeException $e) {
+                if (str_contains($e->getMessage(), 'HTTP 404')) continue;
+                throw $e;
+            }
             $messages[] = $this->normalizeMessage($message);
         }
         return ['messages'=>$messages,'cursor'=>$nextCursor,'recovered_cursor'=>$recovered];
