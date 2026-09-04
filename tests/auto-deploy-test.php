@@ -6,6 +6,7 @@ $script=__DIR__.'/../scripts/auto-deploy.sh';
 $service=__DIR__.'/../deploy/systemd/amazon-returns-deploy.service';
 $timer=__DIR__.'/../deploy/systemd/amazon-returns-deploy.timer';
 adAssert(is_file($script),'Standalone auto-deploy script must exist.');
+adAssert(is_executable($script),'Standalone auto-deploy script must be executable by systemd.');
 adAssert(is_file($service),'Standalone auto-deploy service must exist.');
 adAssert(is_file($timer),'Standalone auto-deploy timer must exist.');
 $s=(string)file_get_contents($script);
