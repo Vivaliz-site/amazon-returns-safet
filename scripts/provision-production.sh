@@ -11,7 +11,7 @@ target_user='amazon_returns_app'
 shared="$root/shared"
 releases="$root/releases"
 env_file="$shared/.env"
-sha="$(git -C "$repo" rev-parse --short=12 HEAD)"
+sha="$(runuser -u ubuntu -- git -C "$repo" rev-parse --short=12 HEAD)"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 release="$releases/$stamp-$sha"
 
@@ -22,7 +22,7 @@ install -d -o www-data -g www-data -m 0750 "$shared/evidence"
 install -d -o root -g root -m 0700 "$shared/private"
 install -d -o ubuntu -g www-data -m 0750 "$release"
 rsync -a --delete --exclude=.git --exclude=.env "$repo/" "$release/"
-printf '%s\n' "$(git -C "$repo" rev-parse HEAD)" > "$release/.release-sha"
+printf '%s\n' "$(runuser -u ubuntu -- git -C "$repo" rev-parse HEAD)" > "$release/.release-sha"
 ln -sfn "releases/$(basename "$release")" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
 
