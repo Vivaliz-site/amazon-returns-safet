@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../includes/amazon-returns/GmailParser.php';
+require_once __DIR__ . '/../../includes/amazon-returns/SourceCursorStore.php';
 
 final class SvAmazonGmailIngestor
 {
@@ -35,13 +36,18 @@ final class SvAmazonGmailIngestor
         ];
     }
 
-    public static function saveCursor(PDO $db, string $cursorKey, string $cursorValue, array $metadata = []): void
+    public static function saveCursor(SvAmazonSourceCursorStore|PDO $target, string $cursorKey, string $cursorValue, array $metadata = []): void
     {
         $cursorKey = trim($cursorKey);
         $cursorValue = trim($cursorValue);
         if ($cursorKey === '' || $cursorValue === '') {
             throw new InvalidArgumentException('Gmail cursor key/value cannot be empty.');
         }
+        if ($target instanceof SvAmazonSourceCursorStore) {
+            $target->save('GMAIL', $cursorKey, $cursorValue, $metadata);
+            return;
+        }
+        $db = $target;
         $stmt = $db->prepare(
             'INSERT INTO amazon_return_source_cursors '
             . '(source, cursor_key, cursor_value, metadata_json, observed_at) '
@@ -56,8 +62,13 @@ final class SvAmazonGmailIngestor
         ]);
     }
 
-    public static function loadCursor(PDO $db, string $cursorKey): ?string
+    public static function loadCursor(SvAmazonSourceCursorStore|PDO $target, string $cursorKey): ?string
     {
+        if ($target instanceof SvAmazonSourceCursorStore) {
+            $row = $target->load('GMAIL', trim($cursorKey));
+            return is_array($row) ? (string)$row['value'] : null;
+        }
+        $db = $target;
         $stmt = $db->prepare('SELECT cursor_value FROM amazon_return_source_cursors WHERE source = :source AND cursor_key = :cursor_key LIMIT 1');
         $stmt->execute([':source' => 'GMAIL', ':cursor_key' => trim($cursorKey)]);
         $value = $stmt->fetchColumn();

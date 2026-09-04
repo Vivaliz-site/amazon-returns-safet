@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/EventStore.php';
+require_once __DIR__ . '/TenantPersistence.php';
 
 final class SvAmazonGmailEventSink
 {
@@ -40,18 +41,99 @@ final class SvAmazonGmailEventSink
         return count($items) === 1 ? $items[0] : self::UNRESOLVED_ITEM_ID;
     }
 
-    public static function persist(PDO $db, array $event): int
+    public static function persist(SvAmazonTenantPersistence|PDO $target, array $event): int
+    {
+        if ($target instanceof PDO) return self::persistLegacy($target, $event);
+        return self::persistScoped($target, $event);
+    }
+
+    private static function persistScoped(SvAmazonTenantPersistence $p, array $event): int
     {
         $orderId = trim((string)($event['order_id'] ?? ''));
         if ($orderId === '') throw new InvalidArgumentException('Gmail event order_id is required.');
-        [$caseId,$itemId] = self::ensureTargetCase($db,$orderId);
+        [$caseId,$itemId] = self::ensureTargetCaseScoped($p, $orderId, $event);
         $patch = self::casePatch($event);
-        if ($itemId !== self::UNRESOLVED_ITEM_ID && ($patch['state'] ?? null) === SvAmazonReturnStates::POLICY_REVIEW_REQUIRED) unset($patch['state']);
-        self::applyPatch($db,$caseId,$patch);
+        if ($itemId !== self::UNRESOLVED_ITEM_ID
+            && ($patch['state'] ?? null) === SvAmazonReturnStates::POLICY_REVIEW_REQUIRED) {
+            unset($patch['state']);
+        }
+        self::applyPatchScoped($p->cases, $caseId, $patch);
 
         $occurredAt = trim((string)($event['occurred_at'] ?? ''));
         if ($occurredAt === '') $occurredAt = gmdate('Y-m-d H:i:s');
-        $payload = [
+        $sourceEventId = trim((string)($event['source_event_id'] ?? $event['message_id'] ?? ''));
+        return $p->events->append([
+            'case_id'=>$caseId,
+            'event_type'=>(string)$event['event_type'],
+            'source'=>'GMAIL',
+            'source_event_id'=>$sourceEventId !== '' ? $sourceEventId : null,
+            'idempotency_key'=>(string)$event['idempotency_key'],
+            'occurred_at'=>$occurredAt,
+            'payload'=>self::payload($event, $orderId),
+            'evidence_sha256'=>isset($event['content_sha256']) ? (string)$event['content_sha256'] : null,
+        ]);
+    }
+
+    /** @return array{0:int,1:string} */
+    private static function ensureTargetCaseScoped(
+        SvAmazonTenantPersistence $p,
+        string $orderId,
+        array $event
+    ): array {
+        $rows = $p->cases->forOrder($orderId);
+        $resolved = [];
+        foreach ($rows as $row) {
+            $item = trim((string)($row['amazon_order_item_id'] ?? ''));
+            if ($item !== '' && $item !== self::UNRESOLVED_ITEM_ID) $resolved[] = $item;
+        }
+        $target = self::targetItemId($resolved);
+        if ($target !== self::UNRESOLVED_ITEM_ID) {
+            foreach ($rows as $row) {
+                if ((string)($row['amazon_order_item_id'] ?? '') === $target) {
+                    $id = (int)($row['id'] ?? 0);
+                    if ($id > 0) return [$id,$target];
+                }
+            }
+        }
+        $existing = $p->cases->findByOrderItem($orderId, self::UNRESOLVED_ITEM_ID);
+        if (is_array($existing) && (int)($existing['id'] ?? 0) > 0) {
+            return [(int)$existing['id'], self::UNRESOLVED_ITEM_ID];
+        }
+        $marketplace = trim((string)($event['marketplace_id'] ?? ''));
+        if ($marketplace === '') $marketplace = $p->cases->marketplaceId();
+        $id = $p->cases->upsertOrderItem([
+            'amazon_order_id'=>$orderId,
+            'amazon_order_item_id'=>self::UNRESOLVED_ITEM_ID,
+            'marketplace_id'=>$marketplace,
+            'quantity_ordered'=>1,
+            'program'=>SvAmazonReturnPrograms::UNKNOWN,
+            'refund_initiator'=>SvAmazonRefundInitiators::UNKNOWN,
+            'physical_status'=>SvAmazonReturnPhysicalStatuses::NOT_RECEIVED,
+            'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED,
+        ]);
+        return [$id,self::UNRESOLVED_ITEM_ID];
+    }
+
+    /** @param array<string,mixed> $patch */
+    private static function applyPatchScoped(
+        SvAmazonReturnCaseRepository $cases,
+        int $caseId,
+        array $patch
+    ): void {
+        if (isset($patch['safe_t_id']) && trim((string)$patch['safe_t_id']) === '') {
+            unset($patch['safe_t_id']);
+        }
+        if (isset($patch['state'])
+            && (!is_string($patch['state']) || !SvAmazonReturnStates::isValid($patch['state']))) {
+            unset($patch['state']);
+        }
+        if ($patch !== []) $cases->update($caseId, $patch);
+    }
+
+    /** @return array<string,mixed> */
+    private static function payload(array $event, string $orderId): array
+    {
+        return [
             'order_id'=>$orderId,
             'safe_t_id'=>$event['safe_t_id'] ?? null,
             'amount'=>$event['amount'] ?? null,
@@ -65,6 +147,20 @@ final class SvAmazonGmailEventSink
             'financial_truth'=>false,
             'content_sha256'=>$event['content_sha256'] ?? null,
         ];
+    }
+
+    private static function persistLegacy(PDO $db, array $event): int
+    {
+        $orderId = trim((string)($event['order_id'] ?? ''));
+        if ($orderId === '') throw new InvalidArgumentException('Gmail event order_id is required.');
+        [$caseId,$itemId] = self::ensureTargetCaseLegacy($db,$orderId);
+        $patch = self::casePatch($event);
+        if ($itemId !== self::UNRESOLVED_ITEM_ID && ($patch['state'] ?? null) === SvAmazonReturnStates::POLICY_REVIEW_REQUIRED) unset($patch['state']);
+        self::applyPatchLegacy($db,$caseId,$patch);
+
+        $occurredAt = trim((string)($event['occurred_at'] ?? ''));
+        if ($occurredAt === '') $occurredAt = gmdate('Y-m-d H:i:s');
+        $payload = self::payload($event, $orderId);
         return SvAmazonReturnEventStore::append($db,[
             'case_id'=>$caseId,
             'event_type'=>(string)$event['event_type'],
@@ -78,7 +174,7 @@ final class SvAmazonGmailEventSink
     }
 
     /** @return array{0:int,1:string} */
-    private static function ensureTargetCase(PDO $db,string $orderId): array
+    private static function ensureTargetCaseLegacy(PDO $db,string $orderId): array
     {
         $known = $db->prepare('SELECT id, amazon_order_item_id FROM amazon_return_cases WHERE amazon_order_id=:order_id ORDER BY id');
         $known->execute([':order_id'=>$orderId]);
@@ -111,7 +207,7 @@ final class SvAmazonGmailEventSink
     }
 
     /** @param array<string,mixed> $patch */
-    private static function applyPatch(PDO $db,int $caseId,array $patch): void
+    private static function applyPatchLegacy(PDO $db,int $caseId,array $patch): void
     {
         $sets=[]; $params=[':id'=>$caseId];
         if(isset($patch['safe_t_id']) && trim((string)$patch['safe_t_id'])!==''){

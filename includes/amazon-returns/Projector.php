@@ -3,16 +3,40 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/EventStore.php';
+require_once __DIR__ . '/CaseRepository.php';
+require_once __DIR__ . '/TenantEventStore.php';
 
 final class SvAmazonReturnProjector
 {
     /** @return array<string,mixed> */
-    public static function project(PDO $db, int $caseId): array
-    {
-        if ($caseId < 1) {
-            throw new InvalidArgumentException('Amazon return case ID must be positive.');
+    public static function project(
+        SvAmazonReturnCaseRepository|PDO $casesOrDb,
+        SvAmazonTenantReturnEventStore|int $eventsOrCaseId,
+        ?int $caseId = null
+    ): array {
+        if ($casesOrDb instanceof PDO) {
+            if (!is_int($eventsOrCaseId)) {
+                throw new InvalidArgumentException('Legacy projection requires a positive case ID.');
+            }
+            return self::projectLegacy($casesOrDb, $eventsOrCaseId);
         }
+        if (!$eventsOrCaseId instanceof SvAmazonTenantReturnEventStore || $caseId === null) {
+            throw new InvalidArgumentException('Scoped projection requires case and event repositories.');
+        }
+        if ($caseId < 1) throw new InvalidArgumentException('Amazon return case ID must be positive.');
+        $case = $casesOrDb->find($caseId);
+        if (!is_array($case)) throw new OutOfBoundsException("Amazon return case {$caseId} was not found.");
+        $facts = self::initialFacts($case);
+        foreach ($eventsOrCaseId->eventsForCase($caseId) as $event) self::applyEvent($facts, $event);
+        self::finalize($facts);
+        self::writeProjectionScoped($casesOrDb, $caseId, $facts);
+        return array_replace($case, $facts);
+    }
 
+    /** @return array<string,mixed> */
+    private static function projectLegacy(PDO $db, int $caseId): array
+    {
+        if ($caseId < 1) throw new InvalidArgumentException('Amazon return case ID must be positive.');
         $case = self::loadCase($db, $caseId);
         $facts = self::initialFacts($case);
         foreach (SvAmazonReturnEventStore::eventsForCase($db, $caseId) as $event) {
@@ -20,7 +44,6 @@ final class SvAmazonReturnProjector
         }
         self::finalize($facts);
         self::writeProjection($db, $caseId, $facts);
-
         return array_replace($case, $facts);
     }
 
@@ -205,6 +228,28 @@ final class SvAmazonReturnProjector
             SvAmazonReturnStates::SUPPORT_ESCALATION,
             SvAmazonReturnStates::CLOSED_LOSS,
         ], true);
+    }
+
+    /** @param array<string,mixed> $facts */
+    private static function writeProjectionScoped(
+        SvAmazonReturnCaseRepository $cases,
+        int $caseId,
+        array $facts
+    ): void {
+        $cases->update($caseId, [
+            'quantity_ordered'=>$facts['quantity_ordered'],
+            'quantity_refunded'=>$facts['quantity_refunded'],
+            'quantity_received'=>$facts['quantity_received'],
+            'program'=>$facts['program'],
+            'refund_initiator'=>$facts['refund_initiator'],
+            'refund_at'=>$facts['refund_at'],
+            'seller_debit_at'=>$facts['seller_debit_at'],
+            'refund_amount'=>$facts['refund_amount'],
+            'physical_status'=>$facts['physical_status'],
+            'state'=>$facts['state'],
+            'terminal_reason'=>$facts['terminal_reason'],
+            'closed_at'=>$facts['closed_at'],
+        ]);
     }
 
     /** @param array<string,mixed> $facts */

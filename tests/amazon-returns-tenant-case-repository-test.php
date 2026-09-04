@@ -124,6 +124,14 @@ crSame(2, $repo->countOpen(), 'Open case count must normalize to integer.');
 $db->queue(['column'=>'2026-06-01 10:00:00']);
 crSame('2026-06-01 10:00:00', $repo->earliestObservedDate(), 'Earliest case date must remain exact.');
 
+$db->queue(['rows'=>[$owned, ['id'=>44,'tenant_id'=>1,'amazon_connection_id'=>10,'amazon_order_id'=>'702-1111111-2222222','amazon_order_item_id'=>'item-2']]]);
+crSame([41,44], array_column($repo->forOrder('702-1111111-2222222'), 'id'), 'Order lookup must return all rows only in the bound scope.');
+$db->queue(['column'=>'A2Q3Y263D00KWC']);
+crSame('A2Q3Y263D00KWC', $repo->marketplaceId(), 'Repository must resolve the marketplace from the bound connection.');
+$db->queue(['row_count'=>1]);
+$db->queue(['fetch'=>['id'=>46,'tenant_id'=>1,'amazon_connection_id'=>10,'amazon_order_id'=>'702-1111111-2222222','amazon_order_item_id'=>'item-resolved']]);
+crSame(46, $repo->resolvePlaceholder('702-1111111-2222222','UNRESOLVED_EMAIL','item-resolved'), 'Placeholder resolution must remain scoped and return the resolved ID.');
+
 $base = [
     'amazon_order_id'=>'702-5555555-6666666',
     'amazon_order_item_id'=>'item-55',

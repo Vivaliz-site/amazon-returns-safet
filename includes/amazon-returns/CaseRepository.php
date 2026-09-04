@@ -68,6 +68,62 @@ final class SvAmazonReturnCaseRepository
     }
 
     /** @return list<array<string,mixed>> */
+    public function forOrder(string $orderId): array
+    {
+        $orderId = $this->requiredText($orderId, 'Amazon order ID', 32);
+        $stmt = $this->prepare(
+            'SELECT * FROM amazon_return_cases WHERE amazon_order_id=:order_id '
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id ORDER BY id'
+        );
+        $stmt->execute($this->scopeParams([':order_id'=>$orderId]));
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC), 'is_array'));
+    }
+
+    public function marketplaceId(): string
+    {
+        $stmt = $this->prepare(
+            "SELECT marketplace_id FROM amazon_return_connections WHERE tenant_id=:tenant_id "
+            . "AND id=:amazon_connection_id AND status='ACTIVE' LIMIT 1"
+        );
+        $stmt->execute($this->scopeParams());
+        $value = $stmt->fetchColumn();
+        if (!is_scalar($value) || trim((string)$value) === '') {
+            throw new RuntimeException('Bound Amazon connection has no active marketplace.');
+        }
+        return $this->requiredText($value, 'Marketplace ID', 32);
+    }
+
+    public function resolvePlaceholder(string $orderId, string $placeholder, string $itemId): ?int
+    {
+        $orderId = $this->requiredText($orderId, 'Amazon order ID', 32);
+        $placeholder = $this->requiredText($placeholder, 'Placeholder item ID', 64);
+        $itemId = $this->requiredText($itemId, 'Amazon order item ID', 64);
+        if ($placeholder === $itemId) {
+            $existing = $this->findByOrderItem($orderId, $itemId);
+            return isset($existing['id']) ? (int)$existing['id'] : null;
+        }
+        $stmt = $this->prepare(
+            'UPDATE amazon_return_cases SET amazon_order_item_id=:item_id,updated_at=UTC_TIMESTAMP() '
+            . 'WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'AND amazon_order_id=:order_id AND amazon_order_item_id=:placeholder '
+            . 'AND NOT EXISTS (SELECT 1 FROM (SELECT id FROM amazon_return_cases '
+            . 'WHERE tenant_id=:existing_tenant_id AND amazon_connection_id=:existing_connection_id '
+            . 'AND amazon_order_id=:existing_order_id AND amazon_order_item_id=:existing_item_id LIMIT 1) existing)'
+        );
+        $stmt->execute($this->scopeParams([
+            ':order_id'=>$orderId,
+            ':placeholder'=>$placeholder,
+            ':item_id'=>$itemId,
+            ':existing_tenant_id'=>$this->context->tenantId(),
+            ':existing_connection_id'=>$this->context->amazonConnectionId(),
+            ':existing_order_id'=>$orderId,
+            ':existing_item_id'=>$itemId,
+        ]));
+        $resolved = $this->findByOrderItem($orderId, $itemId);
+        return isset($resolved['id']) ? (int)$resolved['id'] : null;
+    }
+
+    /** @return list<array<string,mixed>> */
     public function openCases(int $limit = 250): array
     {
         $limit = max(1, min(1000, $limit));

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/EventStore.php';
+require_once __DIR__ . '/TenantPersistence.php';
 
 final class SvAmazonReturnsReport
 {
@@ -104,17 +105,20 @@ final class SvAmazonReturnsReport
         return ['from'=>$from, 'to'=>$maxTo < $now ? $maxTo : $now];
     }
 
-    public static function earliestCaseDate(PDO $db): ?string
+    public static function earliestCaseDate(SvAmazonTenantPersistence|PDO $target): ?string
     {
-        $value = $db->query('SELECT MIN(COALESCE(refund_at,seller_debit_at,created_at)) FROM amazon_return_cases')?->fetchColumn();
+        if ($target instanceof SvAmazonTenantPersistence) return $target->cases->earliestObservedDate();
+        $value = $target->query('SELECT MIN(COALESCE(refund_at,seller_debit_at,created_at)) FROM amazon_return_cases')?->fetchColumn();
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     /** @return array{value:string,metadata:array<string,mixed>}|null */
-    public static function loadCursor(PDO $db, string $key): ?array
+    public static function loadCursor(SvAmazonTenantPersistence|PDO $target, string $key): ?array
     {
-        $stmt = $db->prepare('SELECT cursor_value,metadata_json FROM amazon_return_source_cursors WHERE source=:source AND cursor_key=:cursor_key LIMIT 1');
-        $stmt->execute([':source'=>self::SOURCE, ':cursor_key'=>self::cursorKey($key)]);
+        $key = self::cursorKey($key);
+        if ($target instanceof SvAmazonTenantPersistence) return $target->cursors->load(self::SOURCE, $key);
+        $stmt = $target->prepare('SELECT cursor_value,metadata_json FROM amazon_return_source_cursors WHERE source=:source AND cursor_key=:cursor_key LIMIT 1');
+        $stmt->execute([':source'=>self::SOURCE, ':cursor_key'=>$key]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!is_array($row)) return null;
         $metadata = json_decode((string)($row['metadata_json'] ?? '{}'), true);
@@ -122,32 +126,46 @@ final class SvAmazonReturnsReport
     }
 
     /** @param array<string,mixed> $metadata */
-    public static function saveCursor(PDO $db, string $key, string $value, array $metadata = []): void
+    public static function saveCursor(SvAmazonTenantPersistence|PDO $target, string $key, string $value, array $metadata = []): void
     {
         $value = trim($value);
         if ($value === '') throw new InvalidArgumentException('Amazon report cursor value cannot be empty.');
-        $stmt = $db->prepare(
+        $key = self::cursorKey($key);
+        if ($target instanceof SvAmazonTenantPersistence) {
+            $target->cursors->save(self::SOURCE, $key, $value, $metadata);
+            return;
+        }
+        $stmt = $target->prepare(
             'INSERT INTO amazon_return_source_cursors (source,cursor_key,cursor_value,metadata_json,observed_at) '
             . 'VALUES (:source,:cursor_key,:cursor_value,:metadata_json,UTC_TIMESTAMP()) '
             . 'ON DUPLICATE KEY UPDATE cursor_value=VALUES(cursor_value),metadata_json=VALUES(metadata_json),observed_at=UTC_TIMESTAMP()'
         );
         $stmt->execute([
             ':source'=>self::SOURCE,
-            ':cursor_key'=>self::cursorKey($key),
+            ':cursor_key'=>$key,
             ':cursor_value'=>$value,
             ':metadata_json'=>json_encode($metadata, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         ]);
     }
 
-    public static function clearCursor(PDO $db, string $key): void
+    public static function clearCursor(SvAmazonTenantPersistence|PDO $target, string $key): void
     {
-        $stmt = $db->prepare('DELETE FROM amazon_return_source_cursors WHERE source=:source AND cursor_key=:cursor_key');
-        $stmt->execute([':source'=>self::SOURCE, ':cursor_key'=>self::cursorKey($key)]);
+        $key = self::cursorKey($key);
+        if ($target instanceof SvAmazonTenantPersistence) {
+            $target->cursors->clear(self::SOURCE, $key);
+            return;
+        }
+        $stmt = $target->prepare('DELETE FROM amazon_return_source_cursors WHERE source=:source AND cursor_key=:cursor_key');
+        $stmt->execute([':source'=>self::SOURCE, ':cursor_key'=>$key]);
     }
 
     /** @param list<array<string,mixed>> $rows @return array{rows:int,matched:int,created:int,events:int,classified:int} */
-    public static function persistRows(PDO $db, array $rows, string $documentId, string $evidenceSha256): array
+    public static function persistRows(SvAmazonTenantPersistence|PDO $target, array $rows, string $documentId, string $evidenceSha256): array
     {
+        if ($target instanceof SvAmazonTenantPersistence) {
+            return self::persistRowsScoped($target, $rows, $documentId, $evidenceSha256);
+        }
+        $db = $target;
         $result = ['rows'=>count($rows),'matched'=>0,'created'=>0,'events'=>0,'classified'=>0];
         foreach ($rows as $row) {
             if (!is_array($row)) continue;
@@ -160,6 +178,102 @@ final class SvAmazonReturnsReport
             if (self::applyPatch($db, $resolved['id'], $row)) $result['classified']++;
         }
         return $result;
+    }
+
+    /** @param list<array<string,mixed>> $rows @return array{rows:int,matched:int,created:int,events:int,classified:int} */
+    private static function persistRowsScoped(
+        SvAmazonTenantPersistence $p,
+        array $rows,
+        string $documentId,
+        string $evidenceSha256
+    ): array {
+        $result = ['rows'=>count($rows),'matched'=>0,'created'=>0,'events'=>0,'classified'=>0];
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $resolved = self::resolveCaseScoped($p, $row);
+            if ($resolved === null) continue;
+            $result['matched']++;
+            if ($resolved['created']) $result['created']++;
+            $p->events->append(self::eventForCase(
+                $resolved['id'], $row, $documentId, $evidenceSha256
+            ));
+            $result['events']++;
+            if (self::applyPatchScoped($p->cases, $resolved['id'], $row)) $result['classified']++;
+        }
+        return $result;
+    }
+
+    /** @return array{id:int,created:bool}|null */
+    private static function resolveCaseScoped(SvAmazonTenantPersistence $p, array $row): ?array
+    {
+        $orderId = trim((string)($row['order_id'] ?? ''));
+        $itemId = trim((string)($row['order_item_id'] ?? ''));
+        if ($orderId === '') return null;
+        $existing = $itemId !== ''
+            ? $p->cases->findByOrderItem($orderId, $itemId)
+            : $p->cases->findSingleByOrder($orderId);
+        if (is_array($existing) && (int)($existing['id'] ?? 0) > 0) {
+            return ['id'=>(int)$existing['id'],'created'=>false];
+        }
+        if ($itemId === '') return null;
+
+        $patch = self::casePatch($row);
+        $quantity = max(1, (int)($row['order_quantity'] ?? $row['return_quantity'] ?? 1));
+        $physical = ($row['return_delivery_at'] ?? null) !== null
+            ? SvAmazonReturnPhysicalStatuses::CARRIER_DELIVERED_PENDING_PHYSICAL
+            : SvAmazonReturnPhysicalStatuses::NOT_RECEIVED;
+        $marketplace = trim((string)($row['marketplace_id'] ?? ''));
+        if ($marketplace === '') $marketplace = $p->cases->marketplaceId();
+        $id = $p->cases->upsertOrderItem([
+            'amazon_order_id'=>$orderId,
+            'amazon_order_item_id'=>$itemId,
+            'marketplace_id'=>$marketplace,
+            'sku'=>self::nullable($row['sku'] ?? null),
+            'asin'=>self::nullable($row['asin'] ?? null),
+            'quantity_ordered'=>$quantity,
+            'program'=>SvAmazonReturnPrograms::UNKNOWN,
+            'refund_initiator'=>(string)($patch['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN),
+            'physical_status'=>$physical,
+            'state'=>(string)($patch['state'] ?? SvAmazonReturnStates::POLICY_REVIEW_REQUIRED),
+            'safe_t_id'=>$patch['safe_t_id'] ?? null,
+        ]);
+        return ['id'=>$id,'created'=>true];
+    }
+
+    private static function applyPatchScoped(
+        SvAmazonReturnCaseRepository $cases,
+        int $caseId,
+        array $row
+    ): bool {
+        $case = $cases->find($caseId);
+        if (!is_array($case)) throw new RuntimeException('Scoped return case disappeared.');
+        $sourcePatch = self::casePatch($row);
+        $patch = [];
+        if (isset($sourcePatch['refund_initiator'])
+            && (string)($case['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN)
+                === SvAmazonRefundInitiators::UNKNOWN) {
+            $patch['refund_initiator'] = $sourcePatch['refund_initiator'];
+        }
+        if (isset($sourcePatch['safe_t_id']) && trim((string)($case['safe_t_id'] ?? '')) === '') {
+            $patch['safe_t_id'] = $sourcePatch['safe_t_id'];
+        }
+        if (($row['return_delivery_at'] ?? null) !== null
+            && in_array((string)($case['physical_status'] ?? ''), [
+                SvAmazonReturnPhysicalStatuses::NOT_RECEIVED,
+                SvAmazonReturnPhysicalStatuses::IN_TRANSIT,
+            ], true)) {
+            $patch['physical_status'] = SvAmazonReturnPhysicalStatuses::CARRIER_DELIVERED_PENDING_PHYSICAL;
+        }
+        if (isset($sourcePatch['state']) && in_array((string)($case['state'] ?? ''), [
+            SvAmazonReturnStates::POLICY_REVIEW_REQUIRED,
+            SvAmazonReturnStates::REFUND_DETECTED,
+            SvAmazonReturnStates::AWAITING_RETURN,
+            SvAmazonReturnStates::SAFE_T_SUBMITTED,
+        ], true)) {
+            $patch['state'] = $sourcePatch['state'];
+        }
+        if ($patch !== []) $cases->update($caseId, $patch);
+        return isset($sourcePatch['refund_initiator']);
     }
 
     /** @return array{id:int,created:bool}|null */
