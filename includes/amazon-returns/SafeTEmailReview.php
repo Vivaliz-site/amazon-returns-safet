@@ -53,4 +53,47 @@ final class SvAmazonSafeTEmailReview
 
         return ['to'=>self::RECIPIENT,'subject'=>$subject,'body'=>implode("\n", $lines)];
     }
+
+    /** @return array{to:string,subject:string,body:string,thread_id:string,in_reply_to:string} */
+    public static function composeReply(array $case,array $timeline): array
+    {
+        $safeTId=trim((string)($case['safe_t_id'] ?? ''));
+        $orderId=trim((string)($case['amazon_order_id'] ?? ''));
+        if($safeTId==='' || $orderId==='')throw new InvalidArgumentException('SAFE-T email reply requires SAFE-T and order IDs.');
+        $response=null;
+        for($i=count($timeline)-1;$i>=0;$i--){
+            $event=$timeline[$i] ?? null;
+            if(is_array($event) && ($event['event_type'] ?? '')==='SAFE_T_EMAIL_REVIEW_RESPONSE'){$response=$event;break;}
+        }
+        $payload=is_array($response['payload'] ?? null)?$response['payload']:[];
+        if(strtoupper(trim((string)($payload['review_suggested_action'] ?? '')))!=='RESPOND_EMAIL'){
+            throw new LogicException('Email review response is not approved for automatic reply.');
+        }
+        $threadId=trim((string)($payload['gmail_thread_id'] ?? ''));
+        $inReplyTo=trim((string)($payload['gmail_rfc_message_id'] ?? ''));
+        if($threadId==='')throw new LogicException('Email review reply requires Gmail thread correlation.');
+        $subject='Re: Solicitação de revisão detalhada — SAFE-T '.$safeTId.' / Pedido '.$orderId;
+        $lines=['Olá, equipe SAFE-T,','','Em resposta à análise da SAFE-T '.$safeTId.' do pedido '.$orderId.', seguem somente os fatos verificados atualmente disponíveis:'];
+        if(trim((string)($case['physical_status'] ?? ''))==='NOT_RECEIVED')$lines[]='- O produto permanece registrado como não recebido fisicamente pelo vendedor.';
+        if(trim((string)($case['seller_debit_at'] ?? ''))!=='')$lines[]='- Débito/exposição do vendedor: '.trim((string)$case['seller_debit_at']).'.';
+        if((float)($case['expected_reimbursement_amount'] ?? 0)>0)$lines[]='- Valor econômico esperado para conciliação: R$ '.number_format((float)$case['expected_reimbursement_amount'],2,',','.').'.';
+        $excerpt=trim((string)($payload['review_excerpt'] ?? ''));
+        if($excerpt!==''){
+            $lines[]='';
+            $lines[]='Referência da mensagem recebida da Amazon:';
+            $lines[]=function_exists('mb_substr')?mb_substr($excerpt,0,500,'UTF-8'):substr($excerpt,0,500);
+        }
+        $lines[]='';
+        $lines[]='Solicitamos que a revisão considere esses fatos e informe objetivamente a conclusão e, se aplicável, o próximo passo ou documento específico necessário.';
+        $lines[]='';
+        $lines[]='Atenciosamente,';
+        $lines[]='ShopVivaLiz';
+        return [
+            'to'=>self::RECIPIENT,
+            'subject'=>$subject,
+            'body'=>implode("\n",$lines),
+            'thread_id'=>$threadId,
+            'in_reply_to'=>$inReplyTo,
+        ];
+    }
 }

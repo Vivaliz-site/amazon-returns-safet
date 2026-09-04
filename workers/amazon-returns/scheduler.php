@@ -11,12 +11,12 @@ final class SvAmazonReturnsScheduler
 
     public static function isWriteAction(array $decision): bool
     {
-        return in_array((string)($decision['action'] ?? ''), ['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'], true);
+        return in_array((string)($decision['action'] ?? ''), ['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'], true);
     }
 
     public static function dependencyForAction(string $action): string
     {
-        return strtoupper(trim($action)) === 'SAFE_T_EMAIL_REVIEW' ? 'gmail' : 'seller_central_bridge';
+        return in_array(strtoupper(trim($action)), ['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY'], true) ? 'gmail' : 'seller_central_bridge';
     }
 
     public function schedule(PDO $db, array $case, array $timeline, array $policy): array

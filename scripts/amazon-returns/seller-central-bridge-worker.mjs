@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
-const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://shopvivaliz.com.br/api/amazon-returns/bridge.php';
+const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\bridge.token';
 const CDP_BASE = process.env.SELLER_CENTRAL_CDP_URL || 'http://127.0.0.1:9225';
 const PROFILE = process.env.SELLER_CENTRAL_PROFILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\profile';

@@ -1,0 +1,26 @@
+[Unit]
+Description=Amazon Returns and SAFE-T Recovery
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/home/ubuntu/amazon-returns-deploy/current
+EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/.env
+Environment=AMAZON_RETURNS_ENV_FILE=/home/ubuntu/amazon-returns-deploy/shared/.env
+Environment=AMAZON_RETURNS_RUNTIME_STATE_FILE=/home/ubuntu/amazon-returns-deploy/shared/runtime-state.json
+Environment=AMAZON_RETURN_EVIDENCE_DIR=/home/ubuntu/amazon-returns-deploy/shared/evidence
+ExecStart=/usr/bin/php /home/ubuntu/amazon-returns-deploy/current/workers/amazon-returns/daemon.php
+Restart=always
+RestartSec=15
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/home/ubuntu/amazon-returns-deploy/shared
+
+[Install]
+WantedBy=multi-user.target

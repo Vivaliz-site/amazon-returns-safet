@@ -1,8 +1,9 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/../../includes/admin-guard.php';
-require_once __DIR__ . '/../../includes/csrf.php';
-$csrf=sv_csrf_token('amazon_returns_intake');
+require_once __DIR__ . '/../../includes/AdminAuth.php';
+require_once __DIR__ . '/../../includes/Csrf.php';
+SvAmazonReturnsAdminAuth::requireLogin(false);
+$csrf=SvAmazonReturnsCsrf::token('amazon_returns_intake');
 ?>
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Registrar devolução Amazon</title>
 <style>:root{font-family:Inter,system-ui,sans-serif;color:#17202a;background:#f4f6f8}*{box-sizing:border-box}body{margin:0}.wrap{max-width:720px;margin:auto;padding:18px}.panel{background:#fff;border:1px solid #e4e7ea;border-radius:14px;padding:18px;margin-bottom:14px}label{font-weight:700;display:block;margin:14px 0 6px}input,select,textarea,button{width:100%;font:inherit;padding:12px;border:1px solid #cfd4da;border-radius:10px}button{background:#17202a;color:#fff;font-weight:800;cursor:pointer}.row{display:grid;grid-template-columns:1fr auto;gap:8px}.row button{width:auto}.item{border:1px solid #e4e7ea;border-radius:10px;padding:12px;margin:8px 0;cursor:pointer}.item.active{border-color:#17202a;background:#f8fafc}.muted{color:#667085}.ok{color:#067647;font-weight:700}.err{color:#b42318;font-weight:700}.back{color:#17202a}@media(max-width:560px){.wrap{padding:10px}.panel{padding:14px}.row{grid-template-columns:1fr}.row button{width:100%}}</style></head><body><main class="wrap">

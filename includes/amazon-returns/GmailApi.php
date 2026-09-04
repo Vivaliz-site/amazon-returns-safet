@@ -22,7 +22,7 @@ final class SvAmazonGmailApiClient
     /** @return array{message_id:string,thread_id:string} */
     public function send(string $to, string $subject, string $body): array
     {
-        return $this->sendMessage($to, $subject, $body, null);
+        return $this->sendMessage($to, $subject, $body, null, null, null);
     }
 
     /** @return array{message_id:string,thread_id:string} */
@@ -30,17 +30,19 @@ final class SvAmazonGmailApiClient
     {
         $key = strtolower(trim($idempotencyKey));
         if (preg_match('/^[a-f0-9]{64}$/', $key) !== 1) throw new InvalidArgumentException('Invalid Gmail idempotency key.');
-        $messageId = 'amazon-returns-' . $key . '@shopvivaliz.com.br';
+        $messageId = 'amazon-returns-' . $key . '@returns.shopvivaliz.com.br';
         $found = $this->request('GET', '/messages', ['q'=>'in:sent rfc822msgid:' . $messageId, 'maxResults'=>'1']);
         $existing = is_array($found['messages'][0] ?? null) ? $found['messages'][0] : null;
         if ($existing !== null && trim((string)($existing['id'] ?? '')) !== '') {
             return ['message_id'=>trim((string)$existing['id']), 'thread_id'=>trim((string)($existing['threadId'] ?? ''))];
         }
-        return $this->sendMessage($to, $subject, $body, $messageId);
+        return $this->sendMessage($to, $subject, $body, $messageId, null, null);
     }
 
     /** @return array{message_id:string,thread_id:string} */
-    private function sendMessage(string $to, string $subject, string $body, ?string $messageId): array
+    public function sendReplyOnce(string $to,string $subject,string $body,string $threadId,string $inReplyTo,string $idempotencyKey): array { $key=strtolower(trim($idempotencyKey)); if(preg_match("/^[a-f0-9]{64}$/",$key)!==1) throw new InvalidArgumentException("Invalid Gmail idempotency key."); if(trim($threadId)==="") throw new InvalidArgumentException("Gmail thread ID is required."); $messageId="amazon-returns-".$key."@returns.shopvivaliz.com.br"; $found=$this->request("GET","/messages",["q"=>"in:sent rfc822msgid:".$messageId,"maxResults"=>"1"]); $existing=is_array($found["messages"][0] ?? null)?$found["messages"][0]:null; if($existing!==null && trim((string)($existing["id"] ?? ""))!=="") return ["message_id"=>trim((string)$existing["id"]),"thread_id"=>trim((string)($existing["threadId"] ?? $threadId))]; return $this->sendMessage($to,$subject,$body,$messageId,trim($threadId),trim($inReplyTo)); }
+
+    private function sendMessage(string $to, string $subject, string $body, ?string $messageId, ?string $threadId, ?string $inReplyTo): array
     {
         $to = trim($to);
         $subject = trim(preg_replace('/[\r\n]+/', ' ', $subject) ?? $subject);
@@ -50,13 +52,14 @@ final class SvAmazonGmailApiClient
         $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
         $headers = ["To: {$to}", "Subject: {$encodedSubject}", 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: 8bit'];
         if ($messageId !== null) $headers[] = 'Message-ID: <' . $messageId . '>';
+        if ($inReplyTo !== null && trim($inReplyTo) !== "") { $headers[] = "In-Reply-To: " . trim($inReplyTo); $headers[] = "References: " . trim($inReplyTo); }
         $mime = implode("\r\n", $headers) . "\r\n\r\n" . $body;
         $raw = rtrim(strtr(base64_encode($mime), '+/', '-_'), '=');
         $response = ($this->transport)(
             'POST',
             'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
             ['Authorization'=>'Bearer ' . $this->token(), 'Accept'=>'application/json'],
-            ['raw'=>$raw]
+            $threadId !== null && trim($threadId) !== '' ? ['raw'=>$raw,'threadId'=>trim($threadId)] : ['raw'=>$raw]
         );
         $status = (int)($response['status'] ?? 0);
         $json = is_array($response['json'] ?? null) ? $response['json'] : [];
@@ -156,6 +159,7 @@ final class SvAmazonGmailApiClient
         return [
             'message_id'=>trim((string)($message['id'] ?? '')),
             'thread_id'=>trim((string)($message['threadId'] ?? '')),
+            'rfc_message_id'=>$headers['message-id'] ?? '',
             'from'=>$headers['from'] ?? '',
             'subject'=>$headers['subject'] ?? '',
             'received_at'=>$receivedAt,

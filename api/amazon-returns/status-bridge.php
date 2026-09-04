@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/config/bootstrap-env.php';
-require_once dirname(__DIR__, 2) . '/includes/pdo-database.php';
+require_once dirname(__DIR__, 2) . '/includes/Database.php';
 require_once dirname(__DIR__, 2) . '/includes/amazon-returns/Config.php';
 require_once dirname(__DIR__, 2) . '/includes/amazon-returns/EventStore.php';
 require_once dirname(__DIR__, 2) . '/includes/amazon-returns/Outbox.php';
@@ -62,7 +62,7 @@ function sv_amz_status_ensure_jobs(PDO $db, DateTimeImmutable $now): int
 $expectedToken = getenv('SELLER_CENTRAL_BRIDGE_TOKEN');
 $expectedToken = is_string($expectedToken) ? trim($expectedToken) : '';
 if (!SvAmazonReturnsRemoteBridge::authorized($expectedToken, sv_amz_status_auth_header())) {
-    header('WWW-Authenticate: Bearer realm="ShopVivaliz SAFE-T Status Bridge"');
+    header('WWW-Authenticate: Bearer realm="Amazon Returns SAFE-T Status Bridge"');
     sv_amz_status_reply(['status'=>'UNAUTHORIZED'], 401);
 }
 if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST') {
@@ -76,7 +76,7 @@ $operation = strtolower(trim((string)($input['operation'] ?? '')));
 if (!in_array($operation, ['heartbeat','pull','result'], true)) sv_amz_status_reply(['status'=>'INVALID_OPERATION'], 400);
 
 $config = new SvAmazonReturnsConfig();
-$db = sv_pdo();
+$db = amazon_returns_pdo();
 if (!$db instanceof PDO) sv_amz_status_reply(['status'=>'DB_UNAVAILABLE'], 503);
 
 if ($operation === 'heartbeat') {

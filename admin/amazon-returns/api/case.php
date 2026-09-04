@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../../includes/admin-guard.php';
+require_once __DIR__ . '/../../../includes/AdminAuth.php';
+require_once __DIR__ . '/../../../includes/Database.php';
+SvAmazonReturnsAdminAuth::requireLogin(true);
 require_once __DIR__ . '/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__ . '/../../../includes/amazon-returns/EventStore.php';
 
@@ -11,7 +13,7 @@ header('Cache-Control: no-store');
 function sv_amz_case_reply(array $payload, int $status=200): never { http_response_code($status); echo json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); exit; }
 
 try {
-    $db = function_exists('sv_pdo') ? sv_pdo() : null;
+    $db = amazon_returns_pdo();
     if (!$db instanceof PDO) sv_amz_case_reply(['success'=>false,'error'=>'Banco indisponível.'],503);
     SvAmazonReturnsSchema::ensure($db);
     $caseId = filter_input(INPUT_GET, 'case_id', FILTER_VALIDATE_INT) ?: 0;

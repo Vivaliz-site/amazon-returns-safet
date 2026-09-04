@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../../includes/admin-guard.php';
+require_once __DIR__ . '/../../../includes/AdminAuth.php';
+require_once __DIR__ . '/../../../includes/Database.php';
+SvAmazonReturnsAdminAuth::requireLogin(true);
 require_once __DIR__ . '/../../../includes/amazon-returns/Schema.php';
 
 header('Content-Type: application/json; charset=UTF-8');
@@ -15,7 +17,7 @@ function sv_amz_summary_reply(array $payload, int $status = 200): never {
 }
 
 try {
-    $db = function_exists('sv_pdo') ? sv_pdo() : null;
+    $db = amazon_returns_pdo();
     if (!$db instanceof PDO) sv_amz_summary_reply(['success'=>false,'error'=>'Banco indisponível.'], 503);
     SvAmazonReturnsSchema::ensure($db);
     $exposure = '(CASE WHEN expected_reimbursement_amount > 0 THEN expected_reimbursement_amount ELSE refund_amount END - reconciled_credit_amount)';

@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../../includes/admin-guard.php';
-require_once __DIR__ . '/../../../includes/csrf.php';
+require_once __DIR__ . '/../../../includes/AdminAuth.php';
+require_once __DIR__ . '/../../../includes/Database.php';
+require_once __DIR__ . '/../../../includes/Csrf.php';
+SvAmazonReturnsAdminAuth::requireLogin(true);
 require_once __DIR__ . '/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__ . '/../../../includes/amazon-returns/EventStore.php';
 require_once __DIR__ . '/../../../includes/amazon-returns/Projector.php';
@@ -48,7 +50,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET')!=='POST') sv_amz_intake_reply(['succes
 $contentType=strtolower((string)($_SERVER['CONTENT_TYPE'] ?? ''));
 $input=str_contains($contentType,'application/json') ? (json_decode((string)file_get_contents('php://input'),true) ?: []) : $_POST;
 $csrf=$_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($input['csrf_token'] ?? null);
-if (!sv_csrf_valid('amazon_returns_intake',$csrf)) sv_amz_intake_reply(['success'=>false,'error'=>'CSRF inválido.'],403);
+if (!SvAmazonReturnsCsrf::valid('amazon_returns_intake',$csrf)) sv_amz_intake_reply(['success'=>false,'error'=>'CSRF inválido.'],403);
 
 $condition=strtoupper(trim((string)($input['condition'] ?? '')));
 $conditions=['OK','DAMAGED','USED','WRONG_ITEM','INCOMPLETE','EMPTY_PACKAGE'];
@@ -63,7 +65,7 @@ if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 $caseId=filter_var($input['case_id'] ?? null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
 if ($caseId===false) sv_amz_intake_reply(['success'=>false,'error'=>'Selecione o item/pedido recebido.'],422);
 $note=mb_substr(trim((string)($input['note'] ?? '')),0,2000,'UTF-8');
-$db=function_exists('sv_pdo') ? sv_pdo() : null; if (!$db instanceof PDO) sv_amz_intake_reply(['success'=>false,'error'=>'Banco indisponível.'],503);
+$db=amazon_returns_pdo(); if (!$db instanceof PDO) sv_amz_intake_reply(['success'=>false,'error'=>'Banco indisponível.'],503);
 $stored=[];
 try {
     SvAmazonReturnsSchema::ensure($db); $db->beginTransaction();
@@ -84,7 +86,7 @@ try {
     $eventId=SvAmazonReturnEventStore::append($db,[
         'case_id'=>$caseId,'event_type'=>'PHYSICAL_RECEIVED','source'=>'WAREHOUSE','source_event_id'=>$operationId,
         'idempotency_key'=>$idempotency,'occurred_at'=>$occurredAt,
-        'payload'=>['quantity'=>(int)$quantity,'condition'=>$condition,'note'=>$note,'operator_id'=>(int)($_SESSION['user_id'] ?? 0)],
+        'payload'=>['quantity'=>(int)$quantity,'condition'=>$condition,'note'=>$note,'operator_id'=>crc32(SvAmazonReturnsAdminAuth::username())],
         'evidence_sha256'=>hash('sha256',implode('|',$photoHashes).'|'.$condition.'|'.$note),
     ]);
     if ($stored!==[]) {

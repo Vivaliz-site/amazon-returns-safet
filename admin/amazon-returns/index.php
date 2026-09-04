@@ -1,7 +1,8 @@
 <?php
 
 declare(strict_types=1);
-require_once __DIR__ . '/../../includes/admin-guard.php';
+require_once __DIR__ . '/../../includes/AdminAuth.php';
+SvAmazonReturnsAdminAuth::requireLogin(false);
 ?>
 <!doctype html>
 <html lang="pt-BR">

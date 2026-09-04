@@ -35,6 +35,7 @@ final class SvAmazonReturnsConfig
             'SAFE_T_SUBMIT' => $this->flag('safe_t_write'),
             'SAFE_T_APPEAL' => $this->flag('appeal_write'),
             'SAFE_T_EMAIL_REVIEW' => $this->flag('email_review_write'),
+            'SAFE_T_EMAIL_REPLY' => $this->flag('email_review_write'),
             'SELLER_SUPPORT_OPEN', 'SELLER_SUPPORT_UPDATE' => $this->flag('support_write'),
             default => false,
         };
@@ -71,6 +72,7 @@ final class SvAmazonReturnsConfig
             'SAFE_T_SUBMIT' => $this->externalWriteAllowed('SAFE_T_SUBMIT'),
             'SAFE_T_APPEAL' => $this->externalWriteAllowed('SAFE_T_APPEAL'),
             'SAFE_T_EMAIL_REVIEW' => $this->externalWriteAllowed('SAFE_T_EMAIL_REVIEW'),
+            'SAFE_T_EMAIL_REPLY' => $this->externalWriteAllowed('SAFE_T_EMAIL_REPLY'),
             'SELLER_SUPPORT_OPEN' => $this->externalWriteAllowed('SELLER_SUPPORT_OPEN'),
             'SELLER_SUPPORT_UPDATE' => $this->externalWriteAllowed('SELLER_SUPPORT_UPDATE'),
         ];

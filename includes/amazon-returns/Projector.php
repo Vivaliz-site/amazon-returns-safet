@@ -199,6 +199,7 @@ final class SvAmazonReturnProjector
             SvAmazonReturnStates::APPEAL_APPROVED,
             SvAmazonReturnStates::APPEAL_DENIED_FINAL,
             SvAmazonReturnStates::EMAIL_REVIEW_SENT,
+            SvAmazonReturnStates::EMAIL_REVIEW_RESPONSE_PENDING,
             SvAmazonReturnStates::CREDIT_PENDING,
             SvAmazonReturnStates::RECOVERED,
             SvAmazonReturnStates::SUPPORT_ESCALATION,

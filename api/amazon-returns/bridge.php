@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/config/bootstrap-env.php';
-require_once dirname(__DIR__, 2) . '/includes/pdo-database.php';
+require_once dirname(__DIR__, 2) . '/includes/Database.php';
 require_once dirname(__DIR__, 2) . '/includes/amazon-returns/Config.php';
 require_once dirname(__DIR__, 2) . '/includes/amazon-returns/Enums.php';
 require_once dirname(__DIR__, 2) . '/includes/amazon-returns/EventStore.php';
@@ -30,7 +30,7 @@ function sv_amz_bridge_auth_header(): string
 $expectedToken = getenv('SELLER_CENTRAL_BRIDGE_TOKEN');
 $expectedToken = is_string($expectedToken) ? trim($expectedToken) : '';
 if (!SvAmazonReturnsRemoteBridge::authorized($expectedToken, sv_amz_bridge_auth_header())) {
-    header('WWW-Authenticate: Bearer realm="ShopVivaliz Amazon Returns Bridge"');
+    header('WWW-Authenticate: Bearer realm="Amazon Returns SAFE-T Bridge"');
     sv_amz_bridge_reply(['status'=>'UNAUTHORIZED'], 401);
 }
 
@@ -53,7 +53,7 @@ if (!in_array($operation, ['heartbeat','pull','result'], true)) {
 }
 
 $config = new SvAmazonReturnsConfig();
-$db = sv_pdo();
+$db = amazon_returns_pdo();
 if (!$db instanceof PDO) sv_amz_bridge_reply(['status'=>'DB_UNAVAILABLE'], 503);
 
 if ($operation === 'heartbeat') {
