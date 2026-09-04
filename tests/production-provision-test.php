@@ -27,6 +27,9 @@ ppAssert(str_contains($script,'python3-certbot-dns-cloudflare'),'Provisioning mu
 ppAssert(str_contains($script,'--dns-cloudflare'),'TLS issuance must use Cloudflare DNS validation.');
 ppAssert(str_contains($script,'CLOUDFLARE_DNS_API_TOKEN_FILE'),'TLS bootstrap must accept the DNS token from a protected file.');
 ppAssert(str_contains($script,'cloudflare-certbot.ini'),'TLS renewals must retain root-only DNS credentials outside the release.');
+ppAssert(str_contains($script,'-o root -g www-data -m 0770 "$shared"'),'Shared runtime directory must be group-writable by the service.');
+ppAssert(str_contains($script,'-o www-data -g www-data -m 0750 "$shared/evidence"'),'Evidence directory must be writable by the service user.');
+ppAssert(str_contains($script,'-o root -g root -m 0700 "$shared/private"'),'Private bootstrap secrets must remain root-only.');
 ppAssert(!str_contains($script,'--webroot'),'TLS issuance must not depend on public origin port 80.');
 ppAssert(substr_count($script,'SvAmazonReturnsRuntime::bootstrap') >= 2,'Provisioning must bootstrap once before import and again after import to enforce D+75 policy.');
 ppAssert(str_contains($vhost,'ServerName returns.shopvivaliz.com.br'),'Vhost must own the isolated hostname.');
