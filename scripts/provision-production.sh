@@ -112,6 +112,10 @@ apache2ctl configtest
 systemctl reload apache2
 
 if [[ ! -s /etc/letsencrypt/live/returns.shopvivaliz.com.br/fullchain.pem ]]; then
+    if ! command -v certbot >/dev/null 2>&1; then
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y certbot >/dev/null
+    fi
     certbot certonly --webroot \
         -w "$root/current" \
         -d returns.shopvivaliz.com.br \

@@ -23,6 +23,7 @@ ppAssert(str_contains($script,'amazon_return_cases'),'Provisioning must migrate 
 ppAssert(str_contains($script,'amazon-returns-deploy.timer'),'Provisioning must install the independent deploy timer.');
 ppAssert(str_contains($script,'verify-migration.sh'),'Source import must be verified before cutover.');
 ppAssert(str_contains($script,'.release-sha'),'Provisioning must record the deployed target commit.');
+ppAssert(str_contains($script,'apt-get install -y certbot'),'Provisioning must install certbot when the VM does not provide it.');
 ppAssert(substr_count($script,'SvAmazonReturnsRuntime::bootstrap') >= 2,'Provisioning must bootstrap once before import and again after import to enforce D+75 policy.');
 ppAssert(str_contains($vhost,'ServerName returns.shopvivaliz.com.br'),'Vhost must own the isolated hostname.');
 ppAssert(str_contains($vhost,'/home/ubuntu/amazon-returns-deploy/current'),'Vhost must serve the isolated release.');
