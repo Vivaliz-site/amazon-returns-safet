@@ -31,7 +31,7 @@ final class SvAmazonSafeTReviewReplyAnalyzer
             return self::result('INFO_REQUESTED',$available?'RESPOND_EMAIL':'HUMAN_REVIEW','AMAZON_REQUESTED_INFORMATION',$hash,$excerpt);
         }
 
-        $denial = preg_match('/\b(?:negad[oa]|nao podemos aprovar|nao e elegivel|fora do prazo|reafirmamos nossa decisao)\b/u',$normalized) === 1;
+        $denial = preg_match('/\b(?:neg(?:ad[oa]|amos)|nao podemos aprovar|nao e elegivel|fora do prazo|reafirmamos nossa decisao)\b/u',$normalized) === 1;
         $final = str_contains($normalized,'nao responderemos a outras comunicacoes')
             || str_contains($normalized,'decisao final')
             || str_contains($normalized,'nao sera reconsiderada');

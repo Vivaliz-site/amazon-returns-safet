@@ -62,9 +62,9 @@ $reviewEvents = $parser->parse($reviewReply);
 gmSame(1, count($reviewEvents), 'SAFE-T review email reply must emit one event.');
 gmSame('SAFE_T_EMAIL_REVIEW_RESPONSE', $reviewEvents[0]['event_type'], 'Detailed review reply event type.');
 gmSame('12472-25597-6629839', $reviewEvents[0]['safe_t_id'], 'Detailed review reply SAFE-T ID.');
-gmSame('DENIED', $reviewEvents[0]['review_outcome'] ?? null, 'Detailed review reply outcome must classify explicit denial.');
+gmSame('DENIED_ACTIONABLE', $reviewEvents[0]['review_outcome'] ?? null, 'Detailed review reply must classify a plain denial as non-terminal and actionable for contextual review.');
 $reviewPatch = SvAmazonGmailEventSink::casePatch($reviewEvents[0]);
-gmSame('SUPPORT_ESCALATION', $reviewPatch['state'] ?? null, 'Denied detailed email review must move to Seller Support escalation stage.');
+gmSame('EMAIL_REVIEW_RESPONSE_PENDING', $reviewPatch['state'] ?? null, 'Denied detailed email review must wait for contextual decision instead of auto-escalating.');
 
 $updated = $parser->parse(message('m-update', 'Atualização da solicitação do SAFE-T 12472-25597-6629839 para o pedido 702-5555555-6666666'));
 gmSame('SAFE_T_UPDATED_EMAIL', $updated[0]['event_type'], 'SAFE-T update event type.');

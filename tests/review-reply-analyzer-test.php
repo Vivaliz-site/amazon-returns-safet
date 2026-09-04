@@ -14,6 +14,8 @@ $msg=$base; $msg['body_text']='Para continuar a análise, envie o comprovante de
 rrSame('INFO_REQUESTED',$analyzer->analyze($msg,['requested_evidence_available'=>true])['outcome'],'Specific evidence request must be recognized.');
 $msg=$base; $msg['body_text']='Nenhuma ação é necessária agora. Você será reembolsado proativamente até 10 de setembro de 2026.';
 rrSame('WAIT',$analyzer->analyze($msg,[])['outcome'],'Promised future reimbursement must wait.');
+$msg=$base; $msg['body_text']='Após análise manual, negamos a solicitação de reembolso.';
+rrSame('DENIED_ACTIONABLE',$analyzer->analyze($msg,[])['outcome'],'Plain denial must be recognized but remain non-terminal without case context.');
 $msg=$base; $msg['body_text']='Entendemos sua posição, mas reafirmamos nossa decisão. Não podemos fornecer mais detalhes e não responderemos a outras comunicações sobre esta reivindicação.';
 rrSame('DENIED_FINAL',$analyzer->analyze($msg,['new_material_fact'=>false,'financial_inconsistency'=>false,'open_channel'=>false])['outcome'],'Explicit final denial without unresolved fact may close.');
 rrSame('DENIED_ACTIONABLE',$analyzer->analyze($msg,['new_material_fact'=>false,'financial_inconsistency'=>true,'open_channel'=>false])['outcome'],'Financial inconsistency prevents final closure.');
