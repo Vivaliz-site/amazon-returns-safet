@@ -28,6 +28,7 @@ shSame(true,str_contains($scriptText,'amazon_returns_safet'),'Shadow audit must 
 shSame(true,str_contains($scriptText,'SvAmazonSafeTDecisionEngine'),'Shadow audit must compare real decision outputs.');
 shSame(true,str_contains($scriptText,'ShadowAuditRepository'),'Shadow audit must isolate SQL in a scoped repository.');
 shSame(true,str_contains($scriptText,'AMAZON_RETURNS_SOURCE_TENANT_SLUG'),'Shadow audit must accept explicit source tenant identity.');
+shSame(false,str_contains($scriptText,'$sourceTenantSlugEnv='),'Shadow audit must not retain dead source tenant env-name variables.');
 shSame(true,str_contains($scriptText,'AMAZON_RETURNS_TARGET_TENANT_SLUG'),'Shadow audit must accept explicit target tenant identity.');
 shSame(false,str_contains($scriptText,'EventStore.php'),'Shadow audit must not use the global event store.');
 

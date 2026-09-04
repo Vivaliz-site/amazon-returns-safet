@@ -14,10 +14,6 @@ if(function_exists('posix_geteuid') && posix_geteuid()!==0){
     exit(2);
 }
 
-$sourceTenantSlugEnv='AMAZON_RETURNS_SOURCE_TENANT_SLUG';
-$sourceConnectionEnv='AMAZON_RETURNS_SOURCE_CONNECTION_KEY';
-$targetTenantSlugEnv='AMAZON_RETURNS_TARGET_TENANT_SLUG';
-$targetConnectionEnv='AMAZON_RETURNS_TARGET_CONNECTION_KEY';
 $sourceName=getenv('AMAZON_RETURNS_SOURCE_DB') ?: 'shopvivaliz';
 $targetName=getenv('AMAZON_RETURNS_TARGET_DB') ?: 'amazon_returns_safet';
 $now=new DateTimeImmutable(
@@ -40,9 +36,8 @@ $connect=static function(string $name):PDO{
 
 $contextFor=static function(PDO $db,string $side):?SvAmazonTenantContext{
     if(!SvAmazonReturnsShadowAuditRepository::hasTenantColumns($db))return null;
-    $prefix=$side==='source'?'AMAZON_RETURNS_SOURCE':'AMAZON_RETURNS_TARGET';
-    $slug=getenv($prefix.'_TENANT_SLUG');
-    $key=getenv($prefix.'_CONNECTION_KEY');
+    $slug=getenv($side==='source'?'AMAZON_RETURNS_SOURCE_TENANT_SLUG':'AMAZON_RETURNS_TARGET_TENANT_SLUG');
+    $key=getenv($side==='source'?'AMAZON_RETURNS_SOURCE_CONNECTION_KEY':'AMAZON_RETURNS_TARGET_CONNECTION_KEY');
     if($side==='target'){
         $slug=$slug ?: getenv('AMAZON_RETURNS_TENANT_SLUG');
         $key=$key ?: getenv('AMAZON_RETURNS_CONNECTION_KEY');
