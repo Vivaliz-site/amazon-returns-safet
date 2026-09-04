@@ -5,9 +5,7 @@ final class SvAmazonReturnsSchema
 {
     public static function ensure(PDO $db): void
     {
-        foreach (self::statements() as $statement) {
-            $db->exec($statement);
-        }
+        foreach (self::statements() as $statement) $db->exec($statement);
     }
 
     /** @return list<string> */
@@ -15,8 +13,79 @@ final class SvAmazonReturnsSchema
     {
         return [
             <<<'SQL'
+CREATE TABLE IF NOT EXISTS `amazon_return_tenants` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `slug` VARCHAR(96) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `status` VARCHAR(24) NOT NULL DEFAULT 'ACTIVE',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_amazon_return_tenants_slug` (`slug`),
+    KEY `idx_amazon_return_tenants_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL,
+            <<<'SQL'
+CREATE TABLE IF NOT EXISTS `amazon_return_tenant_users` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `identity_provider` VARCHAR(32) NOT NULL,
+    `subject` VARCHAR(191) NOT NULL,
+    `email` VARCHAR(254) NULL,
+    `display_name` VARCHAR(191) NULL,
+    `role` VARCHAR(24) NOT NULL DEFAULT 'VIEWER',
+    `status` VARCHAR(24) NOT NULL DEFAULT 'ACTIVE',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_amazon_return_tenant_user_subject` (`tenant_id`, `identity_provider`, `subject`),
+    KEY `idx_amazon_return_tenant_users_status` (`tenant_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL,
+            <<<'SQL'
+CREATE TABLE IF NOT EXISTS `amazon_return_connections` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `connection_key` VARCHAR(96) NOT NULL,
+    `label` VARCHAR(191) NOT NULL,
+    `selling_partner_id` VARCHAR(64) NULL,
+    `region` VARCHAR(16) NOT NULL,
+    `endpoint` VARCHAR(255) NOT NULL,
+    `marketplace_id` VARCHAR(32) NOT NULL,
+    `credential_ref` VARCHAR(255) NULL,
+    `status` VARCHAR(24) NOT NULL DEFAULT 'ACTIVE',
+    `authorized_at` DATETIME NULL,
+    `authorization_expires_at` DATETIME NULL,
+    `last_verified_at` DATETIME NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_amazon_return_connection_key` (`tenant_id`, `connection_key`),
+    UNIQUE KEY `uq_amazon_return_selling_partner` (`region`, `selling_partner_id`),
+    KEY `idx_amazon_return_connections_status` (`tenant_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL,
+            <<<'SQL'
+CREATE TABLE IF NOT EXISTS `amazon_return_feature_flags` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `amazon_connection_id` BIGINT UNSIGNED NOT NULL,
+    `flag_key` VARCHAR(96) NOT NULL,
+    `enabled` TINYINT(1) NOT NULL DEFAULT 0,
+    `config_json` JSON NULL,
+    `updated_by_user_id` BIGINT UNSIGNED NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_amazon_return_feature_flag` (`tenant_id`, `amazon_connection_id`, `flag_key`),
+    KEY `idx_amazon_return_feature_flags_enabled` (`tenant_id`, `amazon_connection_id`, `enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL,
+            <<<'SQL'
 CREATE TABLE IF NOT EXISTS `amazon_return_cases` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `amazon_connection_id` BIGINT UNSIGNED NOT NULL,
     `amazon_order_id` VARCHAR(32) NOT NULL,
     `amazon_order_item_id` VARCHAR(64) NOT NULL,
     `marketplace_id` VARCHAR(32) NOT NULL,
@@ -47,17 +116,19 @@ CREATE TABLE IF NOT EXISTS `amazon_return_cases` (
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_amazon_return_case_order_item` (`amazon_order_id`, `amazon_order_item_id`),
-    KEY `idx_amazon_return_cases_state_action` (`state`, `next_action_at`),
-    KEY `idx_amazon_return_cases_safe_t` (`safe_t_id`),
-    KEY `idx_amazon_return_cases_support_case` (`support_case_id`),
-    KEY `idx_amazon_return_cases_eligibility` (`eligibility_at`),
-    KEY `idx_amazon_return_cases_seller_debit` (`seller_debit_at`)
+    UNIQUE KEY `uq_amazon_return_case_order_item` (`tenant_id`, `amazon_connection_id`, `amazon_order_id`, `amazon_order_item_id`),
+    KEY `idx_amazon_return_cases_state_action` (`tenant_id`, `amazon_connection_id`, `state`, `next_action_at`),
+    KEY `idx_amazon_return_cases_safe_t` (`tenant_id`, `amazon_connection_id`, `safe_t_id`),
+    KEY `idx_amazon_return_cases_support_case` (`tenant_id`, `amazon_connection_id`, `support_case_id`),
+    KEY `idx_amazon_return_cases_eligibility` (`tenant_id`, `amazon_connection_id`, `eligibility_at`),
+    KEY `idx_amazon_return_cases_seller_debit` (`tenant_id`, `amazon_connection_id`, `seller_debit_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL,
             <<<'SQL'
 CREATE TABLE IF NOT EXISTS `amazon_return_events` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `amazon_connection_id` BIGINT UNSIGNED NOT NULL,
     `case_id` BIGINT UNSIGNED NOT NULL,
     `event_type` VARCHAR(64) NOT NULL,
     `source` VARCHAR(32) NOT NULL,
@@ -68,13 +139,14 @@ CREATE TABLE IF NOT EXISTS `amazon_return_events` (
     `evidence_sha256` CHAR(64) NULL,
     `created_at` DATETIME NOT NULL,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_amazon_return_events_idempotency` (`idempotency_key`),
-    KEY `idx_amazon_return_events_case_time` (`case_id`, `occurred_at`, `id`)
+    UNIQUE KEY `uq_amazon_return_events_idempotency` (`tenant_id`, `amazon_connection_id`, `idempotency_key`),
+    KEY `idx_amazon_return_events_case_time` (`tenant_id`, `amazon_connection_id`, `case_id`, `occurred_at`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL,
             <<<'SQL'
 CREATE TABLE IF NOT EXISTS `amazon_return_policies` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
     `policy_key` VARCHAR(96) NOT NULL,
     `marketplace_id` VARCHAR(32) NOT NULL,
     `program` VARCHAR(64) NOT NULL,
@@ -87,12 +159,15 @@ CREATE TABLE IF NOT EXISTS `amazon_return_policies` (
     `status` VARCHAR(24) NOT NULL DEFAULT 'ACTIVE',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_amazon_return_policy_version` (`policy_key`, `marketplace_id`, `program`, `effective_from`)
+    UNIQUE KEY `uq_amazon_return_policy_version` (`tenant_id`, `policy_key`, `marketplace_id`, `program`, `effective_from`),
+    KEY `idx_amazon_return_policies_active` (`tenant_id`, `marketplace_id`, `program`, `status`, `effective_from`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL,
             <<<'SQL'
 CREATE TABLE IF NOT EXISTS `amazon_return_evidence` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `amazon_connection_id` BIGINT UNSIGNED NOT NULL,
     `case_id` BIGINT UNSIGNED NOT NULL,
     `kind` VARCHAR(64) NOT NULL,
     `source` VARCHAR(32) NOT NULL,
@@ -103,12 +178,15 @@ CREATE TABLE IF NOT EXISTS `amazon_return_evidence` (
     `captured_at` DATETIME NOT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_amazon_return_evidence_content` (`case_id`, `kind`, `content_sha256`)
+    UNIQUE KEY `uq_amazon_return_evidence_content` (`tenant_id`, `amazon_connection_id`, `case_id`, `kind`, `content_sha256`),
+    KEY `idx_amazon_return_evidence_case` (`tenant_id`, `amazon_connection_id`, `case_id`, `captured_at`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL,
             <<<'SQL'
 CREATE TABLE IF NOT EXISTS `amazon_return_outbox` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `amazon_connection_id` BIGINT UNSIGNED NOT NULL,
     `case_id` BIGINT UNSIGNED NOT NULL,
     `kind` VARCHAR(64) NOT NULL,
     `idempotency_key` CHAR(64) NOT NULL,
@@ -121,14 +199,16 @@ CREATE TABLE IF NOT EXISTS `amazon_return_outbox` (
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_amazon_return_outbox_idempotency` (`idempotency_key`),
-    KEY `idx_amazon_return_outbox_available` (`status`, `available_at`),
-    KEY `idx_amazon_return_outbox_case_kind` (`case_id`, `kind`)
+    UNIQUE KEY `uq_amazon_return_outbox_idempotency` (`tenant_id`, `amazon_connection_id`, `idempotency_key`),
+    KEY `idx_amazon_return_outbox_available` (`tenant_id`, `amazon_connection_id`, `status`, `available_at`),
+    KEY `idx_amazon_return_outbox_case_kind` (`tenant_id`, `amazon_connection_id`, `case_id`, `kind`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL,
             <<<'SQL'
 CREATE TABLE IF NOT EXISTS `amazon_return_dead_letters` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `amazon_connection_id` BIGINT UNSIGNED NOT NULL,
     `outbox_id` BIGINT UNSIGNED NOT NULL,
     `case_id` BIGINT UNSIGNED NOT NULL,
     `kind` VARCHAR(64) NOT NULL,
@@ -142,13 +222,15 @@ CREATE TABLE IF NOT EXISTS `amazon_return_dead_letters` (
     `failed_at` DATETIME NOT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_amazon_return_dead_letter_outbox` (`outbox_id`),
-    KEY `idx_amazon_return_dead_letters_case_kind` (`case_id`, `kind`)
+    UNIQUE KEY `uq_amazon_return_dead_letter_outbox` (`tenant_id`, `amazon_connection_id`, `outbox_id`),
+    KEY `idx_amazon_return_dead_letters_case_kind` (`tenant_id`, `amazon_connection_id`, `case_id`, `kind`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL,
             <<<'SQL'
 CREATE TABLE IF NOT EXISTS `amazon_return_source_cursors` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `amazon_connection_id` BIGINT UNSIGNED NOT NULL,
     `source` VARCHAR(32) NOT NULL,
     `cursor_key` VARCHAR(96) NOT NULL,
     `cursor_value` VARCHAR(512) NOT NULL,
@@ -157,12 +239,15 @@ CREATE TABLE IF NOT EXISTS `amazon_return_source_cursors` (
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_amazon_return_source_cursor` (`source`, `cursor_key`)
+    UNIQUE KEY `uq_amazon_return_source_cursor` (`tenant_id`, `amazon_connection_id`, `source`, `cursor_key`),
+    KEY `idx_amazon_return_source_cursors_observed` (`tenant_id`, `amazon_connection_id`, `source`, `observed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL,
             <<<'SQL'
 CREATE TABLE IF NOT EXISTS `amazon_return_overrides` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `amazon_connection_id` BIGINT UNSIGNED NOT NULL,
     `case_id` BIGINT UNSIGNED NOT NULL,
     `actor_id` BIGINT UNSIGNED NOT NULL,
     `reason` TEXT NOT NULL,
@@ -170,7 +255,7 @@ CREATE TABLE IF NOT EXISTS `amazon_return_overrides` (
     `after_json` JSON NOT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `idx_amazon_return_overrides_case_time` (`case_id`, `created_at`, `id`)
+    KEY `idx_amazon_return_overrides_case_time` (`tenant_id`, `amazon_connection_id`, `case_id`, `created_at`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL,
         ];
