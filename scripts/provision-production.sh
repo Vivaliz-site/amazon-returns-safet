@@ -108,6 +108,9 @@ case_table_exists="$(mysql --protocol=socket -uroot -Nse \
 }
 tenant_column_exists="$(mysql --protocol=socket -uroot -Nse \
     "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='$target_db' AND table_name='amazon_return_cases' AND column_name='tenant_id'")"
+expected_cases="$(mysql --protocol=socket -uroot -Nse \
+    "SELECT COUNT(*) FROM amazon_return_cases" "$target_db")"
+[[ "$expected_cases" =~ ^[0-9]+$ && "$expected_cases" -gt 0 ]] || { echo 'invalid live case count for migration' >&2; exit 2; }
 if [[ "$tenant_column_exists" -eq 0 ]]; then
     AMAZON_RETURNS_ENV_FILE="$env_file" \
         php "$release/scripts/migrate-single-tenant-to-multitenant.php" --dry-run
@@ -116,7 +119,7 @@ if [[ "$tenant_column_exists" -eq 0 ]]; then
     dry_run_cmd="sudo env AMAZON_RETURNS_ENV_FILE=$env_file php $release/scripts/migrate-single-tenant-to-multitenant.php --dry-run"
     backup_cmd="sudo mysqldump --protocol=socket -uroot --single-transaction --routines --triggers $target_db | gzip -9 > $backup_file"
     apply_cmd="sudo env AMAZON_RETURNS_ENV_FILE=$env_file php $release/scripts/migrate-single-tenant-to-multitenant.php --apply"
-    verify_cmd="sudo env AMAZON_RETURNS_ENV_FILE=$env_file AMAZON_RETURNS_SOURCE_DB=$source_db AMAZON_RETURNS_TARGET_DB=$target_db AMAZON_RETURNS_EXPECTED_CASES=37 AMAZON_RETURNS_VERIFICATION_OUTPUT=$verification_file $release/scripts/verify-migration.sh"
+    verify_cmd="sudo env AMAZON_RETURNS_ENV_FILE=$env_file AMAZON_RETURNS_SOURCE_DB=$source_db AMAZON_RETURNS_TARGET_DB=$target_db AMAZON_RETURNS_EXPECTED_CASES=$expected_cases AMAZON_RETURNS_VERIFICATION_OUTPUT=$verification_file $release/scripts/verify-migration.sh"
     rollback_target="${previous_release:-<previous-release>}"
     rollback_cmd="sudo systemctl stop amazon-returns-safet.service && sudo gunzip -c $backup_file | sudo mysql --protocol=socket -uroot $target_db && sudo ln -sfn releases/$(basename "$rollback_target") $root/current && sudo systemctl start amazon-returns-safet.service"
     printf 'dry_run_cmd=%s\n' "$dry_run_cmd"
@@ -145,7 +148,7 @@ verification_file="$shared/private/tenant-foundation-verification-$stamp.txt"
 AMAZON_RETURNS_ENV_FILE="$env_file" \
 AMAZON_RETURNS_SOURCE_DB="$source_db" \
 AMAZON_RETURNS_TARGET_DB="$target_db" \
-AMAZON_RETURNS_EXPECTED_CASES=37 \
+AMAZON_RETURNS_EXPECTED_CASES="$expected_cases" \
 AMAZON_RETURNS_VERIFICATION_OUTPUT="$verification_file" \
     "$release/scripts/verify-migration.sh"
 grep -q '^migration_verification=ok$' "$verification_file"

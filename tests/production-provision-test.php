@@ -44,6 +44,9 @@ ppAssert(str_contains($script,'AMAZON_RETURNS_IMPORT_SOURCE:-0')===false,'Provis
 ppAssert(str_contains($script,'amazon_return_cases'),'Provisioning must migrate existing subsystem state.');
 ppAssert(str_contains($script,'amazon-returns-deploy.timer'),'Provisioning must install the independent deploy timer.');
 ppAssert(str_contains($script,'verify-migration.sh'),'Source import must be verified before cutover.');
+ppAssert(str_contains($script,'expected_cases="$(mysql --protocol=socket -uroot -Nse'),'Provisioning must snapshot the live eligible case count at preflight instead of hard-coding 37.');
+ppAssert(str_contains($script,'SELECT COUNT(*) FROM amazon_return_cases'),'Provisioning live case-count snapshot must query the target cases.');
+ppAssert(!str_contains($script,'AMAZON_RETURNS_EXPECTED_CASES=37'),'Provisioning must not freeze a historical case count while live ingestion continues.');
 ppAssert(str_contains($script,'.release-sha'),'Provisioning must record the deployed target commit.');
 ppAssert(str_contains($script,'python3-certbot-dns-cloudflare'),'Provisioning must support Cloudflare DNS-01 instead of relying on origin port 80.');
 ppAssert(str_contains($script,'--dns-cloudflare'),'TLS issuance must use Cloudflare DNS validation.');
