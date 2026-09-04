@@ -17,8 +17,8 @@ final class SvAmazonReturnsSpApi
     public function __construct(?object $client = null, ?callable $documentTransport = null)
     {
         if ($client === null) {
-            require_once __DIR__ . '/../marketplace/AmazonPublisher.php';
-            $client = new SvAmazonClient();
+            require_once __DIR__ . '/AmazonSpApiClient.php';
+            $client = new SvAmazonSpApiClient();
         }
         foreach (['request', 'marketplaceId'] as $method) {
             if (!method_exists($client, $method)) {
