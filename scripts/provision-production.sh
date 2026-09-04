@@ -112,14 +112,20 @@ apache2ctl configtest
 systemctl reload apache2
 
 if [[ ! -s /etc/letsencrypt/live/returns.shopvivaliz.com.br/fullchain.pem ]]; then
-    if ! command -v certbot >/dev/null 2>&1; then
+    : "${CLOUDFLARE_DNS_API_TOKEN:?Cloudflare DNS token is required for first TLS issuance}"
+    if ! certbot plugins 2>/dev/null | grep -q 'dns-cloudflare'; then
         apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y certbot >/dev/null
+        DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-dns-cloudflare >/dev/null
     fi
-    certbot certonly --webroot \
-        -w "$root/current" \
+    cf_credentials="$(mktemp)"
+    printf 'dns_cloudflare_api_token = %s\n' "$CLOUDFLARE_DNS_API_TOKEN" > "$cf_credentials"
+    chmod 0600 "$cf_credentials"
+    certbot certonly --dns-cloudflare \
+        --dns-cloudflare-credentials "$cf_credentials" \
+        --dns-cloudflare-propagation-seconds 30 \
         -d returns.shopvivaliz.com.br \
         --non-interactive --agree-tos --register-unsafely-without-email
+    rm -f "$cf_credentials"
 fi
 
 install -m 0644 "$root/current/deploy/apache/returns.shopvivaliz.com.br.conf" /etc/apache2/sites-available/amazon-returns-safet.conf
