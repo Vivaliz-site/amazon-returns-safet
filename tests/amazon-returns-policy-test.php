@@ -346,6 +346,14 @@ $wrongItemProjection = policyProject($wrongItemDb);
 policyAssertSame('RECEIVED_DISCREPANT', $wrongItemProjection['state'], 'Wrong item/package evidence must create discrepancy even when correct quantity received is zero.');
 policyAssertSame(1, $wrongItemProjection['exposed_quantity'], 'Wrong item must leave expected refunded unit unresolved.');
 
+$knownProgramProjection=SvAmazonReturnProjector::projectFrom([
+    'id'=>81,'quantity_ordered'=>1,'program'=>'UNKNOWN','state'=>'POLICY_REVIEW_REQUIRED',
+    'physical_status'=>'NOT_RECEIVED',
+], [
+    ['event_type'=>'ORDER_SYNCED','occurred_at'=>'2026-07-01 12:00:00','payload'=>['program'=>'FBA']],
+    ['event_type'=>'ORDER_SYNCED','occurred_at'=>'2026-09-05 03:00:00','payload'=>['program'=>'UNKNOWN']],
+]);
+policyAssertSame('FBA',$knownProgramProjection['program'],'Later incomplete Orders reads must not downgrade a verified program to UNKNOWN.');
 
 $advancedDb = new AmazonPolicyProjectionPdo(
     [
