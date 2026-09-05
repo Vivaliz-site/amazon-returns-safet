@@ -10,8 +10,8 @@ function rtAssert(bool $condition,string $message):void{if(!$condition)throw new
 $defaults=new SvAmazonReturnsConfig([]);
 rtSame(false,$defaults->enabled(),'Master switch defaults off.');
 rtSame('dry-run',$defaults->mode(),'Mode defaults dry-run.');
-foreach(['gmail_ingest','safe_t_write','appeal_write','email_review_write','support_write','policy_monitor'] as $flag)rtSame(false,$defaults->flag($flag),$flag.' defaults off.');
-$enabled=new SvAmazonReturnsConfig(['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_SAFE_T_WRITE'=>'1','AMAZON_RETURNS_APPEAL_WRITE'=>'1','AMAZON_RETURNS_EMAIL_REVIEW_WRITE'=>'1','AMAZON_RETURNS_SUPPORT_WRITE'=>'1']);
+foreach(['gmail_ingest','safe_t_write','appeal_write','email_review_write','email_reply_write','support_write','policy_monitor'] as $flag)rtSame(false,$defaults->flag($flag),$flag.' defaults off.');
+$enabled=new SvAmazonReturnsConfig(['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_SAFE_T_WRITE'=>'1','AMAZON_RETURNS_APPEAL_WRITE'=>'1','AMAZON_RETURNS_EMAIL_REVIEW_WRITE'=>'1','AMAZON_RETURNS_EMAIL_REPLY_WRITE'=>'1','AMAZON_RETURNS_SUPPORT_WRITE'=>'1']);
 foreach(['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN'] as $action)rtSame(true,$enabled->externalWriteAllowed($action),$action.' explicit flag.');
 rtSame(false,$enabled->externalWriteAllowed('DELETE'),'Unknown action never writes.');
 

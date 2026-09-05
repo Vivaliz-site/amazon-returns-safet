@@ -22,6 +22,7 @@ final class SvAmazonReturnsConfig
             'safe_t_write' => 'AMAZON_RETURNS_SAFE_T_WRITE',
             'appeal_write' => 'AMAZON_RETURNS_APPEAL_WRITE',
             'email_review_write' => 'AMAZON_RETURNS_EMAIL_REVIEW_WRITE',
+            'email_reply_write' => 'AMAZON_RETURNS_EMAIL_REPLY_WRITE',
             'support_write' => 'AMAZON_RETURNS_SUPPORT_WRITE',
             'policy_monitor' => 'AMAZON_RETURNS_POLICY_MONITOR',
         ];
@@ -35,7 +36,7 @@ final class SvAmazonReturnsConfig
             'SAFE_T_SUBMIT' => $this->flag('safe_t_write'),
             'SAFE_T_APPEAL' => $this->flag('appeal_write'),
             'SAFE_T_EMAIL_REVIEW' => $this->flag('email_review_write'),
-            'SAFE_T_EMAIL_REPLY' => $this->flag('email_review_write'),
+            'SAFE_T_EMAIL_REPLY' => $this->flag('email_reply_write'),
             'SELLER_SUPPORT_OPEN', 'SELLER_SUPPORT_UPDATE' => $this->flag('support_write'),
             default => false,
         };
