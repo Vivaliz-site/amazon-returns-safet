@@ -25,3 +25,7 @@ All external channel flags remain OFF until their production acceptance gate pas
 https://sellercentral.amazon.com.br/seller-forums/discussions/t/21dbbb44-5916-4a1c-8dfa-87aef8c5aab3
 https://sellercentral.amazon.com.br/seller-forums/discussions/t/374d2692-2b56-411e-b497-b37d7cb1229b
 https://sellercentral.amazon.com.br/help/hub/reference/GQG3WU8KETHHJN25
+## Exact D+45 opening blockers
+When Amazon has refunded the customer and D+45 is reached, create the SAFE-T opening regardless of the transport label or whether the package is marked returning, lost, refused, damaged, delivered by carrier, or unknown.
+A new SAFE-T opening is suppressed only when either (a) the seller has already received the full reconciled reimbursement, or (b) the seller explicitly recorded physical arrival through the application intake routine. The authoritative physical-arrival evidence is `PHYSICAL_RECEIVED` from source `WAREHOUSE`; tracking or marketplace status alone is not seller confirmation.
+Partial credit does not suppress SAFE-T. A promise of future reimbursement does not suppress the initial D+45 opening. Missing `seller_debit_at` does not add a third blocker after the policy engine has already established D+45 eligibility.

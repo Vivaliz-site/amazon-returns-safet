@@ -18,9 +18,9 @@ final class SvAmazonReturnPolicySeeder
                 'policy_key'=>self::OPERATIONAL_KEY,
                 'marketplace_id'=>'A2Q3Y263D00KWC',
                 'program'=>$program,'effective_from'=>$effective,'effective_to'=>null,
-                'eligibility_days'=>self::OPERATIONAL_DAYS,'basis'=>'SELLER_DEBIT_AT',
+                'eligibility_days'=>self::OPERATIONAL_DAYS,'basis'=>'REFUND_AT',
                 'source_url'=>$source,
-                'source_hash'=>hash('sha256','shopvivaliz-operational-d45-v1|2026-09-05|'.$program.'|SELLER_DEBIT_AT'),
+                'source_hash'=>hash('sha256','shopvivaliz-operational-d45-v1|2026-09-05|'.$program.'|REFUND_AT'),
                 'status'=>'ACTIVE',
             ];
             $rows[]=$row;

@@ -290,7 +290,7 @@ $projectionDb = new AmazonPolicyProjectionPdo(
             'source_event_id' => 'intake-1',
             'idempotency_key' => hash('sha256', 'intake-1'),
             'occurred_at' => '2026-05-11 12:00:00',
-            'payload_json' => '{"quantity":1}',
+            'payload_json' => '{"quantity":1,"operator_id":1234}',
             'evidence_sha256' => null,
             'created_at' => '2026-05-11 12:01:00',
         ],
@@ -311,8 +311,8 @@ $receivedOkEvents[0]['payload_json'] = json_encode([
     'program' => 'STANDARD',
     'seller_debit_at' => '2026-05-03 12:00:00',
 ], JSON_THROW_ON_ERROR);
-$receivedOkEvents[2]['event_type'] = 'RECEIVED_OK';
-$receivedOkEvents[2]['payload_json'] = '{}';
+$receivedOkEvents[2]['event_type'] = 'PHYSICAL_RECEIVED';
+$receivedOkEvents[2]['payload_json'] = json_encode(['quantity'=>1,'operator_id'=>1234], JSON_THROW_ON_ERROR);
 $receivedOkDb = new AmazonPolicyProjectionPdo(
     array_replace($projectionDb->case, ['id' => 78, 'quantity_ordered' => 1]),
     array_map(static function (array $event): array {
@@ -326,7 +326,7 @@ policyAssertSame(0, $receivedOkProjection['exposed_quantity'], 'Explicit RECEIVE
 
 $damagedEvents = $receivedOkDb->events;
 $damagedEvents[2]['event_type'] = 'PHYSICAL_RECEIVED';
-$damagedEvents[2]['payload_json'] = json_encode(['quantity'=>1,'condition'=>'DAMAGED'], JSON_THROW_ON_ERROR);
+$damagedEvents[2]['payload_json'] = json_encode(['quantity'=>1,'condition'=>'DAMAGED','operator_id'=>1234], JSON_THROW_ON_ERROR);
 $damagedDb = new AmazonPolicyProjectionPdo(
     array_replace($receivedOkDb->case, ['id' => 79, 'quantity_ordered' => 1]),
     array_map(static function (array $event): array { $event['case_id'] = 79; return $event; }, $damagedEvents)
@@ -337,7 +337,7 @@ policyAssertSame('RECEIVED_DISCREPANT', $damagedProjection['physical_status'], '
 
 $wrongItemEvents = $receivedOkDb->events;
 $wrongItemEvents[2]['event_type'] = 'PHYSICAL_RECEIVED';
-$wrongItemEvents[2]['payload_json'] = json_encode(['quantity'=>0,'condition'=>'WRONG_ITEM'], JSON_THROW_ON_ERROR);
+$wrongItemEvents[2]['payload_json'] = json_encode(['quantity'=>0,'condition'=>'WRONG_ITEM','operator_id'=>1234], JSON_THROW_ON_ERROR);
 $wrongItemDb = new AmazonPolicyProjectionPdo(
     array_replace($receivedOkDb->case, ['id' => 80, 'quantity_ordered' => 1]),
     array_map(static function (array $event): array { $event['case_id'] = 80; return $event; }, $wrongItemEvents)

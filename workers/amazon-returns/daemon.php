@@ -19,6 +19,7 @@ require_once __DIR__ . '/scheduler.php';
 require_once __DIR__ . '/reconcile.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialRefresh.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialRevalidation.php';
+require_once __DIR__ . '/../../includes/amazon-returns/FinancialCheckEvidence.php';
 require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
 require_once __DIR__ . '/seller-central-worker.php';
 
@@ -86,6 +87,7 @@ final class SvAmazonReturnsDaemon
             $state['sp_api']=$now->modify('-1800 seconds')->format(DATE_ATOM);
             $state['financial']=$state['sp_api'];
         }
+        if((int)($results['scheduler']['financial_checks_requested']??0)>0){unset($state['sp_api'],$state['financial']);}
         $this->saveState($state);
         return [
             'status'=>$this->overallStatus($results),
@@ -242,6 +244,7 @@ final class SvAmazonReturnsDaemon
         $decisions=0;
         $enqueued=0;
         $blockedWrites=0;
+        $financialChecks=0;
         $decisionAudit=[];
         $requestedFinancialRecheck=false;
         foreach($cases as $case){
@@ -263,6 +266,7 @@ final class SvAmazonReturnsDaemon
             $projected=array_replace($projected,$timing);
             $decisions++;
             $action=(string)($decision['action'] ?? 'WAIT');
+            if($action==='CHECK_FINANCES')$financialChecks++;
             if($action==='CHECK_FINANCES')$requestedFinancialRecheck=true;
             $decisionAudit[]=SvAmazonReturnsRuntimeAudit::decision($projected,$timeline,$policy,$decision);
             if($action==='CLOSE_LOSS'){
@@ -290,7 +294,7 @@ final class SvAmazonReturnsDaemon
         }
         return [
             'status'=>'OK','cases'=>count($cases),'decisions'=>$decisions,
-            'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,
+            'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,'financial_checks_requested'=>$financialChecks,
             'decision_audit'=>$decisionAudit,
             'financial_recheck_requested'=>$requestedFinancialRecheck,
         ];
@@ -377,7 +381,9 @@ final class SvAmazonReturnsDaemon
         $unambiguous=count($cases)===1;
         $at=gmdate('Y-m-d H:i:s');
         foreach($cases as $case){
-            $this->persistence->events->append(SvAmazonFinancialRevalidation::sourceEvent((int)$case['id'],$complete && $unambiguous,$at));
+            $caseId=(int)$case['id'];
+            $this->persistence->events->append(SvAmazonFinancialRevalidation::sourceEvent($caseId,$complete && $unambiguous,$at));
+            if($complete && $unambiguous)$this->persistence->events->append(SvAmazonFinancialCheckEvidence::refresh($caseId,$orderId,new DateTimeImmutable($at,new DateTimeZone('UTC'))));
         }
     }
 
@@ -402,6 +408,8 @@ final class SvAmazonReturnsDaemon
             $apply=$worker->shouldUpdateCase($case,$transactions);
             $financialAudit[]=SvAmazonReturnsRuntimeAudit::financial($case,$transactions,$result,$apply);
             $confirmation=SvAmazonFinancialRevalidation::confirmation($case,$events,$result,gmdate('Y-m-d H:i:s'));
+            $check=SvAmazonFinancialCheckEvidence::reconciled($caseId,$events,$result,new DateTimeImmutable('now',new DateTimeZone('UTC')));
+            if($check!==null)$this->persistence->events->append($check);
             if(!$apply){
                 if($confirmation!==null)$this->persistence->events->append($confirmation);
                 continue;

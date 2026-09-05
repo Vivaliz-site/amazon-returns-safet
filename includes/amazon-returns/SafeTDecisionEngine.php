@@ -5,6 +5,7 @@ require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/DenialAnalyzer.php';
 require_once __DIR__ . '/SafeTStatus.php';
 require_once __DIR__ . '/AmazonRequestedWait.php';
+require_once __DIR__ . '/ReturnActionRouter.php';
 
 final class SvAmazonSafeTDecisionEngine
 {
@@ -22,13 +23,29 @@ final class SvAmazonSafeTDecisionEngine
         $state=trim((string)($case['state'] ?? ''));
 
         if($this->hasRecoveredCredit($case))return $this->decision('WAIT','ALREADY_REIMBURSED',$caseId);
-        if((string)($case['physical_status'] ?? '')===SvAmazonReturnPhysicalStatuses::RECEIVED_OK){
-            return $this->decision('WAIT','PHYSICAL_RETURN_RECEIVED',$caseId);
+        $initiator=(string)($case['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN);
+        $amazonCustomerRefund=trim((string)($case['refund_at']??''))!=='' && in_array($initiator,[
+            SvAmazonRefundInitiators::AMAZON_AUTOMATIC,
+            SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
+            SvAmazonRefundInitiators::A_TO_Z,
+        ],true);
+        if($safeTId==='' && $this->sellerAppConfirmedPhysicalReceipt($case,$timeline)){
+            return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
         }
 
         $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        if($safeTId==='' && ($policy['eligible']??false)===true){
+            if(!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN){
+                return $this->decision('BLOCKED_REVIEW','REFUND_INITIATOR_UNKNOWN',$caseId);
+            }
+            if(!$amazonCustomerRefund){
+                return $this->decision('WAIT','AMAZON_CUSTOMER_REFUND_NOT_CONFIRMED',$caseId);
+            }
+        }
         $requestedWait=SvAmazonRequestedWait::decision($case,$timeline,$now);
         if($requestedWait!==null)return $requestedWait;
+        $route=SvAmazonReturnActionRouter::decide($case,$timeline,$policy,$now);
+        if($route!==null)return $route;
 
         if($safeTId!=='' && in_array($state,['SAFE_T_DENIED','APPEAL_REQUIRED','SAFE_T_INFO_REQUESTED'],true)){
             $raw=$case['appeal_deadline_at']??null;$deadline=null;
@@ -105,11 +122,10 @@ final class SvAmazonSafeTDecisionEngine
             return $this->decision('WAIT','SAFE_T_ALREADY_EXISTS',$caseId);
         }
 
-        $initiator=(string)($case['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN);
         if(!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN){
             return $this->decision('BLOCKED_REVIEW','REFUND_INITIATOR_UNKNOWN',$caseId);
         }
-        if(trim((string)($case['seller_debit_at'] ?? ''))==='')return $this->decision('WAIT','SELLER_DEBIT_NOT_CONFIRMED',$caseId);
+        if(!$amazonCustomerRefund)return $this->decision('WAIT','AMAZON_CUSTOMER_REFUND_NOT_CONFIRMED',$caseId);
         if(($policy['state'] ?? null)===SvAmazonReturnStates::POLICY_REVIEW_REQUIRED)return $this->decision('BLOCKED_REVIEW','POLICY_REVIEW_REQUIRED',$caseId);
         if(($policy['eligible'] ?? false)!==true)return $this->decision('WAIT','NOT_YET_ELIGIBLE',$caseId);
 
@@ -176,6 +192,19 @@ final class SvAmazonSafeTDecisionEngine
     private function decision(string $action,string $reason,int $caseId): array
     {
         return ['action'=>$action,'reason'=>$reason,'case_id'=>$caseId];
+    }
+
+    private function sellerAppConfirmedPhysicalReceipt(array $case,array $timeline): bool
+    {
+        $caseId=(int)($case['id']??0);
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='PHYSICAL_RECEIVED' || ($event['source']??'')!=='WAREHOUSE')continue;
+            $payload=$event['payload']??null;
+            if(!is_array($payload))continue;
+            if((int)($payload['quantity']??0)>0)return true;
+        }
+        return false;
     }
 
     private function hasRecoveredCredit(array $case): bool
