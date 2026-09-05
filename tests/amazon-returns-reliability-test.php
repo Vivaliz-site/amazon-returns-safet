@@ -56,6 +56,22 @@ $reversed=$reconciler->reconcile([
 rlSame('CREDIT_PENDING',$reversed['state'],'Later reversal must reopen exposure.');
 rlSame(true,$reversed['reopened'],'Reversal of recovered case must be flagged.');
 
+$worker=new SvAmazonReturnsReconcileWorker();
+rlSame([], $worker->transactionsFromEvents([]), 'No financial event must remain no credit, not denial.');
+$safeTTransactions=$worker->transactionsFromEvents([[
+    'event_type'=>'SAFE_T_REIMBURSEMENT_OBSERVED',
+    'payload'=>[
+        'safe_t_claim_id'=>'98143-99485-9285859',
+        'posted_at'=>'2026-08-05T14:30:00Z',
+        'reimbursed_amount'=>['amount'=>'100.00','currency'=>'BRL'],
+        'response_sha256'=>[str_repeat('a',64)],
+    ],
+]]);
+rlSame(1,count($safeTTransactions),'SAFE-T reimbursement must become one authoritative credit.');
+rlSame('SAFE_T_REIMBURSEMENT',$safeTTransactions[0]['transaction_type']??null,'SAFE-T credit classification must be explicit.');
+rlSame('100.00',$safeTTransactions[0]['total_amount']['amount']??null,'SAFE-T credit amount must remain exact.');
+rlSame('RECOVERED',$worker->reconcileCase($case,$safeTTransactions)['state'],'SAFE-T approval closes only after the reimbursement credit is observed.');
+
 rlSame(false,SvAmazonReturnsScheduler::isWriteAction(['action'=>'WAIT']),'WAIT is not a write.');
 rlSame(true,SvAmazonReturnsScheduler::isWriteAction(['action'=>'SELLER_SUPPORT_OPEN']),'Support open is a write.');
 rlSame(true,SvAmazonReturnsScheduler::isWriteAction(['action'=>'SAFE_T_EMAIL_REVIEW']),'Review email is a write.');

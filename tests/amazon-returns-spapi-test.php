@@ -129,7 +129,10 @@ spSame('txn-9', $notification['transaction_id'], 'Transaction ID must normalize.
 
 $methods = array_map(static fn(ReflectionMethod $m): string => strtolower($m->getName()), (new ReflectionClass(SvAmazonReturnsSpApi::class))->getMethods(ReflectionMethod::IS_PUBLIC));
 foreach ($methods as $method) {
-    spAssert(!str_contains($method, 'safe') && !str_contains($method, 'claim') && !str_contains($method, 'appeal'), 'SP-API facade must not expose invented SAFE-T/claim/appeal endpoints.');
+    spAssert(
+        preg_match('/submit|appeal|create.*claim|update.*claim|reply/',$method)!==1,
+        'SP-API facade must not expose invented SAFE-T claim or appeal writes.'
+    );
 }
 $serialized = json_encode([$order,$fin,$report,$notification,$reportStatus,$reportDocument], JSON_THROW_ON_ERROR);
 foreach (['access_token','refresh_token','client_secret','x-amz-access-token'] as $secretKey) {
@@ -142,6 +145,8 @@ final class SpApiReturnsReportMemoryPdo extends PDO {
     public array $cases=[];
     /** @var array<string,int> */
     public array $eventIds=[];
+    /** @var list<array<string,mixed>> */
+    public array $eventRows=[];
     public int $nextEventId=1;
     public int $lastId=0;
     public function __construct() {}
@@ -174,6 +179,7 @@ final class SpApiReturnsReportMemoryStatement extends PDOStatement {
             if(isset($this->db->eventIds[$key]))throw new PDOException('Duplicate entry',23000);
             $id=$this->db->nextEventId++;
             $this->db->eventIds[$key]=$id;
+            $this->db->eventRows[]=$params;
             $this->db->lastId=$id;
             return true;
         }
@@ -198,10 +204,12 @@ $reportDb=new SpApiReturnsReportMemoryPdo();
 $reportDb->cases[501]=[
     'tenant_id'=>1,'amazon_connection_id'=>10,
     'amazon_order_id'=>'701-9999999-1111111','amazon_order_item_id'=>'item-a',
+    'safe_t_id'=>'98143-99485-9285859',
 ];
 $reportDb->cases[502]=[
     'tenant_id'=>2,'amazon_connection_id'=>20,
     'amazon_order_id'=>'701-9999999-1111111','amazon_order_item_id'=>'item-a',
+    'safe_t_id'=>'98143-99485-9285859',
 ];
 $reportPersistence=SvAmazonTenantPersistence::create(
     $reportDb,new SvAmazonTenantContext(1,10)
@@ -236,5 +244,62 @@ spSame(false,SvAmazonSpApiEventSink::persistReturnsReportRow(
     $reportPersistence,$ambiguous,'RPT-1'
 )['applied'],'Ambiguous initiator must not apply.');
 spSame(1,count($reportDb->eventIds),'Ambiguous row cannot append an event.');
+
+final class SafeTFinanceFakeClient {
+    public array $calls=[];
+    public function marketplaceId():string{return 'A2Q3Y263D00KWC';}
+    public function request(string $method,string $path,array $query=[],?array $body=null):array {
+        $this->calls[]=compact('method','path','query','body');
+        if(($query['NextToken']??null)==='page-2'){
+            return ['status'=>200,'request_id'=>'req-safet-2','data'=>['payload'=>[
+                'FinancialEvents'=>['SAFETReimbursementEventList'=>[]],
+            ]]];
+        }
+        return ['status'=>200,'request_id'=>'req-safet-1','data'=>['payload'=>[
+            'FinancialEvents'=>['SAFETReimbursementEventList'=>[[
+                'PostedDate'=>'2026-08-05T14:30:00Z',
+                'SAFETClaimId'=>'98143-99485-9285859',
+                'ReimbursedAmount'=>['CurrencyCode'=>'BRL','CurrencyAmount'=>'68.29'],
+                'ReasonCode'=>'SAFE_T_REIMBURSEMENT',
+                'SAFETReimbursementItemList'=>[['orderItemId'=>'item-a','quantity'=>1]],
+            ]]],
+            'NextToken'=>'page-2',
+        ]]];
+    }
+}
+$safeTClient=new SafeTFinanceFakeClient();
+$safeTApi=new SvAmazonReturnsSpApi($safeTClient);
+$safeTResult=$safeTApi->listSafeTReimbursements('701-9999999-1111111');
+spSame('/finances/v0/orders/701-9999999-1111111/financialEvents',$safeTClient->calls[0]['path'],'SAFE-T reimbursement read must use the documented Finances v0 order endpoint.');
+spSame('page-2',$safeTClient->calls[1]['query']['NextToken']??null,'Finances v0 pagination must use NextToken.');
+spSame(['req-safet-1','req-safet-2'],$safeTResult['request_ids'],'Finances v0 request IDs must be retained.');
+spSame(2,count($safeTResult['response_sha256']??[]),'Each Finances v0 page must retain a response evidence hash.');
+spSame('98143-99485-9285859',$safeTResult['events'][0]['safe_t_claim_id']??null,'SAFE-T claim ID must normalize from Finances v0.');
+spSame('68.29',$safeTResult['events'][0]['reimbursed_amount']['amount']??null,'SAFE-T reimbursement amount must normalize exactly.');
+spSame('req-safet-1',$safeTResult['events'][0]['request_id']??null,'SAFE-T reimbursement must retain its page request ID.');
+spSame($safeTResult['response_sha256'][0]??null,$safeTResult['events'][0]['response_sha256']??null,'SAFE-T reimbursement must retain its exact response-page evidence hash.');
+
+$normalizedEvent=[
+    'posted_at'=>'2026-08-05T14:30:00Z',
+    'safe_t_claim_id'=>'98143-99485-9285859',
+    'reimbursed_amount'=>['amount'=>'68.29','currency'=>'BRL'],
+    'reason_code'=>'SAFE_T_REIMBURSEMENT',
+    'items'=>[['orderItemId'=>'item-a','quantity'=>1]],
+];
+$persisted=SvAmazonSpApiEventSink::persistSafeTReimbursements(
+    $reportPersistence,'701-9999999-1111111',[$normalizedEvent],['req-safet-1'],[str_repeat('a',64)]
+);
+spSame(['matched'=>1,'persisted'=>1,'unmatched'=>0],$persisted,'Owned SAFE-T reimbursement must persist once.');
+$stored=$reportDb->eventRows[array_key_last($reportDb->eventRows)];
+spSame(1,$stored[':tenant_id']??null,'SAFE-T reimbursement event must inherit tenant ownership.');
+spSame(10,$stored[':amazon_connection_id']??null,'SAFE-T reimbursement event must inherit connection ownership.');
+spSame('SAFE_T_REIMBURSEMENT_OBSERVED',$stored[':event_type']??null,'SAFE-T reimbursement must use an immutable financial observation event.');
+$again=SvAmazonSpApiEventSink::persistSafeTReimbursements(
+    $reportPersistence,'701-9999999-1111111',[$normalizedEvent],['req-safet-1'],[str_repeat('a',64)]
+);
+spSame(1,count(array_filter($reportDb->eventRows,static fn(array $row):bool=>($row[':event_type']??'')==='SAFE_T_REIMBURSEMENT_OBSERVED')),'Repeated SAFE-T reimbursement must be idempotent.');
+spSame(['matched'=>0,'persisted'=>0,'unmatched'=>0],SvAmazonSpApiEventSink::persistSafeTReimbursements(
+    $reportPersistence,'701-9999999-1111111',[],['req-empty'],[str_repeat('b',64)]
+),'Empty SAFE-T reimbursement list is a successful no-op, never a denial.');
 
 echo "amazon-returns-spapi-test: OK\n";

@@ -104,6 +104,67 @@ final class SvAmazonReturnsSpApi
         ];
     }
 
+    /** @return array{source:string,financial_truth:bool,request_ids:list<string>,response_sha256:list<string>,events:list<array<string,mixed>>} */
+    public function listSafeTReimbursements(string $amazonOrderId): array
+    {
+        $orderId = self::requiredId($amazonOrderId, 'Amazon order ID');
+        $events = [];
+        $requestIds = [];
+        $responseHashes = [];
+        $nextToken = null;
+        $pages = 0;
+        do {
+            $query = [];
+            if (is_string($nextToken) && $nextToken !== '') $query['NextToken'] = $nextToken;
+            $response = $this->client->request(
+                'GET',
+                '/finances/v0/orders/' . rawurlencode($orderId) . '/financialEvents',
+                $query
+            );
+            self::assertSuccess($response, 'Finances v0 listFinancialEventsByOrderId');
+            $requestId = trim((string)($response['request_id'] ?? ''));
+            if ($requestId !== '') $requestIds[] = $requestId;
+            $data = self::responseData($response);
+            $responseHash = hash('sha256', json_encode(
+                $data,
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+            ));
+            $responseHashes[] = $responseHash;
+            $payload = self::firstArray($data, ['payload']) ?? $data;
+            $financialEvents = self::firstArray($payload, ['FinancialEvents', 'financialEvents']) ?? [];
+            $pageEvents = $financialEvents['SAFETReimbursementEventList']
+                ?? $financialEvents['safetReimbursementEventList'] ?? [];
+            if (!is_array($pageEvents)) {
+                throw new UnexpectedValueException('Finances v0 SAFE-T reimbursement list must be an array.');
+            }
+            foreach ($pageEvents as $event) {
+                if (!is_array($event)) {
+                    throw new UnexpectedValueException('Finances v0 SAFE-T reimbursement event must be an object.');
+                }
+                $events[] = self::normalizeSafeTReimbursement($event) + [
+                    'request_id'=>$requestId !== '' ? $requestId : null,
+                    'response_sha256'=>$responseHash,
+                ];
+            }
+            $nextToken = self::nullableString(
+                $payload['NextToken'] ?? $payload['nextToken']
+                ?? $data['NextToken'] ?? $data['nextToken'] ?? null
+            );
+            $pages++;
+            if ($pages >= 50 && $nextToken !== null) {
+                throw new RuntimeException('Finances v0 pagination exceeded safety limit.');
+            }
+        } while ($nextToken !== null && $nextToken !== '');
+
+        return [
+            'source'=>'SP_API_FINANCES_V0',
+            'financial_truth'=>true,
+            'request_ids'=>array_values(array_unique($requestIds)),
+            'response_sha256'=>$responseHashes,
+            'events'=>$events,
+        ];
+    }
+
     /** @return array{source:string,request_id:string,report_id:string,report_type:string} */
     public function requestReturnsReport(DateTimeImmutable $from, DateTimeImmutable $to): array
     {
@@ -283,12 +344,47 @@ final class SvAmazonReturnsSpApi
         ];
     }
 
+    /** @return array{posted_at:string,safe_t_claim_id:string,reimbursed_amount:array{amount:string,currency:string},reason_code:?string,items:list<array<string,mixed>>} */
+    private static function normalizeSafeTReimbursement(array $event): array
+    {
+        $claimId = trim((string)($event['SAFETClaimId'] ?? $event['safetClaimId'] ?? ''));
+        if ($claimId === '' || strlen($claimId) > 64) {
+            throw new UnexpectedValueException('Finances v0 SAFE-T reimbursement is missing a valid claim ID.');
+        }
+        $postedAt = self::nullableString($event['PostedDate'] ?? $event['postedDate'] ?? null);
+        if ($postedAt === null) {
+            throw new UnexpectedValueException('Finances v0 SAFE-T reimbursement is missing posted date.');
+        }
+        $money = self::moneyOnly($event['ReimbursedAmount'] ?? $event['reimbursedAmount'] ?? null);
+        if ($money === null || !is_numeric($money['amount']) || (float)$money['amount'] <= 0) {
+            throw new UnexpectedValueException('Finances v0 SAFE-T reimbursement amount must be positive.');
+        }
+        $currency = strtoupper(trim($money['currency']));
+        if (preg_match('/^[A-Z]{3}$/', $currency) !== 1) {
+            throw new UnexpectedValueException('Finances v0 SAFE-T reimbursement currency is invalid.');
+        }
+        $items = $event['SAFETReimbursementItemList'] ?? $event['safetReimbursementItemList'] ?? [];
+        if (!is_array($items)) {
+            throw new UnexpectedValueException('Finances v0 SAFE-T reimbursement items must be an array.');
+        }
+        return [
+            'posted_at'=>$postedAt,
+            'safe_t_claim_id'=>$claimId,
+            'reimbursed_amount'=>[
+                'amount'=>number_format((float)$money['amount'], 2, '.', ''),
+                'currency'=>$currency,
+            ],
+            'reason_code'=>self::nullableString($event['ReasonCode'] ?? $event['reasonCode'] ?? null),
+            'items'=>array_values(array_filter($items, 'is_array')),
+        ];
+    }
+
     /** @return array{amount:string,currency:string}|null */
     private static function moneyOnly(mixed $value): ?array
     {
         if (!is_array($value)) return null;
-        $amount = trim((string)($value['amount'] ?? $value['currencyAmount'] ?? ''));
-        $currency = trim((string)($value['currencyCode'] ?? $value['currency'] ?? ''));
+        $amount = trim((string)($value['amount'] ?? $value['currencyAmount'] ?? $value['CurrencyAmount'] ?? ''));
+        $currency = trim((string)($value['currencyCode'] ?? $value['CurrencyCode'] ?? $value['currency'] ?? ''));
         if ($amount === '' && $currency === '') return null;
         return ['amount' => $amount, 'currency' => $currency];
     }

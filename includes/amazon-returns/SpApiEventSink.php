@@ -140,6 +140,132 @@ final class SvAmazonSpApiEventSink
         return ['cases'=>$caseIds,'single_item'=>$single,'refund_event_id'=>$refundEventId];
     }
 
+    /**
+     * @param list<array<string,mixed>> $events
+     * @param list<string> $requestIds
+     * @param list<string> $responseHashes
+     * @return array{matched:int,persisted:int,unmatched:int}
+     */
+    public static function persistSafeTReimbursements(
+        SvAmazonTenantPersistence $p,
+        string $orderId,
+        array $events,
+        array $requestIds = [],
+        array $responseHashes = []
+    ): array {
+        $orderId = trim($orderId);
+        if ($orderId === '') throw new InvalidArgumentException('SAFE-T reimbursement order ID is required.');
+        if ($events === []) return ['matched'=>0,'persisted'=>0,'unmatched'=>0];
+
+        $cases = $p->cases->forOrder($orderId);
+        $matched = 0;
+        $persisted = 0;
+        $unmatched = 0;
+        $requestIds = array_values(array_unique(array_filter(array_map(
+            static fn(mixed $value): string=>trim((string)$value),
+            $requestIds
+        ))));
+        $responseHashes = array_values(array_unique(array_filter(array_map(
+            static fn(mixed $value): string=>strtolower(trim((string)$value)),
+            $responseHashes
+        ), static fn(string $value): bool=>preg_match('/^[a-f0-9]{64}$/', $value) === 1)));
+
+        foreach ($events as $event) {
+            if (!is_array($event)) throw new InvalidArgumentException('SAFE-T reimbursement event must be an array.');
+            $claimId = trim((string)($event['safe_t_claim_id'] ?? ''));
+            $postedAt = self::utcSql($event['posted_at'] ?? null);
+            $money = is_array($event['reimbursed_amount'] ?? null)
+                ? $event['reimbursed_amount'] : [];
+            $amount = trim((string)($money['amount'] ?? ''));
+            $currency = strtoupper(trim((string)($money['currency'] ?? '')));
+            if ($claimId === '' || $postedAt === null || !is_numeric($amount)
+                || (float)$amount <= 0 || preg_match('/^[A-Z]{3}$/', $currency) !== 1) {
+                throw new InvalidArgumentException('SAFE-T reimbursement event is incomplete.');
+            }
+
+            $candidates = array_values(array_filter(
+                $cases,
+                static fn(array $case): bool=>hash_equals(
+                    $claimId,
+                    trim((string)($case['safe_t_id'] ?? ''))
+                )
+            ));
+            $items = is_array($event['items'] ?? null)
+                ? array_values(array_filter($event['items'], 'is_array')) : [];
+            $itemIds = [];
+            foreach ($items as $item) {
+                $itemId = trim((string)(
+                    $item['orderItemId'] ?? $item['OrderItemId']
+                    ?? $item['amazonOrderItemId'] ?? $item['AmazonOrderItemId'] ?? ''
+                ));
+                if ($itemId !== '') $itemIds[] = $itemId;
+            }
+            $itemIds = array_values(array_unique($itemIds));
+            if (count($candidates) > 1 && $itemIds !== []) {
+                $candidates = array_values(array_filter(
+                    $candidates,
+                    static fn(array $case): bool=>in_array(
+                        (string)($case['amazon_order_item_id'] ?? ''),
+                        $itemIds,
+                        true
+                    )
+                ));
+            }
+            if (count($candidates) !== 1) {
+                $unmatched++;
+                continue;
+            }
+
+            $matched++;
+            $caseId = (int)($candidates[0]['id'] ?? 0);
+            $reason = isset($event['reason_code']) ? trim((string)$event['reason_code']) : null;
+            $eventRequestId = trim((string)($event['request_id'] ?? ''));
+            $eventResponseHash = strtolower(trim((string)($event['response_sha256'] ?? '')));
+            if (preg_match('/^[a-f0-9]{64}$/', $eventResponseHash) !== 1) {
+                $eventResponseHash = $responseHashes[0] ?? '';
+            }
+            $fingerprint = hash('sha256', json_encode([
+                'scope'=>$p->context()->scopeKey(),
+                'order_id'=>$orderId,
+                'safe_t_claim_id'=>$claimId,
+                'posted_at'=>$postedAt,
+                'amount'=>number_format((float)$amount, 2, '.', ''),
+                'currency'=>$currency,
+                'reason_code'=>$reason,
+                'items'=>$items,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            $p->events->append([
+                'case_id'=>$caseId,
+                'event_type'=>'SAFE_T_REIMBURSEMENT_OBSERVED',
+                'source'=>'SP_API_FINANCES_V0',
+                'source_event_id'=>$claimId,
+                'idempotency_key'=>$fingerprint,
+                'occurred_at'=>$postedAt,
+                'payload'=>[
+                    'order_id'=>$orderId,
+                    'safe_t_claim_id'=>$claimId,
+                    'posted_at'=>$postedAt,
+                    'reimbursed_amount'=>[
+                        'amount'=>number_format((float)$amount, 2, '.', ''),
+                        'currency'=>$currency,
+                    ],
+                    'reason_code'=>$reason,
+                    'items'=>$items,
+                    'request_ids'=>array_values(array_unique(array_filter(
+                        array_merge($requestIds, [$eventRequestId])
+                    ))),
+                    'response_sha256'=>array_values(array_unique(array_filter(
+                        array_merge($responseHashes, [$eventResponseHash])
+                    ))),
+                    'financial_truth'=>true,
+                ],
+                'evidence_sha256'=>$eventResponseHash !== '' ? $eventResponseHash : null,
+            ]);
+            $persisted++;
+        }
+        return ['matched'=>$matched,'persisted'=>$persisted,'unmatched'=>$unmatched];
+    }
+
     private static function upsertCaseScoped(
         SvAmazonTenantPersistence $p,
         array $order,

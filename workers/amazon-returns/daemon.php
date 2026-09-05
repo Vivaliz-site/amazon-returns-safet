@@ -269,6 +269,10 @@ final class SvAmazonReturnsDaemon
         $synced=0;
         $persistedCases=0;
         $failures=0;
+        $safeTReads=0;
+        $safeTEvents=0;
+        $safeTEmpty=0;
+        $safeTFailures=0;
         $throttleMs=max(
             0,min(10000,(int)$this->config->get('AMAZON_RETURNS_SP_API_THROTTLE_MS','2100'))
         );
@@ -280,6 +284,31 @@ final class SvAmazonReturnsDaemon
                     $this->persistence,$order,$financial['transactions'] ?? []
                 );
                 $persistedCases+=count($saved['cases'] ?? []);
+                $hasSafeT=false;
+                foreach($this->persistence->cases->forOrder($orderId) as $case){
+                    if(trim((string)($case['safe_t_id']??''))!==''){
+                        $hasSafeT=true;
+                        break;
+                    }
+                }
+                if($hasSafeT){
+                    try{
+                        $safeT=$api->listSafeTReimbursements($orderId);
+                        $safeTReads++;
+                        $safeTList=is_array($safeT['events']??null)?$safeT['events']:[];
+                        if($safeTList===[])$safeTEmpty++;
+                        $persisted=SvAmazonSpApiEventSink::persistSafeTReimbursements(
+                            $this->persistence,
+                            $orderId,
+                            $safeTList,
+                            is_array($safeT['request_ids']??null)?$safeT['request_ids']:[],
+                            is_array($safeT['response_sha256']??null)?$safeT['response_sha256']:[]
+                        );
+                        $safeTEvents+=(int)($persisted['persisted']??0);
+                    }catch(Throwable){
+                        $safeTFailures++;
+                    }
+                }
                 $synced++;
             }catch(Throwable){
                 $failures++;
@@ -287,8 +316,10 @@ final class SvAmazonReturnsDaemon
             if($throttleMs>0 && $index<count($orders)-1)usleep($throttleMs*1000);
         }
         return [
-            'status'=>$failures>0?'PARTIAL':'OK','orders'=>count($orders),
+            'status'=>($failures>0||$safeTFailures>0)?'PARTIAL':'OK','orders'=>count($orders),
             'synced'=>$synced,'persisted_cases'=>$persistedCases,'failures'=>$failures,
+            'safe_t_reads'=>$safeTReads,'safe_t_events'=>$safeTEvents,
+            'safe_t_empty'=>$safeTEmpty,'safe_t_failures'=>$safeTFailures,
         ];
     }
 
@@ -303,12 +334,7 @@ final class SvAmazonReturnsDaemon
             $caseId=(int)($case['id'] ?? 0);
             if($caseId<1)continue;
             $events=$this->persistence->events->eventsForCase($caseId);
-            $transactions=[];
-            foreach($events as $event){
-                if(($event['event_type'] ?? '')!=='FINANCIAL_TRANSACTION_OBSERVED')continue;
-                $transaction=$event['payload']['transaction'] ?? null;
-                if(is_array($transaction))$transactions[]=$transaction;
-            }
+            $transactions=$worker->transactionsFromEvents($events);
             if($transactions===[])continue;
             $withTransactions++;
             $result=$worker->reconcileCase($case,$transactions);
