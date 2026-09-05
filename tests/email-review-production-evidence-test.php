@@ -16,4 +16,8 @@ $env=['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_
 $c=new SvAmazonReturnsConfig($env);epeSame(true,$c->externalWriteAllowed('SAFE_T_EMAIL_REVIEW'),'review channel enabled independently');epeSame(false,$c->externalWriteAllowed('SAFE_T_EMAIL_REPLY'),'enabling review must not enable replies');
 $env['AMAZON_RETURNS_EMAIL_REVIEW_WRITE']='0';$env['AMAZON_RETURNS_EMAIL_REPLY_WRITE']='1';$c=new SvAmazonReturnsConfig($env);
 epeSame(false,$c->externalWriteAllowed('SAFE_T_EMAIL_REVIEW'),'reply flag cannot enable review');epeSame(true,$c->externalWriteAllowed('SAFE_T_EMAIL_REPLY'),'reply has its own explicit gate');
+$mixed=$base+['body_text'=>'Entraremos em contato assim que tivermos uma atualizacao. Apos nova analise, negamos sua solicitacao de reembolso.'];
+$r=$a->analyze($mixed,[]);epeSame('DENIED_ACTIONABLE',$r['outcome'],'explicit denial must outrank generic future-contact wording');
+$mixed=$base+['body_text'=>'Aguarde nossa resposta. Para continuar a analise, envie o comprovante de rastreio e fotos do item.'];
+$r=$a->analyze($mixed,['requested_evidence_available'=>true]);epeSame('INFO_REQUESTED',$r['outcome'],'specific evidence request must outrank generic wait wording');
 if($fail){fwrite(STDERR,implode("\n",$fail)."\n");exit(1);}echo "email-review-production-evidence-test: OK\n";

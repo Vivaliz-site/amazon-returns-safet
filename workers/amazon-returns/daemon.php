@@ -113,7 +113,11 @@ final class SvAmazonReturnsDaemon
     private function runGmail(): array
     {
         $ingestEnabled=$this->config->flag('gmail_ingest');
-        $emailWriteEnabled=$this->config->externalWriteAllowed('SAFE_T_EMAIL_REVIEW');
+        $emailActions=array_values(array_filter(
+            ['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY'],
+            fn(string $action):bool=>$this->config->externalWriteAllowed($action)
+        ));
+        $emailWriteEnabled=$emailActions!==[];
         if(!$ingestEnabled && !$emailWriteEnabled)return ['status'=>'SKIPPED_DISABLED'];
         $gate=$this->dependencyGate('gmail');
         if(($gate['status'] ?? '')!=='READY_NO_RUNTIME_PROVIDER')return $gate;
@@ -150,7 +154,7 @@ final class SvAmazonReturnsDaemon
         if(!$emailWriteEnabled)return $result;
         $rows=$this->persistence->outbox->claimBatch(
             10,
-            ['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY']
+            $emailActions
         );
         $result['review_claimed']=count($rows);
         foreach($rows as $row){

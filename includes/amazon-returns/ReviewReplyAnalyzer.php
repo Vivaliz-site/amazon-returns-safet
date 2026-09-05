@@ -20,13 +20,6 @@ final class SvAmazonSafeTReviewReplyAnalyzer
             return self::result('APPROVED','CREDIT_PENDING','AMAZON_CONFIRMED_APPROVAL',$hash,$excerpt);
         }
 
-        $wait = preg_match('/(?:reembolsad[oa]|reembolso).{0,100}(?:proativamente|automaticamente).{0,100}\bate\b/u',$normalized) === 1
-            || preg_match('/\b(?:aguarde|espere).{0,80}\bate\b/u',$normalized) === 1
-            || preg_match('/\b(?:aguarde|aguardar) (?:nossa|nosso) (?:resposta|retorno)\b/u',$normalized) === 1
-            || preg_match('/\bentraremos em contato (?:assim que|quando)\b/u',$normalized) === 1
-            || preg_match('/\brecebera uma atualizacao.{0,120}\b(?:analise|revisao)\b/u',$normalized) === 1;
-        if ($wait) return self::result('WAIT','WAIT','AMAZON_PROMISED_FUTURE_ACTION',$hash,$excerpt);
-
         $asks = preg_match('/\b(?:envie|forneca|encaminhe|precisamos|necessitamos|responda)\b/u',$normalized) === 1;
         $evidence = preg_match('/\b(?:comprovante|rastreio|foto|fotos|evidencia|documento|informacao|informacoes|detalhes)\b/u',$normalized) === 1;
         if ($asks && $evidence) {
@@ -49,6 +42,13 @@ final class SvAmazonSafeTReviewReplyAnalyzer
             $action = $newFact || $openChannel ? 'RESPOND_EMAIL' : ($financial ? 'OPEN_SUPPORT' : 'HUMAN_REVIEW');
             return self::result('DENIED_ACTIONABLE',$action,'DENIAL_HAS_UNRESOLVED_ACTIONABLE_CONTEXT',$hash,$excerpt);
         }
+
+        $wait = preg_match('/(?:reembolsad[oa]|reembolso).{0,100}(?:proativamente|automaticamente).{0,100}\bate\b/u',$normalized) === 1
+            || preg_match('/\b(?:aguarde|espere).{0,80}\bate\b/u',$normalized) === 1
+            || preg_match('/\b(?:aguarde|aguardar) (?:nossa|nosso) (?:resposta|retorno)\b/u',$normalized) === 1
+            || preg_match('/\bentraremos em contato (?:assim que|quando)\b/u',$normalized) === 1
+            || preg_match('/\brecebera uma atualizacao.{0,120}\b(?:analise|revisao)\b/u',$normalized) === 1;
+        if ($wait) return self::result('WAIT','WAIT','AMAZON_PROMISED_FUTURE_ACTION',$hash,$excerpt);
 
         return self::result('UNKNOWN_AMBIGUOUS','HUMAN_REVIEW','REPLY_MEANING_NOT_RELIABLY_CLASSIFIED',$hash,$excerpt);
     }
