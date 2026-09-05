@@ -27,8 +27,24 @@ final class SvAmazonSafeTStatusService
         return hash('sha256', implode('|', $parts));
     }
 
+    public static function currentObservationKey(int $caseId,array $read,array $events): string
+    {
+        $latest=null;
+        foreach($events as $event){
+            if(($event['event_type']??'')!=='SAFE_T_STATUS_OBSERVED' || ($event['source']??'')!=='SELLER_CENTRAL')continue;
+            if((int)($event['case_id']??0)!==$caseId || !is_array($event['payload']??null))continue;
+            if(trim((string)($event['payload']['safe_t_id']??''))!==trim((string)($read['safe_t_id']??'')))continue;
+            if($latest===null || (int)$event['id']>(int)$latest['id'])$latest=$event;
+        }
+        $base=self::observationKey($caseId,$read);
+        if($latest!==null && hash_equals($base,self::observationKey($caseId,$latest['payload'])))return (string)$latest['idempotency_key'];
+        return hash('sha256','status-observation-v2|'.$base.'|'.(string)($latest['id']??0));
+    }
+
     public static function nextState(string $currentState, string $claimStatus, bool $appealDenied = false): string
     {
+        if($currentState==='RECOVERED')return $currentState;
+        if(strtoupper(trim($claimStatus))==='DENIED' && in_array($currentState,['EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','CREDIT_PENDING','CLOSED_LOSS'],true))return $currentState;
         return match (strtoupper(trim($claimStatus))) {
             'DENIED' => $appealDenied ? 'APPEAL_DENIED_FINAL' : 'SAFE_T_DENIED',
             'APPROVED' => $currentState === 'APPEAL_SUBMITTED' ? 'APPEAL_APPROVED' : 'SAFE_T_APPROVED',
