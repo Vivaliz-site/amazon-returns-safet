@@ -31,7 +31,8 @@ rlSame(true,SvAmazonTenantReturnsOutbox::leaseExpired('2026-09-01T11:50:00Z',$no
 rlSame(false,SvAmazonTenantReturnsOutbox::leaseExpired('2026-09-01T11:59:00Z',$now),'Fresh lease must not be stolen.');
 
 $reconciler=new SvAmazonFinancialReconciler();
-$case=['state'=>'SAFE_T_APPROVED','expected_reimbursement_amount'=>'100.00','reconciled_credit_amount'=>'0.00'];
+// Official BRL transactions require a matching, known case currency.
+$case=['state'=>'SAFE_T_APPROVED','expected_reimbursement_amount'=>'100.00','reconciled_credit_amount'=>'0.00','marketplace_id'=>'A2Q3Y263D00KWC'];
 $none=$reconciler->reconcile($case,[]);
 rlSame('CREDIT_PENDING',$none['state'],'Approved SAFE-T without credit is CREDIT_PENDING.');
 rlSame('100.00',$none['outstanding_amount'],'No credit leaves full amount outstanding.');

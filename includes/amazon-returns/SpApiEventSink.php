@@ -6,6 +6,7 @@ require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/GmailEventSink.php';
 require_once __DIR__ . '/ReturnsReportParser.php';
 require_once __DIR__ . '/TenantPersistence.php';
+require_once __DIR__ . '/FinancialObservations.php';
 
 final class SvAmazonSpApiEventSink
 {
@@ -326,6 +327,11 @@ final class SvAmazonSpApiEventSink
         ]);
     }
 
+    public static function financialObservationKey(int $caseId, array $transaction, int $previousEventId = 0): string
+    {
+        return SvAmazonFinancialObservations::key($caseId, $transaction, $previousEventId);
+    }
+
     private static function appendTransactionsScoped(
         SvAmazonTenantReturnEventStore $events,
         int $caseId,
@@ -333,22 +339,26 @@ final class SvAmazonSpApiEventSink
         bool $single
     ): void {
         if (!$single) return;
+        $latest = SvAmazonFinancialObservations::latestEvents($events->eventsForCase($caseId));
         foreach ($transactions as $index=>$tx) {
             if (!is_array($tx)) continue;
             $txId = trim((string)($tx['transaction_id'] ?? ''));
-            $identity = $txId !== ''
-                ? $txId : hash('sha256', json_encode($tx, JSON_UNESCAPED_SLASHES) ?: (string)$index);
+            $identity = SvAmazonFinancialObservations::identity($tx);
+            $previous = $latest[$identity] ?? null;
+            if (is_array($previous) && SvAmazonFinancialObservations::signature($previous['payload']['transaction']) === SvAmazonFinancialObservations::signature($tx)) continue;
+            $previousId = is_array($previous) ? (int)($previous['id'] ?? 0) : 0;
             $occurred = self::utcSql($tx['posted_at'] ?? null) ?? gmdate('Y-m-d H:i:s');
-            $events->append([
+            $eventId = $events->append([
                 'case_id'=>$caseId,
                 'event_type'=>'FINANCIAL_TRANSACTION_OBSERVED',
                 'source'=>'SP_API_FINANCES',
                 'source_event_id'=>$txId !== '' ? $txId : null,
-                'idempotency_key'=>hash('sha256', 'spapi-transaction|' . $caseId . '|' . $identity),
+                'idempotency_key'=>self::financialObservationKey($caseId, $tx, $previousId),
                 'occurred_at'=>$occurred,
                 'payload'=>['transaction'=>$tx,'financial_truth'=>true],
                 'evidence_sha256'=>null,
             ]);
+            $latest[$identity] = ['id'=>$eventId, 'payload'=>['transaction'=>$tx]];
         }
     }
 
