@@ -17,10 +17,14 @@ rtSame(false,$enabled->externalWriteAllowed('DELETE'),'Unknown action never writ
 
 $policies=SvAmazonReturnPolicySeeder::definitions();
 rtSame(3,count($policies),'BR policy seed count.');
+$daysByProgram=[];
 foreach($policies as $policy){
-    rtSame(75,(int)$policy['eligibility_days'],'All active return-not-received policies must be D+75.');
+    $daysByProgram[(string)$policy['program']] = (int)$policy['eligibility_days'];
     rtAssert(preg_match('/^[a-f0-9]{64}$/',(string)$policy['source_hash'])===1,'Policy hash required.');
 }
+rtSame(45,$daysByProgram['STANDARD'] ?? null,'STANDARD return-not-received must use 45 days.');
+rtSame(60,$daysByProgram['FBA_ONSITE'] ?? null,'FBA Onsite orders from 2026-04-21 must use 60 days.');
+rtSame(60,$daysByProgram['DELIVERY_BY_AMAZON'] ?? null,'Delivery by Amazon orders from 2026-04-21 must use 60 days.');
 
 $service=(string)file_get_contents(__DIR__.'/../deploy/systemd/amazon-returns-safet.service');
 foreach(['/home/ubuntu/amazon-returns-deploy/current','/home/ubuntu/amazon-returns-deploy/shared/.env'] as $needle)rtAssert(str_contains($service,$needle),'Standalone service missing '.$needle);
