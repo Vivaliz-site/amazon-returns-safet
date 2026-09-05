@@ -49,4 +49,8 @@ dorSame($beforeClose['resume_scope'],SvAmazonRequestedWait::jobResumeScope(['pay
 dorSame(null,SvAmazonRequestedWait::jobResumeScope(['payload'=>['decision'=>['resume_scope'=>'invalid']]]),'invalid resumption marker is not accepted');
 $failedSent=$sent;$failedSent['payload']['status']='FAILED';
 dorSame('CHECK_FINANCES',$engine->nextAction($closingWindow,[$wait,$sourceFinance,$finance,$failedSent],$policy,new DateTimeImmutable('2026-09-10T15:00:00Z'))['action'],'failed job does not falsely complete the dated resumption');
+$lateDebit=array_replace($case,['program'=>'STANDARD','refund_at'=>'2026-07-01 12:00:00','seller_debit_at'=>'2026-07-10 12:00:00']);
+$byRefund=SvAmazonReturnPolicyEngine::evaluate($lateDebit,new DateTimeImmutable('2026-08-15T12:00:00Z'));
+dorSame(true,$byRefund['eligible'],'D45 starts at Amazon customer refund, not later seller debit');
+dorSame('2026-08-15 12:00:00',$byRefund['eligibility_at'],'D45 exact refund-based opening timestamp');
 if($errors){fwrite(STDERR,implode("\n",$errors)."\n");exit(1);}echo "d45-opening-and-resume-test: OK\n";

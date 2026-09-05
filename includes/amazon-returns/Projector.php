@@ -27,7 +27,7 @@ final class SvAmazonReturnProjector
         $facts=self::initialFacts($case);
         foreach($events as $event){
             if(!is_array($event))throw new InvalidArgumentException('Projection event must be an array.');
-            self::applyEvent($facts,$event);
+            self::applyEvent($facts,$event,(int)($case['id'] ?? 0));
         }
         self::finalize($facts);
         return array_replace($case,$facts);
@@ -45,7 +45,7 @@ final class SvAmazonReturnProjector
             'refund_at' => null,
             'seller_debit_at' => null,
             'refund_amount' => '0.00',
-            'physical_status' => in_array((string)($case['physical_status'] ?? ''), SvAmazonReturnPhysicalStatuses::all(), true)
+            'physical_status' => in_array((string)($case['physical_status'] ?? ''), [SvAmazonReturnPhysicalStatuses::IN_TRANSIT,SvAmazonReturnPhysicalStatuses::CARRIER_DELIVERED_PENDING_PHYSICAL], true)
                 ? (string)$case['physical_status'] : SvAmazonReturnPhysicalStatuses::NOT_RECEIVED,
             'state' => SvAmazonReturnStates::isValid((string)($case['state'] ?? ''))
                 ? (string)$case['state'] : SvAmazonReturnStates::REFUND_DETECTED,
@@ -58,7 +58,7 @@ final class SvAmazonReturnProjector
     }
 
     /** @param array<string,mixed> $facts @param array<string,mixed> $event */
-    private static function applyEvent(array &$facts, array $event): void
+    private static function applyEvent(array &$facts, array $event, int $caseId): void
     {
         $type = (string) ($event['event_type'] ?? '');
         $occurredAt = self::utcString($event['occurred_at'] ?? null);
@@ -112,8 +112,12 @@ final class SvAmazonReturnProjector
                 break;
 
             case 'PHYSICAL_RECEIVED':
-            case 'WAREHOUSE_RECEIVED':
-            case 'RECEIVED_OK':
+                if ((string)($event['source'] ?? '') !== 'WAREHOUSE'
+                    || (int)($event['case_id'] ?? 0) !== $caseId
+                    || trim((string)($event['source_event_id'] ?? '')) === ''
+                    || (int)($payload['operator_id'] ?? 0) < 1) {
+                    break;
+                }
                 $condition = strtoupper(trim((string)($payload['condition'] ?? 'OK')));
                 if (!in_array($condition, ['OK', 'INTACT'], true)) {
                     $facts['has_physical_discrepancy'] = true;
@@ -122,11 +126,6 @@ final class SvAmazonReturnProjector
                     $facts['quantity_received'] = self::nonNegativeInt(
                         $payload['quantity_received_total'],
                         'quantity_received_total'
-                    );
-                } elseif ($type === 'RECEIVED_OK' && !array_key_exists('quantity', $payload)) {
-                    $facts['quantity_received'] = max(
-                        (int) $facts['quantity_received'],
-                        (int) $facts['quantity_refunded']
                     );
                 } else {
                     $facts['quantity_received'] += self::nonNegativeInt($payload['quantity'] ?? 1, 'quantity');

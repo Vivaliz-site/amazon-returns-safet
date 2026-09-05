@@ -9,10 +9,10 @@ $policy=['eligible'=>true,'eligibility_at'=>'2026-07-16 12:00:00','eligibility_d
 function raEvent(string $type,array $payload,int $id=1,string $at='2026-09-01 12:00:00',string $source='SELLER_CENTRAL'):array{return ['id'=>$id,'case_id'=>77,'event_type'=>$type,'source'=>$source,'occurred_at'=>$at,'payload'=>$payload];}
 $return=raEvent('RETURN_REPORT_OBSERVED',['return_status'=>'Retornando ao Vendedor'],1,'2026-09-01 12:00:00','SP_API_REPORTS');
 raEq(null,SvAmazonReturnActionRouter::decide($case,[$return],$policy,$now),'confirmed return-to-seller delegates normal eligibility');
-raEq('HUMAN_REVIEW',SvAmazonReturnActionRouter::decide($case,[],$policy,$now)['action'],'no transport evidence must not fabricate a return route');
+raEq('HUMAN_REVIEW',SvAmazonReturnActionRouter::decide($case,[],$policy,$now)['action'],'without confirmed Amazon customer refund, unknown transport remains review-only');
 foreach(['Perdido no Transporte','Nao foi possivel entregar','Recusado pelo cliente','Avariado pela Transportadora'] as $status){
  $event=$return;$event['payload']['return_status']=$status;
- raEq('CHECK_FINANCES',SvAmazonReturnActionRouter::decide($case,[$event],$policy,$now)['action'],'proactive route before any new claim: '.$status);
+ raEq('CHECK_FINANCES',SvAmazonReturnActionRouter::decide($case,[$event],$policy,$now)['action'],'without confirmed Amazon customer refund, proactive route applies: '.$status);
 }
 $damage=$case;$damage['physical_status']='RECEIVED_DISCREPANT';
 raEq('DAMAGE_EVIDENCE_REVIEW',SvAmazonReturnActionRouter::decide($damage,[],$policy,$now)['action'],'physical discrepancy never becomes non-return');
@@ -48,4 +48,17 @@ raEq('HUMAN_REVIEW',SvAmazonReturnActionRouter::decide($claim,[$ambiguous],$poli
 $other=$sent;$other['payload']['safe_t_id']='99999-88888-7777777';raEq(null,SvAmazonReturnActionRouter::decide($claim,[$other],$policy,$now),'different claim cannot suppress current lifecycle');
 $contradiction=$checked;$contradiction['payload']['credit_amount']='100.00';$contradiction['payload']['outstanding_amount']='0.00';
 raEq('CHECK_FINANCES',SvAmazonReturnActionRouter::decide($case,[$lost,$contradiction],$policy,$now)['action'],'positive-credit disagreement must not open another support claim');
+
+// Owner rule 2026-09-05: Amazon customer refund + D45 + seller loss => SAFE-T regardless of transport status.
+$refunded=$case+['refund_initiator'=>'AMAZON_AUTOMATIC'];
+raEq(null,SvAmazonReturnActionRouter::decide($refunded,[],$policy,$now),'D45 customer refund cannot be blocked by missing transport status');
+foreach(['Retornando ao Vendedor','Perdido no Transporte','Nao foi possivel entregar','Recusado pelo cliente','Avariado pela Transportadora','Status Desconhecido'] as $status){
+ $event=$return;$event['payload']['return_status']=$status;
+ raEq(null,SvAmazonReturnActionRouter::decide($refunded,[$event],$policy,$now),'D45 seller loss delegates SAFE-T regardless of transport: '.$status);
+}
+$receivedLoss=$refunded;$receivedLoss['physical_status']='RECEIVED_OK';
+raEq(null,SvAmazonReturnActionRouter::decide($receivedLoss,[$return],$policy,$now),'returned item with unresolved seller financial loss still delegates SAFE-T at D45');
+$paid=$refunded;$paid['reconciled_credit_amount']='100.00';
+raEq(null,SvAmazonReturnActionRouter::decide($paid,[$return],$policy,$now),'router delegates fully reimbursed cases to engine top-level credit suppression');
+
 if($errors){fwrite(STDERR,implode("\n",$errors)."\n");exit(1);}echo "return-action-router-test: OK\n";

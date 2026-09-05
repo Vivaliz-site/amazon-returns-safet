@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/Enums.php';
 
 /** Select an operational route; returning null delegates the existing claim lifecycle. */
 final class SvAmazonReturnActionRouter
@@ -13,6 +14,9 @@ final class SvAmazonReturnActionRouter
             return $claim==='' || $id==='' || $id===$claim;
         }));
         $physical=(string)($case['physical_status']??'');
+        if($claim==='' && self::amazonCustomerRefund($case) && ($policy['eligible']??false)===true && self::hasOutstandingSellerLoss($case)){
+            return null;
+        }
         if($physical==='RECEIVED_DISCREPANT')return self::decision('DAMAGE_EVIDENCE_REVIEW','PHYSICAL_DISCREPANCY_REQUIRES_EVIDENCE',$case);
         if(($case['program']??'')==='FBA')return self::decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$case);
         $sent=self::latest($events,['SAFE_T_EMAIL_REVIEW_SENT','SAFE_T_EMAIL_REPLY_SENT']);
@@ -58,6 +62,26 @@ final class SvAmazonReturnActionRouter
         if(($policy['eligible']??false)!==true)return null;
         if(in_array($status,['retornando ao vendedor','returning to seller','return to seller in transit'],true))return null;
         return self::decision('HUMAN_REVIEW','RETURN_TRANSPORT_STATUS_UNVERIFIED',$case);
+    }
+
+    private static function amazonCustomerRefund(array $case): bool
+    {
+        if(trim((string)($case['refund_at']??''))==='')return false;
+        return in_array((string)($case['refund_initiator']??''),[
+            SvAmazonRefundInitiators::AMAZON_AUTOMATIC,
+            SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
+            SvAmazonRefundInitiators::A_TO_Z,
+        ],true);
+    }
+
+    private static function hasOutstandingSellerLoss(array $case): bool
+    {
+        $expected=(float)($case['expected_reimbursement_amount']??0);
+        $credited=(float)($case['reconciled_credit_amount']??0);
+        $physical=(string)($case['physical_status']??'');
+        $missingItem=$physical!==SvAmazonReturnPhysicalStatuses::RECEIVED_OK;
+        $missingCredit=$expected>0 && $credited+0.00001<$expected;
+        return $missingItem || $missingCredit;
     }
 
     private static function waitingDays(array $case): ?int

@@ -28,3 +28,10 @@ See `docs/runbooks/shopvivaliz-d45-operational-policy.md` and `docs/superpowers/
 - A task is not complete merely because code was merged. Verify deployed SHA, service health, required worker/runtime state, queues, dead letters, and the specific production behavior changed by the task.
 - For external-write features, merge/deploy completion and write enablement are separate gates. Keep writes OFF until the relevant production acceptance evidence exists; then enable one channel at a time and verify each canary before advancing.
 - When a repository branch/worktree is superseded, reconcile it explicitly: merge/cherry-pick the still-valid commits or preserve it as a clearly named historical branch. Never rely on local-only files as the sole copy of work.
+
+## Owner clarification: D+45 SAFE-T opening blockers (2026-09-05)
+For a case where Amazon has refunded the customer, D+45 is the opening trigger. Transport state does not postpone opening. The only business conditions that suppress the new SAFE-T opening are:
+1. the seller has already received the full reconciled financial reimbursement; or
+2. the seller explicitly confirms through the application intake routine that the physical product arrived.
+Carrier tracking, "returning to seller", lost/refused/damaged transport labels, a projected physical status without the seller intake event, a promise of future reimbursement, or a missing separate seller-debit field are not additional blockers once D+45 eligibility is established.
+Seller physical arrival is evidenced by the app intake event (`PHYSICAL_RECEIVED`, source `WAREHOUSE`), not by carrier/Seller Central status alone.
