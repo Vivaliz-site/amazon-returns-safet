@@ -15,7 +15,7 @@ foreach(['Perdido no Transporte','Nao foi possivel entregar','Recusado pelo clie
  raEq('CHECK_FINANCES',SvAmazonReturnActionRouter::decide($case,[$event],$policy,$now)['action'],'without confirmed Amazon customer refund, proactive route applies: '.$status);
 }
 $damage=$case;$damage['physical_status']='RECEIVED_DISCREPANT';
-raEq('DAMAGE_EVIDENCE_REVIEW',SvAmazonReturnActionRouter::decide($damage,[],$policy,$now)['action'],'physical discrepancy never becomes non-return');
+raEq('HUMAN_REVIEW',SvAmazonReturnActionRouter::decide($damage,[],$policy,$now)['action'],'damaged/discrepant return initial opening is manual-only');
 $fba=$case;$fba['program']='FBA';raEq('CHECK_FINANCES',SvAmazonReturnActionRouter::decide($fba,[$return],$policy,$now)['action'],'classic FBA has a separate finance/support route');
 $claim=$case+['safe_t_id'=>'11111-22222-3333333','appeal_deadline_at'=>'2026-09-15 18:00:00'];$claim['state']='SAFE_T_DENIED';
 $promise=raEvent('SAFE_T_STATUS_OBSERVED',['claim_status'=>'DENIED','decision_text'=>'Voce sera reembolsado proativamente ate 10 de setembro de 2026.']);

@@ -23,3 +23,7 @@ O agente deve executar e validar a tarefa de ponta a ponta. Nenhuma alteração 
 Nenhum PR, rascunho, Action necessária, conflito ou falha de deploy do trabalho pode ser abandonado como se a tarefa estivesse concluída. Inspecionar também os demais worktrees e pendências do repositório; coordenar execuções simultâneas e preservar trabalho alheio. Não integrar regra obsoleta apenas para encerrar um PR.
 
 O agente faz a validação e o merge do SHA revisado; o **auto gate existente** faz o deploy. O agente acompanha o resultado e corrige falhas na mesma execução até comprovar o sucesso, salvo bloqueio externo real que exija atuação do usuário/provedor. Não contornar checks, permissões ou autenticação para aparentar entrega.
+
+
+## Decisao de 05/09/2026: devolucao danificada
+Produtos que retornarem danificados terao a abertura inicial tratada manualmente pelo usuario. O aplicativo nao deve abrir automaticamente uma nova reivindicacao SAFE-T para `RECEIVED_DISCREPANT`/dano fisico. Depois que o usuario abrir manualmente e existir um SAFE-T ID, se a Amazon negar a reivindicacao, o aplicativo pode assumir o acompanhamento e os recursos subsequentes, respeitando prazo oficial, evidencia, deduplicacao e demais gates do canal.

@@ -10,7 +10,7 @@ $event=['id'=>1,'case_id'=>77,'event_type'=>'RETURN_REPORT_OBSERVED','source'=>'
 riEq('SAFE_T_SUBMIT',$engine->nextAction($case,[$event],$policy,$now)['action'],'D45 Amazon-refunded loss submits SAFE-T even on proactive transport status');
 riEq('SAFE_T_SUBMIT',$engine->nextAction($case,[],$policy,$now)['action'],'D45 Amazon-refunded loss does not require a transport status to submit SAFE-T');
 $event['payload']['return_status']='Retornando ao Vendedor';riEq('SAFE_T_SUBMIT',$engine->nextAction($case,[$event],$policy,$now)['action'],'legitimate return-to-seller still uses SAFE-T');
-$damaged=$case;$damaged['physical_status']='RECEIVED_DISCREPANT';riEq('SAFE_T_SUBMIT',$engine->nextAction($damaged,[],$policy,$now)['action'],'at D45 Amazon-refunded seller loss still submits SAFE-T; only app receipt or full seller credit blocks');
+$damaged=$case;$damaged['physical_status']='RECEIVED_DISCREPANT';riEq('HUMAN_REVIEW',$engine->nextAction($damaged,[],$policy,$now)['action'],'damaged/discrepant return initial SAFE-T opening is manual-only');
 foreach(['EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','RECOVERED'] as $state){
  riEq($state,SvAmazonSafeTStatusService::nextState($state,'DENIED',true),'a later UI denial cannot erase completed channel progress '.$state);
 }
@@ -43,4 +43,8 @@ $partialCredit=$refunded;$partialCredit['reconciled_credit_amount']='99.99';
 riEq('SAFE_T_SUBMIT',$engine->nextAction($partialCredit,[],$policy,$now)['action'],'partial seller credit does not block D45 SAFE-T');
 $noDebit=$refunded;$noDebit['seller_debit_at']=null;
 riEq('SAFE_T_SUBMIT',$engine->nextAction($noDebit,[],$policy,$now)['action'],'once D45 policy is eligible, missing separate debit field does not create a third blocker');
+$damagedManual=$case;$damagedManual['physical_status']='RECEIVED_DISCREPANT';$damagedManual['safe_t_id']=null;$damagedManual['state']='RECEIVED_DISCREPANT';
+riEq('HUMAN_REVIEW',$engine->nextAction($damagedManual,[],$policy,$now)['action'],'damaged return initial SAFE-T opening is manual-only');
+$damagedDenied=$damagedManual;$damagedDenied['safe_t_id']='12345-67890-1234567';$damagedDenied['state']='SAFE_T_DENIED';$damagedDenied['appeal_deadline_at']='2026-09-08 18:00:00';$damagedDenied['latest_denial_text']='Negamos a reivindicacao';
+riEq('SAFE_T_APPEAL',$engine->nextAction($damagedDenied,[],$policy,$now)['action'],'after user manually opened and Amazon denied, app may continue the denial lifecycle');
 if($errors){fwrite(STDERR,implode("\n",$errors)."\n");exit(1);}echo "return-routing-integration-test: OK\n";

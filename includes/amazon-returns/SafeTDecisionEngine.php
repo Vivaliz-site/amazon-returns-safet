@@ -29,7 +29,7 @@ final class SvAmazonSafeTDecisionEngine
             SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
             SvAmazonRefundInitiators::A_TO_Z,
         ],true);
-        if($this->sellerAppConfirmedPhysicalReceipt($case,$timeline)){
+        if($safeTId==='' && $this->sellerAppConfirmedPhysicalReceipt($case,$timeline)){
             return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
         }
 

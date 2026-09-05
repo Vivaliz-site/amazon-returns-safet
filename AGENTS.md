@@ -43,3 +43,8 @@ Read `docs/REGRAS-DE-ENTREGA.md` and `docs/MEMORIA-DO-PROJETO.md` at the start o
 - Do not merge obsolete/conflicting code merely to clear a checklist; prove the valid requirements were absorbed by the replacement.
 - Deploy only through `scripts/auto-deploy.sh` via `amazon-returns-deploy.service`/timer. `dirty_checkout`, `ci_not_green` and `already_current` are states to investigate, not proof of delivery.
 - If tests, CI or deploy fail, correct the cause and repeat the gate in the same execution. External writes still require their channel-specific production acceptance.
+
+
+## Owner clarification: damaged returns (2026-09-05)
+- Initial SAFE-T opening for physically damaged/discrepant returns is manual-only by the user; the app must not auto-submit a new damaged-return claim.
+- After the user has manually opened the claim and a SAFE-T ID exists, the app may continue the denial/appeal lifecycle if Amazon denies it, subject to official deadlines and normal evidence/deduplication gates.

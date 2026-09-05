@@ -14,10 +14,13 @@ final class SvAmazonReturnActionRouter
             return $claim==='' || $id==='' || $id===$claim;
         }));
         $physical=(string)($case['physical_status']??'');
+        if($physical==='RECEIVED_DISCREPANT'){
+            if($claim==='')return self::decision('HUMAN_REVIEW','DAMAGED_RETURN_INITIAL_CLAIM_MANUAL_ONLY',$case);
+            return null;
+        }
         if($claim==='' && self::amazonCustomerRefund($case) && ($policy['eligible']??false)===true && self::hasOutstandingSellerLoss($case)){
             return null;
         }
-        if($physical==='RECEIVED_DISCREPANT')return self::decision('DAMAGE_EVIDENCE_REVIEW','PHYSICAL_DISCREPANCY_REQUIRES_EVIDENCE',$case);
         if(($case['program']??'')==='FBA')return self::decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$case);
         $sent=self::latest($events,['SAFE_T_EMAIL_REVIEW_SENT','SAFE_T_EMAIL_REPLY_SENT']);
         $reply=self::latest($events,['SAFE_T_EMAIL_REVIEW_RESPONSE']);
