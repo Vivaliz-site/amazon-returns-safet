@@ -35,6 +35,7 @@ tbAssert(str_contains((string)$health->getParameters()[0]->getType(), 'SvAmazonT
 
 $entrypoints = [
     'workers/amazon-returns/daemon.php',
+    'api/health.php',
     'api/amazon-returns/bridge.php',
     'api/amazon-returns/status-bridge.php',
     'admin/amazon-returns/api/case.php',

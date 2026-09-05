@@ -11,6 +11,8 @@ $h=(string)file_get_contents($health);
 weAssert(str_contains($i,'SvAmazonReturnsAdminAuth'),'Root entrypoint must use standalone admin auth.');
 weAssert(str_contains($i,'/admin/amazon-returns/'),'Authenticated root must reach dashboard.');
 weAssert(str_contains($h,'amazon_returns_require_pdo'),'Health must use standalone DB bootstrap.');
+weAssert(str_contains($h,'SvAmazonTenantRegistry::resolveCurrent'),'Health must resolve the current tenant server-side.');
+weAssert(str_contains($h,'SvAmazonTenantPersistence::create'),'Health must bind runtime queries to tenant persistence.');
 weAssert(str_contains($h,'SvAmazonReturnsRuntime::health'),'Health must report real runtime state.');
 weAssert(!str_contains($h,'shopvivaliz'),'Health must not depend on website runtime.');
 
