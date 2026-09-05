@@ -68,6 +68,7 @@ try{
     $mismatches=[];
     $normalizedLegacyRefundAmounts=[];
     $normalizedAuthoritativeCredits=[];
+    $normalizedVerifiedInitiators=[];
     foreach($keys as $key){
         $a=$sourceCases[$key] ?? null;
         $b=$targetCases[$key] ?? null;
@@ -79,21 +80,27 @@ try{
             ];
             continue;
         }
+        $sourceEvents=$source->eventsForCase((int)$a['id']);
+        $targetEvents=$target->eventsForCase((int)$b['id']);
+        $legacyRefundNormalization=SvAmazonReturnsShadowAudit::hasLegacyLifecycleRefundNormalization($a,$b);
+        $authoritativeCreditAdvancement=SvAmazonReturnsShadowAudit::hasAuthoritativeCreditAdvancement($a,$b,$targetEvents);
+        $verifiedInitiatorCorrection=SvAmazonReturnsShadowAudit::hasVerifiedInitiatorProjectionCorrection($a,$b,$targetEvents);
         $sourceCase=$a;
+        if($legacyRefundNormalization)$sourceCase['refund_amount']=$b['refund_amount'];
+        if($authoritativeCreditAdvancement)$sourceCase['reconciled_credit_amount']=$b['reconciled_credit_amount'];
+        if($verifiedInitiatorCorrection)$sourceCase['refund_initiator']=$b['refund_initiator'];
         $sourceCase['policies']=$sourcePolicies;
         $targetCase=$b;
         $targetCase['policies']=$targetPolicies;
         $sourcePolicy=SvAmazonReturnPolicyEngine::evaluate($sourceCase,$now);
         $targetPolicy=SvAmazonReturnPolicyEngine::evaluate($targetCase,$now);
-        $sourceEvents=$source->eventsForCase((int)$a['id']);
-        $targetEvents=$target->eventsForCase((int)$b['id']);
         $sourceDecision=$engine->nextAction(
             $sourceCase,$sourceEvents,$sourcePolicy
         );
         $targetDecision=$engine->nextAction(
             $targetCase,$targetEvents,$targetPolicy
         );
-        if(SvAmazonReturnsShadowAudit::hasLegacyLifecycleRefundNormalization($a,$b)){
+        if($legacyRefundNormalization){
             $normalizedLegacyRefundAmounts[]=[
                 'case_key'=>$key,
                 'order_id'=>(string)($a['amazon_order_id']??''),
@@ -103,13 +110,22 @@ try{
                 'reason'=>'LEGACY_DEFERRED_RELEASED_LIFECYCLE_DUPLICATE',
             ];
         }
-        if(SvAmazonReturnsShadowAudit::hasAuthoritativeCreditAdvancement($a,$b,$targetEvents)){
+        if($authoritativeCreditAdvancement){
             $normalizedAuthoritativeCredits[]=[
                 'case_key'=>$key,
                 'order_id'=>(string)($a['amazon_order_id']??''),
                 'source_reconciled_credit_amount'=>(string)($a['reconciled_credit_amount']??''),
                 'target_reconciled_credit_amount'=>(string)($b['reconciled_credit_amount']??''),
                 'reason'=>'POST_MIGRATION_SAFE_T_REIMBURSEMENT_OBSERVED',
+            ];
+        }
+        if($verifiedInitiatorCorrection){
+            $normalizedVerifiedInitiators[]=[
+                'case_key'=>$key,
+                'order_id'=>(string)($a['amazon_order_id']??''),
+                'source_refund_initiator'=>(string)($a['refund_initiator']??''),
+                'target_refund_initiator'=>(string)($b['refund_initiator']??''),
+                'reason'=>'VERIFIED_SP_API_REPORT_PROJECTION_CORRECTION',
             ];
         }
         $caseDiff=SvAmazonReturnsShadowAudit::migrationCaseDiff($a,$b,$targetEvents);
@@ -142,6 +158,8 @@ try{
         'normalized_legacy_refund_amounts'=>$normalizedLegacyRefundAmounts,
         'normalized_authoritative_credit_count'=>count($normalizedAuthoritativeCredits),
         'normalized_authoritative_credits'=>$normalizedAuthoritativeCredits,
+        'normalized_verified_initiator_count'=>count($normalizedVerifiedInitiators),
+        'normalized_verified_initiators'=>$normalizedVerifiedInitiators,
         'target_non_d75_active_policies'=>$badPolicies,
         'mismatches'=>$mismatches,
     ];

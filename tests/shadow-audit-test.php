@@ -40,6 +40,16 @@ shSame([],SvAmazonReturnsShadowAudit::migrationCaseDiff($beforeCredit,$afterCred
 shSame(true,SvAmazonReturnsShadowAudit::hasAuthoritativeCreditAdvancement($beforeCredit,$afterCredit,$creditEvents),'Accepted credit advancement must remain visible in the report.');
 shSame(['reconciled_credit_amount'=>['source'=>'0.00','target'=>'40.00']],SvAmazonReturnsShadowAudit::migrationCaseDiff($beforeCredit,$afterCredit,[]),'Credit without a financial event must still fail shadow audit.');
 
+$unknownInitiator=['refund_initiator'=>'UNKNOWN'];
+$verifiedInitiator=['refund_initiator'=>'AMAZON_AUTOMATIC'];
+$reportEvents=[[
+    'event_type'=>'RETURN_REPORT_OBSERVED','source'=>'SP_API_REPORTS',
+    'payload'=>['refund_initiator'=>'AMAZON_AUTOMATIC'],
+]];
+shSame([],SvAmazonReturnsShadowAudit::migrationCaseDiff($unknownInitiator,$verifiedInitiator,$reportEvents),'Verified report evidence may correct a legacy UNKNOWN projection.');
+shSame(true,SvAmazonReturnsShadowAudit::hasVerifiedInitiatorProjectionCorrection($unknownInitiator,$verifiedInitiator,$reportEvents),'Verified initiator correction must remain visible in the report.');
+shSame(['refund_initiator'=>['source'=>'UNKNOWN','target'=>'AMAZON_AUTOMATIC']],SvAmazonReturnsShadowAudit::migrationCaseDiff($unknownInitiator,$verifiedInitiator,[]),'Initiator change without report evidence must still fail shadow audit.');
+
 shSame([],SvAmazonReturnsShadowAudit::decisionDiff(['action'=>'WAIT','reason'=>'X'],['action'=>'WAIT','reason'=>'X']),'Equal decisions must match.');
 $dd=SvAmazonReturnsShadowAudit::decisionDiff(['action'=>'SAFE_T_APPEAL','reason'=>'DENIED'],['action'=>'WAIT','reason'=>'SAFE_T_ALREADY_EXISTS']);
 shSame('SAFE_T_APPEAL',$dd['action']['source'] ?? null,'Decision action mismatch must be explicit.');
@@ -53,6 +63,7 @@ shSame(true,str_contains($scriptText,'SvAmazonSafeTDecisionEngine'),'Shadow audi
 shSame(true,str_contains($scriptText,'ShadowAuditRepository'),'Shadow audit must isolate SQL in a scoped repository.');
 shSame(true,str_contains($scriptText,'normalized_legacy_refund_amount_count'),'Shadow audit must report every accepted legacy refund normalization.');
 shSame(true,str_contains($scriptText,'normalized_authoritative_credit_count'),'Shadow audit must report every evidence-backed credit advancement.');
+shSame(true,str_contains($scriptText,'normalized_verified_initiator_count'),'Shadow audit must report every evidence-backed initiator correction.');
 shSame(true,str_contains($scriptText,'AMAZON_RETURNS_SOURCE_TENANT_SLUG'),'Shadow audit must accept explicit source tenant identity.');
 shSame(false,str_contains($scriptText,'$sourceTenantSlugEnv='),'Shadow audit must not retain dead source tenant env-name variables.');
 shSame(true,str_contains($scriptText,'AMAZON_RETURNS_TARGET_TENANT_SLUG'),'Shadow audit must accept explicit target tenant identity.');
