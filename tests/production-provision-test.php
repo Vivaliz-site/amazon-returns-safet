@@ -6,13 +6,16 @@ function ppAssert(bool $condition, string $message): void {
 }
 
 $scriptPath=__DIR__.'/../scripts/provision-production.sh';
+$liveVerificationPath=__DIR__.'/../scripts/verify-live-tenant-foundation.sh';
 $vhostPath=__DIR__.'/../deploy/apache/returns.shopvivaliz.com.br.conf';
 $runbookPath=__DIR__.'/../docs/runbooks/tenant-foundation-migration.md';
 ppAssert(is_file($scriptPath),'Production provision script must exist.');
+ppAssert(is_file($liveVerificationPath),'Live tenant verification script must exist.');
 ppAssert(is_file($vhostPath),'Dedicated Apache vhost must exist.');
 ppAssert(is_file($runbookPath),'Tenant migration runbook must exist.');
 
 $script=(string)file_get_contents($scriptPath);
+$liveVerification=(string)file_get_contents($liveVerificationPath);
 $vhost=(string)file_get_contents($vhostPath);
 $runbook=(string)file_get_contents($runbookPath);
 ppAssert(str_contains($script,'amazon_returns_safet'),'Provisioning must create the dedicated database.');
@@ -61,6 +64,13 @@ ppAssert(str_contains($script,'-o root -g root -m 0700 "$shared/private"'),'Priv
 ppAssert(substr_count($script,'runuser -u ubuntu -- git -C "$repo"') >= 2,'Root provisioning must run repository git reads as the checkout owner.');
 ppAssert(!str_contains($script,'--webroot'),'TLS issuance must not depend on public origin port 80.');
 ppAssert(str_contains($script,'SvAmazonReturnsRuntime::bootstrap($db,$context)'),'Provisioning must bootstrap only after resolving tenant context.');
+ppAssert(str_contains($script,'verify-live-tenant-foundation.sh'),'Subsequent releases must verify live tenant invariants without comparing mutable runtime state to the migration snapshot.');
+foreach(['tenant_count','connection_count','target_current_cases','ownership_nulls','cross_tenant_mismatch_count','processing_jobs','write_flags_disabled','live_tenant_verification=ok'] as $needle){
+    ppAssert(str_contains($liveVerification,$needle),'Live tenant verification missing '.$needle);
+}
+foreach(['amazon_return_connections','amazon_return_tenant_users','amazon_return_feature_flags','updated_by_user_id'] as $needle){
+    ppAssert(str_contains($liveVerification,$needle),'Live tenant verification must cover '.$needle);
+}
 ppAssert(str_contains($vhost,'ServerName returns.shopvivaliz.com.br'),'Vhost must own the isolated hostname.');
 ppAssert(str_contains($vhost,'/home/ubuntu/amazon-returns-deploy/current'),'Vhost must serve the isolated release.');
 ppAssert(!str_contains($vhost,'shopvivaliz-deploy/current'),'Vhost must not serve website code.');
