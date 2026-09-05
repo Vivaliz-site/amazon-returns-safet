@@ -20,6 +20,7 @@ foreach(['STANDARD','FBA_ONSITE','DELIVERY_BY_AMAZON'] as $program){
 }
 $c=$base+['program'=>'DELIVERY_BY_AMAZON','order_at'=>'2026-05-01 00:00:00'];$c['seller_debit_at']='2026-06-03 10:00:00';
 pmEq('2026-07-31 10:00:00',SvAmazonReturnPolicyEngine::evaluate($c,new DateTimeImmutable('2026-08-01T00:00:00Z'))['eligibility_at'],'DBA60 is after refund, not later debit');
+$pre=$c;$pre['order_at']='2026-04-20 12:00:00';pmEq('2026-07-16 10:00:00',SvAmazonReturnPolicyEngine::evaluate($pre,new DateTimeImmutable('2026-08-01T00:00:00Z'))['eligibility_at'],'pre-cutover Onsite/DBA45 also starts from refund');
 $c['order_at']=null;pmEq(false,SvAmazonReturnPolicyEngine::evaluate($c,new DateTimeImmutable('2026-12-01T00:00:00Z'))['eligible'],'missing order date fails closed');
 $c=$base+['program'=>'FBA','order_at'=>'2026-05-01 00:00:00'];pmEq(false,SvAmazonReturnPolicyEngine::evaluate($c,new DateTimeImmutable('2026-12-01T00:00:00Z'))['eligible'],'classic FBA is separate');
 $c=$base+['program'=>'STANDARD','order_at'=>'2026-05-01 00:00:00'];$old=$by['STANDARD'];$old['id']=9;$new=$old;$new['id']=10;$new['eligibility_days']=44;$c['policies']=[$old,$new];

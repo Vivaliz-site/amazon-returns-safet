@@ -59,7 +59,9 @@ final class SvAmazonReturnPolicyEngine
             );
         }
 
-        $basisAt = self::basisDate($case, (string) ($policy['basis'] ?? 'SELLER_DEBIT_AT'));
+        $basis = in_array($case['program'] ?? '', [SvAmazonReturnPrograms::FBA_ONSITE,SvAmazonReturnPrograms::DELIVERY_BY_AMAZON], true)
+            ? 'REFUND_AT' : (string) ($policy['basis'] ?? 'SELLER_DEBIT_AT');
+        $basisAt = self::basisDate($case, $basis);
         $days = filter_var($policy['eligibility_days'] ?? null, FILTER_VALIDATE_INT);
         $policyId = $policy['id'] ?? $policy['policy_version_id'] ?? null;
         if (!$basisAt instanceof DateTimeImmutable || $days === false || $days < 1 || (!is_int($policyId) && !is_string($policyId))) {
