@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
 import { parseSafeTStatus } from './safe-t-status-parser.mjs';
 
@@ -210,24 +211,50 @@ async function runOnce() {
   return true;
 }
 
+async function acquireReadWorkerLease() {
+  // Process-owned loopback lease: survives a runner restart, never a node exit.
+  // A duplicate must not pull a job or navigate the shared Seller Central tab.
+  const port = Number(process.env.SELLER_CENTRAL_STATUS_LOCK_PORT || 19225);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('Invalid SELLER_CENTRAL_STATUS_LOCK_PORT');
+  }
+  const lease = createServer(socket => socket.destroy());
+  return new Promise((resolve, reject) => {
+    lease.once('error', error => {
+      if (error.code === 'EADDRINUSE') resolve(null);
+      else reject(error);
+    });
+    lease.listen({ host: '127.0.0.1', port, exclusive: true }, () => resolve(lease));
+  });
+}
+
 async function main() {
   if (process.argv.includes('--heartbeat')) {
     process.stdout.write(`${JSON.stringify(await bridge('heartbeat', { worker_id: 'fred-win-safe-t-status' }))}\n`);
     return;
   }
-  if (process.argv.includes('--once')) {
-    await runOnce();
+  const lease = await acquireReadWorkerLease();
+  if (!lease) {
+    log('worker_already_running', { status: 'READ_WORKER_LEASE_HELD' });
     return;
   }
-  log('worker_started');
-  while (true) {
-    try {
-      const processed = await runOnce();
-      if (!processed) await sleep(POLL_MS);
-    } catch (error) {
-      log('worker_error', { status: error?.name || 'Error' });
-      await sleep(Math.max(POLL_MS, 30000));
+  try {
+    if (process.argv.includes('--once')) {
+      await runOnce();
+      return;
     }
+    log('worker_started');
+    while (true) {
+      try {
+        const processed = await runOnce();
+        if (!processed) await sleep(POLL_MS);
+      } catch (error) {
+        log('worker_error', { status: error?.name || 'Error' });
+        await sleep(Math.max(POLL_MS, 30000));
+      }
+    }
+  } finally {
+    lease.close();
   }
 }
 
