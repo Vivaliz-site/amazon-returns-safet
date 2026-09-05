@@ -90,12 +90,17 @@ if [[ "$tenant_slug" == shopvivaliz ]]; then
     emit "operational_policy_count=$operational_policies"
 fi
 
-write_flags_disabled=true
-for key in AMAZON_RETURNS_SAFE_T_WRITE AMAZON_RETURNS_APPEAL_WRITE AMAZON_RETURNS_EMAIL_REVIEW_WRITE AMAZON_RETURNS_EMAIL_REPLY_WRITE AMAZON_RETURNS_SUPPORT_WRITE; do
-    value="$(env_value "$key")"
-    case "${value,,}" in ''|0|false|no|off) ;; *) write_flags_disabled=false ;; esac
+write_profile_json="$(php "$(dirname "$0")/write-profile-check.php" "--env-file=$env_file")"
+profile_value() {
+    local key="$1"
+    printf '%s' "$write_profile_json" | php -r '$j=json_decode(stream_get_contents(STDIN),true);$k=$argv[1];if($k==="version"){echo $j["version"]??"";exit;}echo !empty($j["flags"][$k])?"1":"0";' "$key"
+}
+write_profile_version="$(profile_value version)"
+[[ "$write_profile_version" == 'safet-submit-appeal-v1' ]] || { echo "write_profile_invalid version=$write_profile_version" >&2; exit 1; }
+for spec in SAFE_T_SUBMIT:1 SAFE_T_APPEAL:1 SAFE_T_EMAIL_REVIEW:0 SAFE_T_EMAIL_REPLY:0 SELLER_SUPPORT_OPEN:0 SELLER_SUPPORT_UPDATE:0; do
+    action="${spec%%:*}"; expected="${spec##*:}"; actual="$(profile_value "$action")"
+    [[ "$actual" == "$expected" ]] || { echo "write_profile_flag_mismatch action=$action expected=$expected actual=$actual" >&2; exit 1; }
 done
-[[ "$write_flags_disabled" == true ]] || { echo 'external_write_flag_enabled=true' >&2; exit 1; }
 
 emit "tenant_count=$tenant_count"
 emit "connection_count=$connection_count"
@@ -106,7 +111,9 @@ emit "cross_tenant_children=$cross_tenant_children"
 emit "case_connection_mismatches=$case_connection_mismatches"
 emit "cross_tenant_mismatch_count=$cross_tenant_mismatch_count"
 emit "processing_jobs=$processing_jobs"
-emit "write_flags_disabled=$write_flags_disabled"
+emit "write_profile_version=$write_profile_version"
+emit "safe_t_submit_write_enabled=$(profile_value SAFE_T_SUBMIT)"
+emit "safe_t_appeal_write_enabled=$(profile_value SAFE_T_APPEAL)"
 emit 'live_tenant_verification=ok'
 
 if [[ -n "$output_file" ]]; then

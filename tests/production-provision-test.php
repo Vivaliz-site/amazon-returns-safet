@@ -65,7 +65,7 @@ ppAssert(substr_count($script,'runuser -u ubuntu -- git -C "$repo"') >= 2,'Root 
 ppAssert(!str_contains($script,'--webroot'),'TLS issuance must not depend on public origin port 80.');
 ppAssert(str_contains($script,'SvAmazonReturnsRuntime::bootstrap($db,$context)'),'Provisioning must bootstrap only after resolving tenant context.');
 ppAssert(str_contains($script,'verify-live-tenant-foundation.sh'),'Subsequent releases must verify live tenant invariants without comparing mutable runtime state to the migration snapshot.');
-foreach(['tenant_count','connection_count','target_current_cases','ownership_nulls','cross_tenant_mismatch_count','processing_jobs','write_flags_disabled','live_tenant_verification=ok'] as $needle){
+foreach(['tenant_count','connection_count','target_current_cases','ownership_nulls','cross_tenant_mismatch_count','processing_jobs','write_profile_version','safe_t_submit_write_enabled','safe_t_appeal_write_enabled','live_tenant_verification=ok'] as $needle){
     ppAssert(str_contains($liveVerification,$needle),'Live tenant verification missing '.$needle);
 }
 foreach(['amazon_return_connections','amazon_return_tenant_users','amazon_return_feature_flags','updated_by_user_id'] as $needle){
@@ -74,7 +74,7 @@ foreach(['amazon_return_connections','amazon_return_tenant_users','amazon_return
 ppAssert(str_contains($vhost,'ServerName returns.shopvivaliz.com.br'),'Vhost must own the isolated hostname.');
 ppAssert(str_contains($vhost,'/home/ubuntu/amazon-returns-deploy/current'),'Vhost must serve the isolated release.');
 ppAssert(!str_contains($vhost,'shopvivaliz-deploy/current'),'Vhost must not serve website code.');
-foreach(['--dry-run','mysqldump','--apply','verify-migration.sh','rollback','37/37','ownership_nulls=0','cross_tenant_mismatch_count=0','processing_jobs=0','write_flags_disabled=true','shadow','SAFE_T_READ'] as $runbookNeedle){
+foreach(['--dry-run','mysqldump','--apply','verify-migration.sh','rollback','37/37','ownership_nulls=0','cross_tenant_mismatch_count=0','processing_jobs=0','write_profile_version=safet-submit-appeal-v1','safe_t_submit_write_enabled=1','safe_t_appeal_write_enabled=1','shadow','SAFE_T_READ'] as $runbookNeedle){
     ppAssert(str_contains($runbook,$runbookNeedle),'Runbook missing '.$runbookNeedle);
 }
 
