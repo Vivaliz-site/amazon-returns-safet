@@ -1,7 +1,9 @@
+> Superseded rule clarification (2026-09-05): the owner requires FIRST opening at D+45. Later waits follow the exact date requested by Amazon, not a new global 60/75-day threshold. See `docs/runbooks/shopvivaliz-d45-operational-policy.md`.
+
 # Financial refresh coverage and production acceptance evidence
 
 ## Scope
-Keep D+75, external write flags, and protected credentials unchanged.
+Keep D+45 operational opening, external write flags, and protected credentials unchanged.
 No new HTTP endpoint or authentication route is introduced.
 
 ## Fair refresh and bootstrap

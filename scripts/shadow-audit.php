@@ -142,7 +142,7 @@ try{
             ];
         }
     }
-    $badPolicies=$target->nonD75ActivePolicies();
+    $badPolicies=$target->invalidOperationalPolicies();
     $result=[
         'status'=>$mismatches===[] && $badPolicies===0?'OK':'MISMATCH',
         'at'=>$now->format(DATE_ATOM),
@@ -160,7 +160,7 @@ try{
         'normalized_authoritative_credits'=>$normalizedAuthoritativeCredits,
         'normalized_verified_initiator_count'=>count($normalizedVerifiedInitiators),
         'normalized_verified_initiators'=>$normalizedVerifiedInitiators,
-        'target_non_d75_active_policies'=>$badPolicies,
+        'target_invalid_operational_policies'=>$badPolicies,
         'mismatches'=>$mismatches,
     ];
     echo json_encode(

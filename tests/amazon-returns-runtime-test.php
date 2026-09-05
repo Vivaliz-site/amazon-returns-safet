@@ -18,7 +18,7 @@ rtSame(false,$enabled->externalWriteAllowed('DELETE'),'Unknown action never writ
 $policies=SvAmazonReturnPolicySeeder::definitions();
 rtSame(3,count($policies),'BR policy seed count.');
 foreach($policies as $policy){
-    rtSame(75,(int)$policy['eligibility_days'],'All active return-not-received policies must be D+75.');
+    rtSame(45,(int)$policy['eligibility_days'],'ShopVivaliz first operational opening must be D+45.');
     rtAssert(preg_match('/^[a-f0-9]{64}$/',(string)$policy['source_hash'])===1,'Policy hash required.');
 }
 

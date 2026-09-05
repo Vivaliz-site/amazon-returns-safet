@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/Enums.php';
+require_once __DIR__ . '/AmazonRequestedWait.php';
 require_once __DIR__ . '/TenantPersistence.php';
 
 final class SvAmazonGmailEventSink
@@ -22,6 +23,8 @@ final class SvAmazonGmailEventSink
         if ($type === 'SAFE_T_EMAIL_REVIEW_RESPONSE') {
             $patch = ['safe_t_id'=>trim((string)($event['safe_t_id'] ?? ''))];
             $outcome = strtoupper(trim((string)($event['review_outcome'] ?? 'UNKNOWN_AMBIGUOUS')));
+            $resume=SvAmazonRequestedWait::timestamp($event['review_next_action_at']??null);
+            if($resume!==null)$patch['next_action_at']=$resume->format('Y-m-d H:i:s');
             $patch['state'] = $outcome === 'APPROVED'
                 ? SvAmazonReturnStates::CREDIT_PENDING
                 : SvAmazonReturnStates::EMAIL_REVIEW_RESPONSE_PENDING;
@@ -134,6 +137,7 @@ final class SvAmazonGmailEventSink
             'review_outcome'=>$event['review_outcome'] ?? null,
             'review_suggested_action'=>$event['review_suggested_action'] ?? null,
             'review_reason'=>$event['review_reason'] ?? null,
+            'review_next_action_at'=>$event['review_next_action_at'] ?? null,
             'review_excerpt'=>$event['review_excerpt'] ?? null,
             'gmail_thread_id'=>$event['thread_id'] ?? null,
             'gmail_rfc_message_id'=>$event['rfc_message_id'] ?? null,

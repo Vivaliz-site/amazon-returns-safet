@@ -19,4 +19,10 @@ if(!method_exists($worker,'shouldUpdateCase')){fwrite(STDERR,"Missing unsupporte
 rcaSame(false,$worker->shouldUpdateCase($case,[]),'no evidence should not mutate a normal pending case');
 $case['state']='RECOVERED';rcaSame(true,$worker->shouldUpdateCase($case,[]),'recovered without evidence must be revalidated');
 rcaSame('CREDIT_PENDING',$worker->reconcileCase($case,[])['state'],'unsupported recovery must reopen');
+
+$stale=$case;$stale['eligibility_at']='2026-09-30 12:00:00';$stale['next_action_at']='2026-09-30 12:00:00';
+$row=SvAmazonReturnsRuntimeAudit::decision($stale,[],['eligibility_at'=>'2026-08-31 12:00:00'],['action'=>'HUMAN_REVIEW','next_action_at'=>null]);
+rcaSame('2026-08-31 12:00:00',$row['eligibility_at'],'audit must show current calculation rather than stale old policy date');
+rcaSame(null,$row['next_action_at'],'explicit unknown requested date must not expose an obsolete date');
+
 echo "runtime-case-audit-test: OK\n";

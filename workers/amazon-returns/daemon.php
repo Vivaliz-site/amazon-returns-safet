@@ -18,6 +18,7 @@ require_once __DIR__ . '/gmail-ingest.php';
 require_once __DIR__ . '/scheduler.php';
 require_once __DIR__ . '/reconcile.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialRefresh.php';
+require_once __DIR__ . '/../../includes/amazon-returns/FinancialRevalidation.php';
 require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
 require_once __DIR__ . '/seller-central-worker.php';
 
@@ -53,6 +54,11 @@ final class SvAmazonReturnsDaemon
         $bootstrap=SvAmazonReturnsRuntime::bootstrap($this->db,$this->context);
         $state=$this->loadState();
         $due=SvAmazonReturnsRuntime::dueTasks($state,$now);
+        $openingRevision=$bootstrap['policy_audit']['policy_key']??null;
+        if($openingRevision!==null && ($state['opening_policy_revision']??null)!==$openingRevision){
+            $due=array_values(array_unique([...$due,'scheduler','sp_api','financial']));
+            $state['opening_policy_revision']=$openingRevision;
+        }
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
         $due=$plan['due'];
         $results=['bootstrap'=>$bootstrap];
@@ -75,6 +81,10 @@ final class SvAmazonReturnsDaemon
                 ];
             }
             $state[$task]=$now->format(DATE_ATOM);
+        }
+        if(($results['scheduler']['financial_recheck_requested']??false) && !isset($results['sp_api'])){
+            $state['sp_api']=$now->modify('-1800 seconds')->format(DATE_ATOM);
+            $state['financial']=$state['sp_api'];
         }
         $this->saveState($state);
         return [
@@ -176,7 +186,7 @@ final class SvAmazonReturnsDaemon
                 $timeline=$this->persistence->events->eventsForCase($caseId);
                 $kind=strtoupper((string)($row['kind'] ?? ''));
                 if($kind==='SAFE_T_EMAIL_REPLY'){
-                    $message=SvAmazonSafeTEmailReview::composeReply($case,$timeline);
+                    $message=SvAmazonSafeTEmailReview::composeReply($case,$timeline,null,SvAmazonRequestedWait::jobResumeScope($row));
                     $sent=$gmail->sendReplyOnce(
                         $message['to'],$message['subject'],$message['body'],$message['thread_id'],
                         $message['in_reply_to'],(string)$row['idempotency_key']
@@ -202,6 +212,7 @@ final class SvAmazonReturnsDaemon
                     ),
                     'occurred_at'=>gmdate('Y-m-d H:i:s'),
                     'payload'=>[
+                        'resume_scope'=>SvAmazonRequestedWait::jobResumeScope($row),
                         'order_id'=>(string)$case['amazon_order_id'],
                         'safe_t_id'=>$case['safe_t_id'] ?? null,
                         'gmail_message_id'=>$sent['message_id'],
@@ -232,6 +243,7 @@ final class SvAmazonReturnsDaemon
         $enqueued=0;
         $blockedWrites=0;
         $decisionAudit=[];
+        $requestedFinancialRecheck=false;
         foreach($cases as $case){
             $caseId=(int)($case['id'] ?? 0);
             if($caseId<1)continue;
@@ -243,9 +255,15 @@ final class SvAmazonReturnsDaemon
             $projected['policies']=$policies;
             $policy=SvAmazonReturnPolicyEngine::evaluate($projected,$now);
             $timeline=$this->persistence->events->eventsForCase($caseId);
-            $decision=$engine->nextAction($projected,$timeline,$policy);
+            $decision=$engine->nextAction($projected,$timeline,$policy,$now);
+            $timing=['eligibility_at'=>$policy['eligibility_at']??null,'policy_version_id'=>$policy['policy_version_id']??null];
+            if(array_key_exists('next_action_at',$decision))$timing['next_action_at']=$decision['next_action_at'];
+            elseif(trim((string)($projected['safe_t_id']??''))==='')$timing['next_action_at']=$policy['eligibility_at']??null;
+            $this->persistence->cases->update($caseId,$timing);
+            $projected=array_replace($projected,$timing);
             $decisions++;
             $action=(string)($decision['action'] ?? 'WAIT');
+            if($action==='CHECK_FINANCES')$requestedFinancialRecheck=true;
             $decisionAudit[]=SvAmazonReturnsRuntimeAudit::decision($projected,$timeline,$policy,$decision);
             if($action==='CLOSE_LOSS'){
                 $this->persistence->cases->update($caseId,[
@@ -266,7 +284,7 @@ final class SvAmazonReturnsDaemon
                 continue;
             }
             $scheduled=(new SvAmazonReturnsScheduler($engine))->schedule(
-                $this->persistence->outbox,$projected,$timeline,$policy
+                $this->persistence->outbox,$projected,$timeline,$policy,$now
             );
             if(($scheduled['outbox_id'] ?? null)!==null)$enqueued++;
         }
@@ -274,6 +292,7 @@ final class SvAmazonReturnsDaemon
             'status'=>'OK','cases'=>count($cases),'decisions'=>$decisions,
             'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,
             'decision_audit'=>$decisionAudit,
+            'financial_recheck_requested'=>$requestedFinancialRecheck,
         ];
     }
 
@@ -296,6 +315,7 @@ final class SvAmazonReturnsDaemon
             0,min(10000,(int)$this->config->get('AMAZON_RETURNS_SP_API_THROTTLE_MS','2100'))
         );
         foreach($orders as $index=>$orderId){
+            $financeComplete=true;
             try{
                 $order=$api->syncOrder($orderId);
                 $financial=$api->listTransactions($orderId);
@@ -326,11 +346,14 @@ final class SvAmazonReturnsDaemon
                         $safeTEvents+=(int)($persisted['persisted']??0);
                     }catch(Throwable){
                         $safeTFailures++;
+                        $financeComplete=false;
                     }
                 }
+                $this->recordFinanceSource($orderId,$financeComplete);
                 $synced++;
             }catch(Throwable){
                 $failures++;
+                try{$this->recordFinanceSource($orderId,false);}catch(Throwable){}
             }
             if($throttleMs>0 && $index<count($orders)-1)usleep($throttleMs*1000);
         }
@@ -348,6 +371,16 @@ final class SvAmazonReturnsDaemon
     }
 
     /** @return array<string,mixed> */
+    private function recordFinanceSource(string $orderId,bool $complete): void
+    {
+        $cases=$this->persistence->cases->forOrder($orderId);
+        $unambiguous=count($cases)===1;
+        $at=gmdate('Y-m-d H:i:s');
+        foreach($cases as $case){
+            $this->persistence->events->append(SvAmazonFinancialRevalidation::sourceEvent((int)$case['id'],$complete && $unambiguous,$at));
+        }
+    }
+
     private function runFinancial(): array
     {
         $worker=new SvAmazonReturnsReconcileWorker();
@@ -368,7 +401,11 @@ final class SvAmazonReturnsDaemon
             $result=$worker->reconcileCase($case,$transactions);
             $apply=$worker->shouldUpdateCase($case,$transactions);
             $financialAudit[]=SvAmazonReturnsRuntimeAudit::financial($case,$transactions,$result,$apply);
-            if(!$apply)continue;
+            $confirmation=SvAmazonFinancialRevalidation::confirmation($case,$events,$result,gmdate('Y-m-d H:i:s'));
+            if(!$apply){
+                if($confirmation!==null)$this->persistence->events->append($confirmation);
+                continue;
+            }
             if($transactions!==[])$withTransactions++;
             $terminal=$result['state']===SvAmazonReturnStates::RECOVERED;
             $this->persistence->cases->update($caseId,[
@@ -379,6 +416,7 @@ final class SvAmazonReturnsDaemon
                     ? ($case['closed_at'] ?? gmdate('Y-m-d H:i:s'))
                     : null,
             ]);
+            if($confirmation!==null)$this->persistence->events->append($confirmation);
             $updated++;
             }catch(Throwable $e){
                 $failed++;

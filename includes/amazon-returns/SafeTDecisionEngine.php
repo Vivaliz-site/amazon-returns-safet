@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/DenialAnalyzer.php';
 require_once __DIR__ . '/SafeTStatus.php';
+require_once __DIR__ . '/AmazonRequestedWait.php';
 
 final class SvAmazonSafeTDecisionEngine
 {
@@ -26,6 +27,9 @@ final class SvAmazonSafeTDecisionEngine
         }
 
         $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        $requestedWait=SvAmazonRequestedWait::decision($case,$timeline,$now);
+        if($requestedWait!==null)return $requestedWait;
+
         if($safeTId!=='' && in_array($state,['SAFE_T_DENIED','APPEAL_REQUIRED','SAFE_T_INFO_REQUESTED'],true)){
             $raw=$case['appeal_deadline_at']??null;$deadline=null;
             if(is_string($raw) && preg_match('/^(\d{4})-(\d{2})-(\d{2})[ T]/',$raw,$parts)===1 && checkdate((int)$parts[2],(int)$parts[3],(int)$parts[1])){

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/RemoteBridge.php';
+require_once __DIR__ . '/AmazonRequestedWait.php';
 require_once __DIR__ . '/TenantPersistence.php';
 
 final class SvAmazonReturnsBridgeService
@@ -189,6 +190,7 @@ final class SvAmazonReturnsBridgeService
             'occurred_at'=>gmdate('Y-m-d H:i:s'),
             'payload'=>[
                 'action'=>(string)$row['kind'],
+                'resume_scope'=>SvAmazonRequestedWait::jobResumeScope($row),
                 'status'=>$status,
                 'submitted'=>$result['submitted'],
                 'external_id'=>$externalId,

@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/AmazonRequestedWait.php';
 
 final class SvAmazonSafeTReviewReplyAnalyzer
 {
@@ -25,6 +26,13 @@ final class SvAmazonSafeTReviewReplyAnalyzer
         if ($asks && $evidence) {
             $available = ($context['requested_evidence_available'] ?? false) === true;
             return self::result('INFO_REQUESTED',$available?'RESPOND_EMAIL':'HUMAN_REVIEW','AMAZON_REQUESTED_INFORMATION',$hash,$excerpt);
+        }
+
+        $received=$message['received_at']??$message['email_ts']??null;
+        $requested=SvAmazonRequestedWait::parse($body,is_string($received)?$received:null,$context);
+        if (($requested['next_action_at']??null)!==null) {
+            return self::result('WAIT','WAIT','AMAZON_REQUESTED_DATED_WAIT',$hash,$excerpt)
+                + ['next_action_at'=>$requested['next_action_at']];
         }
 
         $denial = preg_match('/\b(?:neg(?:ad[oa]|amos)|nao podemos aprovar|nao e elegivel|fora do prazo|reafirmamos nossa decisao)\b/u',$normalized) === 1;

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/SafeTStatus.php';
+require_once __DIR__ . '/SafeTDecisionEngine.php';
 
 final class SvAmazonSafeTEmailReview
 {
@@ -45,7 +46,8 @@ final class SvAmazonSafeTEmailReview
             $lines[] = 'Caso relacionado no Suporte ao Vendedor: ' . $supportCase . '.';
             $lines[] = '';
         }
-        $lines[] = 'O recurso no fluxo SAFE-T já foi analisado e negado. Solicito nova revisão manual do histórico do pedido, da devolução e do débito, com ressarcimento quando devido.';
+        if(($case['state']??'')==='APPEAL_DENIED_FINAL')$lines[]='O recurso no fluxo SAFE-T foi analisado e negado, conforme o estado registrado do caso.';
+        $lines[]='Solicito nova revisao manual do historico do pedido, da devolucao e do debito, com ressarcimento quando devido.';
         $lines[] = 'Caso a Amazon considere que o item foi devolvido/entregue ao vendedor, solicito informar a data, rastreamento, transportadora e comprovante de entrega utilizados nessa conclusão.';
         $lines[] = '';
         $lines[] = 'Atenciosamente,';
@@ -55,7 +57,7 @@ final class SvAmazonSafeTEmailReview
     }
 
     /** @return array{to:string,subject:string,body:string,thread_id:string,in_reply_to:string} */
-    public static function composeReply(array $case,array $timeline): array
+    public static function composeReply(array $case,array $timeline,?DateTimeImmutable $now=null,?string $reservedResumeScope=null): array
     {
         $safeTId=trim((string)($case['safe_t_id'] ?? ''));
         $orderId=trim((string)($case['amazon_order_id'] ?? ''));
@@ -66,14 +68,19 @@ final class SvAmazonSafeTEmailReview
             if(is_array($event) && ($event['event_type'] ?? '')==='SAFE_T_EMAIL_REVIEW_RESPONSE'){$response=$event;break;}
         }
         $payload=is_array($response['payload'] ?? null)?$response['payload']:[];
-        if(strtoupper(trim((string)($payload['review_suggested_action'] ?? '')))!=='RESPOND_EMAIL'){
-            throw new LogicException('Email review response is not approved for automatic reply.');
+        $datedDecision=null;
+        if($reservedResumeScope!==null || strtoupper(trim((string)($payload['review_suggested_action'] ?? '')))!=='RESPOND_EMAIL'){
+            $datedDecision=(new SvAmazonSafeTDecisionEngine())->nextAction($case,$timeline,[],$now);
+            if(($datedDecision['action']??'')!=='SAFE_T_EMAIL_REPLY' || $reservedResumeScope===null || ($datedDecision['resume_scope']??null)!==$reservedResumeScope){
+                throw new LogicException('Email review response is not approved for automatic reply.');
+            }
         }
         $threadId=trim((string)($payload['gmail_thread_id'] ?? ''));
         $inReplyTo=trim((string)($payload['gmail_rfc_message_id'] ?? ''));
         if($threadId==='')throw new LogicException('Email review reply requires Gmail thread correlation.');
         $subject='Re: Solicitação de revisão detalhada — SAFE-T '.$safeTId.' / Pedido '.$orderId;
         $lines=['Olá, equipe SAFE-T,','','Em resposta à análise da SAFE-T '.$safeTId.' do pedido '.$orderId.', seguem somente os fatos verificados atualmente disponíveis:'];
+        if($datedDecision!==null)$lines[]='- Retomada na data solicitada pela Amazon, apos nova verificacao financeira sem ressarcimento integral: '.(string)$datedDecision['next_action_at'].' UTC.';
         if(trim((string)($case['physical_status'] ?? ''))==='NOT_RECEIVED')$lines[]='- O produto permanece registrado como não recebido fisicamente pelo vendedor.';
         if(trim((string)($case['seller_debit_at'] ?? ''))!=='')$lines[]='- Débito/exposição do vendedor: '.trim((string)$case['seller_debit_at']).'.';
         if((float)($case['expected_reimbursement_amount'] ?? 0)>0)$lines[]='- Valor econômico esperado para conciliação: R$ '.number_format((float)$case['expected_reimbursement_amount'],2,',','.').'.';

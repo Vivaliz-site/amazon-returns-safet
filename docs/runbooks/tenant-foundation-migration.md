@@ -1,3 +1,5 @@
+> Superseded rule clarification (2026-09-05): the owner requires FIRST opening at D+45. Later waits follow the exact date requested by Amazon, not a new global 60/75-day threshold. See `docs/runbooks/shopvivaliz-d45-operational-policy.md`.
+
 # Runbook — migração da fundação multi-tenant
 
 ## Objetivo e escopo
@@ -16,7 +18,7 @@ A mudança só é aceita quando todas estas evidências forem verdadeiras:
 - `processing_jobs=0`;
 - `write_flags_disabled=true`;
 - `pre_migration_hash` é igual a `post_migration_hash`;
-- D+75 permanece válido para todas as políticas ativas deste tenant;
+- D+45 operational opening permanece válido para todas as políticas ativas deste tenant;
 - shadow audit retorna `mismatch_count=0`;
 - health, daemon, Gmail, SP-API e as duas bridges respondem sem erro;
 - um `SAFE_T_READ` real conclui sem job abandonado em `PROCESSING`.
@@ -233,7 +235,7 @@ Interrompa e não troque o release se ocorrer qualquer condição:
 - `cross_tenant_mismatch_count` maior que zero;
 - `processing_jobs` maior que zero;
 - hashes pré/pós diferentes;
-- política ativa diferente de D+75 no tenant atual;
+- política ativa diferente de D+45 operational opening no tenant atual;
 - algum write flag habilitado;
 - shadow audit diferente de zero mismatch;
 - health, daemon, SP-API, Gmail ou bridge com erro não explicado;

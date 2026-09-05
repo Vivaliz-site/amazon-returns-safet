@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/TenantContext.php';
+require_once __DIR__ . '/PolicySeeder.php';
 
 final class SvAmazonReturnsShadowAuditRepository
 {
@@ -94,9 +95,9 @@ final class SvAmazonReturnsShadowAuditRepository
         return $rows;
     }
 
-    public function nonD75ActivePolicies(): int
+    public function invalidOperationalPolicies(): int
     {
-        $sql="SELECT COUNT(*) FROM amazon_return_policies WHERE status='ACTIVE' AND eligibility_days<>75";
+        $sql="SELECT * FROM amazon_return_policies WHERE status='ACTIVE'";
         $params=[];
         if($this->tenantSchema){
             $sql.=' AND tenant_id=:tenant_id';
@@ -104,7 +105,8 @@ final class SvAmazonReturnsShadowAuditRepository
         }
         $stmt=$this->prepare($sql);
         $stmt->execute($params);
-        return max(0,(int)$stmt->fetchColumn());
+        $audit=SvAmazonReturnPolicySeeder::auditDefinitions($stmt->fetchAll(PDO::FETCH_ASSOC));
+        return (int)$audit['invalid_definitions'];
     }
 
     /** @return array<string,int|string> */

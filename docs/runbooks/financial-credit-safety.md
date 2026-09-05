@@ -1,8 +1,10 @@
+> Superseded rule clarification (2026-09-05): the owner requires FIRST opening at D+45. Later waits follow the exact date requested by Amazon, not a new global 60/75-day threshold. See `docs/runbooks/shopvivaliz-d45-operational-policy.md`.
+
 # Financial credit safety
 
 ## Scope and invariant
 A SAFE-T approval or support email is not reconciled credit.
-This change does not modify policy D+75, schema, external write flags, or email/support channels.
+This change does not modify policy D+45 operational opening, schema, external write flags, or email/support channels.
 
 ## Corrections
 - Count only released official transactions; preserve the existing trusted internal seller_effect_amount contract.
