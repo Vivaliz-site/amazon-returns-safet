@@ -8,6 +8,11 @@ final class SvAmazonReturnsReconcileWorker
     public function __construct(private ?SvAmazonFinancialReconciler $reconciler = null) { $this->reconciler ??= new SvAmazonFinancialReconciler(); }
     public function reconcileCase(array $case, array $transactions): array { return $this->reconciler->reconcile($case, $transactions); }
 
+    public function shouldUpdateCase(array $case, array $transactions): bool
+    {
+        return $transactions !== [] || ($case['state'] ?? '') === SvAmazonReturnStates::RECOVERED;
+    }
+
     /** @param list<array<string,mixed>> $events @return list<array<string,mixed>> */
     public function transactionsFromEvents(array $events): array
     {
