@@ -18,15 +18,22 @@ final class EmailGateStatement extends PDOStatement {
 }
 $errors=[];
 foreach([[1,0,['SAFE_T_EMAIL_REVIEW']],[0,1,['SAFE_T_EMAIL_REPLY']],[1,1,['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY']],[0,0,[]]] as [$review,$reply,$expected]){
+ $profile=tempnam(sys_get_temp_dir(),'email-profile-');
+ file_put_contents($profile,json_encode([
+  'version'=>'email-gate-test-v1','SAFE_T_SUBMIT'=>false,'SAFE_T_APPEAL'=>false,
+  'SAFE_T_EMAIL_REVIEW'=>(bool)$review,'SAFE_T_EMAIL_REPLY'=>(bool)$reply,
+  'SELLER_SUPPORT_OPEN'=>false,'SELLER_SUPPORT_UPDATE'=>false,
+ ],JSON_THROW_ON_ERROR));
  $db=new EmailGatePdo();$config=new SvAmazonReturnsConfig([
   'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_GMAIL_INGEST'=>'0',
-  'AMAZON_RETURNS_EMAIL_REVIEW_WRITE'=>(string)$review,'AMAZON_RETURNS_EMAIL_REPLY_WRITE'=>(string)$reply,
+  'AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,
   'GMAIL_OAUTH_CLIENT_ID'=>'test','GMAIL_OAUTH_CLIENT_SECRET'=>'test','GMAIL_OAUTH_REFRESH_TOKEN'=>'test',
  ]);
  $daemon=new SvAmazonReturnsDaemon($db,new SvAmazonTenantContext(1,1),$config);
  $method=new ReflectionMethod($daemon,'runGmail');$result=$method->invoke($daemon);
  $kinds=[];foreach($db->executed as $execution){foreach($execution['params'] as $value){if(is_string($value)&&str_starts_with($value,'SAFE_T_EMAIL_'))$kinds[]=$value;}}
  $kinds=array_values(array_unique($kinds));sort($kinds);sort($expected);
+ @unlink($profile);
  if($kinds!==$expected)$errors[]='review='.$review.' reply='.$reply.' claimed='.json_encode($kinds).' expected='.json_encode($expected);
 }
 if($errors){fwrite(STDERR,implode("\n",$errors)."\n");exit(1);}echo "email-executor-gates-test: OK\n";

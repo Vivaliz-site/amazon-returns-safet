@@ -32,14 +32,37 @@ final class SvAmazonReturnsConfig
     public function externalWriteAllowed(string $action): bool
     {
         if (!$this->enabled() || $this->mode() !== 'production') return false;
-        return match (strtoupper(trim($action))) {
-            'SAFE_T_SUBMIT' => $this->flag('safe_t_write'),
-            'SAFE_T_APPEAL' => $this->flag('appeal_write'),
-            'SAFE_T_EMAIL_REVIEW' => $this->flag('email_review_write'),
-            'SAFE_T_EMAIL_REPLY' => $this->flag('email_reply_write'),
-            'SELLER_SUPPORT_OPEN', 'SELLER_SUPPORT_UPDATE' => $this->flag('support_write'),
-            default => false,
-        };
+        if ($this->bool('AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH', false)) return false;
+        $profile=$this->writeProfile();
+        if($profile===null)return false;
+        $action=strtoupper(trim($action));
+        return isset($profile[$action]) && $profile[$action]===true;
+    }
+
+    public function writeProfileVersion(): ?string
+    {
+        $profile=$this->writeProfile();
+        return is_array($profile)?(string)$profile['version']:null;
+    }
+
+    /** @return array<string,bool|string>|null */
+    private function writeProfile(): ?array
+    {
+        $default=dirname(__DIR__,2).'/deploy/write-profile.json';
+        $path=$this->get('AMAZON_RETURNS_WRITE_PROFILE_FILE',$default);
+        if($path==='' || !is_file($path) || !is_readable($path))return null;
+        $raw=@file_get_contents($path);
+        if(!is_string($raw) || trim($raw)==='')return null;
+        try{$profile=json_decode($raw,true,32,JSON_THROW_ON_ERROR);}catch(Throwable){return null;}
+        if(!is_array($profile))return null;
+        $actions=['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'];
+        $allowed=array_merge(['version'],$actions);
+        $keys=array_keys($profile);sort($keys);$expected=$allowed;sort($expected);
+        if($keys!==$expected)return null;
+        $version=$profile['version']??null;
+        if(!is_string($version) || preg_match('/^[a-z0-9][a-z0-9._-]{2,63}$/D',$version)!==1)return null;
+        foreach($actions as $action)if(!is_bool($profile[$action]??null))return null;
+        return $profile;
     }
 
     public function sellerCentralBridgeMode(): string

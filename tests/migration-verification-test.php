@@ -23,7 +23,9 @@ mvAssert(str_contains($source, 'RETURN_NOT_RECEIVED_D45_REFUND_V2'), 'Migration 
 mvAssert(str_contains($source, "status='ACTIVE'"), 'Migration verification must resolve an active tenant connection.');
 mvAssert(str_contains($source,'expected_cases="${AMAZON_RETURNS_EXPECTED_CASES:-37}"'),'Verification must default to the confirmed 37 cases.');
 mvAssert(str_contains($source,"status='PROCESSING'"),'Verification must report stuck processing jobs.');
-mvAssert(str_contains($source,'write_flags_disabled=true'),'Verification must assert all external writes remain disabled.');
+mvAssert(str_contains($source,'safet-submit-appeal-v1'),'Verification must assert the exact versioned write profile.');
+mvAssert(str_contains($source,'SAFE_T_SUBMIT:1 SAFE_T_APPEAL:1'),'Verification must enable only submit and appeal.');
+mvAssert(str_contains($source,'SAFE_T_EMAIL_REVIEW:0 SAFE_T_EMAIL_REPLY:0 SELLER_SUPPORT_OPEN:0 SELLER_SUPPORT_UPDATE:0'),'Verification must keep email/support writes disabled.');
 mvAssert(str_contains($source,'canonical_owner_rows'),'Verification must hash ordered target rows including owner IDs.');
 mvAssert(!str_contains($source, 'cat "$env_file"'), 'Migration verification must not print environment secrets.');
 foreach (['AMAZON_LWA_REFRESH_TOKEN','AMAZON_LWA_CLIENT_SECRET','GMAIL_OAUTH_REFRESH_TOKEN'] as $secret) {

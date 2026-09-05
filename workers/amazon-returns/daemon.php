@@ -60,6 +60,11 @@ final class SvAmazonReturnsDaemon
             $due=array_values(array_unique([...$due,'scheduler','sp_api','financial']));
             $state['opening_policy_revision']=$openingRevision;
         }
+        $writeRevision=$this->config->writeProfileVersion();
+        if($writeRevision!==null && ($state['write_profile_revision']??null)!==$writeRevision){
+            $due=array_values(array_unique([...$due,'scheduler']));
+            $state['write_profile_revision']=$writeRevision;
+        }
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
         $due=$plan['due'];
         $results=['bootstrap'=>$bootstrap];
