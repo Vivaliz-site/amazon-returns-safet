@@ -21,7 +21,10 @@ final class SvAmazonSafeTReviewReplyAnalyzer
         }
 
         $wait = preg_match('/(?:reembolsad[oa]|reembolso).{0,100}(?:proativamente|automaticamente).{0,100}\bate\b/u',$normalized) === 1
-            || preg_match('/\b(?:aguarde|espere).{0,80}\bate\b/u',$normalized) === 1;
+            || preg_match('/\b(?:aguarde|espere).{0,80}\bate\b/u',$normalized) === 1
+            || preg_match('/\b(?:aguarde|aguardar) (?:nossa|nosso) (?:resposta|retorno)\b/u',$normalized) === 1
+            || preg_match('/\bentraremos em contato (?:assim que|quando)\b/u',$normalized) === 1
+            || preg_match('/\brecebera uma atualizacao.{0,120}\b(?:analise|revisao)\b/u',$normalized) === 1;
         if ($wait) return self::result('WAIT','WAIT','AMAZON_PROMISED_FUTURE_ACTION',$hash,$excerpt);
 
         $asks = preg_match('/\b(?:envie|forneca|encaminhe|precisamos|necessitamos|responda)\b/u',$normalized) === 1;
@@ -52,7 +55,14 @@ final class SvAmazonSafeTReviewReplyAnalyzer
 
     private static function amazonSender(string $from): bool
     {
-        return preg_match('/@(?:[a-z0-9-]+\.)*amazon\.com(?:\.br)?\b/i',$from) === 1;
+        if (strpbrk($from, "\r\n") !== false) return false;
+        $address = trim($from);
+        if (preg_match('/^[^<>]*<([^<>]+)>$/D', $address, $match) === 1) $address = trim($match[1]);
+        if (filter_var($address, FILTER_VALIDATE_EMAIL) === false) return false;
+        $domain = strtolower(substr(strrchr($address, '@'), 1));
+        return $domain === 'amazon.com' || $domain === 'amazon.com.br'
+            || str_ends_with($domain, '.amazon.com')
+            || str_ends_with($domain, '.amazon.com.br');
     }
 
     private static function normalize(string $text): string
