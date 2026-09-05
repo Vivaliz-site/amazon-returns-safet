@@ -150,14 +150,13 @@ $result=SvAmazonReturnsRuntime::bootstrap($db,$context);
 if(($result["status"]??"")!=="OK")throw new RuntimeException("bootstrap failed");
 ' "$release"
 
-verification_file="$shared/private/tenant-foundation-verification-$stamp.txt"
+verification_file="$shared/private/live-tenant-verification-$stamp.txt"
 AMAZON_RETURNS_ENV_FILE="$env_file" \
-AMAZON_RETURNS_SOURCE_DB="$source_db" \
 AMAZON_RETURNS_TARGET_DB="$target_db" \
 AMAZON_RETURNS_EXPECTED_CASES="$expected_cases" \
 AMAZON_RETURNS_VERIFICATION_OUTPUT="$verification_file" \
-    "$release/scripts/verify-migration.sh"
-grep -q '^migration_verification=ok$' "$verification_file"
+    "$release/scripts/verify-live-tenant-foundation.sh"
+grep -q '^live_tenant_verification=ok$' "$verification_file"
 
 ln -sfn "releases/$(basename "$release")" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
