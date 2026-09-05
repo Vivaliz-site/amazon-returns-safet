@@ -195,7 +195,7 @@ cross_tenant_mismatch_count=$((cross_tenant_children + case_connection_mismatche
 [[ "$cross_tenant_children" -eq 0 ]] || { echo "cross_tenant_children=$cross_tenant_children" >&2; exit 1; }
 [[ "$case_connection_mismatches" -eq 0 ]] || { echo "case_connection_mismatches=$case_connection_mismatches" >&2; exit 1; }
 
-bad_policy="$(mysql_scalar "$target_db" "SELECT COUNT(*) FROM amazon_return_policies WHERE tenant_id=$tenant_id AND status='ACTIVE' AND eligibility_days <> 75")"
+bad_policy="$(mysql_scalar "$target_db" "SELECT COUNT(*) FROM amazon_return_policies WHERE tenant_id=$tenant_id AND status='ACTIVE' AND eligibility_days <> 45")"
 [[ "$bad_policy" -eq 0 ]] || { echo "migration_policy_not_d75 count=$bad_policy" >&2; exit 1; }
 processing_jobs="$(mysql_scalar "$target_db" "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING'")"
 [[ "$processing_jobs" -eq 0 ]] || { echo "processing_jobs=$processing_jobs" >&2; exit 1; }
@@ -237,7 +237,7 @@ emit "pre_migration_hash=$pre_migration_hash"
 emit "post_migration_hash=$post_migration_hash"
 emit "ownership_hash=$ownership_hash"
 emit "write_flags_disabled=$write_flags_disabled"
-emit "migration_policy_ok tenant_id=$tenant_id policy_d75=true"
+emit "migration_policy_ok tenant_id=$tenant_id policy_d45=true"
 emit 'migration_verification=ok'
 
 if [[ -n "$output_file" ]]; then

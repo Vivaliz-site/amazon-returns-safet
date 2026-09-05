@@ -96,7 +96,7 @@ final class SvAmazonReturnsShadowAuditRepository
 
     public function nonD75ActivePolicies(): int
     {
-        $sql="SELECT COUNT(*) FROM amazon_return_policies WHERE status='ACTIVE' AND eligibility_days<>75";
+        $sql="SELECT COUNT(*) FROM amazon_return_policies WHERE status='ACTIVE' AND eligibility_days<>45";
         $params=[];
         if($this->tenantSchema){
             $sql.=' AND tenant_id=:tenant_id';

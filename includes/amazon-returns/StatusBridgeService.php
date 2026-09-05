@@ -29,6 +29,11 @@ final class SvAmazonReturnsStatusBridgeService
         foreach($this->p->cases->casesWithSafeTId(250) as $case){
             $caseId=(int)($case['id'] ?? 0);
             $safeTId=trim((string)($case['safe_t_id'] ?? ''));
+            $physicalStatus=(string)($case['physical_status'] ?? '');
+            if(in_array($physicalStatus,[SvAmazonReturnPhysicalStatuses::RECEIVED_OK,SvAmazonReturnPhysicalStatuses::RECEIVED_DISCREPANT],true)){
+                $this->p->outbox->markSucceededForCase($caseId,'SAFE_T_READ');
+                continue;
+            }
             if($caseId<1 || $safeTId==='')continue;
             if($this->p->outbox->hasActive($caseId,'SAFE_T_READ'))continue;
             $key=SvAmazonSafeTStatusService::readKey($caseId,$safeTId,$now);

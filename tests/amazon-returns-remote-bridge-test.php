@@ -163,6 +163,8 @@ foreach([$endpointSource,$statusEndpointSource] as $endpointContract){
     }
 }
 rbAssert(str_contains((string)file_get_contents(__DIR__.'/../includes/amazon-returns/StatusBridgeService.php'), "'SAFE_T_READ'"), 'Status service may claim SAFE_T_READ jobs only.');
+rbAssert(str_contains((string)file_get_contents(__DIR__.'/../includes/amazon-returns/StatusBridgeService.php'), 'RECEIVED_OK'), 'Status bridge must stop queueing SAFE_T_READ after physical receipt.');
+rbAssert(str_contains((string)file_get_contents(__DIR__.'/../admin/amazon-returns/api/intake.php'), 'markSucceededForCase'), 'Physical intake must clear SAFE_T_READ queue entries for received cases.');
 rbAssert(str_contains($endpointSource, 'apache_request_headers'), 'Bridge endpoint must fall back to apache_request_headers() for Authorization (Apache mod_php does not reliably populate $_SERVER[HTTP_AUTHORIZATION]).');
 rbAssert(str_contains($statusEndpointSource, 'apache_request_headers'), 'Status bridge must preserve Apache Authorization fallback.');
 rbAssert(!str_contains($endpointSource, "\$_GET['token']"), 'Bridge token must never be accepted from query string.');

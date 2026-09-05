@@ -195,6 +195,22 @@ final class SvAmazonTenantReturnsOutbox
         );
     }
 
+    public function markSucceededForCase(int $caseId, string $kind): int
+    {
+        $caseId = $this->positiveId($caseId, 'case ID');
+        $kind = $this->kind($kind);
+        $stmt = $this->prepare(
+            "UPDATE amazon_return_outbox SET status='SUCCEEDED',locked_at=NULL,last_error=NULL,updated_at=UTC_TIMESTAMP() "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id "
+            . "AND kind=:kind AND status IN ('PENDING','PROCESSING')"
+        );
+        $stmt->execute($this->scopeParams([
+            ':case_id' => $caseId,
+            ':kind' => $kind,
+        ]));
+        return max(0, (int) $stmt->rowCount());
+    }
+
     public function releaseUnprocessed(int $id): void
     {
         $this->updateOne(

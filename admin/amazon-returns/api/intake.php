@@ -214,6 +214,9 @@ try{
     $projection=SvAmazonReturnProjector::project(
         $p->cases,$p->events,(int)$caseId
     );
+    if (($projection['physical_status'] ?? null) === 'RECEIVED_OK' || (int)($projection['quantity_received'] ?? 0) > 0) {
+        $p->outbox->markSucceededForCase((int)$caseId, 'SAFE_T_READ');
+    }
     $db->commit();
     sv_amz_intake_reply([
         'success'=>true,'duplicate'=>false,'event_id'=>$eventId,'case'=>$projection,
