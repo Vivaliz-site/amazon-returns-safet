@@ -53,10 +53,10 @@ final class SvAmazonReturnsDaemon
         $bootstrap=SvAmazonReturnsRuntime::bootstrap($this->db,$this->context);
         $state=$this->loadState();
         $due=SvAmazonReturnsRuntime::dueTasks($state,$now);
-        $due=SvAmazonFinancialRefresh::schedule($due,
-            $this->config->enabled() && SvAmazonFinancialRefresh::requiresInitialRefresh($this->persistence)
-        );
+        $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
+        $due=$plan['due'];
         $results=['bootstrap'=>$bootstrap];
+        if(($plan['gate']['status'] ?? '')==='FAILED')$results['financial_refresh_gate']=$plan['gate'];
         foreach($due as $task){
             if($task==='bootstrap')continue;
             try{
@@ -347,11 +347,12 @@ final class SvAmazonReturnsDaemon
     private function runFinancial(): array
     {
         $worker=new SvAmazonReturnsReconcileWorker();
-        $cases=$this->persistence->cases->casesWithExpectedReimbursement(250);
         $updated=0;
         $withTransactions=0;
         $financialAudit=[];
-        foreach($cases as $case){
+        $caseCount=0;
+        foreach(SvAmazonFinancialRefresh::financialCases($this->persistence,250) as $case){
+            $caseCount++;
             $caseId=(int)($case['id'] ?? 0);
             if($caseId<1)continue;
             $events=$this->persistence->events->eventsForCase($caseId);
@@ -373,7 +374,7 @@ final class SvAmazonReturnsDaemon
             $updated++;
         }
         return [
-            'status'=>'OK','cases'=>count($cases),
+            'status'=>'OK','cases'=>$caseCount,
             'with_transactions'=>$withTransactions,'updated'=>$updated,
             'financial_audit'=>$financialAudit,
         ];

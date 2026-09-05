@@ -28,3 +28,8 @@ All 46 PHP test files, SQL audit 61 files and PHP lint passed before PR creation
 ## Production acceptance
 Require initial_scan_complete=true, no API failures, complete case-level review and zero PROCESSING before enabling any write channel.
 A passing test or a SAFE-T approval alone is not proof of a real reconciled payment.
+
+## Runtime hardening
+Financial schedule planning is fail-closed: a cursor-store exception is reported as a failed gate instead of escaping `runOnce()` or permitting credit projection.
+Credit application is independently keyset-paginated by case ID, so more than 250 expected-reimbursement cases cannot starve later cases.
+The disabled integration keeps its normal `SKIPPED_DISABLED` behavior and does not force financial work.

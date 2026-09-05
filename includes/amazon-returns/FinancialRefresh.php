@@ -50,7 +50,7 @@ final class SvAmazonFinancialRefresh
     {
         $saved = $p->cursors->load(self::SOURCE, self::KEY);
         if (!is_array($saved)) return true;
-        $meta = $saved['metadata'];
+        $meta = is_array($saved['metadata'] ?? null) ? $saved['metadata'] : [];
         if (($meta['initial_scan_complete'] ?? false) === true) return false;
         if (($meta['has_more'] ?? false) === true) return true;
         // A failed complete cycle waits for the normal cadence instead of hammering the API.
@@ -65,6 +65,29 @@ final class SvAmazonFinancialRefresh
             $due[] = 'financial';
         }
         return array_values(array_unique($due));
+    }
+
+    public static function safeSchedule(array $due, bool $enabled, SvAmazonTenantPersistence $p): array
+    {
+        if (!$enabled) return ['due'=>$due, 'gate'=>['status'=>'SKIPPED_DISABLED']];
+        try {
+            return ['due'=>self::schedule($due, self::requiresInitialRefresh($p)), 'gate'=>['status'=>'OK']];
+        } catch (Throwable $e) {
+            $due = array_values(array_filter($due, static fn(mixed $task): bool => $task !== 'financial'));
+            return ['due'=>$due, 'gate'=>['status'=>'FAILED', 'error_class'=>$e::class]];
+        }
+    }
+
+    public static function financialCases(SvAmazonTenantPersistence $p, int $batchSize = 250): Generator
+    {
+        $after = 0;
+        do {
+            $cases = $p->cases->financialCasesAfter($after, $batchSize);
+            foreach ($cases as $case) {
+                $after = max($after, (int)($case['id'] ?? 0));
+                yield $case;
+            }
+        } while ($cases !== []);
     }
 
     public static function canReconcile(array $refreshResult, bool $initialScanComplete): bool
