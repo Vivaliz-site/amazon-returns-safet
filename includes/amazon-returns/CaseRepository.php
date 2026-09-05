@@ -184,6 +184,26 @@ final class SvAmazonReturnCaseRepository
     }
 
     /** @return list<string> */
+    /** @return list<string> */
+    public function financialOrderIdsAfter(string $after = '', int $limit = 25): array
+    {
+        $limit = max(1, min(1000, $limit));
+        if ($after !== '') $after = $this->requiredText($after, 'Financial order cursor', 32);
+        $stmt = $this->prepare(
+            'SELECT DISTINCT amazon_order_id FROM amazon_return_cases '
+            . 'WHERE (closed_at IS NULL OR expected_reimbursement_amount>0) '
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'AND amazon_order_id>:after_order_id ORDER BY amazon_order_id LIMIT ' . $limit
+        );
+        $stmt->execute($this->scopeParams([':after_order_id'=>$after]));
+        $ids = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $id = trim((string)($row['amazon_order_id'] ?? ''));
+            if ($id !== '') $ids[] = $id;
+        }
+        return $ids;
+    }
+
     public function openOrderIds(int $limit=25): array
     {
         $limit=max(1,min(1000,$limit));

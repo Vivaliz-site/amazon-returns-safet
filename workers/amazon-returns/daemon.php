@@ -17,6 +17,8 @@ require_once __DIR__ . '/../../includes/amazon-returns/SafeTEmailReview.php';
 require_once __DIR__ . '/gmail-ingest.php';
 require_once __DIR__ . '/scheduler.php';
 require_once __DIR__ . '/reconcile.php';
+require_once __DIR__ . '/../../includes/amazon-returns/FinancialRefresh.php';
+require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
 require_once __DIR__ . '/seller-central-worker.php';
 
 final class SvAmazonReturnsDaemon
@@ -51,11 +53,20 @@ final class SvAmazonReturnsDaemon
         $bootstrap=SvAmazonReturnsRuntime::bootstrap($this->db,$this->context);
         $state=$this->loadState();
         $due=SvAmazonReturnsRuntime::dueTasks($state,$now);
+        $due=SvAmazonFinancialRefresh::schedule($due,
+            $this->config->enabled() && SvAmazonFinancialRefresh::requiresInitialRefresh($this->persistence)
+        );
         $results=['bootstrap'=>$bootstrap];
         foreach($due as $task){
             if($task==='bootstrap')continue;
             try{
-                $results[$task]=$this->runTask($task,$now);
+                if($task==='financial' && !SvAmazonFinancialRefresh::canReconcile(
+                    $results['sp_api'] ?? [], SvAmazonFinancialRefresh::initialScanComplete($this->persistence)
+                )){
+                    $results[$task]=['status'=>'SKIPPED','reason'=>'FINANCIAL_REFRESH_NOT_ACCEPTED'];
+                }else{
+                    $results[$task]=$this->runTask($task,$now);
+                }
             }catch(Throwable $e){
                 $results[$task]=[
                     'status'=>'FAILED',
@@ -216,6 +227,7 @@ final class SvAmazonReturnsDaemon
         $decisions=0;
         $enqueued=0;
         $blockedWrites=0;
+        $decisionAudit=[];
         foreach($cases as $case){
             $caseId=(int)($case['id'] ?? 0);
             if($caseId<1)continue;
@@ -230,6 +242,7 @@ final class SvAmazonReturnsDaemon
             $decision=$engine->nextAction($projected,$timeline,$policy);
             $decisions++;
             $action=(string)($decision['action'] ?? 'WAIT');
+            $decisionAudit[]=SvAmazonReturnsRuntimeAudit::decision($projected,$timeline,$policy,$decision);
             if($action==='CLOSE_LOSS'){
                 $this->persistence->cases->update($caseId,[
                     'state'=>SvAmazonReturnStates::CLOSED_LOSS,
@@ -256,6 +269,7 @@ final class SvAmazonReturnsDaemon
         return [
             'status'=>'OK','cases'=>count($cases),'decisions'=>$decisions,
             'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,
+            'decision_audit'=>$decisionAudit,
         ];
     }
 
@@ -265,7 +279,8 @@ final class SvAmazonReturnsDaemon
         $gate=$this->dependencyGate('sp_api');
         if(($gate['status'] ?? '')!=='READY_NO_RUNTIME_PROVIDER')return $gate;
         $api=new SvAmazonReturnsSpApi();
-        $orders=$this->persistence->cases->openOrderIds(25);
+        $batch=SvAmazonFinancialRefresh::nextBatch($this->persistence,25);
+        $orders=$batch['order_ids'];
         $synced=0;
         $persistedCases=0;
         $failures=0;
@@ -315,8 +330,13 @@ final class SvAmazonReturnsDaemon
             }
             if($throttleMs>0 && $index<count($orders)-1)usleep($throttleMs*1000);
         }
+        $scan=SvAmazonFinancialRefresh::recordAttempted($this->persistence,$batch,$failures+$safeTFailures);
         return [
             'status'=>($failures>0||$safeTFailures>0)?'PARTIAL':'OK','orders'=>count($orders),
+            'initial_scan_complete'=>$scan['initial_scan_complete'],
+            'cycle_attempted'=>$scan['cycle_attempted'],
+            'cycle_failures'=>$scan['cycle_failures'],
+            'rotation_wrapped'=>$batch['wrapped'],
             'synced'=>$synced,'persisted_cases'=>$persistedCases,'failures'=>$failures,
             'safe_t_reads'=>$safeTReads,'safe_t_events'=>$safeTEvents,
             'safe_t_empty'=>$safeTEmpty,'safe_t_failures'=>$safeTFailures,
@@ -330,14 +350,17 @@ final class SvAmazonReturnsDaemon
         $cases=$this->persistence->cases->casesWithExpectedReimbursement(250);
         $updated=0;
         $withTransactions=0;
+        $financialAudit=[];
         foreach($cases as $case){
             $caseId=(int)($case['id'] ?? 0);
             if($caseId<1)continue;
             $events=$this->persistence->events->eventsForCase($caseId);
             $transactions=$worker->transactionsFromEvents($events);
-            if($transactions===[])continue;
-            $withTransactions++;
             $result=$worker->reconcileCase($case,$transactions);
+            $apply=$worker->shouldUpdateCase($case,$transactions);
+            $financialAudit[]=SvAmazonReturnsRuntimeAudit::financial($case,$transactions,$result,$apply);
+            if(!$apply)continue;
+            if($transactions!==[])$withTransactions++;
             $terminal=$result['state']===SvAmazonReturnStates::RECOVERED;
             $this->persistence->cases->update($caseId,[
                 'reconciled_credit_amount'=>$result['credit_amount'],
@@ -352,6 +375,7 @@ final class SvAmazonReturnsDaemon
         return [
             'status'=>'OK','cases'=>count($cases),
             'with_transactions'=>$withTransactions,'updated'=>$updated,
+            'financial_audit'=>$financialAudit,
         ];
     }
 
