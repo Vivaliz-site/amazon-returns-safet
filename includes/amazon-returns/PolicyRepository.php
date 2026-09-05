@@ -142,7 +142,8 @@ final class SvAmazonReturnPolicyRepository
             }
             $terms[]='('.implode(' AND ',$parts).')';
         }
-        return 'SELECT CASE WHEN COUNT(*)='.count($terms)
+        $perProgram=array_map(static fn(string $term):string=>'COALESCE(SUM(CASE WHEN '.$term.' THEN 1 ELSE 0 END),0)=1',$terms);
+        return 'SELECT CASE WHEN COUNT(*)='.count($terms).' AND '.implode(' AND ',$perProgram)
             .' AND COALESCE(SUM(CASE WHEN '.implode(' OR ',$terms)
             ." THEN 0 ELSE 1 END),0)=0 THEN 0 ELSE 1 END FROM amazon_return_policies WHERE tenant_id="
             .$tenantId." AND status='ACTIVE'";
