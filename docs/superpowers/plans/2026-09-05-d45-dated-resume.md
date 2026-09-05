@@ -15,11 +15,18 @@
 
 ## Execution ledger
 - [x] Read live code, existing D45 draft, public Amazon source, existing reply/status and outbox contracts.
-- [ ] Tests: first opening D44/D45 for supported programs; immutable tenant policy activation; foreign tenant unchanged.
-- [ ] Implement PolicySeeder/PolicyRepository and exact operational-policy verifier, retire legacy active D75 without deleting historical rows.
-- [ ] Tests: explicit date in Amazon status/mail; future WAIT; due date triggers finance check then existing-channel follow-up; credit suppresses reopening; same date is idempotent; missing date does not guess.
-- [ ] Implement date parser and decision/scheduler persistence of next_action_at; maintain canonical source evidence.
-- [ ] Update runbooks/specs/audits to distinguish D45 operational opening from external policy and remove active D75 invariant.
+- [x] Tests: first opening D44/D45 for supported programs; immutable tenant policy activation; foreign tenant unchanged.
+- [x] Implement PolicySeeder/PolicyRepository and exact operational-policy verifier, retire legacy active D75 without deleting historical rows.
+- [x] Tests: explicit date in Amazon status/mail; future WAIT; due date triggers finance check then existing-channel follow-up; credit suppresses reopening; same date is idempotent; missing date does not guess.
+- [x] Implement date parser and decision/scheduler persistence of next_action_at; maintain canonical source evidence.
+- [x] Update runbooks/specs/audits to distinguish D45 operational opening from external policy and remove active D75 invariant.
 - [ ] Run full suite, SQL isolation audit, PHP/Node/Bash lint, independent review, CI and merge.
 - [ ] Observe existing deployment timer; verify active policy and per-case decisions in private journal; verify no stale PROCESSING and writes OFF.
 - [ ] Retain disabled legacy runtime until the complete production acceptance gates pass.
+
+## Evidence at code review
+- 54 PHP test files pass; tenant SQL audit covers63 files; PHP, Node and Bash syntax checks and git diff --check pass.
+- Red/green evidence is retained in /home/ubuntu/amazon-returns-audit-20260905/d45-resume/.
+- Review findings fixed: historical dates cannot become requested dates; one dated attempt stays unique across appeal-window boundaries; successful dated attempts wait for a new response; email composition requires current due-date/finance evidence.
+- PR13 has deployed successfully and production refresh covered39/39 distinct orders with zero failures. This does not establish acceptance of the D45 release or external writes.
+- Deployment/actual policy rows, per-case dates, external channel acceptance and legacy removal remain separate gates.
