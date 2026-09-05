@@ -17,7 +17,7 @@ final class EmailGateStatement extends PDOStatement {
  public function rowCount():int{return 0;}
 }
 $errors=[];
-foreach([[1,0,['SAFE_T_EMAIL_REVIEW']],[0,1,['SAFE_T_EMAIL_REPLY']],[0,0,[]]] as [$review,$reply,$expected]){
+foreach([[1,0,['SAFE_T_EMAIL_REVIEW']],[0,1,['SAFE_T_EMAIL_REPLY']],[1,1,['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY']],[0,0,[]]] as [$review,$reply,$expected]){
  $db=new EmailGatePdo();$config=new SvAmazonReturnsConfig([
   'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_GMAIL_INGEST'=>'0',
   'AMAZON_RETURNS_EMAIL_REVIEW_WRITE'=>(string)$review,'AMAZON_RETURNS_EMAIL_REPLY_WRITE'=>(string)$reply,
