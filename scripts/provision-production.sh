@@ -139,6 +139,7 @@ if [[ "$tenant_column_exists" -eq 0 ]]; then
 fi
 
 # Preserve the previous policy rows before correcting a published matrix.
+install -m 0600 /dev/null "$shared/private/policies-before-$stamp.sql"
 mysqldump --protocol=socket -uroot --single-transaction --no-create-info "$target_db" amazon_return_policies > "$shared/private/policies-before-$stamp.sql"
 chmod 0600 "$shared/private/policies-before-$stamp.sql"
 
