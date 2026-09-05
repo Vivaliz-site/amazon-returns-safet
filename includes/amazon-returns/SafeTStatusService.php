@@ -29,6 +29,8 @@ final class SvAmazonSafeTStatusService
 
     public static function nextState(string $currentState, string $claimStatus, bool $appealDenied = false): string
     {
+        if($currentState==='RECOVERED')return $currentState;
+        if(strtoupper(trim($claimStatus))==='DENIED' && in_array($currentState,['EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','CREDIT_PENDING','CLOSED_LOSS'],true))return $currentState;
         return match (strtoupper(trim($claimStatus))) {
             'DENIED' => $appealDenied ? 'APPEAL_DENIED_FINAL' : 'SAFE_T_DENIED',
             'APPROVED' => $currentState === 'APPEAL_SUBMITTED' ? 'APPEAL_APPROVED' : 'SAFE_T_APPROVED',

@@ -13,6 +13,9 @@ function sdAssert(bool $condition, string $message): void { if (!$condition) thr
 function eligibleCase(array $changes = []): array {
     return array_replace([
         'id' => 77,
+        'program'=>'STANDARD','order_at'=>'2026-05-01 00:00:00',
+        'return_status'=>'Retornando ao Vendedor','return_status_source'=>'SP_API_REPORTS',
+        'appeal_deadline_at'=>'2026-09-15 18:00:00',
         'amazon_order_id' => '702-1234567-7654321',
         'refund_initiator' => 'AMAZON_AUTOMATIC',
         'refund_at' => '2026-06-01 12:00:00',
@@ -29,7 +32,7 @@ function eligibleCase(array $changes = []): array {
     ], $changes);
 }
 $eligiblePolicy = ['eligible' => true, 'state' => 'SAFE_T_ELIGIBLE', 'policy_version_id' => 12, 'eligibility_at' => '2026-07-16 12:00:00'];
-$engine = new SvAmazonSafeTDecisionEngine();
+$engine = new SvAmazonSafeTDecisionEngine(null,new DateTimeImmutable('2026-09-05T15:00:00Z'));
 
 $submit = $engine->nextAction(eligibleCase(), [], $eligiblePolicy);
 sdSame('SAFE_T_SUBMIT', $submit['action'], 'Eligible case without claim must submit SAFE-T.');
