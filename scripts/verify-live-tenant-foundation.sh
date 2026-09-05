@@ -82,8 +82,16 @@ env_value() {
         printf '%s' "${!key:-0}"
     fi
 }
+if [[ "$tenant_slug" == shopvivaliz ]]; then
+    operational_policies="$(scalar "SELECT COUNT(*) FROM amazon_return_policies WHERE tenant_id=$tenant_id AND status='ACTIVE' AND policy_key='RETURN_NOT_RECEIVED_D45_V1' AND marketplace_id='A2Q3Y263D00KWC' AND eligibility_days=45 AND basis='SELLER_DEBIT_AT' AND effective_to IS NULL AND ((program='STANDARD' AND effective_from='2020-01-01') OR (program IN ('FBA_ONSITE','DELIVERY_BY_AMAZON') AND effective_from='2026-04-21'))")"
+    bad_policy="$(scalar "SELECT COUNT(*) FROM amazon_return_policies WHERE tenant_id=$tenant_id AND status='ACTIVE' AND policy_key LIKE 'RETURN_NOT_RECEIVED%' AND NOT (policy_key='RETURN_NOT_RECEIVED_D45_V1' AND marketplace_id='A2Q3Y263D00KWC' AND eligibility_days=45 AND basis='SELLER_DEBIT_AT' AND effective_to IS NULL AND ((program='STANDARD' AND effective_from='2020-01-01') OR (program IN ('FBA_ONSITE','DELIVERY_BY_AMAZON') AND effective_from='2026-04-21')))")"
+    [[ "$operational_policies" -eq 3 && "$bad_policy" -eq 0 ]] || { echo "operational_policy_invalid count=$operational_policies invalid=$bad_policy" >&2; exit 1; }
+    emit "operational_opening_days=45"
+    emit "operational_policy_count=$operational_policies"
+fi
+
 write_flags_disabled=true
-for key in AMAZON_RETURNS_SAFE_T_WRITE AMAZON_RETURNS_APPEAL_WRITE AMAZON_RETURNS_EMAIL_REVIEW_WRITE AMAZON_RETURNS_SUPPORT_WRITE; do
+for key in AMAZON_RETURNS_SAFE_T_WRITE AMAZON_RETURNS_APPEAL_WRITE AMAZON_RETURNS_EMAIL_REVIEW_WRITE AMAZON_RETURNS_EMAIL_REPLY_WRITE AMAZON_RETURNS_SUPPORT_WRITE; do
     value="$(env_value "$key")"
     case "${value,,}" in ''|0|false|no|off) ;; *) write_flags_disabled=false ;; esac
 done

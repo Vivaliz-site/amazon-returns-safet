@@ -23,9 +23,10 @@ final class SvAmazonReturnsScheduler
         SvAmazonTenantReturnsOutbox $target,
         array $case,
         array $timeline,
-        array $policy
+        array $policy,
+        ?DateTimeImmutable $now=null
     ): array {
-        $decision = $this->engine->nextAction($case, $timeline, $policy);
+        $decision = $this->engine->nextAction($case, $timeline, $policy, $now);
         if (!self::isWriteAction($decision)) return ['decision'=>$decision,'outbox_id'=>null];
         $key = (string)($decision['idempotency_key'] ?? '');
         if ($key === '') throw new LogicException('Write decision missing idempotency key.');

@@ -1,6 +1,8 @@
+> Superseded rule clarification (2026-09-05): the owner requires FIRST opening at D+45. Later waits follow the exact date requested by Amazon, not a new global 60/75-day threshold. See `docs/runbooks/shopvivaliz-d45-operational-policy.md`.
+
 # Email review evidence and independent channel gates
 
-This patch preserves D+75 and does not enable an external write.
+This patch preserves D+45 operational opening and does not enable an external write.
 
 - Recognize the actual internal-review response patterns observed in the existing seller-support messages as WAIT, not a reason to duplicate a support case or review request.
 - A support survey or generic resolution message remains HUMAN_REVIEW; it is not financial credit.

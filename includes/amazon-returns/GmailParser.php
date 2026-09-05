@@ -68,6 +68,7 @@ final class SvAmazonGmailParser
             'review_outcome'=>$review['outcome'] ?? null,
             'review_suggested_action'=>$review['suggested_action'] ?? null,
             'review_reason'=>$review['reason'] ?? null,
+            'review_next_action_at'=>$review['next_action_at'] ?? null,
             'review_excerpt'=>$review['excerpt'] ?? null,
             'content_sha256'=>$contentSha,
             'idempotency_key'=>hash('sha256',implode('|',$identityParts)),

@@ -17,8 +17,11 @@ final class SvAmazonReturnsRuntimeAudit
         return self::caseFields($case) + [
             'action'=>(string)($decision['action'] ?? 'WAIT'),
             'reason'=>(string)($decision['reason'] ?? ''),
+            'next_action_at'=>array_key_exists('next_action_at',$decision)?$decision['next_action_at']:($case['next_action_at']??null),
+            'wait_source_hash'=>$decision['wait_source_hash']??null,
+            'resume_scope'=>$decision['resume_scope']??null,
             'eligible'=>(bool)($policy['eligible'] ?? false),
-            'eligibility_at'=>$case['eligibility_at'] ?? $policy['eligibility_at'] ?? null,
+            'eligibility_at'=>array_key_exists('eligibility_at',$policy)?$policy['eligibility_at']:($case['eligibility_at']??null),
             'safe_t_id'=>$case['safe_t_id'] ?? null,
             'support_case_id'=>$case['support_case_id'] ?? null,
             'appeal_deadline_at'=>$case['appeal_deadline_at'] ?? null,

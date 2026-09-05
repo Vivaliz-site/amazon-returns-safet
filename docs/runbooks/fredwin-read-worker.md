@@ -1,9 +1,11 @@
+> Superseded rule clarification (2026-09-05): the owner requires FIRST opening at D+45. Later waits follow the exact date requested by Amazon, not a new global 60/75-day threshold. See `docs/runbooks/shopvivaliz-d45-operational-policy.md`.
+
 # Fred-Win SAFE-T reader: single-instance recovery
 
 ## Scope
 Prevent duplicate readers from claiming jobs and navigating the same CDP page.
 No policy, database schema, financial state, or external write flag is changed.
-D+75 remains unchanged. A SAFE-T approval is not proof of reconciled credit.
+D+45 operational opening remains unchanged. A SAFE-T approval is not proof of reconciled credit.
 
 ## Process-owned lease
 The reader reserves 127.0.0.1:19225 before its first pull or CDP operation.

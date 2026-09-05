@@ -32,7 +32,7 @@ function policyVersions(): array
             'program' => 'STANDARD',
             'effective_from' => '2020-01-01',
             'effective_to' => null,
-            'eligibility_days' => 75,
+            'eligibility_days' => 45,
             'basis' => 'SELLER_DEBIT_OR_REFUND_AT',
             'status' => 'ACTIVE',
         ],
@@ -43,7 +43,7 @@ function policyVersions(): array
             'program' => 'FBA_ONSITE',
             'effective_from' => '2026-04-21',
             'effective_to' => null,
-            'eligibility_days' => 75,
+            'eligibility_days' => 45,
             'basis' => 'SELLER_DEBIT_OR_REFUND_AT',
             'status' => 'ACTIVE',
         ],
@@ -54,7 +54,7 @@ function policyVersions(): array
             'program' => 'DELIVERY_BY_AMAZON',
             'effective_from' => '2026-04-21',
             'effective_to' => null,
-            'eligibility_days' => 75,
+            'eligibility_days' => 45,
             'basis' => 'SELLER_DEBIT_OR_REFUND_AT',
             'status' => 'ACTIVE',
         ],
@@ -79,49 +79,49 @@ function applicableCase(array $changes = []): array
     ], $changes);
 }
 
-$d74 = SvAmazonReturnPolicyEngine::evaluate(
+$d44 = SvAmazonReturnPolicyEngine::evaluate(
     applicableCase(),
-    new DateTimeImmutable('2026-07-16 12:00:00', new DateTimeZone('UTC'))
+    new DateTimeImmutable('2026-06-16 12:00:00', new DateTimeZone('UTC'))
 );
-policyAssertSame(false, $d74['eligible'], 'A normal applicable case must not be eligible at D+74.');
-policyAssertSame('2026-07-17 12:00:00', $d74['eligibility_at'], 'Eligibility must use seller debit before refund.');
-policyAssertSame(101, $d74['policy_version_id'], 'The selected policy version must be returned.');
+policyAssertSame(false, $d44['eligible'], 'A normal applicable case must not be eligible at D+44.');
+policyAssertSame('2026-06-17 12:00:00', $d44['eligibility_at'], 'Eligibility must use seller debit before refund.');
+policyAssertSame(101, $d44['policy_version_id'], 'The selected policy version must be returned.');
 
-$d75 = SvAmazonReturnPolicyEngine::evaluate(
+$d45 = SvAmazonReturnPolicyEngine::evaluate(
     applicableCase(),
-    new DateTimeImmutable('2026-07-17 09:00:00-03:00')
+    new DateTimeImmutable('2026-06-17 09:00:00-03:00')
 );
-policyAssertSame(true, $d75['eligible'], 'A normal applicable case must be eligible exactly at D+75 UTC.');
-policyAssertSame('SAFE_T_ELIGIBLE', $d75['state'], 'Eligible non-return exposure must enter SAFE_T_ELIGIBLE.');
-policyAssertSame(true, $d75['can_auto_write'], 'A classified eligible case may pass the policy write gate.');
+policyAssertSame(true, $d45['eligible'], 'A normal applicable case must be eligible exactly at D+45 UTC.');
+policyAssertSame('SAFE_T_ELIGIBLE', $d45['state'], 'Eligible non-return exposure must enter SAFE_T_ELIGIBLE.');
+policyAssertSame(true, $d45['can_auto_write'], 'A classified eligible case may pass the policy write gate.');
 
 $refundFallback = SvAmazonReturnPolicyEngine::evaluate(
     applicableCase(['seller_debit_at' => null]),
-    new DateTimeImmutable('2026-07-16 12:00:00', new DateTimeZone('UTC'))
+    new DateTimeImmutable('2026-06-16 12:00:00', new DateTimeZone('UTC'))
 );
 policyAssertSame(true, $refundFallback['eligible'], 'Refund time must be the safe fallback when seller debit time is absent.');
-policyAssertSame('2026-07-16 12:00:00', $refundFallback['eligibility_at'], 'Refund fallback must retain UTC time.');
+policyAssertSame('2026-06-16 12:00:00', $refundFallback['eligibility_at'], 'Refund fallback must retain UTC time.');
 
 foreach (['FBA_ONSITE' => 201, 'DELIVERY_BY_AMAZON' => 202] as $program => $policyId) {
-    $d74x = SvAmazonReturnPolicyEngine::evaluate(
+    $d44x = SvAmazonReturnPolicyEngine::evaluate(
         applicableCase(['program' => $program, 'order_at' => '2026-04-21 00:00:00']),
-        new DateTimeImmutable('2026-07-17 11:59:59', new DateTimeZone('UTC'))
+        new DateTimeImmutable('2026-06-17 11:59:59', new DateTimeZone('UTC'))
     );
-    policyAssertSame(false, $d74x['eligible'], "{$program} must not be eligible before D+75.");
-    policyAssertSame($policyId, $d74x['policy_version_id'], "{$program} must select its D+75 policy version.");
+    policyAssertSame(false, $d44x['eligible'], "{$program} must not be eligible before D+45.");
+    policyAssertSame($policyId, $d44x['policy_version_id'], "{$program} must select its D+45 policy version.");
 
-    $d75x = SvAmazonReturnPolicyEngine::evaluate(
+    $d45x = SvAmazonReturnPolicyEngine::evaluate(
         applicableCase(['program' => $program, 'order_at' => '2026-04-21 00:00:00']),
-        new DateTimeImmutable('2026-07-17 12:00:00', new DateTimeZone('UTC'))
+        new DateTimeImmutable('2026-06-17 12:00:00', new DateTimeZone('UTC'))
     );
-    policyAssertSame(true, $d75x['eligible'], "{$program} must be eligible at D+75.");
+    policyAssertSame(true, $d45x['eligible'], "{$program} must be eligible at D+45.");
 }
 
 $beforeException = SvAmazonReturnPolicyEngine::evaluate(
     applicableCase(['program' => 'FBA_ONSITE', 'order_at' => '2026-04-20 23:59:59']),
-    new DateTimeImmutable('2026-07-17 12:00:00', new DateTimeZone('UTC'))
+    new DateTimeImmutable('2026-06-17 12:00:00', new DateTimeZone('UTC'))
 );
-policyAssertSame(true, $beforeException['eligible'], 'Before 2026-04-21, the normal D+75 policy must apply.');
+policyAssertSame(true, $beforeException['eligible'], 'Before 2026-04-21, the normal D+45 policy must apply.');
 policyAssertSame(101, $beforeException['policy_version_id'], 'Pre-effective exception must fall back to normal policy.');
 
 $unknownInitiator = SvAmazonReturnPolicyEngine::evaluate(

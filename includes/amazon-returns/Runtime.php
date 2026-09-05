@@ -52,12 +52,15 @@ final class SvAmazonReturnsRuntime
         SvAmazonReturnsSchema::ensure($db);
         $p=SvAmazonTenantPersistence::create($db,$context);
         $policySeeds=SvAmazonReturnPolicySeeder::ensure($p->policies);
+        $policyAudit=$policySeeds>0 ? SvAmazonReturnPolicySeeder::auditDefinitions($p->policies->allActive()) : ['valid'=>true,'policy_key'=>null];
+        if(!$policyAudit['valid'])throw new RuntimeException('Active operational policy does not match approved opening rule.');
         return [
             'status'=>'OK',
             'tenant_id'=>$context->tenantId(),
             'amazon_connection_id'=>$context->amazonConnectionId(),
             'schema_tables'=>count(SvAmazonReturnsSchema::statements()),
             'policy_seeds'=>$policySeeds,
+            'policy_audit'=>$policyAudit,
         ];
     }
 

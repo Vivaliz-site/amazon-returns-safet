@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/DenialAnalyzer.php';
 require_once __DIR__ . '/SafeTStatus.php';
+require_once __DIR__ . '/AmazonRequestedWait.php';
 
 final class SvAmazonSafeTDecisionEngine
 {
@@ -13,7 +14,7 @@ final class SvAmazonSafeTDecisionEngine
     }
 
     /** @return array<string,mixed> */
-    public function nextAction(array $case,array $timeline,array $policy): array
+    public function nextAction(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null): array
     {
         $caseId=(int)($case['id'] ?? 0);
         $orderId=trim((string)($case['amazon_order_id'] ?? ''));
@@ -24,6 +25,10 @@ final class SvAmazonSafeTDecisionEngine
         if((string)($case['physical_status'] ?? '')===SvAmazonReturnPhysicalStatuses::RECEIVED_OK){
             return $this->decision('WAIT','PHYSICAL_RETURN_RECEIVED',$caseId);
         }
+
+        $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        $requestedWait=SvAmazonRequestedWait::decision($case,$timeline,$now);
+        if($requestedWait!==null)return $requestedWait;
 
         if($safeTId!==''){
             if($state===SvAmazonReturnStates::SAFE_T_INFO_REQUESTED){

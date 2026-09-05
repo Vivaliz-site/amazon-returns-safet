@@ -1,3 +1,5 @@
+> Superseded rule clarification (2026-09-05): the owner requires FIRST opening at D+45. Later waits follow the exact date requested by Amazon, not a new global 60/75-day threshold. See `docs/runbooks/shopvivaliz-d45-operational-policy.md`.
+
 # Amazon Returns & SAFE-T — API-First Multi-Tenant SaaS Design
 
 **Date:** 2026-09-04
@@ -204,7 +206,7 @@ No adapter writes directly to projected case state. This keeps source ingestion,
 
 ## 13. Policy architecture
 
-D+75 remains the active policy for the current ShopVivaliz production tenant where already verified. It is not hardcoded as a universal commercial rule.
+D+45 operational opening remains the active policy for the current ShopVivaliz production tenant where already verified. It is not hardcoded as a universal commercial rule.
 
 Policy is versioned by:
 
