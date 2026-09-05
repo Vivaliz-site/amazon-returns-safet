@@ -37,3 +37,4 @@ $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php
 frhSame(true,str_contains($daemon,'SvAmazonFinancialRefresh::safeSchedule('),'daemon must contain guarded financial schedule');
 frhSame(true,str_contains($daemon,'SvAmazonFinancialRefresh::financialCases('),'daemon reconciliation must use keyset case iteration');
 frhSame(false,str_contains($daemon,'casesWithExpectedReimbursement(250)'),'fixed LIMIT 250 path must not remain in daemon');
+frhSame(true,str_contains($daemon,'$task===\'financial\' && $this->config->enabled()'),'disabled runtime must bypass financial acceptance gate');

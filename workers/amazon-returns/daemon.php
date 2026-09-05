@@ -60,7 +60,7 @@ final class SvAmazonReturnsDaemon
         foreach($due as $task){
             if($task==='bootstrap')continue;
             try{
-                if($task==='financial' && !SvAmazonFinancialRefresh::canReconcile(
+                if($task==='financial' && $this->config->enabled() && !SvAmazonFinancialRefresh::canReconcile(
                     $results['sp_api'] ?? [], SvAmazonFinancialRefresh::initialScanComplete($this->persistence)
                 )){
                     $results[$task]=['status'=>'SKIPPED','reason'=>'FINANCIAL_REFRESH_NOT_ACCEPTED'];
