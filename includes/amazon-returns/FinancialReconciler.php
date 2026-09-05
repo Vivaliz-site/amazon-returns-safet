@@ -21,6 +21,7 @@ final class SvAmazonFinancialReconciler
         foreach ($unique as $tx) {
             $source = ($tx['source'] ?? '') === 'SP_API_FINANCES_V0' ? 'v0' : 'ledger';
             $money = is_array($tx['total_amount'] ?? null) ? $tx['total_amount'] : [];
+            if ($currency === '' && !isset($tx['seller_effect_amount'])) { $unclassified++; continue; }
             $txCurrency = strtoupper(trim((string)($money['currency'] ?? '')));
             if ($currency !== '' && $txCurrency !== '' && $currency !== $txCurrency) { $unclassified++; continue; }
             $status = strtoupper(trim((string)($tx['transaction_status'] ?? '')));
