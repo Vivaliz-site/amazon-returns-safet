@@ -35,3 +35,11 @@ For a case where Amazon has refunded the customer, D+45 is the opening trigger. 
 2. the seller explicitly confirms through the application intake routine that the physical product arrived.
 Carrier tracking, "returning to seller", lost/refused/damaged transport labels, a projected physical status without the seller intake event, a promise of future reimbursement, or a missing separate seller-debit field are not additional blockers once D+45 eligibility is established.
 Seller physical arrival is evidenced by the app intake event (`PHYSICAL_RECEIVED`, source `WAREHOUSE`), not by carrier/Seller Central status alone.
+
+## Mandatory delivery rules and persistent project memory
+Read `docs/REGRAS-DE-ENTREGA.md` and `docs/MEMORIA-DO-PROJETO.md` at the start of every task.
+- The responsible agent owns validation, review, commit/push, merge, auto-gate deployment and functional production verification.
+- No task-owned PR, required Action, local-only change, unresolved conflict or failed deployment may be left pending at handoff.
+- Do not merge obsolete/conflicting code merely to clear a checklist; prove the valid requirements were absorbed by the replacement.
+- Deploy only through `scripts/auto-deploy.sh` via `amazon-returns-deploy.service`/timer. `dirty_checkout`, `ci_not_green` and `already_current` are states to investigate, not proof of delivery.
+- If tests, CI or deploy fail, correct the cause and repeat the gate in the same execution. External writes still require their channel-specific production acceptance.
