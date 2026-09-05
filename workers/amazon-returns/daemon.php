@@ -186,7 +186,7 @@ final class SvAmazonReturnsDaemon
                 $timeline=$this->persistence->events->eventsForCase($caseId);
                 $kind=strtoupper((string)($row['kind'] ?? ''));
                 if($kind==='SAFE_T_EMAIL_REPLY'){
-                    $message=SvAmazonSafeTEmailReview::composeReply($case,$timeline);
+                    $message=SvAmazonSafeTEmailReview::composeReply($case,$timeline,null,SvAmazonRequestedWait::jobResumeScope($row));
                     $sent=$gmail->sendReplyOnce(
                         $message['to'],$message['subject'],$message['body'],$message['thread_id'],
                         $message['in_reply_to'],(string)$row['idempotency_key']

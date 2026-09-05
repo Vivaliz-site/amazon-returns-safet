@@ -57,7 +57,7 @@ final class SvAmazonSafeTEmailReview
     }
 
     /** @return array{to:string,subject:string,body:string,thread_id:string,in_reply_to:string} */
-    public static function composeReply(array $case,array $timeline,?DateTimeImmutable $now=null): array
+    public static function composeReply(array $case,array $timeline,?DateTimeImmutable $now=null,?string $reservedResumeScope=null): array
     {
         $safeTId=trim((string)($case['safe_t_id'] ?? ''));
         $orderId=trim((string)($case['amazon_order_id'] ?? ''));
@@ -69,9 +69,9 @@ final class SvAmazonSafeTEmailReview
         }
         $payload=is_array($response['payload'] ?? null)?$response['payload']:[];
         $datedDecision=null;
-        if(strtoupper(trim((string)($payload['review_suggested_action'] ?? '')))!=='RESPOND_EMAIL'){
+        if($reservedResumeScope!==null || strtoupper(trim((string)($payload['review_suggested_action'] ?? '')))!=='RESPOND_EMAIL'){
             $datedDecision=(new SvAmazonSafeTDecisionEngine())->nextAction($case,$timeline,[],$now);
-            if(($datedDecision['action']??'')!=='SAFE_T_EMAIL_REPLY' || empty($datedDecision['resume_scope'])){
+            if(($datedDecision['action']??'')!=='SAFE_T_EMAIL_REPLY' || $reservedResumeScope===null || ($datedDecision['resume_scope']??null)!==$reservedResumeScope){
                 throw new LogicException('Email review response is not approved for automatic reply.');
             }
         }

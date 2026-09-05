@@ -17,7 +17,7 @@ final class SvAmazonRequestedWait
         $date = '(?:[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}[\/.][0-9]{1,2}[\/.][0-9]{4}|[0-9]{1,2}\s+de\s+[a-z]+\s+de\s+[0-9]{4})';
         $waitVerb='(?:aguarde|aguardar|espere|retorne|volte|reabra|reabrir)';
         $futureMoney='(?:(?:sera|serao)\s+(?:reembolsad[oa]|ressarcid[oa])|(?:reembolso|ressarcimento)\s+(?:sera|serao|previst[oa]))';
-        $pattern = '/\b(?:'.$waitVerb.'|'.$futureMoney.')\b[^.,;!?\n]{0,160}?\b(ate|a partir de|apos|depois de|em|para)\s+(?:o dia\s+|dia\s+)?('.$date.')\b/';
+        $pattern = '/\b(?:'.$waitVerb.'|'.$futureMoney.')\b(?:(?!\b(?:foi|foram|ocorreu|ocorreram|ja|e|mas|porem)\b)[^.,;!?\n]){0,160}?\b(ate|a partir de|apos|depois de|em|para)\s+(?:o dia\s+|dia\s+)?('.$date.')\b/';
         preg_match_all($pattern, $normalized, $matches, PREG_SET_ORDER);
         $dates = [];
         foreach ($matches as $match) {
