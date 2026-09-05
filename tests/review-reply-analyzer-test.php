@@ -18,6 +18,8 @@ $msg=$base; $msg['body_text']='Após análise manual, negamos a solicitação de
 rrSame('DENIED_ACTIONABLE',$analyzer->analyze($msg,[])['outcome'],'Plain denial must be recognized but remain non-terminal without case context.');
 $msg=$base; $msg['body_text']='Entendemos sua posição, mas reafirmamos nossa decisão. Não podemos fornecer mais detalhes e não responderemos a outras comunicações sobre esta reivindicação.';
 rrSame('DENIED_FINAL',$analyzer->analyze($msg,['new_material_fact'=>false,'financial_inconsistency'=>false,'open_channel'=>false])['outcome'],'Explicit final denial without unresolved fact may close.');
+rrSame('HUMAN_REVIEW',$analyzer->analyze($msg,['new_material_fact'=>false,'financial_inconsistency'=>false,'open_channel'=>false])['suggested_action'],'Terminal loss closure must remain gated without explicit approval.');
+rrSame('CLOSED_LOSS',$analyzer->analyze($msg,['new_material_fact'=>false,'financial_inconsistency'=>false,'open_channel'=>false,'terminal_close_allowed'=>true])['suggested_action'],'Explicit terminal approval may authorize a documented loss closure.');
 rrSame('DENIED_ACTIONABLE',$analyzer->analyze($msg,['new_material_fact'=>false,'financial_inconsistency'=>true,'open_channel'=>false])['outcome'],'Financial inconsistency prevents final closure.');
 $msg=$base; $msg['body_text']='Analisamos sua solicitação. Obrigado por entrar em contato.';
 rrSame('UNKNOWN_AMBIGUOUS',$analyzer->analyze($msg,[])['outcome'],'Ambiguous reply must fail closed.');
