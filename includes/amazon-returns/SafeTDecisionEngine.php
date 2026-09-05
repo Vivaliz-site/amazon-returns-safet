@@ -8,7 +8,7 @@ require_once __DIR__ . '/AmazonRequestedWait.php';
 
 final class SvAmazonSafeTDecisionEngine
 {
-    public function __construct(private ?SvAmazonDenialAnalyzer $denialAnalyzer = null)
+    public function __construct(private ?SvAmazonDenialAnalyzer $denialAnalyzer = null,private ?DateTimeImmutable $clock=null)
     {
         $this->denialAnalyzer ??= new SvAmazonDenialAnalyzer();
     }
@@ -26,9 +26,17 @@ final class SvAmazonSafeTDecisionEngine
             return $this->decision('WAIT','PHYSICAL_RETURN_RECEIVED',$caseId);
         }
 
-        $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
         $requestedWait=SvAmazonRequestedWait::decision($case,$timeline,$now);
         if($requestedWait!==null)return $requestedWait;
+
+        if($safeTId!=='' && in_array($state,['SAFE_T_DENIED','APPEAL_REQUIRED','SAFE_T_INFO_REQUESTED'],true)){
+            $raw=$case['appeal_deadline_at']??null;$deadline=null;
+            if(is_string($raw) && preg_match('/^(\d{4})-(\d{2})-(\d{2})[ T]/',$raw,$parts)===1 && checkdate((int)$parts[2],(int)$parts[3],(int)$parts[1])){
+                try{$candidate=new DateTimeImmutable($raw,new DateTimeZone('UTC'));if(DateTimeImmutable::getLastErrors()===false)$deadline=$candidate;}catch(Throwable){}
+            }
+            if($deadline===null || $now>$deadline)return $this->decision('HUMAN_REVIEW',$deadline===null?'OFFICIAL_APPEAL_DEADLINE_UNRESOLVED':'OFFICIAL_APPEAL_WINDOW_EXPIRED',$caseId);
+        }
 
         if($safeTId!==''){
             if($state===SvAmazonReturnStates::SAFE_T_INFO_REQUESTED){

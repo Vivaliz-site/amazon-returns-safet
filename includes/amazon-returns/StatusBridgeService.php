@@ -131,10 +131,16 @@ final class SvAmazonReturnsStatusBridgeService
         if(!is_string($snapshot) || preg_match('/^[a-f0-9]{64}$/i',$snapshot)!==1){
             $snapshot=null;
         }
-        $eventKey=SvAmazonSafeTStatusService::observationKey($caseId,$read,$snapshot);
+
         $db=$this->p->db();
         $db->beginTransaction();
         try{
+            $this->p->cases->assertOwned($caseId);
+            $case=$this->p->cases->find($caseId);
+            if(!is_array($case))throw new RuntimeException('Owned status case disappeared.');
+            if(!hash_equals($knownSafeT,trim((string)($case['safe_t_id']??''))))throw new RuntimeException('Claim identity changed during observation.');
+            $events=$this->p->events->eventsForCase($caseId);
+            $eventKey=SvAmazonSafeTStatusService::currentObservationKey($caseId,$read,$events);
             $existing=$this->p->events->findIdByIdempotencyKey($eventKey);
             $isNew=$existing===null;
             if($isNew){
@@ -148,34 +154,34 @@ final class SvAmazonReturnsStatusBridgeService
                     'payload'=>$read,
                     'evidence_sha256'=>$snapshot,
                 ]);
-                $nextState=SvAmazonSafeTStatusService::nextState(
-                    (string)$case['state'],(string)$read['claim_status'],
-                    (bool)($read['appeal_denied'] ?? false)
-                );
-                $fingerprint=trim((string)($read['decision_fingerprint'] ?? ''));
-                $lastFingerprint=trim((string)($case['last_denial_fingerprint'] ?? ''));
-                $repeat=(int)($case['repeated_denial_count'] ?? 0);
-                if((string)$read['claim_status']==='DENIED'){
-                    $repeat=SvAmazonSafeTStatusService::repeatCount(
-                        $lastFingerprint!==''?$lastFingerprint:null,
-                        $repeat,
-                        $fingerprint!==''?$fingerprint:null
-                    );
-                    if($fingerprint!=='')$lastFingerprint=$fingerprint;
-                }
-                $deadline=$read['appeal_deadline_at'] ?? $case['appeal_deadline_at'];
-                if((string)$read['claim_status']==='APPROVED')$deadline=null;
-                $patch=[
-                    'state'=>$nextState,
-                    'appeal_deadline_at'=>$deadline,
-                    'last_denial_fingerprint'=>$lastFingerprint!==''?$lastFingerprint:null,
-                    'repeated_denial_count'=>$repeat,
-                ];
-                if(in_array((string)$read['claim_status'],['DENIED','INFO_REQUESTED'],true)){
-                    $patch['next_action_at']=gmdate('Y-m-d H:i:s');
-                }
-                $this->p->cases->update($caseId,$patch);
             }
+            $nextState=SvAmazonSafeTStatusService::nextState(
+                (string)$case['state'],(string)$read['claim_status'],
+                (bool)($read['appeal_denied'] ?? false)
+            );
+            $fingerprint=trim((string)($read['decision_fingerprint'] ?? ''));
+            $lastFingerprint=trim((string)($case['last_denial_fingerprint'] ?? ''));
+            $repeat=(int)($case['repeated_denial_count'] ?? 0);
+            if($isNew && (string)$read['claim_status']==='DENIED'){
+                $repeat=SvAmazonSafeTStatusService::repeatCount(
+                    $lastFingerprint!==''?$lastFingerprint:null,
+                    $repeat,
+                    $fingerprint!==''?$fingerprint:null
+                );
+                if($fingerprint!=='')$lastFingerprint=$fingerprint;
+            }
+            $deadline=$read['appeal_deadline_at'] ?? $case['appeal_deadline_at'];
+            if((string)$read['claim_status']==='APPROVED')$deadline=null;
+            $patch=[
+                'state'=>$nextState,
+                'appeal_deadline_at'=>$deadline,
+                'last_denial_fingerprint'=>$lastFingerprint!==''?$lastFingerprint:null,
+                'repeated_denial_count'=>$repeat,
+            ];
+            if($isNew && $nextState!==(string)$case['state'] && in_array($nextState,['SAFE_T_DENIED','APPEAL_DENIED_FINAL','SAFE_T_INFO_REQUESTED'],true)){
+                $patch['next_action_at']=gmdate('Y-m-d H:i:s');
+            }
+            $this->p->cases->update($caseId,$patch);
             $this->p->outbox->markSucceeded((int)$row['id']);
             $db->commit();
             return [
