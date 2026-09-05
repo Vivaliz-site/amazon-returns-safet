@@ -35,6 +35,9 @@ final class SvAmazonReturnsShadowAudit
         if(self::hasAuthoritativeCreditAdvancement($source,$target,$targetEvents)){
             unset($diff['reconciled_credit_amount']);
         }
+        if(self::hasVerifiedInitiatorProjectionCorrection($source,$target,$targetEvents)){
+            unset($diff['refund_initiator']);
+        }
         return $diff;
     }
 
@@ -73,6 +76,27 @@ final class SvAmazonReturnsShadowAudit
             $observed+=$amount;
         }
         return $observed>0&&$targetCredit===$sourceCredit+$observed;
+    }
+
+    public static function hasVerifiedInitiatorProjectionCorrection(
+        array $source,array $target,array $targetEvents
+    ): bool {
+        $sourceInitiator=strtoupper(trim((string)($source['refund_initiator']??'')));
+        $targetInitiator=strtoupper(trim((string)($target['refund_initiator']??'')));
+        if($sourceInitiator!=='UNKNOWN'||!in_array($targetInitiator,[
+            'AMAZON_AUTOMATIC','AMAZON_CUSTOMER_SERVICE','SELLER','A_TO_Z',
+        ],true))return false;
+        foreach($targetEvents as $event){
+            if(!is_array($event)||($event['source']??'')!=='SP_API_REPORTS'
+                ||!in_array((string)($event['event_type']??''),[
+                    'RETURN_REPORT_OBSERVED','RETURNS_REPORT_MATCHED',
+                ],true))continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if(strtoupper(trim((string)($payload['refund_initiator']??'')))===$targetInitiator){
+                return true;
+            }
+        }
+        return false;
     }
 
     /** @return array<string,array{source:mixed,target:mixed}> */
