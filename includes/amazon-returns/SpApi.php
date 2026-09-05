@@ -324,22 +324,25 @@ final class SvAmazonReturnsSpApi
     {
         $orderId = '';
         $related = $transaction['relatedIdentifiers'] ?? $transaction['relatedIdentifier'] ?? [];
+        $normalizedRelated = [];
         if (is_array($related)) {
             foreach ($related as $identifier) {
                 if (!is_array($identifier)) continue;
-                $name = strtoupper(trim((string)($identifier['name'] ?? $identifier['type'] ?? '')));
-                if ($name === 'ORDER_ID') {
-                    $orderId = trim((string)($identifier['value'] ?? $identifier['id'] ?? ''));
-                    break;
-                }
+                $name = strtoupper(trim((string)($identifier['relatedIdentifierName'] ?? $identifier['name'] ?? $identifier['type'] ?? '')));
+                $value = trim((string)($identifier['relatedIdentifierValue'] ?? $identifier['value'] ?? $identifier['id'] ?? ''));
+                if ($name === '' || $value === '') continue;
+                $normalizedRelated[$name . '|' . $value] = ['name'=>$name, 'value'=>$value];
+                if ($name === 'ORDER_ID') $orderId = $value;
             }
         }
+        ksort($normalizedRelated, SORT_STRING);
         return [
             'transaction_id' => trim((string)($transaction['transactionId'] ?? $transaction['id'] ?? '')),
             'transaction_type' => trim((string)($transaction['transactionType'] ?? $transaction['type'] ?? '')),
             'transaction_status' => self::nullableString($transaction['transactionStatus'] ?? $transaction['status'] ?? null),
             'posted_at' => self::nullableString($transaction['postedDate'] ?? $transaction['postedTime'] ?? null),
             'order_id' => $orderId,
+            'related_identifiers' => array_values($normalizedRelated),
             'total_amount' => self::moneyOnly($transaction['totalAmount'] ?? $transaction['amount'] ?? null),
         ];
     }
