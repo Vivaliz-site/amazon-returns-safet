@@ -233,6 +233,9 @@ final class SvAmazonReturnProjector
         if (!is_string($value) || !in_array($value, $allowed, true)) {
             throw new UnexpectedValueException("Invalid {$key} in Amazon return event.");
         }
+        if ($value === 'UNKNOWN' && isset($target[$key]) && $target[$key] !== 'UNKNOWN') {
+            return;
+        }
         $target[$key] = $value;
     }
 

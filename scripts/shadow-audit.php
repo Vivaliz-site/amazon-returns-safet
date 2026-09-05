@@ -66,6 +66,8 @@ try{
     sort($keys,SORT_STRING);
     $engine=new SvAmazonSafeTDecisionEngine();
     $mismatches=[];
+    $normalizedLegacyRefundAmounts=[];
+    $normalizedAuthoritativeCredits=[];
     foreach($keys as $key){
         $a=$sourceCases[$key] ?? null;
         $b=$targetCases[$key] ?? null;
@@ -83,13 +85,34 @@ try{
         $targetCase['policies']=$targetPolicies;
         $sourcePolicy=SvAmazonReturnPolicyEngine::evaluate($sourceCase,$now);
         $targetPolicy=SvAmazonReturnPolicyEngine::evaluate($targetCase,$now);
+        $sourceEvents=$source->eventsForCase((int)$a['id']);
+        $targetEvents=$target->eventsForCase((int)$b['id']);
         $sourceDecision=$engine->nextAction(
-            $sourceCase,$source->eventsForCase((int)$a['id']),$sourcePolicy
+            $sourceCase,$sourceEvents,$sourcePolicy
         );
         $targetDecision=$engine->nextAction(
-            $targetCase,$target->eventsForCase((int)$b['id']),$targetPolicy
+            $targetCase,$targetEvents,$targetPolicy
         );
-        $caseDiff=SvAmazonReturnsShadowAudit::caseDiff($a,$b);
+        if(SvAmazonReturnsShadowAudit::hasLegacyLifecycleRefundNormalization($a,$b)){
+            $normalizedLegacyRefundAmounts[]=[
+                'case_key'=>$key,
+                'order_id'=>(string)($a['amazon_order_id']??''),
+                'source_refund_amount'=>(string)($a['refund_amount']??''),
+                'target_refund_amount'=>(string)($b['refund_amount']??''),
+                'expected_reimbursement_amount'=>(string)($b['expected_reimbursement_amount']??''),
+                'reason'=>'LEGACY_DEFERRED_RELEASED_LIFECYCLE_DUPLICATE',
+            ];
+        }
+        if(SvAmazonReturnsShadowAudit::hasAuthoritativeCreditAdvancement($a,$b,$targetEvents)){
+            $normalizedAuthoritativeCredits[]=[
+                'case_key'=>$key,
+                'order_id'=>(string)($a['amazon_order_id']??''),
+                'source_reconciled_credit_amount'=>(string)($a['reconciled_credit_amount']??''),
+                'target_reconciled_credit_amount'=>(string)($b['reconciled_credit_amount']??''),
+                'reason'=>'POST_MIGRATION_SAFE_T_REIMBURSEMENT_OBSERVED',
+            ];
+        }
+        $caseDiff=SvAmazonReturnsShadowAudit::migrationCaseDiff($a,$b,$targetEvents);
         $decisionDiff=SvAmazonReturnsShadowAudit::decisionDiff(
             $sourceDecision,$targetDecision
         );
@@ -115,6 +138,10 @@ try{
         'target_open_cases'=>count($targetCases),
         'compared_cases'=>count($keys),
         'mismatch_count'=>count($mismatches),
+        'normalized_legacy_refund_amount_count'=>count($normalizedLegacyRefundAmounts),
+        'normalized_legacy_refund_amounts'=>$normalizedLegacyRefundAmounts,
+        'normalized_authoritative_credit_count'=>count($normalizedAuthoritativeCredits),
+        'normalized_authoritative_credits'=>$normalizedAuthoritativeCredits,
         'target_non_d75_active_policies'=>$badPolicies,
         'mismatches'=>$mismatches,
     ];
