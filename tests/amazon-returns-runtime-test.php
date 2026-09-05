@@ -35,6 +35,8 @@ rtAssert(str_contains($daemon,'SvAmazonTenantPersistence'),'Daemon must use scop
 rtAssert(str_contains($daemon,'$this->persistence->outbox->claimBatch'),'Daemon must claim only through the scoped outbox.');
 rtAssert(str_contains($daemon,"['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE']"),'Seller Central worker action allowlist.');
 rtAssert(str_contains($daemon,'amazon_returns_pdo()'),'Daemon must use standalone DB bootstrap.');
+rtAssert(str_contains($daemon,'listSafeTReimbursements'),'Daemon must read documented Finances v0 SAFE-T reimbursements.');
+rtAssert(str_contains($daemon,'persistSafeTReimbursements'),'Daemon must persist SAFE-T reimbursements through tenant-scoped stores.');
 rtAssert(!str_contains($daemon,'EventStore.php'),'Daemon cannot load global EventStore.');
 rtAssert(!str_contains($daemon,'Outbox.php'),'Daemon cannot load global Outbox.');
 rtAssert(!str_contains($daemon,'config/constants.php'),'Daemon cannot load website constants.');
