@@ -159,6 +159,12 @@ $db->queue(['row_count'=>1]);
 $repo->update(41, ['state'=>'SAFE_T_ELIGIBLE','next_action_at'=>'2026-09-05 12:00:00']);
 
 $db->queue(['fetch'=>$owned]);
+$db->queue(['row_count'=>1]);
+$repo->update(41, ['quantity_ordered'=>2]);
+$quantityUpdate = $db->executed[array_key_last($db->executed)];
+crSame(2, $quantityUpdate['params'][':patch_quantity_ordered'] ?? null, 'Projection must be able to persist quantity ordered.');
+
+$db->queue(['fetch'=>$owned]);
 $repo->assertOwned(41);
 $db->queue(['fetch'=>false]);
 crThrows(fn()=>$repo->assertOwned(99), 'Missing owned case must be rejected.');

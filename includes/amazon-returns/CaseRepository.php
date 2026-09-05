@@ -6,7 +6,7 @@ require_once __DIR__ . '/TenantContext.php';
 final class SvAmazonReturnCaseRepository
 {
     private const PATCHABLE = [
-        'quantity_refunded','quantity_received','program','refund_initiator','refund_at','seller_debit_at',
+        'quantity_ordered','quantity_refunded','quantity_received','program','refund_initiator','refund_at','seller_debit_at',
         'refund_amount','expected_reimbursement_amount','reconciled_credit_amount','physical_status','state',
         'policy_version_id','eligibility_at','next_action_at','safe_t_id','support_case_id',
         'repeated_denial_count','last_denial_fingerprint','appeal_deadline_at','terminal_reason','closed_at',
