@@ -16,7 +16,7 @@ A review-email response uses its existing thread. An existing support case is up
 No date, approval, rejection, email promise or successful request is proof of recovered money. Only reconciled real financial credit closes financial recovery.
 
 ## Storage and acceptance
-The versioned key is RETURN_NOT_RECEIVED_D45_V1, scoped to the shopvivaliz tenant. Legacy rule values remain in SUPERSEDED records; another tenant is not changed.
+The versioned key is RETURN_NOT_RECEIVED_D45_REFUND_V2, scoped to the shopvivaliz tenant. Legacy rule values remain in SUPERSEDED records; another tenant is not changed.
 Source refresh and reconciliation are separately recorded and linked. New API failure or stale financial evidence removes resumption clearance.
 next_action_at exposes the requested date; idempotency derives from the original response/date rather than the polling clock.
 All external channel flags remain OFF until their production acceptance gate passes. Configuration/tests passing does not prove an external request has been sent.

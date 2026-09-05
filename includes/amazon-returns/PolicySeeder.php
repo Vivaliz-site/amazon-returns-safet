@@ -6,7 +6,7 @@ require_once __DIR__ . '/PolicyRepository.php';
 final class SvAmazonReturnPolicySeeder
 {
     public const OPERATIONAL_DAYS = 45;
-    public const OPERATIONAL_KEY = 'RETURN_NOT_RECEIVED_D45_V1';
+    public const OPERATIONAL_KEY = 'RETURN_NOT_RECEIVED_D45_REFUND_V2';
 
     /** @return list<array<string,mixed>> */
     public static function definitions(): array
@@ -20,7 +20,7 @@ final class SvAmazonReturnPolicySeeder
                 'program'=>$program,'effective_from'=>$effective,'effective_to'=>null,
                 'eligibility_days'=>self::OPERATIONAL_DAYS,'basis'=>'REFUND_AT',
                 'source_url'=>$source,
-                'source_hash'=>hash('sha256','shopvivaliz-operational-d45-v1|2026-09-05|'.$program.'|REFUND_AT'),
+                'source_hash'=>hash('sha256','shopvivaliz-operational-d45-refund-v2|2026-09-05|'.$program.'|REFUND_AT'),
                 'status'=>'ACTIVE',
             ];
             $rows[]=$row;

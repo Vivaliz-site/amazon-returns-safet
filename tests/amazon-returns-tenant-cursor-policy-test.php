@@ -79,7 +79,7 @@ final class CursorPolicyMemoryStatement extends PDOStatement
         if(str_starts_with($upper,'UPDATE AMAZON_RETURN_POLICIES SET STATUS')) {
             foreach($this->db->policies as &$row){
                 if($row['tenant_id']!==(int)$params[':tenant_id'])continue;
-                if(isset($params[':legacy_key']) && $row['policy_key']===$params[':legacy_key'] && in_array($row['eligibility_days'],str_contains($upper,'ELIGIBILITY_DAYS IN (45,60,75)')?[45,60,75]:[75],true) && $row['marketplace_id']===$params[':marketplace_id'] && $row['program']===$params[':program'])$row['status']='SUPERSEDED';
+                if(isset($params[':legacy_family']) && str_starts_with($row['policy_key'],rtrim($params[':legacy_family'],'%')) && $row['policy_key']!==($params[':current_key']??'') && $row['marketplace_id']===$params[':marketplace_id'] && $row['program']===$params[':program'])$row['status']='SUPERSEDED';
             }
             unset($row);return true;
         }
@@ -239,10 +239,14 @@ try { $policies1->seed([$basePolicy + ['tenant_id'=>2]]); }
 catch (InvalidArgumentException) { $thrown = true; }
 cpAssert($thrown, 'Policy repository accepted caller-supplied ownership.');
 
+$oldV1=array_replace($basePolicy,['policy_key'=>'RETURN_NOT_RECEIVED_D45_V1','effective_from'=>'2020-01-01','eligibility_days'=>45,'basis'=>'SELLER_DEBIT_AT','source_hash'=>hash('sha256','old-v1')]);
+$policies1->seed([$oldV1]);
 cpSame(3, SvAmazonReturnPolicySeeder::ensure($policies1), 'Policy seeder must delegate all approved definitions.');
 $beforeRepeat=count($db->policies);
 cpSame(3,SvAmazonReturnPolicySeeder::ensure($policies1),'Repeated bootstrap must preserve policy versions.');
 cpSame($beforeRepeat,count($db->policies),'Repeated bootstrap must not duplicate policies.');
+$v1=array_values(array_filter($db->policies,static fn(array $r):bool=>$r['tenant_id']===1 && $r['policy_key']==='RETURN_NOT_RECEIVED_D45_V1'));
+cpSame('SUPERSEDED',$v1[0]['status']??null,'Old D45 V1 must be superseded, not mutated.');
 $legacy=array_values(array_filter($db->policies,static fn(array $r):bool=>$r['tenant_id']===1 && $r['policy_key']==='RETURN_NOT_RECEIVED'));
 cpSame(75,$legacy[0]['eligibility_days'],'Superseded policy value must not be rewritten.');
 cpSame('SUPERSEDED',$legacy[0]['status'],'Only legacy policy activation should change.');

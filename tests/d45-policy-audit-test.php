@@ -4,6 +4,7 @@ require_once __DIR__.'/../includes/amazon-returns/PolicySeeder.php';
 if(!method_exists(SvAmazonReturnPolicySeeder::class,'auditDefinitions')){fwrite(STDERR,"Missing exact operational policy acceptance audit\n");exit(1);}
 function dpaSame(mixed $want,mixed $got,string $why):void{if($want!==$got)throw new RuntimeException($why);}
 $defs=SvAmazonReturnPolicySeeder::definitions();
+dpaSame('RETURN_NOT_RECEIVED_D45_REFUND_V2',SvAmazonReturnPolicySeeder::OPERATIONAL_KEY,'refund-based D45 must use a new immutable policy version');
 dpaSame(true,SvAmazonReturnPolicySeeder::auditDefinitions($defs)['valid'],'approved tenant operational definitions must validate');
 dpaSame(false,SvAmazonReturnPolicySeeder::auditDefinitions([])['valid'],'zero policies cannot pass as no invalid policies');
 $bad=$defs;$bad[1]['eligibility_days']=60;dpaSame(false,SvAmazonReturnPolicySeeder::auditDefinitions($bad)['valid'],'published60 must not replace operational45');
