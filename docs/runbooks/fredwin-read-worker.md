@@ -1,9 +1,11 @@
+> Policy correction (2026-09-05): the former global 75-day rule is withdrawn. Use docs/superpowers/specs/2026-09-05-policy-modes-45-60.md; periods and action routes depend on program, order date and evidence.
+
 # Fred-Win SAFE-T reader: single-instance recovery
 
 ## Scope
 Prevent duplicate readers from claiming jobs and navigating the same CDP page.
 No policy, database schema, financial state, or external write flag is changed.
-D+75 remains unchanged. A SAFE-T approval is not proof of reconciled credit.
+the applicable 45/60-day matrix remains unchanged. A SAFE-T approval is not proof of reconciled credit.
 
 ## Process-owned lease
 The reader reserves 127.0.0.1:19225 before its first pull or CDP operation.

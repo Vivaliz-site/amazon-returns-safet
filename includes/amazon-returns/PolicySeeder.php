@@ -12,9 +12,9 @@ final class SvAmazonReturnPolicySeeder
         $standardSource='https://sellercentral.amazon.com.br/seller-forums/discussions/t/21dbbb44-5916-4a1c-8dfa-87aef8c5aab3';
         $sixtySource='https://sellercentral.amazon.com.br/seller-forums/discussions/t/374d2692-2b56-411e-b497-b37d7cb1229b';
         return [
-            self::row('RETURN_NOT_RECEIVED','A2Q3Y263D00KWC','STANDARD','2020-01-01',75,'SELLER_DEBIT_AT',$standardSource,'Amazon BR: Retornando ao Vendedor >75 dias com comprador reembolsado habilita tentativa SAFE-T.'),
-            self::row('RETURN_NOT_RECEIVED','A2Q3Y263D00KWC','FBA_ONSITE','2026-04-21',75,'SELLER_DEBIT_AT',$sixtySource,'Amazon BR: pedidos FBA Onsite a partir de 21/04/2026 aguardam 75 dias após reembolso.'),
-            self::row('RETURN_NOT_RECEIVED','A2Q3Y263D00KWC','DELIVERY_BY_AMAZON','2026-04-21',75,'SELLER_DEBIT_AT',$sixtySource,'Amazon BR: pedidos Delivery by Amazon a partir de 21/04/2026 aguardam 75 dias após reembolso.'),
+            self::row('RETURN_NOT_RECEIVED','A2Q3Y263D00KWC','STANDARD','2020-01-01',45,'SELLER_DEBIT_AT',$standardSource,'Amazon BR: Retornando ao Vendedor >45 dias com comprador reembolsado habilita tentativa SAFE-T.'),
+            self::row('RETURN_NOT_RECEIVED','A2Q3Y263D00KWC','FBA_ONSITE','2026-04-21',60,'REFUND_AT',$sixtySource,'Amazon BR: pedidos FBA Onsite a partir de 21/04/2026 aguardam 60 dias após reembolso.'),
+            self::row('RETURN_NOT_RECEIVED','A2Q3Y263D00KWC','DELIVERY_BY_AMAZON','2026-04-21',60,'REFUND_AT',$sixtySource,'Amazon BR: pedidos Delivery by Amazon a partir de 21/04/2026 aguardam 60 dias após reembolso.'),
         ];
     }
 

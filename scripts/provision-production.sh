@@ -138,6 +138,10 @@ if [[ "$tenant_column_exists" -eq 0 ]]; then
     exit 3
 fi
 
+# Preserve the previous policy rows before correcting a published matrix.
+mysqldump --protocol=socket -uroot --single-transaction --no-create-info "$target_db" amazon_return_policies > "$shared/private/policies-before-$stamp.sql"
+chmod 0600 "$shared/private/policies-before-$stamp.sql"
+
 AMAZON_RETURNS_ENV_FILE="$env_file" php -r '
 $release=$argv[1];
 require $release."/includes/Database.php";

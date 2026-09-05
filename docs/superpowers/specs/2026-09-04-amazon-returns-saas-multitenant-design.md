@@ -1,3 +1,5 @@
+> Policy correction (2026-09-05): the former global 75-day rule is withdrawn. Use docs/superpowers/specs/2026-09-05-policy-modes-45-60.md; periods and action routes depend on program, order date and evidence.
+
 # Amazon Returns & SAFE-T — API-First Multi-Tenant SaaS Design
 
 **Date:** 2026-09-04
@@ -204,7 +206,7 @@ No adapter writes directly to projected case state. This keeps source ingestion,
 
 ## 13. Policy architecture
 
-D+75 remains the active policy for the current ShopVivaliz production tenant where already verified. It is not hardcoded as a universal commercial rule.
+the applicable 45/60-day matrix remains the active policy for the current ShopVivaliz production tenant where already verified. It is not hardcoded as a universal commercial rule.
 
 Policy is versioned by:
 

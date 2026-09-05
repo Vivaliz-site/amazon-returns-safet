@@ -1,3 +1,5 @@
+> Policy correction (2026-09-05): the former global 75-day rule is withdrawn. Use docs/superpowers/specs/2026-09-05-policy-modes-45-60.md; periods and action routes depend on program, order date and evidence.
+
 # SaaS Tenant Foundation A1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -15,7 +17,7 @@
 - Keep every external write flag disabled; this tranche changes persistence only.
 - Do not deploy, push, merge, or mutate the production database while implementing this plan.
 - Preserve all 37 current cases and their events, evidence, outbox, policy, cursor, and override relationships.
-- D+75 remains unchanged for the current ShopVivaliz tenant.
+- the applicable 45/60-day matrix remains unchanged for the current ShopVivaliz tenant.
 - Every tenant-owned unique key must include `tenant_id`; connection-specific keys must also include `amazon_connection_id`.
 - No tenant-owned repository method may execute without an explicit `SvAmazonTenantContext`.
 - No credential, browser cookie, OAuth token, or MFA value may enter application tables, logs, fixtures, or migration output.
@@ -187,7 +189,7 @@ Expected: FAIL because the migration class and script do not exist.
 
 - [ ] **Step 5: Extend migration-verification structural assertions**
 
-Require the production verification script to compare tenant-scoped counts and hashes and to assert zero null owners and zero child/parent ownership mismatches. Keep D+75 and secret-redaction assertions.
+Require the production verification script to compare tenant-scoped counts and hashes and to assert zero null owners and zero child/parent ownership mismatches. Keep the applicable 45/60-day matrix and secret-redaction assertions.
 
 - [ ] **Step 6: Run tests**
 
@@ -452,7 +454,7 @@ public static function ensure(PDO|SvAmazonReturnPolicyRepository $target): int
 
 Run: `php tests/amazon-returns-tenant-cursor-policy-test.php && php tests/amazon-returns-policy-test.php && php -l includes/amazon-returns/SourceCursorStore.php && php -l includes/amazon-returns/PolicyRepository.php`
 
-Expected: PASS without changing D+75 definitions.
+Expected: PASS without changing the applicable 45/60-day matrix definitions.
 
 - [ ] **Step 6: Commit**
 
@@ -712,7 +714,7 @@ Expected: FAIL because tenant migration gates are not yet represented.
 
 The provisioning script installs new identity variables only when absent, never overwrites an existing tenant identity, and prints the exact operator commands for dry-run, backup, apply, verification, and rollback. It must not automatically apply the ownership migration on a live database.
 
-`verify-migration.sh` exports canonical ordered rows including owner IDs, computes SHA-256 hashes, compares 37 source/target current cases for the ShopVivaliz cutover, checks D+75, checks zero null owners/mismatches, and redacts environment contents.
+`verify-migration.sh` exports canonical ordered rows including owner IDs, computes SHA-256 hashes, compares 37 source/target current cases for the ShopVivaliz cutover, checks the applicable 45/60-day matrix, checks zero null owners/mismatches, and redacts environment contents.
 
 - [ ] **Step 4: Write the migration runbook**
 

@@ -222,7 +222,7 @@ $candidate=array_replace($basePolicy,[
 $expectedCandidateId=$db->lastId+1;
 cpSame($expectedCandidateId,$policies1->insertCandidate($candidate),'Candidate insert must return the tenant-local row ID.');
 foreach (SvAmazonReturnPolicySeeder::definitions() as $definition) {
-    cpSame(75, $definition['eligibility_days'], 'Current approved policy must remain D+75.');
+    cpSame($definition['program']==='STANDARD'?45:60, $definition['eligibility_days'], 'Approved program-specific policy matrix.');
 }
 
 foreach ($db->prepared as $sql) {

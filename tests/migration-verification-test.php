@@ -19,7 +19,7 @@ foreach (['AMAZON_RETURNS_TENANT_SLUG','AMAZON_RETURNS_CONNECTION_KEY','tenant_i
 mvAssert(str_contains($source, 'information_schema.columns'), 'Verification must build a canonical common-column projection.');
 mvAssert(str_contains($source, 'sha256sum'), 'Migration verification must compare content hashes.');
 mvAssert(str_contains($source, 'COUNT(*)'), 'Migration verification must compare row counts.');
-mvAssert(str_contains($source, 'eligibility_days <> 75'), 'Migration verification must assert D+75.');
+mvAssert(str_contains($source, 'policy-matrix-check.php'), 'Migration verification must assert exact matrix.');
 mvAssert(str_contains($source, "status='ACTIVE'"), 'Migration verification must resolve an active tenant connection.');
 mvAssert(str_contains($source,'expected_cases="${AMAZON_RETURNS_EXPECTED_CASES:-37}"'),'Verification must default to the confirmed 37 cases.');
 mvAssert(str_contains($source,"status='PROCESSING'"),'Verification must report stuck processing jobs.');

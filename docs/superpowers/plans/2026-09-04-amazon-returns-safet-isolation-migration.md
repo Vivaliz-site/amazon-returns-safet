@@ -1,3 +1,5 @@
+> Policy correction (2026-09-05): the former global 75-day rule is withdrawn. Use docs/superpowers/specs/2026-09-05-policy-modes-45-60.md; periods and action routes depend on program, order date and evidence.
+
 # Amazon Returns SAFE-T Isolation Migration Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -18,7 +20,7 @@
 - New application must not depend on ShopVivaliz runtime includes, tables, admin sessions, deployment symlinks or `.env` after cutover.
 - `Data Devolucao` / warehouse receipt hard-blocks a new non-return SAFE-T.
 - `Data Reembolso` is financial history only and never proves physical receipt.
-- Initial eligibility is D+75.
+- Initial eligibility is the applicable 45/60-day matrix.
 - First actionable SAFE-T denial goes through Seller Central appeal before detailed review email.
 - Denied Seller Central appeal sends exactly one case-scoped detailed review to `Safe-T-Review@amazon.com`.
 - A negative email response is analyzed before choosing `RESPOND_EMAIL`, `OPEN_SUPPORT`, `WAIT`, `CREDIT_PENDING`, `CLOSED_LOSS` or `HUMAN_REVIEW`.
@@ -56,7 +58,7 @@
 - Produces: `SvAmazonSafeTEmailReview::compose(array,array): array{to:string,subject:string,body:string}`.
 - Produces: `SvAmazonGmailApiClient::sendOnce(string,string,string,string): array` with RFC Message-ID idempotency.
 - Produces: `SvAmazonReturnsOutbox::claimBatch(PDO,int,array): array` with kind filtering.
-- Produces: D+75 seed definitions and upsert that updates existing policy rows.
+- Produces: the applicable 45/60-day matrix seed definitions and upsert that updates existing policy rows.
 - Produces: economic lifecycle deduplication for refund and reimbursement observations.
 
 - [ ] **Step 1: Run the complete Amazon Returns baseline on the correction worktree**
@@ -71,9 +73,9 @@ Tests must prove that a top-level original claim `Motivo` is never used as `deci
 
 Tests must prove: first denial => `SAFE_T_APPEAL`; denial after appeal => `SAFE_T_EMAIL_REVIEW`; email denial does not automatically close; active support case is not duplicated; Gmail send is idempotent.
 
-- [ ] **Step 4: Add/verify D+75 tests**
+- [ ] **Step 4: Add/verify the applicable 45/60-day matrix tests**
 
-Assert all active BR return-not-received policy definitions are 75 days and `PolicySeeder::ensure()` updates existing rows instead of leaving 45/60-day rows unchanged.
+Assert all active BR return-not-received policy definitions match STANDARD=45 and Onsite/DBA=60 for orders from 2026-04-21 and `PolicySeeder::ensure()` updates existing rows instead of retaining obsolete global policy values.
 
 - [ ] **Step 5: Add/verify financial lifecycle tests**
 
@@ -270,7 +272,7 @@ Do not print secrets or raw protected evidence bodies.
 
 - [ ] **Step 4: Run shadow decisions against all open production cases**
 
-Expected: no unexplained decision discrepancy. Specifically verify all 14 known SAFE-T claims, D+75 eligibility gates, current approved/denied states and financial amounts after deduplication.
+Expected: no unexplained decision discrepancy. Specifically verify all 14 known SAFE-T claims, the applicable 45/60-day matrix eligibility gates, current approved/denied states and financial amounts after deduplication.
 
 - [ ] **Step 5: Correct discrepancies via TDD and rerun until zero unexplained differences**
 
@@ -296,7 +298,7 @@ Change status endpoint to `https://returns.shopvivaliz.com.br/api/status-bridge`
 
 - [ ] **Step 4: Enable SAFE-T submit channel only after eligibility validation**
 
-Pilot with exactly one real case that is currently eligible, unreceived, financially confirmed, D+75 reached and has no existing SAFE-T. Require external claim ID read-back and subsequent status read before enabling general submit.
+Pilot with exactly one real case that is currently eligible, unreceived, financially confirmed, the applicable 45/60-day matrix reached and has no existing SAFE-T. Require external claim ID read-back and subsequent status read before enabling general submit.
 
 - [ ] **Step 5: Enable SAFE-T appeal channel**
 
@@ -320,7 +322,7 @@ Recheck the five known approved SAFE-T claims and any newly approved cases. Veri
 
 - [ ] **Step 10: Run full production health/audit**
 
-Expected health gates: no eligible case without required treatment; no denied appeal missing email review; no unclassified reply silently written; no duplicate actions; no stale processing leases; policy rows at D+75; financial duplicate bug absent.
+Expected health gates: no eligible case without required treatment; no denied appeal missing email review; no unclassified reply silently written; no duplicate actions; no stale processing leases; policy rows at the applicable 45/60-day matrix; financial duplicate bug absent.
 
 ### Task 8: Remove Website Runtime Coupling and Final Verification
 

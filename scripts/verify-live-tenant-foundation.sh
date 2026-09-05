@@ -83,12 +83,16 @@ env_value() {
     fi
 }
 write_flags_disabled=true
-for key in AMAZON_RETURNS_SAFE_T_WRITE AMAZON_RETURNS_APPEAL_WRITE AMAZON_RETURNS_EMAIL_REVIEW_WRITE AMAZON_RETURNS_SUPPORT_WRITE; do
+for key in AMAZON_RETURNS_SAFE_T_WRITE AMAZON_RETURNS_APPEAL_WRITE AMAZON_RETURNS_EMAIL_REVIEW_WRITE AMAZON_RETURNS_EMAIL_REPLY_WRITE AMAZON_RETURNS_SUPPORT_WRITE; do
     value="$(env_value "$key")"
     case "${value,,}" in ''|0|false|no|off) ;; *) write_flags_disabled=false ;; esac
 done
 [[ "$write_flags_disabled" == true ]] || { echo 'external_write_flag_enabled=true' >&2; exit 1; }
 
+policy_sql="$(php "$(dirname "$0")/policy-matrix-check.php" --sql "$tenant_id")"
+policy_mismatch="$(scalar "$policy_sql")"
+[[ "$policy_mismatch" -eq 0 ]] || { echo "policy_matrix_mismatch=$policy_mismatch" >&2; exit 1; }
+emit "policy_matrix=BR_45_60"
 emit "tenant_count=$tenant_count"
 emit "connection_count=$connection_count"
 emit "target_current_cases=$target_current_cases"

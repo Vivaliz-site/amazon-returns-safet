@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/TenantContext.php';
+require_once __DIR__ . '/PolicyMatrix.php';
 
 final class SvAmazonReturnsShadowAuditRepository
 {
@@ -94,17 +95,9 @@ final class SvAmazonReturnsShadowAuditRepository
         return $rows;
     }
 
-    public function nonD75ActivePolicies(): int
+    public function policyMatrixViolationCount(): int
     {
-        $sql="SELECT COUNT(*) FROM amazon_return_policies WHERE status='ACTIVE' AND eligibility_days<>75";
-        $params=[];
-        if($this->tenantSchema){
-            $sql.=' AND tenant_id=:tenant_id';
-            $params=[':tenant_id'=>$this->context->tenantId()];
-        }
-        $stmt=$this->prepare($sql);
-        $stmt->execute($params);
-        return max(0,(int)$stmt->fetchColumn());
+        return count(SvAmazonReturnPolicyMatrix::violations($this->activePolicies()));
     }
 
     /** @return array<string,int|string> */

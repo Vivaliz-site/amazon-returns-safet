@@ -1,8 +1,10 @@
+> Policy correction (2026-09-05): the former global 75-day rule is withdrawn. Use docs/superpowers/specs/2026-09-05-policy-modes-45-60.md; periods and action routes depend on program, order date and evidence.
+
 # Financial credit safety
 
 ## Scope and invariant
 A SAFE-T approval or support email is not reconciled credit.
-This change does not modify policy D+75, schema, external write flags, or email/support channels.
+This change does not modify policy the applicable 45/60-day matrix, schema, external write flags, or email/support channels.
 
 ## Corrections
 - Count only released official transactions; preserve the existing trusted internal seller_effect_amount contract.

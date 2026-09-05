@@ -129,6 +129,25 @@ final class SvAmazonReturnPolicyRepository
         return $count;
     }
 
+    public static function matrixMismatchSql(int $tenantId): string
+    {
+        if($tenantId<1)throw new InvalidArgumentException('Positive tenant ID required.');
+        $terms=[];
+        foreach(SvAmazonReturnPolicySeeder::definitions() as $definition){
+            $parts=[];
+            foreach($definition as $field=>$value){
+                if($value===null)$parts[]=$field.' IS NULL';
+                elseif(is_int($value))$parts[]=$field.'='.$value;
+                else $parts[]=$field."='".str_replace("'","''",$value)."'";
+            }
+            $terms[]='('.implode(' AND ',$parts).')';
+        }
+        return 'SELECT CASE WHEN COUNT(*)='.count($terms)
+            .' AND COALESCE(SUM(CASE WHEN '.implode(' OR ',$terms)
+            ." THEN 0 ELSE 1 END),0)=0 THEN 0 ELSE 1 END FROM amazon_return_policies WHERE tenant_id="
+            .$tenantId." AND status='ACTIVE'";
+    }
+
     /** @param array<string,mixed> $definition @return array<string,mixed> */
     private static function normalize(array $definition): array
     {

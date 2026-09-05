@@ -138,7 +138,7 @@ final class SvAmazonReturnPolicyEngine
             if ($dateOrder !== 0) {
                 return $dateOrder;
             }
-            return strcmp((string) ($right['id'] ?? ''), (string) ($left['id'] ?? ''));
+            return (int) ($right['id'] ?? 0) <=> (int) ($left['id'] ?? 0);
         });
 
         if ($candidates === []) {

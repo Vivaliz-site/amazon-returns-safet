@@ -1,3 +1,5 @@
+> Policy correction (2026-09-05): the former global 75-day rule is withdrawn. Use docs/superpowers/specs/2026-09-05-policy-modes-45-60.md; periods and action routes depend on program, order date and evidence.
+
 # Amazon Returns & SAFE-T — 100% Isolation Design
 
 **Date:** 2026-09-04
@@ -17,7 +19,7 @@ After cutover, the ShopVivaliz e-commerce application must have no runtime depen
 
 1. `Data Devolucao` / physical warehouse receipt is authoritative physical-return truth. If physical return is confirmed, a new non-return SAFE-T is hard-blocked.
 2. `Data Reembolso` is financial history only and never proves physical receipt.
-3. Current business policy for initial eligibility is D+75 from the configured financial basis.
+3. Current business policy for initial eligibility is the applicable 45/60-day matrix from the configured financial basis.
 4. Eligible cases must automatically open SAFE-T when all write gates are satisfied.
 5. SAFE-T status must be read automatically from Seller Central.
 6. First SAFE-T denial must be appealed in Seller Central when the appeal route is available and facts support it.
@@ -127,7 +129,7 @@ Canonical flow:
 
 `ORDER/REFUND OBSERVED`
 → `AWAITING_RETURN`
-→ `SAFE_T_ELIGIBLE` at D+75 when all gates pass
+→ `SAFE_T_ELIGIBLE` at the applicable 45/60-day matrix when all gates pass
 → `SAFE_T_SUBMITTED`
 → automatic Seller Central status polling
 
@@ -260,7 +262,7 @@ Before any new SAFE-T submit:
 1. financial exposure is confirmed;
 2. refund context is sufficiently classified;
 3. physical return remains unreceived for the claimed quantity;
-4. D+75 eligibility has been reached;
+4. the applicable 45/60-day matrix eligibility has been reached;
 5. no existing SAFE-T exists for the same recovery event;
 6. evidence bundle is sufficient;
 7. corresponding write flag is enabled.
@@ -295,7 +297,7 @@ Daily audit covers at least:
 - outbox processing/pending/dead-letter state
 - worker heartbeat/auth state
 - Gmail and SP-API failures
-- D+75 policy correctness
+- the applicable 45/60-day matrix policy correctness
 - financial deduplication correctness
 - duplicate-action detection
 
@@ -328,7 +330,7 @@ The migration is complete only when all of the following are demonstrated with f
 - no target runtime include/query/deploy depends on `site-shopvivaliz`;
 - `returns.shopvivaliz.com.br` admin and APIs operate independently;
 - Fred-Win reads Seller Central through the new API;
-- D+75 policy is active and verified;
+- the applicable 45/60-day matrix policy is active and verified;
 - physical return blocks new claims;
 - financial lifecycle duplication is corrected;
 - first denial produces appeal treatment;

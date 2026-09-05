@@ -1,6 +1,8 @@
+> Policy correction (2026-09-05): the former global 75-day rule is withdrawn. Use docs/superpowers/specs/2026-09-05-policy-modes-45-60.md; periods and action routes depend on program, order date and evidence.
+
 # Email review evidence and independent channel gates
 
-This patch preserves D+75 and does not enable an external write.
+This patch preserves the applicable 45/60-day matrix and does not enable an external write.
 
 - Recognize the actual internal-review response patterns observed in the existing seller-support messages as WAIT, not a reason to duplicate a support case or review request.
 - A support survey or generic resolution message remains HUMAN_REVIEW; it is not financial credit.
