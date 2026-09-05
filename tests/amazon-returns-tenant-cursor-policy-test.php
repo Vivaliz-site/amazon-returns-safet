@@ -30,7 +30,12 @@ final class CursorPolicyMemoryPdo extends PDO
     public array $prepared = [];
     public int $lastId = 0;
 
+    private bool $transaction = false;
     public function __construct() {}
+    public function beginTransaction(): bool { $this->transaction=true;return true; }
+    public function commit(): bool { $this->transaction=false;return true; }
+    public function rollBack(): bool { $this->transaction=false;return true; }
+    public function inTransaction(): bool { return $this->transaction; }
 
     public function prepare(string $query, array $options = []): PDOStatement|false
     {
@@ -60,6 +65,22 @@ final class CursorPolicyMemoryStatement extends PDOStatement
         $this->result = [];
         $upper = strtoupper(preg_replace('/\s+/', ' ', trim($this->sql)) ?? trim($this->sql));
 
+        if(str_starts_with($upper,'SELECT SLUG FROM AMAZON_RETURN_TENANTS')) {
+            $this->result=[['slug'=>(int)$params[':tenant_id']===1?'shopvivaliz':'other-seller']];return true;
+        }
+        if(str_starts_with($upper,'SELECT POLICY_KEY,MARKETPLACE_ID')) {
+            foreach($this->db->policies as $row){
+                if($row['tenant_id']===(int)$params[':tenant_id'] && $row['policy_key']===$params[':policy_key'] && $row['marketplace_id']===$params[':marketplace_id'] && $row['program']===$params[':program'] && $row['effective_from']===$params[':effective_from'])$this->result[]=$row;
+            }
+            return true;
+        }
+        if(str_starts_with($upper,'UPDATE AMAZON_RETURN_POLICIES SET STATUS')) {
+            foreach($this->db->policies as &$row){
+                if($row['tenant_id']!==(int)$params[':tenant_id'])continue;
+                if(isset($params[':legacy_key']) && $row['policy_key']===$params[':legacy_key'] && $row['eligibility_days']===75 && $row['marketplace_id']===$params[':marketplace_id'] && $row['program']===$params[':program'])$row['status']='SUPERSEDED';
+            }
+            unset($row);return true;
+        }
         if (str_starts_with($upper, 'INSERT INTO AMAZON_RETURN_SOURCE_CURSORS')) {
             $key = $this->cursorKey($params);
             $this->db->cursors[$key] = [
@@ -216,13 +237,26 @@ catch (InvalidArgumentException) { $thrown = true; }
 cpAssert($thrown, 'Policy repository accepted caller-supplied ownership.');
 
 cpSame(3, SvAmazonReturnPolicySeeder::ensure($policies1), 'Policy seeder must delegate all approved definitions.');
+$beforeRepeat=count($db->policies);
+cpSame(3,SvAmazonReturnPolicySeeder::ensure($policies1),'Repeated bootstrap must preserve policy versions.');
+cpSame($beforeRepeat,count($db->policies),'Repeated bootstrap must not duplicate policies.');
+$legacy=array_values(array_filter($db->policies,static fn(array $r):bool=>$r['tenant_id']===1 && $r['policy_key']==='RETURN_NOT_RECEIVED'));
+cpSame(75,$legacy[0]['eligibility_days'],'Superseded policy value must not be rewritten.');
+cpSame('SUPERSEDED',$legacy[0]['status'],'Only legacy policy activation should change.');
+cpSame(0,SvAmazonReturnPolicySeeder::ensure($policies2),'Do not apply ShopVivaliz operational overrides to other sellers.');
+cpSame(90,$policies2->activeFor('A2Q3Y263D00KWC','STANDARD')[0]['eligibility_days'],'Other tenant policy was changed.');
+$mutated=SvAmazonReturnPolicySeeder::definitions();$mutated[0]['eligibility_days']=46;
+$immutableRejected=false;
+try{$policies1->activateOperationalPolicies($mutated,'RETURN_NOT_RECEIVED');}catch(RuntimeException){$immutableRejected=true;}
+cpAssert($immutableRejected,'An existing operational version must reject changed metadata.');
+
 $candidate=array_replace($basePolicy,[
     'effective_from'=>'2026-10-01','source_hash'=>hash('sha256','candidate-v1'),'status'=>'CANDIDATE',
 ]);
 $expectedCandidateId=$db->lastId+1;
 cpSame($expectedCandidateId,$policies1->insertCandidate($candidate),'Candidate insert must return the tenant-local row ID.');
 foreach (SvAmazonReturnPolicySeeder::definitions() as $definition) {
-    cpSame(75, $definition['eligibility_days'], 'Current approved policy must remain D+75.');
+    cpSame(45, $definition['eligibility_days'], 'Current operational policy must be D+45.');
 }
 
 foreach ($db->prepared as $sql) {

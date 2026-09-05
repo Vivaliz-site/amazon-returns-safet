@@ -29,7 +29,17 @@ final class SvAmazonSafeTStatusService
 
     public static function nextState(string $currentState, string $claimStatus, bool $appealDenied = false): string
     {
-        return match (strtoupper(trim($claimStatus))) {
+        $claimStatus=strtoupper(trim($claimStatus));
+        // A generic status is not proof that the appeal/review stage was undone.
+        if(in_array($currentState,['RECOVERED','CLOSED_LOSS','RECEIVED_OK'],true))return $currentState;
+        if($claimStatus==='DENIED' && !$appealDenied && in_array($currentState,[
+            'APPEAL_SUBMITTED','APPEAL_DENIED_FINAL','EMAIL_REVIEW_SENT',
+            'EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION',
+        ],true))return $currentState;
+        if($claimStatus==='DENIED' && $appealDenied && in_array($currentState,[
+            'EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION',
+        ],true))return $currentState;
+        return match ($claimStatus) {
             'DENIED' => $appealDenied ? 'APPEAL_DENIED_FINAL' : 'SAFE_T_DENIED',
             'APPROVED' => $currentState === 'APPEAL_SUBMITTED' ? 'APPEAL_APPROVED' : 'SAFE_T_APPROVED',
             'INFO_REQUESTED' => 'SAFE_T_INFO_REQUESTED',

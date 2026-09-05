@@ -17,6 +17,10 @@ final class SvAmazonReturnPolicyEngine
         $exposed = max(0, $refunded - $received);
         $physicalStatus = (string) ($case['physical_status'] ?? SvAmazonReturnPhysicalStatuses::NOT_RECEIVED);
 
+        if ($physicalStatus === SvAmazonReturnPhysicalStatuses::RECEIVED_DISCREPANT && $refunded > 0 && $exposed === 0) {
+            return self::decision(false, null, null, 'DAMAGED_OR_DISCREPANT_RETURN_REQUIRES_REVIEW', SvAmazonReturnStates::RECEIVED_DISCREPANT, 0, false);
+        }
+
         if ($physicalStatus === SvAmazonReturnPhysicalStatuses::RECEIVED_OK || ($refunded > 0 && $exposed === 0)) {
             return self::decision(false, null, null, 'PHYSICAL_RETURN_RECEIVED', SvAmazonReturnStates::RECEIVED_OK, 0, false);
         }
@@ -138,7 +142,7 @@ final class SvAmazonReturnPolicyEngine
             if ($dateOrder !== 0) {
                 return $dateOrder;
             }
-            return strcmp((string) ($right['id'] ?? ''), (string) ($left['id'] ?? ''));
+            return (int) ($right['id'] ?? 0) <=> (int) ($left['id'] ?? 0);
         });
 
         if ($candidates === []) {

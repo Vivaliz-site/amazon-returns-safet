@@ -17,6 +17,60 @@ final class SvAmazonReturnPolicyRepository
     ) {
     }
 
+    public function tenantSlug(): string
+    {
+        $stmt=$this->db->prepare('SELECT slug FROM amazon_return_tenants WHERE id=:tenant_id');
+        if(!$stmt instanceof PDOStatement)throw new RuntimeException('Tenant identity lookup failed.');
+        $stmt->execute([':tenant_id'=>$this->context->tenantId()]);
+        $row=$stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row)?(string)($row['slug']??''):'';
+    }
+
+    /** Activate a new explicit operational version without rewriting old rule values.
+     * @param list<array<string,mixed>> $definitions
+     */
+    public function activateOperationalPolicies(array $definitions,string $legacyKey): int
+    {
+        $ownTransaction=!$this->db->inTransaction();
+        if($ownTransaction)$this->db->beginTransaction();
+        try{
+            $count=0;
+            foreach($definitions as $definition){
+                $row=self::normalize($definition);
+                $params=[
+                    ':tenant_id'=>$this->context->tenantId(),':policy_key'=>$row['policy_key'],
+                    ':marketplace_id'=>$row['marketplace_id'],':program'=>$row['program'],
+                    ':effective_from'=>$row['effective_from'],
+                ];
+                $stmt=$this->db->prepare('SELECT policy_key,marketplace_id,program,effective_from,effective_to,eligibility_days,basis,source_url,source_hash,status FROM amazon_return_policies WHERE tenant_id=:tenant_id AND policy_key=:policy_key AND marketplace_id=:marketplace_id AND program=:program AND effective_from=:effective_from');
+                if(!$stmt instanceof PDOStatement)throw new RuntimeException('Operational policy lookup failed.');
+                $stmt->execute($params);
+                $existing=$stmt->fetch(PDO::FETCH_ASSOC);
+                if(is_array($existing)){
+                    foreach(self::FIELDS as $field){
+                        if((string)($existing[$field]??'')!==(string)($row[$field]??'')){
+                            throw new RuntimeException('Operational policy version is immutable; create a new version: '.$row['policy_key']);
+                        }
+                    }
+                }else{
+                    $this->seed([$row]);
+                }
+                $retire=$this->db->prepare("UPDATE amazon_return_policies SET status='SUPERSEDED' WHERE tenant_id=:tenant_id AND policy_key=:legacy_key AND marketplace_id=:marketplace_id AND program=:program AND eligibility_days=75 AND status='ACTIVE'");
+                if(!$retire instanceof PDOStatement)throw new RuntimeException('Legacy policy retirement failed.');
+                $retire->execute([
+                    ':tenant_id'=>$this->context->tenantId(),':legacy_key'=>$legacyKey,
+                    ':marketplace_id'=>$row['marketplace_id'],':program'=>$row['program'],
+                ]);
+                $count++;
+            }
+            if($ownTransaction)$this->db->commit();
+            return $count;
+        }catch(Throwable $e){
+            if($ownTransaction && $this->db->inTransaction())$this->db->rollBack();
+            throw $e;
+        }
+    }
+
     /** @return list<array<string,mixed>> */
     public function activeFor(string $marketplaceId, string $program): array
     {

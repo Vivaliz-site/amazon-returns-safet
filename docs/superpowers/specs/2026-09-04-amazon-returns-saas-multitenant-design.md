@@ -204,7 +204,7 @@ No adapter writes directly to projected case state. This keeps source ingestion,
 
 ## 13. Policy architecture
 
-D+75 remains the active policy for the current ShopVivaliz production tenant where already verified. It is not hardcoded as a universal commercial rule.
+Superseded on 2026-09-05: ShopVivaliz starts operational SAFE-T attempts at D+45, as explicitly required by the owner. This is a tenant-specific operational override, not a promise of Amazon eligibility. See docs/runbooks/shopvivaliz-d45-operational-policy.md. The previous D+75 assertion was incorrect and must not be propagated.
 
 Policy is versioned by:
 
