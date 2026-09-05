@@ -354,6 +354,7 @@ final class SvAmazonReturnsDaemon
         $batch=SvAmazonFinancialRefresh::nextReconciliationBatch($this->persistence,250);
         $cases=$batch['cases'];
         $updated=0;
+        $failed=0;
         $withTransactions=0;
         $financialAudit=[];
         $caseCount=0;
@@ -361,6 +362,7 @@ final class SvAmazonReturnsDaemon
             $caseCount++;
             $caseId=(int)($case['id'] ?? 0);
             if($caseId<1)continue;
+            try{
             $events=$this->persistence->events->eventsForCase($caseId);
             $transactions=$worker->transactionsFromEvents($events);
             $result=$worker->reconcileCase($case,$transactions);
@@ -378,10 +380,14 @@ final class SvAmazonReturnsDaemon
                     : null,
             ]);
             $updated++;
+            }catch(Throwable $e){
+                $failed++;
+                $financialAudit[]=['case_id'=>$caseId,'status'=>'FAILED','applied'=>false,'error_class'=>$e::class];
+            }
         }
         SvAmazonFinancialRefresh::recordReconciliationBatch($this->persistence,$batch);
         return [
-            'status'=>'OK','cases'=>$caseCount,
+            'status'=>$failed>0?'PARTIAL':'OK','failed'=>$failed,'cases'=>$caseCount,
             'with_transactions'=>$withTransactions,'updated'=>$updated,
             'rotation_has_more'=>$batch['has_more'],'rotation_wrapped'=>$batch['wrapped'],
             'financial_audit'=>$financialAudit,
