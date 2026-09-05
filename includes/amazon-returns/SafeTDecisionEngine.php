@@ -5,6 +5,7 @@ require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/DenialAnalyzer.php';
 require_once __DIR__ . '/SafeTStatus.php';
 require_once __DIR__ . '/AmazonRequestedWait.php';
+require_once __DIR__ . '/ReturnActionRouter.php';
 
 final class SvAmazonSafeTDecisionEngine
 {
@@ -29,6 +30,8 @@ final class SvAmazonSafeTDecisionEngine
         $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
         $requestedWait=SvAmazonRequestedWait::decision($case,$timeline,$now);
         if($requestedWait!==null)return $requestedWait;
+        $route=SvAmazonReturnActionRouter::decide($case,$timeline,$policy,$now);
+        if($route!==null)return $route;
 
         if($safeTId!=='' && in_array($state,['SAFE_T_DENIED','APPEAL_REQUIRED','SAFE_T_INFO_REQUESTED'],true)){
             $raw=$case['appeal_deadline_at']??null;$deadline=null;

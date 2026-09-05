@@ -17,6 +17,7 @@ final class SvAmazonReturnsRuntimeAudit
         return self::caseFields($case) + [
             'action'=>(string)($decision['action'] ?? 'WAIT'),
             'reason'=>(string)($decision['reason'] ?? ''),
+            'operational_mode'=>$decision['operational_mode'] ?? $decision['action'] ?? null,
             'next_action_at'=>array_key_exists('next_action_at',$decision)?$decision['next_action_at']:($case['next_action_at']??null),
             'wait_source_hash'=>$decision['wait_source_hash']??null,
             'resume_scope'=>$decision['resume_scope']??null,

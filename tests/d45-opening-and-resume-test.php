@@ -6,7 +6,7 @@ require_once __DIR__.'/../includes/amazon-returns/SafeTDecisionEngine.php';
 $errors=[];
 function dorSame(mixed $want,mixed $got,string $why):void {global $errors;if($want!==$got)$errors[]=$why.' expected='.json_encode($want).' actual='.json_encode($got);}
 $policies=[];foreach(SvAmazonReturnPolicySeeder::definitions() as $i=>$row){$policies[]=['id'=>$i+1]+$row;dorSame(45,$row['eligibility_days'],'Owner requires first opening D45 for '.$row['program']);}
-$case=['id'=>77,'amazon_order_id'=>'702-1111111-2222222','marketplace_id'=>'A2Q3Y263D00KWC','order_at'=>'2026-05-01 08:00:00','seller_debit_at'=>'2026-07-01 12:00:00','refund_at'=>'2026-07-01 12:00:00','refund_initiator'=>'AMAZON_AUTOMATIC','quantity_ordered'=>1,'quantity_refunded'=>1,'quantity_received'=>0,'physical_status'=>'NOT_RECEIVED','expected_reimbursement_amount'=>'100.00','reconciled_credit_amount'=>'0.00','state'=>'AWAITING_RETURN','policies'=>$policies];
+$case=['id'=>77,'amazon_order_id'=>'702-1111111-2222222','marketplace_id'=>'A2Q3Y263D00KWC','order_at'=>'2026-05-01 08:00:00','seller_debit_at'=>'2026-07-01 12:00:00','refund_at'=>'2026-07-01 12:00:00','refund_initiator'=>'AMAZON_AUTOMATIC','quantity_ordered'=>1,'quantity_refunded'=>1,'quantity_received'=>0,'physical_status'=>'NOT_RECEIVED','return_status'=>'Retornando ao Vendedor','return_status_source'=>'SP_API_REPORTS','expected_reimbursement_amount'=>'100.00','reconciled_credit_amount'=>'0.00','state'=>'AWAITING_RETURN','policies'=>$policies];
 $engine=new SvAmazonSafeTDecisionEngine();
 foreach(['STANDARD','FBA_ONSITE','DELIVERY_BY_AMAZON'] as $program){
  $row=$case+['program'=>$program];
