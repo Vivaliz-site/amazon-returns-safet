@@ -59,10 +59,10 @@ final class SvAmazonReturnPolicyRepository
                         }
                     }
                 }
-                $retire=$this->db->prepare("UPDATE amazon_return_policies SET status='SUPERSEDED' WHERE tenant_id=:tenant_id AND policy_key=:legacy_key AND marketplace_id=:marketplace_id AND program=:program AND eligibility_days IN (45,60,75) AND status='ACTIVE'");
+                $retire=$this->db->prepare("UPDATE amazon_return_policies SET status='SUPERSEDED' WHERE tenant_id=:tenant_id AND policy_key LIKE :legacy_family AND policy_key<>:current_key AND marketplace_id=:marketplace_id AND program=:program AND status='ACTIVE'");
                 if(!$retire instanceof PDOStatement)throw new RuntimeException('Legacy policy retirement failed.');
                 $retire->execute([
-                    ':tenant_id'=>$this->context->tenantId(),':legacy_key'=>$legacyKey,
+                    ':tenant_id'=>$this->context->tenantId(),':legacy_family'=>$legacyKey.'%',':current_key'=>$row['policy_key'],
                     ':marketplace_id'=>$row['marketplace_id'],':program'=>$row['program'],
                 ]);
                 $count++;
