@@ -40,7 +40,8 @@ final class SvAmazonSafeTReviewReplyAnalyzer
             $financial = ($context['financial_inconsistency'] ?? false) === true;
             $openChannel = ($context['open_channel'] ?? false) === true;
             if ($final && !$newFact && !$financial && !$openChannel) {
-                return self::result('DENIED_FINAL',((['terminal_close_allowed'] ?? false) === true ? 'CLOSED_LOSS' : 'HUMAN_REVIEW'),'EXPLICIT_FINAL_DENIAL_NO_UNRESOLVED_PATH',$hash,$excerpt);
+                $terminalCloseAllowed = ($context['terminal_close_allowed'] ?? false) === true;
+                return self::result('DENIED_FINAL',$terminalCloseAllowed ? 'CLOSED_LOSS' : 'HUMAN_REVIEW','EXPLICIT_FINAL_DENIAL_NO_UNRESOLVED_PATH',$hash,$excerpt);
             }
             $action = $newFact || $openChannel ? 'RESPOND_EMAIL' : ($financial ? 'OPEN_SUPPORT' : 'HUMAN_REVIEW');
             return self::result('DENIED_ACTIONABLE',$action,'DENIAL_HAS_UNRESOLVED_ACTIONABLE_CONTEXT',$hash,$excerpt);
