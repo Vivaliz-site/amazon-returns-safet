@@ -16,8 +16,9 @@ final class SvAmazonReturnPolicyEngine
         $received = min($refunded, self::quantity($case, 'quantity_received'));
         $exposed = max(0, $refunded - $received);
         $physicalStatus = (string) ($case['physical_status'] ?? SvAmazonReturnPhysicalStatuses::NOT_RECEIVED);
+        $hasPhysicalDiscrepancy = $physicalStatus === SvAmazonReturnPhysicalStatuses::RECEIVED_DISCREPANT;
 
-        if ($physicalStatus === SvAmazonReturnPhysicalStatuses::RECEIVED_OK || ($refunded > 0 && $exposed === 0)) {
+        if (!$hasPhysicalDiscrepancy && ($physicalStatus === SvAmazonReturnPhysicalStatuses::RECEIVED_OK || ($refunded > 0 && $exposed === 0))) {
             return self::decision(false, null, null, 'PHYSICAL_RETURN_RECEIVED', SvAmazonReturnStates::RECEIVED_OK, 0, false);
         }
 
@@ -34,14 +35,14 @@ final class SvAmazonReturnPolicyEngine
             );
         }
 
-        if ($refunded < 1 || $exposed < 1) {
+        if ($refunded < 1 || ($exposed < 1 && !$hasPhysicalDiscrepancy)) {
             return self::decision(
                 false,
                 null,
                 null,
                 'NO_UNRESOLVED_REFUNDED_QUANTITY',
                 SvAmazonReturnStates::POLICY_REVIEW_REQUIRED,
-                $exposed,
+                $hasPhysicalDiscrepancy ? max(1,$exposed) : $exposed,
                 false
             );
         }
@@ -76,9 +77,9 @@ final class SvAmazonReturnPolicyEngine
 
         $eligibilityAt = $basisAt->add(new DateInterval('P' . $days . 'D'));
         $eligible = $nowUtc >= $eligibilityAt;
-        $state = $eligible
-            ? SvAmazonReturnStates::SAFE_T_ELIGIBLE
-            : self::waitingState($physicalStatus);
+        $state = $hasPhysicalDiscrepancy
+            ? SvAmazonReturnStates::RECEIVED_DISCREPANT
+            : ($eligible ? SvAmazonReturnStates::SAFE_T_ELIGIBLE : self::waitingState($physicalStatus));
 
         return self::decision(
             $eligible,
@@ -86,7 +87,7 @@ final class SvAmazonReturnPolicyEngine
             $policyId,
             $eligible ? 'ELIGIBILITY_REACHED' : 'ELIGIBILITY_PENDING',
             $state,
-            $exposed,
+            $hasPhysicalDiscrepancy ? max(1,$exposed) : $exposed,
             $eligible
         );
     }
@@ -138,7 +139,9 @@ final class SvAmazonReturnPolicyEngine
             if ($dateOrder !== 0) {
                 return $dateOrder;
             }
-            return strcmp((string) ($right['id'] ?? ''), (string) ($left['id'] ?? ''));
+            $leftId=$left['id'] ?? null;$rightId=$right['id'] ?? null;
+            if(is_numeric($leftId) && is_numeric($rightId))return (int)$rightId <=> (int)$leftId;
+            return strcmp((string)$rightId,(string)$leftId);
         });
 
         if ($candidates === []) {

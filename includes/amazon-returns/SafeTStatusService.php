@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/AmazonRequestedWait.php';
 
 final class SvAmazonSafeTStatusService
 {
@@ -27,25 +28,41 @@ final class SvAmazonSafeTStatusService
         return hash('sha256', implode('|', $parts));
     }
 
+    public static function observationPlan(int $caseId,array $read,array $timeline): array
+    {
+        $observations=[];
+        $claim=trim((string)($read['safe_t_id']??''));
+        foreach($timeline as $event){
+            if((int)($event['case_id']??0)!==$caseId || ($event['event_type']??'')!=='SAFE_T_STATUS_OBSERVED' || ($event['source']??'')!=='SELLER_CENTRAL')continue;
+            $payload=$event['payload']??null;
+            if(!is_array($payload) || trim((string)($payload['safe_t_id']??''))!==$claim)continue;
+            $at=SvAmazonRequestedWait::timestamp($event['occurred_at']??null);
+            if($at!==null)$observations[]=['rank'=>[$at->getTimestamp(),(int)($event['id']??0)],'event'=>$event];
+        }
+        usort($observations,static fn(array $a,array $b):int=>$b['rank']<=>$a['rank']);
+        $latest=$observations[0]['event']??null;
+        $base=self::observationKey($caseId,$read);
+        if($latest!==null && self::observationKey($caseId,$latest['payload'])===$base){
+            return ['append'=>false,'idempotency_key'=>(string)$latest['idempotency_key']];
+        }
+        return ['append'=>true,'idempotency_key'=>hash('sha256','status-observation-v2|'.$base.'|'.(int)($latest['id']??0))];
+    }
+
     public static function currentObservationKey(int $caseId,array $read,array $events): string
     {
-        $latest=null;
-        foreach($events as $event){
-            if(($event['event_type']??'')!=='SAFE_T_STATUS_OBSERVED' || ($event['source']??'')!=='SELLER_CENTRAL')continue;
-            if((int)($event['case_id']??0)!==$caseId || !is_array($event['payload']??null))continue;
-            if(trim((string)($event['payload']['safe_t_id']??''))!==trim((string)($read['safe_t_id']??'')))continue;
-            if($latest===null || (int)$event['id']>(int)$latest['id'])$latest=$event;
-        }
-        $base=self::observationKey($caseId,$read);
-        if($latest!==null && hash_equals($base,self::observationKey($caseId,$latest['payload'])))return (string)$latest['idempotency_key'];
-        return hash('sha256','status-observation-v2|'.$base.'|'.(string)($latest['id']??0));
+        return (string)self::observationPlan($caseId,$read,$events)['idempotency_key'];
     }
 
     public static function nextState(string $currentState, string $claimStatus, bool $appealDenied = false): string
     {
-        if($currentState==='RECOVERED')return $currentState;
-        if(strtoupper(trim($claimStatus))==='DENIED' && in_array($currentState,['EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','CREDIT_PENDING','CLOSED_LOSS'],true))return $currentState;
-        return match (strtoupper(trim($claimStatus))) {
+        $claimStatus=strtoupper(trim($claimStatus));
+        if(in_array($currentState,['RECOVERED','RECEIVED_OK'],true))return $currentState;
+        if($claimStatus==='DENIED'){
+            if(in_array($currentState,['EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','CREDIT_PENDING','CLOSED_LOSS'],true))return $currentState;
+            if(!$appealDenied && in_array($currentState,['APPEAL_SUBMITTED','APPEAL_DENIED_FINAL'],true))return $currentState;
+        }
+        if($claimStatus==='APPROVED' && in_array($currentState,['CREDIT_PENDING','APPEAL_APPROVED'],true))return $currentState;
+        return match ($claimStatus) {
             'DENIED' => $appealDenied ? 'APPEAL_DENIED_FINAL' : 'SAFE_T_DENIED',
             'APPROVED' => $currentState === 'APPEAL_SUBMITTED' ? 'APPEAL_APPROVED' : 'SAFE_T_APPROVED',
             'INFO_REQUESTED' => 'SAFE_T_INFO_REQUESTED',
@@ -53,6 +70,34 @@ final class SvAmazonSafeTStatusService
                 ? 'SAFE_T_SUBMITTED' : $currentState,
             default => $currentState,
         };
+    }
+
+    public static function projection(array $case,array $read,bool $isNew,DateTimeImmutable $now): array
+    {
+        $current=(string)($case['state']??'');
+        $status=strtoupper(trim((string)($read['claim_status']??'UNKNOWN')));
+        $next=self::nextState($current,$status,(bool)($read['appeal_denied']??false));
+        $fingerprint=trim((string)($read['decision_fingerprint']??''));
+        $last=trim((string)($case['last_denial_fingerprint']??''));
+        $repeat=(int)($case['repeated_denial_count']??0);
+        if($status==='DENIED' && $isNew){
+            $repeat=self::repeatCount($last,$repeat,$fingerprint);
+            if($fingerprint!=='')$last=$fingerprint;
+        }
+        $patch=[
+            'state'=>$next,
+            'appeal_deadline_at'=>$status==='APPROVED'?null:($read['appeal_deadline_at']??$case['appeal_deadline_at']??null),
+            'last_denial_fingerprint'=>$last!==''?$last:null,
+            'repeated_denial_count'=>$repeat,
+        ];
+        if($status==='DENIED'){
+            $wait=SvAmazonRequestedWait::parse((string)($read['decision_text']??''),$read['denied_at']??null,$case);
+            if(($wait['next_action_at']??null)!==null)$patch['next_action_at']=$wait['next_action_at'];
+            elseif($isNew && $next!==$current && in_array($next,['SAFE_T_DENIED','APPEAL_DENIED_FINAL'],true))$patch['next_action_at']=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+        }elseif($status==='INFO_REQUESTED' && $isNew && $next!==$current){
+            $patch['next_action_at']=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+        }
+        return $patch;
     }
 
     public static function repeatCount(?string $previousFingerprint, int $currentCount, ?string $newFingerprint): int
