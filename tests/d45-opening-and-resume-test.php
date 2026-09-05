@@ -39,4 +39,14 @@ $old=$wait;$old['occurred_at']='2026-08-01 12:00:00';$old['payload']['decision_t
 dorSame('WAIT',$engine->nextAction($claim,[$changed,$old],$policy,new DateTimeImmutable('2026-09-10T13:00:00Z'))['action'],'late-arriving older response must not replace newer wait');
 $blocked=['id'=>200,'case_id'=>77,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL','occurred_at'=>'2026-09-10 12:00:00','payload'=>['status'=>'BLOCKED_UNTIL','block_reason'=>'NOT_ELIGIBLE']];
 dorSame('HUMAN_REVIEW',$engine->nextAction($claim,[$blocked],$policy,new DateTimeImmutable('2026-09-10T12:05:00Z'))['action'],'explicit vendor block without date cannot silently retry');
+$closingWindow=$claim;$closingWindow['appeal_deadline_at']='2026-09-10 12:00:30';
+$beforeClose=$engine->nextAction($closingWindow,[$wait,$sourceFinance,$finance],$policy,new DateTimeImmutable('2026-09-10T12:00:00Z'));
+$afterClose=$engine->nextAction($closingWindow,[$wait,$sourceFinance,$finance],$policy,new DateTimeImmutable('2026-09-10T12:00:31Z'));
+dorSame($beforeClose['idempotency_key'],$afterClose['idempotency_key'],'one dated attempt must not split into two outbox jobs when appeal deadline crosses');
+$sent=['case_id'=>77,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL','occurred_at'=>'2026-09-10 12:01:00','payload'=>['status'=>'ACCEPTED','resume_scope'=>$beforeClose['resume_scope']]];
+dorSame('WAIT',$engine->nextAction($closingWindow,[$wait,$sourceFinance,$finance,$sent],$policy,new DateTimeImmutable('2026-09-10T15:00:00Z'))['action'],'already executed dated resumption must wait for the next Amazon response, not hourly recheck loops');
+dorSame($beforeClose['resume_scope'],SvAmazonRequestedWait::jobResumeScope(['payload'=>['decision'=>$beforeClose]]),'completed job preserves its original dated scope');
+dorSame(null,SvAmazonRequestedWait::jobResumeScope(['payload'=>['decision'=>['resume_scope'=>'invalid']]]),'invalid resumption marker is not accepted');
+$failedSent=$sent;$failedSent['payload']['status']='FAILED';
+dorSame('CHECK_FINANCES',$engine->nextAction($closingWindow,[$wait,$sourceFinance,$finance,$failedSent],$policy,new DateTimeImmutable('2026-09-10T15:00:00Z'))['action'],'failed job does not falsely complete the dated resumption');
 if($errors){fwrite(STDERR,implode("\n",$errors)."\n");exit(1);}echo "d45-opening-and-resume-test: OK\n";

@@ -212,6 +212,7 @@ final class SvAmazonReturnsDaemon
                     ),
                     'occurred_at'=>gmdate('Y-m-d H:i:s'),
                     'payload'=>[
+                        'resume_scope'=>SvAmazonRequestedWait::jobResumeScope($row),
                         'order_id'=>(string)$case['amazon_order_id'],
                         'safe_t_id'=>$case['safe_t_id'] ?? null,
                         'gmail_message_id'=>$sent['message_id'],

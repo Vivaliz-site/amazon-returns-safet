@@ -22,4 +22,6 @@ $method=new ReflectionMethod(SvAmazonGmailEventSink::class,'payload');$payload=$
 aweSame('2026-09-10 03:00:00',$payload['review_next_action_at']??null,'immutable event preserves requested date');
 $message['body_text']='Envie comprovante e fotos. Aguarde ate 10/09/2026.';$event=(new SvAmazonGmailParser())->parse($message)[0];
 aweSame('INFO_REQUESTED',$event['review_outcome'],'new evidence request must not be silently deferred');
+aweSame('2026-09-08 12:00:00',SvAmazonRequestedWait::parse('Aguarde 5 dias apos o debito.','2026-09-04 12:00:00',['refund_at'=>'2026-09-01 12:00:00','seller_debit_at'=>'2026-09-03 12:00:00'])['next_action_at']??null,'explicit debit-relative wait uses debit, not earlier refund');
+foreach(['Aguarde nossa resposta. Seu reembolso foi processado em 01/09/2026.','Aguarde nossa resposta, seu reembolso foi processado em 01/09/2026.','Aguarde nossa resposta; o ressarcimento foi emitido em 01/09/2026.'] as $body){aweSame(null,SvAmazonRequestedWait::parse($body)['next_action_at']??null,'historical refund sentence cannot become requested resumption date');}
 if($errors){fwrite(STDERR,implode("\n",$errors)."\n");exit(1);}echo "amazon-wait-evidence-test: OK\n";

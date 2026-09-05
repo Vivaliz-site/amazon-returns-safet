@@ -15,7 +15,9 @@ final class SvAmazonRequestedWait
         $result = ['next_action_at'=>null, 'instruction_hash'=>hash('sha256', trim($normalized)), 'date_precision'=>'unknown'];
         if (str_contains($normalized, 'nao responderemos a outras comunicacoes') || str_contains($normalized, 'nao sera reconsiderada')) return $result;
         $date = '(?:[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}[\/.][0-9]{1,2}[\/.][0-9]{4}|[0-9]{1,2}\s+de\s+[a-z]+\s+de\s+[0-9]{4})';
-        $pattern = '/\b(?:aguarde|aguardar|espere|retorne|volte|reabra|reabrir|reembolsado|reembolsada|ressarcido|ressarcida|reembolso|ressarcimento)\b[^!?\n]{0,180}?\b(ate|a partir de|apos|depois de|em)\s+(?:o dia\s+|dia\s+)?('.$date.')\b/';
+        $waitVerb='(?:aguarde|aguardar|espere|retorne|volte|reabra|reabrir)';
+        $futureMoney='(?:(?:sera|serao)\s+(?:reembolsad[oa]|ressarcid[oa])|(?:reembolso|ressarcimento)\s+(?:sera|serao|previst[oa]))';
+        $pattern = '/\b(?:'.$waitVerb.'|'.$futureMoney.')\b[^.,;!?\n]{0,160}?\b(ate|a partir de|apos|depois de|em|para)\s+(?:o dia\s+|dia\s+)?('.$date.')\b/';
         preg_match_all($pattern, $normalized, $matches, PREG_SET_ORDER);
         $dates = [];
         foreach ($matches as $match) {
@@ -25,8 +27,10 @@ final class SvAmazonRequestedWait
             $dates[$day->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s')] = true;
         }
         if ($dates === [] && preg_match('/\b(?:aguarde|aguardar|espere)\s+([0-9]{1,3})\s+dias(?!\s+uteis)/', $normalized, $relative)) {
-            $anchor = preg_match('/(?:apos|desde|a partir d[oa])\s+(?:o\s+)?(?:reembolso|debito)/', $normalized)
-                ? ($context['refund_at'] ?? null) : $responseAt;
+            $anchor=$responseAt;
+            if(preg_match('/(?:apos|desde|a partir d[oa])\s+(?:o\s+)?(reembolso|debito)/',$normalized,$basis)){
+                $anchor=$basis[1]==='debito' ? ($context['seller_debit_at']??null) : ($context['refund_at']??null);
+            }
             $start = self::timestamp($anchor);
             $days = (int)$relative[1];
             if ($start !== null && $days > 0 && $days <= 365) $dates[$start->modify('+'.$days.' days')->format('Y-m-d H:i:s')] = true;
@@ -89,6 +93,8 @@ final class SvAmazonRequestedWait
         $due=self::timestamp($wait['next_action_at']);
         if ($due===null) return $base+['action'=>'HUMAN_REVIEW','reason'=>'AMAZON_WAIT_DATE_UNRESOLVED'];
         if ($now < $due) return $base+['action'=>'WAIT','reason'=>'AMAZON_REQUESTED_WAIT'];
+        $scope=hash('sha256',trim((string)($case['safe_t_id']??'')).'|'.$wait['instruction_hash'].'|'.$due->format(DATE_ATOM));
+        if(self::alreadyResumed($case,$timeline,$scope,$now))return $base+['action'=>'WAIT','reason'=>'AMAZON_DATED_RESUMPTION_ALREADY_SENT','resume_scope'=>$scope];
         if (!self::financiallyRechecked($case,$timeline,$due,$now)) return $base+['action'=>'CHECK_FINANCES','reason'=>'AMAZON_WAIT_DATE_REACHED_RECHECK_CREDIT'];
         if ((float)($case['expected_reimbursement_amount']??0)<=0) return $base+['action'=>'HUMAN_REVIEW','reason'=>'REIMBURSEMENT_AMOUNT_UNRESOLVED'];
         $claim=trim((string)($case['safe_t_id']??''));
@@ -105,7 +111,28 @@ final class SvAmazonRequestedWait
         }
         $scope=hash('sha256',$claim.'|'.$wait['instruction_hash'].'|'.$due->format(DATE_ATOM));
         return $base+['action'=>$action,'reason'=>'AMAZON_REQUESTED_DATE_REACHED_UNRECOVERED','resume_scope'=>$scope,'review_scope'=>$scope,
-            'support_case_id'=>$support!==''?$support:null,'idempotency_key'=>hash('sha256','dated-resume|'.$action.'|'.$scope)];
+            'support_case_id'=>$support!==''?$support:null,'idempotency_key'=>hash('sha256','dated-resume|'.$scope)];
+    }
+
+    private static function alreadyResumed(array $case,array $timeline,string $scope,DateTimeImmutable $now): bool
+    {
+        foreach($timeline as $event){
+            if((int)($event['case_id']??0)!==(int)($case['id']??0))continue;
+            $at=self::timestamp($event['occurred_at']??null);
+            if($at===null || $at>$now)continue;
+            $p=$event['payload']??[];
+            if(($p['resume_scope']??'')!==$scope)continue;
+            $type=$event['event_type']??'';$source=$event['source']??'';
+            if($type==='SELLER_CENTRAL_ACTION_RESULT' && $source==='SELLER_CENTRAL' && in_array($p['status']??'',['ACCEPTED','ALREADY_EXISTS'],true))return true;
+            if(in_array($type,['SAFE_T_EMAIL_REPLY_SENT','SAFE_T_EMAIL_REVIEW_SENT'],true) && $source==='GMAIL')return true;
+        }
+        return false;
+    }
+
+    public static function jobResumeScope(array $row): ?string
+    {
+        $scope=$row['payload']['decision']['resume_scope']??null;
+        return is_string($scope) && preg_match('/^[a-f0-9]{64}$/D',$scope)===1 ? $scope : null;
     }
 
     public static function financiallyRechecked(array $case, array $timeline, DateTimeImmutable $due, DateTimeImmutable $now): bool
