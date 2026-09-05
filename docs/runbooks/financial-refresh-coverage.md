@@ -23,7 +23,7 @@ Audit output belongs to the private daemon journal, not the public health API.
 financial-refresh-coverage-test: 25+14 pagination, tenant isolation, wrap, retry fairness, valid empty cursor.
 financial-initial-scan-test: scan completion, partial/failure gating, task ordering, empty dataset and retry cadence.
 runtime-case-audit-test: allowlisted audit, no payload leakage, unsupported recovered-case revalidation.
-All 46 PHP test files, SQL audit 61 files and PHP lint passed before PR creation.
+All 49 PHP test files, SQL audit 61 files and PHP lint passed after integration hardening.
 
 ## Production acceptance
 Require initial_scan_complete=true, no API failures, complete case-level review and zero PROCESSING before enabling any write channel.
@@ -31,5 +31,5 @@ A passing test or a SAFE-T approval alone is not proof of a real reconciled paym
 
 ## Runtime hardening
 Financial schedule planning is fail-closed: a cursor-store exception is reported as a failed gate instead of escaping `runOnce()` or permitting credit projection.
-Credit application is independently keyset-paginated by case ID, so more than 250 expected-reimbursement cases cannot starve later cases.
+Credit application uses a separate persisted case-ID rotation, capped at 250 cases per financial tick, so large tenants remain bounded without starving later cases. Corrupt or non-advancing IDs fail closed.
 The disabled integration keeps its normal `SKIPPED_DISABLED` behavior and does not force financial work.

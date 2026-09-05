@@ -351,11 +351,13 @@ final class SvAmazonReturnsDaemon
     private function runFinancial(): array
     {
         $worker=new SvAmazonReturnsReconcileWorker();
+        $batch=SvAmazonFinancialRefresh::nextReconciliationBatch($this->persistence,250);
+        $cases=$batch['cases'];
         $updated=0;
         $withTransactions=0;
         $financialAudit=[];
         $caseCount=0;
-        foreach(SvAmazonFinancialRefresh::financialCases($this->persistence,250) as $case){
+        foreach($cases as $case){
             $caseCount++;
             $caseId=(int)($case['id'] ?? 0);
             if($caseId<1)continue;
@@ -377,9 +379,11 @@ final class SvAmazonReturnsDaemon
             ]);
             $updated++;
         }
+        SvAmazonFinancialRefresh::recordReconciliationBatch($this->persistence,$batch);
         return [
             'status'=>'OK','cases'=>$caseCount,
             'with_transactions'=>$withTransactions,'updated'=>$updated,
+            'rotation_has_more'=>$batch['has_more'],'rotation_wrapped'=>$batch['wrapped'],
             'financial_audit'=>$financialAudit,
         ];
     }

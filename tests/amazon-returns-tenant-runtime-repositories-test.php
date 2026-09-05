@@ -44,7 +44,7 @@ $db=new TenantRuntimeRepoPdo();
 $p=SvAmazonTenantPersistence::create($db,new SvAmazonTenantContext(3,30));
 $db->push(['column'=>'9']); trSame(9,$p->cases->countAll(),'Scoped case count.');
 $db->push(['rows'=>[['amazon_order_id'=>'702-1'],['amazon_order_id'=>'702-2']]]); trSame(['702-1','702-2'],$p->cases->openOrderIds(25),'Scoped open order IDs.');
-$db->push(['rows'=>[['id'=>1]]]); trSame([1],array_column($p->cases->casesWithExpectedReimbursement(10),'id'),'Scoped financial cases.');
+$db->push(['rows'=>[['id'=>1]]]); trSame([1],array_column($p->cases->financialCasesAfter(0,10),'id'),'Scoped keyset financial cases.');
 $db->push(['rows'=>[['id'=>2]]]); trSame([2],array_column($p->cases->casesWithSafeTId(10),'id'),'Scoped SAFE-T cases.');
 $db->push(['fetch'=>['total_cases'=>2,'at_risk'=>'10.00']]); trSame(2,(int)$p->cases->summary()['total_cases'],'Scoped summary.');
 $db->push(['rows'=>[['id'=>2]]]); trSame([2],array_column($p->cases->recent(10),'id'),'Scoped recent cases.');

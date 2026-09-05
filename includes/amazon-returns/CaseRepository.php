@@ -236,19 +236,6 @@ final class SvAmazonReturnCaseRepository
     }
 
     /** @return list<array<string,mixed>> */
-    public function casesWithExpectedReimbursement(int $limit=250): array
-    {
-        $limit=max(1,min(1000,$limit));
-        $stmt=$this->prepare(
-            'SELECT * FROM amazon_return_cases WHERE expected_reimbursement_amount>0 '
-            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
-            . 'ORDER BY id LIMIT '.$limit
-        );
-        $stmt->execute($this->scopeParams());
-        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
-    }
-
-    /** @return list<array<string,mixed>> */
     public function casesWithSafeTId(int $limit=250): array
     {
         $limit=max(1,min(1000,$limit));

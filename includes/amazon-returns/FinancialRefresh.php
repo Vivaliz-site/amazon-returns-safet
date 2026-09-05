@@ -6,6 +6,8 @@ final class SvAmazonFinancialRefresh
 {
     private const SOURCE = 'SP_API';
     private const KEY = 'financial_order_rotation';
+    private const RECONCILIATION_SOURCE = 'FINANCIAL';
+    private const RECONCILIATION_KEY = 'case_reconciliation_rotation';
 
     public static function nextBatch(SvAmazonTenantPersistence $p, int $limit = 25): array
     {
@@ -78,16 +80,37 @@ final class SvAmazonFinancialRefresh
         }
     }
 
-    public static function financialCases(SvAmazonTenantPersistence $p, int $batchSize = 250): Generator
+    public static function nextReconciliationBatch(SvAmazonTenantPersistence $p, int $limit = 250): array
     {
-        $after = 0;
-        do {
-            $cases = $p->cases->financialCasesAfter($after, $batchSize);
-            foreach ($cases as $case) {
-                $after = max($after, (int)($case['id'] ?? 0));
-                yield $case;
-            }
-        } while ($cases !== []);
+        $limit = max(1, min(999, $limit));
+        $saved = $p->cursors->load(self::RECONCILIATION_SOURCE, self::RECONCILIATION_KEY);
+        $raw = is_array($saved) ? trim((string)$saved['value']) : '0';
+        if ($raw === '') $raw = '0';
+        if (!ctype_digit($raw)) throw new UnexpectedValueException('Financial reconciliation cursor is invalid.');
+        $after = (int)$raw;
+        $rows = $p->cases->financialCasesAfter($after, $limit + 1);
+        $wrapped = $after > 0 && $rows === [];
+        if ($wrapped) { $after = 0; $rows = $p->cases->financialCasesAfter(0, $limit + 1); }
+        $cases = array_slice($rows, 0, $limit);
+        $cursor = $after;
+        foreach ($cases as $case) {
+            $id = (int)($case['id'] ?? 0);
+            if ($id <= $cursor) throw new UnexpectedValueException('Financial reconciliation case IDs must advance.');
+            $cursor = $id;
+        }
+        return ['cases'=>$cases, 'has_more'=>count($rows) > $limit, 'wrapped'=>$wrapped, 'after_id'=>$after];
+    }
+
+    public static function recordReconciliationBatch(SvAmazonTenantPersistence $p, array $batch): void
+    {
+        $cases = is_array($batch['cases'] ?? null) ? $batch['cases'] : [];
+        $last = 0;
+        foreach ($cases as $case) $last = max($last, (int)($case['id'] ?? 0));
+        $p->cursors->save(self::RECONCILIATION_SOURCE, self::RECONCILIATION_KEY, (string)$last, [
+            'has_more'=>(bool)($batch['has_more'] ?? false),
+            'wrapped'=>(bool)($batch['wrapped'] ?? false),
+            'processed'=>count($cases),
+        ]);
     }
 
     public static function canReconcile(array $refreshResult, bool $initialScanComplete): bool
