@@ -81,4 +81,8 @@ foreach(['--dry-run','mysqldump','--apply','verify-migration.sh','rollback','37/
     ppAssert(str_contains($runbook,$runbookNeedle),'Runbook missing '.$runbookNeedle);
 }
 
+ppAssert(str_contains($script,"ensure_env_key 'AMAZON_RETURNS_REVIEW_AI_MODEL' 'gpt-5.6-terra'"),'Provisioning must install review AI model without overwriting.');
+ppAssert(str_contains($script,"ensure_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '0'"),'Learned execution must provision fail closed.');
+ppAssert(!str_contains($script,"ensure_env_key 'OPENAI_API_KEY'"),'Provisioning must not manufacture or overwrite an OpenAI API key.');
+foreach(['pending_outbox','dead_letters','learned_rule_execution_enabled'] as $needle)ppAssert(str_contains($liveVerification,$needle),'Live verifier missing rollout gate '.$needle);
 echo "production-provision-test: OK\n";

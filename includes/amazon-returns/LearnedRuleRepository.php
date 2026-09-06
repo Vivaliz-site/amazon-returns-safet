@@ -15,6 +15,15 @@ final class SvAmazonLearnedRuleRepository
         foreach (['status','rule_family_key','source_review_id'] as $key) if (isset($filters[$key])) { $where.=" AND {$key}=:{$key}"; $params[':'.$key]=$filters[$key]; }
         return $this->rows(self::TABLE,$where,$params);
     }
+    public function ownershipViolationCount(): int
+    {
+        $queries=[
+            "SELECT COUNT(*) FROM amazon_return_learned_rules r LEFT JOIN amazon_return_reviews v ON v.id=r.source_review_id WHERE r.tenant_id=:tenant_id AND r.amazon_connection_id=:connection_id AND (v.id IS NULL OR v.tenant_id<>r.tenant_id OR v.amazon_connection_id<>r.amazon_connection_id)",
+            "SELECT COUNT(*) FROM amazon_return_rule_applications a LEFT JOIN amazon_return_learned_rules r ON r.id=a.rule_id LEFT JOIN amazon_return_cases c ON c.id=a.case_id WHERE a.tenant_id=:tenant_id AND a.amazon_connection_id=:connection_id AND (r.id IS NULL OR c.id IS NULL OR r.tenant_id<>a.tenant_id OR r.amazon_connection_id<>a.amazon_connection_id OR c.tenant_id<>a.tenant_id OR c.amazon_connection_id<>a.amazon_connection_id)",
+        ];
+        $total=0;foreach($queries as $sql)$total+=(int)$this->sql($sql)->fetchColumn();
+        return $total;
+    }
     /** Revision excludes mutable telemetry and changes only when executable memory changes. */
     public function revision(): string
     {

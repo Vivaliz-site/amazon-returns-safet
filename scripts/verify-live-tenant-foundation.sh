@@ -74,6 +74,8 @@ for relation in 'amazon_return_learned_rules source_review_id amazon_return_revi
 done
 cross_tenant_mismatch_count=$((cross_tenant_children + case_connection_mismatches))
 processing_jobs="$(scalar "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING'")"
+pending_outbox="$(scalar "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status IN ('PENDING','PROCESSING')")"
+dead_letters="$(scalar "SELECT COUNT(*) FROM amazon_return_dead_letters WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id")"
 
 [[ "$ownership_nulls" -eq 0 ]] || { echo "ownership_nulls=$ownership_nulls" >&2; exit 1; }
 [[ "$cross_tenant_mismatch_count" -eq 0 ]] || { echo "cross_tenant_mismatch_count=$cross_tenant_mismatch_count" >&2; exit 1; }
@@ -87,6 +89,8 @@ env_value() {
         printf '%s' "${!key:-0}"
     fi
 }
+learned_rule_execution_raw="$(env_value AMAZON_RETURNS_LEARNED_RULE_EXECUTION)"
+case "${learned_rule_execution_raw,,}" in 1|true|yes|on) learned_rule_execution_enabled=1 ;; *) learned_rule_execution_enabled=0 ;; esac
 if [[ "$tenant_slug" == shopvivaliz ]]; then
     operational_policies="$(scalar "SELECT COUNT(*) FROM amazon_return_policies WHERE tenant_id=$tenant_id AND status='ACTIVE' AND policy_key='RETURN_NOT_RECEIVED_D45_REFUND_V2' AND marketplace_id='A2Q3Y263D00KWC' AND eligibility_days=45 AND basis='REFUND_AT' AND effective_to IS NULL AND ((program='STANDARD' AND effective_from='2020-01-01') OR (program IN ('FBA_ONSITE','DELIVERY_BY_AMAZON') AND effective_from='2026-04-21'))")"
     bad_policy="$(scalar "SELECT COUNT(*) FROM amazon_return_policies WHERE tenant_id=$tenant_id AND status='ACTIVE' AND policy_key LIKE 'RETURN_NOT_RECEIVED%' AND NOT (policy_key='RETURN_NOT_RECEIVED_D45_REFUND_V2' AND marketplace_id='A2Q3Y263D00KWC' AND eligibility_days=45 AND basis='REFUND_AT' AND effective_to IS NULL AND ((program='STANDARD' AND effective_from='2020-01-01') OR (program IN ('FBA_ONSITE','DELIVERY_BY_AMAZON') AND effective_from='2026-04-21')))")"
@@ -116,6 +120,9 @@ emit "cross_tenant_children=$cross_tenant_children"
 emit "case_connection_mismatches=$case_connection_mismatches"
 emit "cross_tenant_mismatch_count=$cross_tenant_mismatch_count"
 emit "processing_jobs=$processing_jobs"
+emit "pending_outbox=$pending_outbox"
+emit "dead_letters=$dead_letters"
+emit "learned_rule_execution_enabled=$learned_rule_execution_enabled"
 emit "write_profile_version=$write_profile_version"
 emit "safe_t_submit_write_enabled=$(profile_value SAFE_T_SUBMIT)"
 emit "safe_t_appeal_write_enabled=$(profile_value SAFE_T_APPEAL)"

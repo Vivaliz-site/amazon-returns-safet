@@ -25,6 +25,8 @@ final class SvAmazonDecisionCoordinator
         if(!in_array($base['action']??'',['HUMAN_REVIEW','BLOCKED_REVIEW'],true))return $base;
         $context=SvAmazonReviewContext::build($case,$timeline,$policy,$base);$match=$this->ruleEngine->match($context,$this->persistence->learnedRules->active());
         if($match['status']==='MATCH'){
+            $executionEnabled=$this->config!==null && method_exists($this->config,'learnedRuleExecutionEnabled') && $this->config->learnedRuleExecutionEnabled();
+            if(!$executionEnabled)return $base+['learned_rule_shadow_match'=>$match['rule']['id']??null,'signature_hash'=>$context['signature_hash']];
             $decision=$this->base->guardLearnedEffect($match['effect'],$case,$timeline,$policy,$now);
             $decision['learned_rule_id']=$match['rule']['id']??null;$decision['learned_rule_version']=$match['rule']['version']??null;$decision['signature_hash']=$context['signature_hash'];
             if($persist)$this->auditMatch($case,$context,$match['rule'],$match['effect'],$decision);
