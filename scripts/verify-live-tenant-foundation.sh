@@ -36,7 +36,7 @@ target_current_cases="$(scalar "SELECT COUNT(*) FROM amazon_return_cases WHERE t
 }
 
 ownership_nulls=0
-for table in amazon_return_cases amazon_return_events amazon_return_outbox amazon_return_dead_letters amazon_return_evidence amazon_return_source_cursors amazon_return_overrides; do
+for table in amazon_return_cases amazon_return_events amazon_return_outbox amazon_return_dead_letters amazon_return_evidence amazon_return_source_cursors amazon_return_overrides amazon_return_reviews amazon_return_learned_rules amazon_return_rule_applications; do
     count="$(scalar "SELECT COUNT(*) FROM \`$table\` WHERE tenant_id IS NULL OR amazon_connection_id IS NULL")"
     ownership_nulls=$((ownership_nulls + count))
 done
@@ -49,7 +49,7 @@ ownership_nulls=$((ownership_nulls + count))
 
 case_connection_mismatches="$(scalar "SELECT COUNT(*) FROM amazon_return_cases c LEFT JOIN amazon_return_connections a ON a.id=c.amazon_connection_id WHERE a.id IS NULL OR a.tenant_id<>c.tenant_id")"
 cross_tenant_children=0
-for table in amazon_return_events amazon_return_evidence amazon_return_outbox amazon_return_overrides; do
+for table in amazon_return_events amazon_return_evidence amazon_return_outbox amazon_return_overrides amazon_return_reviews amazon_return_rule_applications; do
     count="$(scalar "SELECT COUNT(*) FROM \`$table\` child LEFT JOIN amazon_return_cases parent ON parent.id=child.case_id WHERE parent.id IS NULL OR parent.tenant_id<>child.tenant_id OR parent.amazon_connection_id<>child.amazon_connection_id")"
     cross_tenant_children=$((cross_tenant_children + count))
 done
@@ -67,6 +67,11 @@ count="$(scalar "SELECT COUNT(*) FROM amazon_return_feature_flags child LEFT JOI
 cross_tenant_children=$((cross_tenant_children + count))
 count="$(scalar "SELECT COUNT(*) FROM amazon_return_feature_flags flag JOIN amazon_return_tenant_users user ON user.id=flag.updated_by_user_id WHERE user.tenant_id<>flag.tenant_id")"
 cross_tenant_children=$((cross_tenant_children + count))
+for relation in 'amazon_return_learned_rules source_review_id amazon_return_reviews' 'amazon_return_rule_applications rule_id amazon_return_learned_rules' 'amazon_return_reviews resulting_rule_id amazon_return_learned_rules'; do
+    read -r child foreign_key parent <<< "$relation"
+    count="$(scalar "SELECT COUNT(*) FROM \`$child\` child LEFT JOIN \`$parent\` parent ON parent.id=child.\`$foreign_key\` WHERE child.\`$foreign_key\` IS NOT NULL AND (parent.id IS NULL OR parent.tenant_id<>child.tenant_id OR parent.amazon_connection_id<>child.amazon_connection_id)")"
+    cross_tenant_children=$((cross_tenant_children + count))
+done
 cross_tenant_mismatch_count=$((cross_tenant_children + case_connection_mismatches))
 processing_jobs="$(scalar "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING'")"
 

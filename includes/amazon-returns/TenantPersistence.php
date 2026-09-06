@@ -8,6 +8,9 @@ require_once __DIR__ . '/EvidenceStore.php';
 require_once __DIR__ . '/TenantOutbox.php';
 require_once __DIR__ . '/SourceCursorStore.php';
 require_once __DIR__ . '/PolicyRepository.php';
+require_once __DIR__ . '/ReviewRepository.php';
+require_once __DIR__ . '/LearnedRuleRepository.php';
+require_once __DIR__ . '/RuleApplicationRepository.php';
 
 final class SvAmazonTenantPersistence
 {
@@ -17,6 +20,9 @@ final class SvAmazonTenantPersistence
     public readonly SvAmazonTenantReturnsOutbox $outbox;
     public readonly SvAmazonSourceCursorStore $cursors;
     public readonly SvAmazonReturnPolicyRepository $policies;
+    public readonly SvAmazonReviewRepository $reviews;
+    public readonly SvAmazonLearnedRuleRepository $learnedRules;
+    public readonly SvAmazonRuleApplicationRepository $ruleApplications;
 
     private function __construct(
         private readonly PDO $db,
@@ -28,6 +34,9 @@ final class SvAmazonTenantPersistence
         $this->outbox = new SvAmazonTenantReturnsOutbox($db, $context);
         $this->cursors = new SvAmazonSourceCursorStore($db, $context);
         $this->policies = new SvAmazonReturnPolicyRepository($db, $context);
+        $this->reviews = new SvAmazonReviewRepository($db, $context);
+        $this->learnedRules = new SvAmazonLearnedRuleRepository($db, $context);
+        $this->ruleApplications = new SvAmazonRuleApplicationRepository($db, $context);
     }
 
     public static function create(PDO $db, SvAmazonTenantContext $context): self

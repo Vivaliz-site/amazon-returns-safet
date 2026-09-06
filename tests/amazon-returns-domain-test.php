@@ -257,15 +257,15 @@ foreach ([
 ] as $requiredSql) {
     assertTrue(str_contains($ddl, $requiredSql), "DDL is missing required definition: {$requiredSql}");
 }
-assertSameValue(12, count(SvAmazonReturnsSchema::statements()), 'Schema generation must be deterministic: one statement per table.');
-assertTrue(substr_count($ddl, 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci') === 12, 'Every table must use InnoDB/utf8mb4.');
+assertSameValue(15, count(SvAmazonReturnsSchema::statements()), 'Schema generation must be deterministic: one statement per table.');
+assertTrue(substr_count($ddl, 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci') === 15, 'Every table must use InnoDB/utf8mb4.');
 $schemaDb = new AmazonReturnsMemoryPdo();
 SvAmazonReturnsSchema::ensure($schemaDb);
 SvAmazonReturnsSchema::ensure($schemaDb);
-assertSameValue(24, count($schemaDb->ddlExecutions), 'Calling ensure twice must safely replay all CREATE TABLE IF NOT EXISTS statements.');
+assertSameValue(30, count($schemaDb->ddlExecutions), 'Calling ensure twice must safely replay all CREATE TABLE IF NOT EXISTS statements.');
 assertSameValue(
     $schemaDb->ddlExecutions[0],
-    $schemaDb->ddlExecutions[12],
+    $schemaDb->ddlExecutions[15],
     'Repeated schema generation must be deterministic.'
 );
 

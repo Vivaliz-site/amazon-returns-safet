@@ -35,6 +35,7 @@ final class TenantIsolationMemoryPdo extends PDO
     public array $cursors=[];
     public array $outbox=[];
     public array $executed=[];
+    public array $memory=[];
     public array $next=['case'=>1,'event'=>1,'evidence'=>1,'outbox'=>1];
     public int $lastId=0;
     private bool $transaction=false;
@@ -85,6 +86,19 @@ final class TenantIsolationMemoryStatement extends PDOStatement
         $this->rows=[];
         $this->affected=0;
         $this->db->executed[]=['sql'=>$this->query,'params'=>$params];
+
+        if (preg_match('/(?:FROM|UPDATE) (AMAZON_RETURN_(?:REVIEWS|LEARNED_RULES|RULE_APPLICATIONS))\b/', $sql, $match)) {
+            tiAssert(str_contains($sql,'TENANT_ID=:TENANT_ID') && str_contains($sql,'AMAZON_CONNECTION_ID=:CONNECTION_ID'), 'Memory SQL lost scope predicates.');
+            foreach ($this->db->memory[strtolower($match[1])]??[] as $row) {
+                if (!$this->scopeMatches($row,$params)) continue;
+                if (isset($params[':id']) && $row['id']!==(int)$params[':id']) continue;
+                if (isset($params[':case_id']) && $row['case_id']!==(int)$params[':case_id']) continue;
+                if (str_starts_with($sql,'UPDATE')) throw new LogicException('Cross-scope mutation reached an owned fixture.');
+                $this->rows[]=$row;
+            }
+            if (str_contains($sql,'COUNT(*)')) $this->rows=[['count'=>count($this->rows)]];
+            return true;
+        }
 
         if(str_starts_with($sql,'INSERT INTO AMAZON_RETURN_CASES')){
             return $this->insertCase($params);
@@ -372,7 +386,7 @@ final class TenantIsolationMemoryStatement extends PDOStatement
     {
         return (int)($row['tenant_id'] ?? 0)===(int)($params[':tenant_id'] ?? 0)
             && (int)($row['amazon_connection_id'] ?? 0)
-                ===(int)($params[':amazon_connection_id'] ?? 0);
+                ===(int)($params[':amazon_connection_id'] ?? $params[':connection_id'] ?? 0);
     }
 
     /** @param array<string,mixed> $params */
@@ -398,6 +412,10 @@ $db->connections=[
 ];
 $p1=SvAmazonTenantPersistence::create($db,new SvAmazonTenantContext(1,10));
 $p2=SvAmazonTenantPersistence::create($db,new SvAmazonTenantContext(2,20));
+foreach (['reviews','learnedRules','ruleApplications'] as $property) {
+    tiAssert(isset($p1->$property), 'Missing scoped persistence '.$property);
+    tiAssert($p1->$property !== $p2->$property, 'Memory repositories must be bound per context.');
+}
 $caseInput=[
     'amazon_order_id'=>'702-1234567-7654321',
     'amazon_order_item_id'=>'item-shared',
@@ -505,9 +523,32 @@ $p2->outbox->markSucceeded($job2);
 tiSame('SUCCEEDED',$db->outbox[$job1]['status'],'Tenant 1 could not complete own job.');
 tiSame('SUCCEEDED',$db->outbox[$job2]['status'],'Tenant 2 could not complete own job.');
 
+// Always-on isolation coverage; real MySQL lifecycle checks live in the memory test.
+$p3=SvAmazonTenantPersistence::create($db,new SvAmazonTenantContext(1,11));
+foreach (['amazon_return_reviews','amazon_return_learned_rules','amazon_return_rule_applications'] as $table) {
+    $db->memory[$table]=[['id'=>99,'case_id'=>$case1,'tenant_id'=>1,'amazon_connection_id'=>10,'status'=>'OPEN','version'=>1]];
+}
+tiSame(99,$p1->reviews->find(99)['id']??null,'Owned memory row is readable.');
+$memoryBefore=$db->memory;
+foreach ([$p2,$p3] as $foreign) {
+    tiSame(null,$foreign->reviews->find(99),'Foreign review read.');
+    tiSame([],$foreign->reviews->forCase($case1),'Foreign case reviews.');
+    tiSame([],$foreign->reviews->openQueue(),'Foreign review queue.');
+    tiSame([],$foreign->learnedRules->active(),'Foreign active rules.');
+    tiSame([],$foreign->ruleApplications->forCase($case1),'Foreign applications.');
+    tiSame(0,$foreign->ruleApplications->countAll(),'Foreign application count.');
+    tiThrows(fn()=>$foreign->reviews->open($case1,'TEST',hash('sha256','context'),[]),'Foreign case review insert.');
+    tiThrows(fn()=>$foreign->reviews->decide(99,1,['decision_mode'=>'WAIT','final_action'=>'WAIT','actor'=>'test','source_version'=>'v1']),'Foreign decision.');
+    tiThrows(fn()=>$foreign->reviews->saveSuggestion(99,1,[],'test-model'),'Foreign suggestion.');
+    tiThrows(fn()=>$foreign->reviews->recordAiFailure(99,1,'RuntimeException'),'Foreign AI failure.');
+    tiThrows(fn()=>$foreign->learnedRules->setStatus(99,1,'DISABLED'),'Foreign rule disable.');
+    tiThrows(fn()=>$foreign->learnedRules->incrementOutcome(99,'DENIED',hash('sha256','key')),'Foreign outcome counter.');
+    tiThrows(fn()=>$foreign->ruleApplications->recordOutcome(99,'DENIED',['event_id'=>1]),'Foreign outcome.');
+}
+tiSame($memoryBefore,$db->memory,'Cross-scope memory mutations changed fixtures.');
 foreach($db->executed as $execution){
     $sql=$execution['sql'];
-    if(!preg_match('/amazon_return_(cases|events|evidence|source_cursors|outbox)/i',$sql))continue;
+    if(!preg_match('/amazon_return_(cases|events|evidence|source_cursors|outbox|reviews|learned_rules|rule_applications)/i',$sql))continue;
     tiAssert(str_contains($sql,'tenant_id'),'Integration query missing tenant_id.');
     tiAssert(str_contains($sql,'amazon_connection_id'),'Integration query missing connection scope.');
 }
