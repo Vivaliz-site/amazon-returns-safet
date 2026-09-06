@@ -1,8 +1,8 @@
 {
-  "version": "safet-submit-appeal-v1",
+  "version": "safet-submit-appeal-email-review-v1",
   "SAFE_T_SUBMIT": true,
   "SAFE_T_APPEAL": true,
-  "SAFE_T_EMAIL_REVIEW": false,
+  "SAFE_T_EMAIL_REVIEW": true,
   "SAFE_T_EMAIL_REPLY": false,
   "SELLER_SUPPORT_OPEN": false,
   "SELLER_SUPPORT_UPDATE": false
