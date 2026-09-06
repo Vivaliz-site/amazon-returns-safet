@@ -1,5 +1,8 @@
 # Amazon Returns / SAFE-T operating constraints
 
+## Acesso a infraestrutura e VMs
+Antes de executar qualquer comando em VM Oracle Cloud, leia e siga obrigatoriamente `AGENTS-VM-ACCESS.md`. O runbook define as duas VMs atuais, Remote Desktop Commander, SSH administrativo, OCI Run Command via perfil `AGENTS`, a ordem de fallback e as regras para nao expor secrets. Nunca presuma root no OCI Run Command.
+
 ## Latest owner decision: 2026-09-05
 First operational opening for ShopVivaliz is D+45. Do not silently replace this with D+60 or D+75.
 When Amazon requests a wait, preserve its actual requested date and response evidence; resume/reopen in the correct existing channel on that date, after real financial revalidation.
