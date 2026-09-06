@@ -183,6 +183,11 @@ $installerSource=(string)file_get_contents(__DIR__.'/../scripts/install-amazon-r
 rbAssert(!str_contains($installerSource,'New-ScheduledTaskTrigger -AtStartup,'),'Windows bridge installer must use valid trigger expressions without a trailing command comma.');
 rbAssert(!str_contains($installerSource,'C:\\Users\\FRED'),'Windows bridge installer must not hardcode the Fred-Win user profile.');
 rbAssert(str_contains($installerSource,'LOCALAPPDATA'),'Windows bridge installer must discover Opera from the current host profile.');
+rbAssert(str_contains($installerSource,'-AllowStartIfOnBatteries'),'Windows writer task must be allowed to start on battery.');
+rbAssert(str_contains($installerSource,'-DontStopIfGoingOnBatteries'),'Windows writer task must keep running when switching to battery.');
+rbAssert(str_contains($installerSource,"if (\$state -ne 'Running')"),'Windows bridge installer must fail unless the scheduled task is actually Running.');
+rbAssert(str_contains($installerSource,'WRITER_PROCESS_COUNT'),'Windows bridge installer must verify the specific writer process count.');
+rbAssert(str_contains($installerSource,'SELLER_CENTRAL_BRIDGE_ENDPOINT'),'Windows runner must pin the authenticated production bridge endpoint explicitly.');
 $qaWorkflow=(string)file_get_contents(__DIR__.'/../.github/workflows/ci.yml');
 rbAssert(str_contains($qaWorkflow,'node --check scripts/amazon-returns/seller-central-bridge-worker.mjs'),'CI must syntax-check the persistent Seller Central bridge worker.');
 rbAssert(!str_contains($installerSource, '}New-Item'), 'Windows bridge installer must preserve a statement boundary after dependency validation.');
