@@ -106,3 +106,25 @@ test('only one reader pulls jobs; heartbeat still works and exit releases its lo
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('post-appeal page with seller appeal after denial is pending', () => {
+  const body = [
+    'Detalhes da reivindicação: 45092-65513-7280005',
+    'Negamos sua reivindicação SAFE-T referente ao pedido 702-4847212-7165801.',
+    'Sua reivindicação não foi registrada dentro do prazo do recurso.',
+    'Pedido 702-4847212-7165801, SAFE-T 45092-65513-7280005. Solicito reavaliação da decisão.',
+  ].join('\n');
+  const observation = parseSafeTStatus(body, { safe_t_id: '45092-65513-7280005', order_id: '702-4847212-7165801' });
+  assert.equal(observation.claim_status, 'PENDING');
+  assert.equal(observation.appeal_submitted, true);
+});
+
+test('new Amazon denial after seller appeal remains denied', () => {
+  const body = [
+    'Negamos sua reivindicação SAFE-T referente ao pedido 702-4847212-7165801.',
+    'Pedido 702-4847212-7165801, SAFE-T 45092-65513-7280005. Solicito reavaliação da decisão.',
+    'Analisamos seu recurso e negamos sua solicitação de reembolso.',
+  ].join('\n');
+  const observation = parseSafeTStatus(body, { safe_t_id: '45092-65513-7280005', order_id: '702-4847212-7165801' });
+  assert.equal(observation.claim_status, 'DENIED');
+});

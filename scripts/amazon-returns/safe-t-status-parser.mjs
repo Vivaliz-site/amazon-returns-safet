@@ -22,14 +22,52 @@ function parsePtDate(raw) {
   return `${m[3]}-${pad(month)}-${pad(Number(m[2]))}T${pad(hour)}:${m[5]}:00-03:00`;
 }
 
+function lastIndex(text, pattern) {
+  const matches = [...text.matchAll(new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`))];
+  return matches.length ? (matches[matches.length - 1].index ?? -1) : -1;
+}
+
 function statusFrom(body) {
   const normalized = body.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const statusSection = normalized.match(/status da reivindicacao\s*\n?\s*([^\n]{1,80})/i)?.[1] ?? '';
-  const candidate = statusSection || normalized;
-  if (/\bnegad[oa]\b/.test(candidate)) return 'DENIED';
-  if (/\b(?:aprovad[oa]|concedid[oa])\b/.test(candidate)) return 'APPROVED';
-  if (/\binformac(?:ao|oes) solicitad[ao]s?\b|\bmais informac(?:ao|oes) necessarias?\b/.test(candidate)) return 'INFO_REQUESTED';
-  if (/\bem analise\b|\bpendente\b|\bem andamento\b/.test(candidate)) return 'PENDING';
+  if (statusSection) {
+    if (/\bnegad[oa]\b|\bnegamos\b/.test(statusSection)) return 'DENIED';
+    if (/\b(?:aprovad[oa]|concedid[oa])\b/.test(statusSection)) return 'APPROVED';
+    if (/\binformac(?:ao|oes) solicitad[ao]s?\b|\bmais informac(?:ao|oes) necessarias?\b/.test(statusSection)) return 'INFO_REQUESTED';
+    if (/\bem analise\b|\bpendente\b|\bem andamento\b|\brecurso (?:enviado|em analise)\b/.test(statusSection)) return 'PENDING';
+  }
+
+  const appeal = Math.max(
+    lastIndex(normalized, /\bsolicito reavaliacao da decisao\b/i),
+    lastIndex(normalized, /\bsolicito (?:nova )?revisao\b/i),
+    lastIndex(normalized, /\bsolicito[^\n]{0,160}\brecurso\b/i),
+  );
+  const denied = Math.max(
+    lastIndex(normalized, /\bnegad[oa]\b/i),
+    lastIndex(normalized, /\bnegamos sua reivindicacao\b/i),
+    lastIndex(normalized, /\bnegamos sua solicitacao\b/i),
+    lastIndex(normalized, /\breafirmamos nossa decisao\b/i),
+  );
+  const approved = Math.max(
+    lastIndex(normalized, /\baprovad[oa]\b/i),
+    lastIndex(normalized, /\bconcedid[oa]\b/i),
+  );
+  const info = Math.max(
+    lastIndex(normalized, /\binformac(?:ao|oes) solicitad[ao]s?\b/i),
+    lastIndex(normalized, /\bmais informac(?:ao|oes) necessarias?\b/i),
+  );
+  const pending = Math.max(
+    lastIndex(normalized, /\bem analise\b/i),
+    lastIndex(normalized, /\bpendente\b/i),
+    lastIndex(normalized, /\bem andamento\b/i),
+  );
+  const latestDecision = Math.max(denied, approved, info);
+  if (appeal > latestDecision) return 'PENDING';
+  const latest = Math.max(denied, approved, info, pending);
+  if (latest === denied && denied >= 0) return 'DENIED';
+  if (latest === approved && approved >= 0) return 'APPROVED';
+  if (latest === info && info >= 0) return 'INFO_REQUESTED';
+  if (latest === pending && pending >= 0) return 'PENDING';
   return 'UNKNOWN';
 }
 
@@ -60,7 +98,7 @@ function decisionText(body, status) {
 function appealState(body, decision) {
   const normalizedBody = body.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const normalizedDecision = decision.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const submitted = /analisamos (?:seu|o) recurso|analise do recurso|recurso referente a decisao|solicito (?:nova )?revisao|solicito[^\n]{0,160}\brecurso\b/.test(normalizedBody);
+  const submitted = /analisamos (?:seu|o) recurso|analise do recurso|recurso referente a decisao|solicito reavaliacao da decisao|solicito (?:nova )?revisao|solicito[^\n]{0,160}\brecurso\b/.test(normalizedBody);
   const denied = submitted && /\brecurso\b/.test(normalizedDecision) && /\bnegamos\b|\bnegad[oa]\b|reafirmamos nossa decisao/.test(normalizedDecision);
   return { appeal_submitted: submitted, appeal_denied: denied };
 }
