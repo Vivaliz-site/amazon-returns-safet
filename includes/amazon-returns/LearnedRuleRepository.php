@@ -33,7 +33,7 @@ final class SvAmazonLearnedRuleRepository
             $source=$this->owned('amazon_return_reviews',(int)($definition['source_review_id']??0),true);
             if ($source['status']!=='DECIDED' || $source['decision_mode']==='EXCEPTION') throw new RuntimeException('A reusable human decision is required.');
             if ($source['resulting_rule_id']!==null) {
-                $existing=$this->owned(self::TABLE,(int)$source['resulting_rule_id']);
+                $existing=$this->owned(self::TABLE,(int)$source['resulting_rule_id'],true);
                 if ($existing['rule_family_key']!==$family || (int)$existing['specificity']!==$specificity
                     || self::canonical($existing['match'])!==self::canonical($definition['match'])
                     || self::canonical($existing['effect'])!==self::canonical($definition['effect'])) {

@@ -120,7 +120,7 @@ final class SvAmazonReviewRepository
             // Serializes duplicate episodes without overwriting the first context snapshot.
             $this->owned('amazon_return_cases',$caseId,true);
             $key=hash('sha256',$caseId.'|'.$contextHash);
-            $existing=$this->rows(self::TABLE,'open_key=:key',[':key'=>$key],'');
+            $existing=$this->rows(self::TABLE,'open_key=:key',[':key'=>$key],'FOR UPDATE');
             if ($existing) return $existing[0];
             $id=$this->insert(self::TABLE,['case_id'=>$caseId,'reason'=>$reason,'context_hash'=>$contextHash,'context_json'=>self::json($context),'open_key'=>$key,'created_at'=>self::now()]);
             return $this->owned(self::TABLE,$id);

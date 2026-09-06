@@ -37,7 +37,7 @@ final class SvAmazonRuleApplicationRepository
     public function pendingOutcomes(int $limit=500): array
     {
         if ($limit<1 || $limit>10000) throw new InvalidArgumentException('Invalid outcome batch limit.');
-        return $this->rows(self::TABLE,"outcome IN ('PENDING','APPROVED_PENDING_CREDIT')",[],'ORDER BY id LIMIT '.$limit);
+        return $this->rows(self::TABLE,"(outcome IN ('PENDING','APPROVED_PENDING_CREDIT') OR JSON_CONTAINS(COALESCE(counted_outcomes_json,JSON_ARRAY()),JSON_QUOTE(outcome))=0)",[],'ORDER BY id LIMIT '.$limit);
     }
     public function recordOutcome(int $applicationId, string $outcome, array $evidenceRefs): void
     {
