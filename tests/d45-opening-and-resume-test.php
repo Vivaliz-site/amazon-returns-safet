@@ -42,7 +42,10 @@ dorSame('HUMAN_REVIEW',$engine->nextAction($claim,[$blocked],$policy,new DateTim
 $closingWindow=$claim;$closingWindow['appeal_deadline_at']='2026-09-10 12:00:30';
 $beforeClose=$engine->nextAction($closingWindow,[$wait,$sourceFinance,$finance],$policy,new DateTimeImmutable('2026-09-10T12:00:00Z'));
 $afterClose=$engine->nextAction($closingWindow,[$wait,$sourceFinance,$finance],$policy,new DateTimeImmutable('2026-09-10T12:00:31Z'));
-dorSame($beforeClose['idempotency_key'],$afterClose['idempotency_key'],'one dated attempt must not split into two outbox jobs when appeal deadline crosses');
+dorSame('SAFE_T_APPEAL',$beforeClose['action'],'dated attempt remains internal appeal while the window is open');
+dorSame('HUMAN_REVIEW',$afterClose['action'],'crossing the internal appeal deadline must stop external writes');
+dorSame('INTERNAL_APPEAL_WINDOW_MISSED_REQUIRES_REVIEW',$afterClose['reason']??null,'missed first-stage window must be explicit');
+dorSame(null,$afterClose['idempotency_key']??null,'expired first-stage window must not mint a second external-write key');
 $sent=['case_id'=>77,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL','occurred_at'=>'2026-09-10 12:01:00','payload'=>['status'=>'ACCEPTED','resume_scope'=>$beforeClose['resume_scope']]];
 dorSame('WAIT',$engine->nextAction($closingWindow,[$wait,$sourceFinance,$finance,$sent],$policy,new DateTimeImmutable('2026-09-10T15:00:00Z'))['action'],'already executed dated resumption must wait for the next Amazon response, not hourly recheck loops');
 dorSame($beforeClose['resume_scope'],SvAmazonRequestedWait::jobResumeScope(['payload'=>['decision'=>$beforeClose]]),'completed job preserves its original dated scope');
