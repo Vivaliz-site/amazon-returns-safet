@@ -77,7 +77,7 @@ foreach(['amazon_return_connections','amazon_return_tenant_users','amazon_return
 ppAssert(str_contains($vhost,'ServerName returns.shopvivaliz.com.br'),'Vhost must own the isolated hostname.');
 ppAssert(str_contains($vhost,'/home/ubuntu/amazon-returns-deploy/current'),'Vhost must serve the isolated release.');
 ppAssert(!str_contains($vhost,'shopvivaliz-deploy/current'),'Vhost must not serve website code.');
-foreach(['--dry-run','mysqldump','--apply','verify-migration.sh','rollback','37/37','ownership_nulls=0','cross_tenant_mismatch_count=0','processing_jobs=0','write_profile_version=safet-submit-appeal-v1','safe_t_submit_write_enabled=1','safe_t_appeal_write_enabled=1','shadow','SAFE_T_READ'] as $runbookNeedle){
+foreach(['--dry-run','mysqldump','--apply','verify-migration.sh','rollback','37/37','ownership_nulls=0','cross_tenant_mismatch_count=0','processing_jobs=0','write_profile_version=safet-submit-appeal-email-review-v1','safe_t_submit_write_enabled=1','safe_t_appeal_write_enabled=1','safe_t_email_review_write_enabled=1','shadow','SAFE_T_READ'] as $runbookNeedle){
     ppAssert(str_contains($runbook,$runbookNeedle),'Runbook missing '.$runbookNeedle);
 }
 

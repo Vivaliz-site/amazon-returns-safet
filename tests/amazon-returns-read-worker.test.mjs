@@ -31,6 +31,7 @@ test('real denied-page layout preserves denied appeal without a status label', (
   const observation = parseSafeTStatus('Detalhes da reivindica\u00e7\u00e3o: 11111-22222-3333333\nNegado\nID da reivindica\u00e7\u00e3o SAFE-T\n11111-22222-3333333\nRecorrer por\nTue, Sep 8, 2026, 02:28 PM\nAnalisamos seu recurso. Ap\u00f3s a an\u00e1lise do recurso, negamos sua solicita\u00e7\u00e3o de reembolso.');
   assert.equal(observation.claim_status, 'DENIED');
   assert.equal(observation.appeal_denied, true);
+  assert.ok(observation.decision_text && observation.decision_text.includes('recurso'), 'appeal_denied must carry auditable denial text for second-stage email review');
   assert.equal(observation.safe_t_id, '11111-22222-3333333');
   assert.equal(observation.appeal_deadline_at, '2026-09-08T14:28:00-03:00');
 });

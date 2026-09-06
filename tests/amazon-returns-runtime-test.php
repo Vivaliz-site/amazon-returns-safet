@@ -14,7 +14,8 @@ foreach(['gmail_ingest','safe_t_write','appeal_write','email_review_write','emai
 $enabled=new SvAmazonReturnsConfig(['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_SAFE_T_WRITE'=>'1','AMAZON_RETURNS_APPEAL_WRITE'=>'1','AMAZON_RETURNS_EMAIL_REVIEW_WRITE'=>'1','AMAZON_RETURNS_EMAIL_REPLY_WRITE'=>'1','AMAZON_RETURNS_SUPPORT_WRITE'=>'1']);
 rtSame(true,$enabled->externalWriteAllowed('SAFE_T_SUBMIT'),'Versioned profile enables SAFE-T submit.');
 rtSame(true,$enabled->externalWriteAllowed('SAFE_T_APPEAL'),'Versioned profile enables SAFE-T appeal.');
-foreach(['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN'] as $action)rtSame(false,$enabled->externalWriteAllowed($action),$action.' remains disabled by versioned profile.');
+rtSame(true,$enabled->externalWriteAllowed('SAFE_T_EMAIL_REVIEW'),'Versioned profile enables second-stage email review.');
+foreach(['SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN'] as $action)rtSame(false,$enabled->externalWriteAllowed($action),$action.' remains disabled by versioned profile.');
 rtSame(false,$enabled->externalWriteAllowed('DELETE'),'Unknown action never writes.');
 
 $policies=SvAmazonReturnPolicySeeder::definitions();

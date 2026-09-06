@@ -16,7 +16,7 @@ A mudança só é aceita quando todas estas evidências forem verdadeiras:
 - `ownership_nulls=0`;
 - `cross_tenant_mismatch_count=0`;
 - `processing_jobs=0`;
-- `write_profile_version=safet-submit-appeal-v1`; `safe_t_submit_write_enabled=1`; `safe_t_appeal_write_enabled=1`; email/support writes remain off;
+- `write_profile_version=safet-submit-appeal-email-review-v1`; `safe_t_submit_write_enabled=1`; `safe_t_appeal_write_enabled=1`; second-stage SAFE-T review email is enabled; email replies and support writes remain off;
 - `pre_migration_hash` é igual a `post_migration_hash`;
 - D+45 operational opening permanece válido para todas as políticas ativas deste tenant;
 - shadow audit retorna `mismatch_count=0`;
@@ -162,9 +162,10 @@ grep -Fx 'target_current_cases=37' "$verification"
 grep -Fx 'ownership_nulls=0' "$verification"
 grep -Fx 'cross_tenant_mismatch_count=0' "$verification"
 grep -Fx 'processing_jobs=0' "$verification"
-grep -Fx 'write_profile_version=safet-submit-appeal-v1' "$verification"
+grep -Fx 'write_profile_version=safet-submit-appeal-email-review-v1' "$verification"
 grep -Fx 'safe_t_submit_write_enabled=1' "$verification"
 grep -Fx 'safe_t_appeal_write_enabled=1' "$verification"
+grep -Fx 'safe_t_email_review_write_enabled=1' "$verification"
 grep -Fx 'migration_verification=ok' "$verification"
 ```
 

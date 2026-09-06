@@ -11,10 +11,10 @@ $cfg=new SvAmazonReturnsConfig([
  'AMAZON_RETURNS_EMAIL_REVIEW_WRITE'=>'0','AMAZON_RETURNS_EMAIL_REPLY_WRITE'=>'0',
  'AMAZON_RETURNS_SUPPORT_WRITE'=>'0','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,
 ]);
-wpSame('safet-submit-appeal-v1',$cfg->writeProfileVersion(),'profile version');
+wpSame('safet-submit-appeal-email-review-v1',$cfg->writeProfileVersion(),'profile version');
 wpSame(true,$cfg->externalWriteAllowed('SAFE_T_SUBMIT'),'profile enables future eligible openings');
 wpSame(true,$cfg->externalWriteAllowed('SAFE_T_APPEAL'),'profile enables eligible appeals');
-wpSame(false,$cfg->externalWriteAllowed('SAFE_T_EMAIL_REVIEW'),'email review remains off');
+wpSame(true,$cfg->externalWriteAllowed('SAFE_T_EMAIL_REVIEW'),'second-stage email review enabled');
 wpSame(false,$cfg->externalWriteAllowed('SAFE_T_EMAIL_REPLY'),'email reply remains off');
 wpSame(false,$cfg->externalWriteAllowed('SELLER_SUPPORT_OPEN'),'support remains off');
 $kill=new SvAmazonReturnsConfig([
@@ -35,10 +35,10 @@ $checker=__DIR__.'/../scripts/write-profile-check.php';
 wpSame(true,is_file($checker),'runtime verifier must use a profile checker');
 if(is_file($checker)){
  $json=shell_exec('php '.escapeshellarg($checker));$checked=is_string($json)?json_decode($json,true):null;
- wpSame('safet-submit-appeal-v1',$checked['version']??null,'checker profile version');
+ wpSame('safet-submit-appeal-email-review-v1',$checked['version']??null,'checker profile version');
  wpSame(true,$checked['flags']['SAFE_T_SUBMIT']??null,'checker sees submit enabled');
  wpSame(true,$checked['flags']['SAFE_T_APPEAL']??null,'checker sees appeal enabled');
- wpSame(false,$checked['flags']['SAFE_T_EMAIL_REVIEW']??null,'checker keeps email review off');
+ wpSame(true,$checked['flags']['SAFE_T_EMAIL_REVIEW']??null,'checker sees email review enabled');
 }
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 wpSame(true,str_contains($daemon,'write_profile_revision'),'profile change must force scheduler reevaluation');

@@ -229,8 +229,8 @@ profile_value() {
     printf '%s' "$write_profile_json" | php -r '$j=json_decode(stream_get_contents(STDIN),true);$k=$argv[1];if($k==="version"){echo $j["version"]??"";exit;}echo !empty($j["flags"][$k])?"1":"0";' "$key"
 }
 write_profile_version="$(profile_value version)"
-[[ "$write_profile_version" == 'safet-submit-appeal-v1' ]] || { echo "write_profile_invalid version=$write_profile_version" >&2; exit 1; }
-for spec in SAFE_T_SUBMIT:1 SAFE_T_APPEAL:1 SAFE_T_EMAIL_REVIEW:0 SAFE_T_EMAIL_REPLY:0 SELLER_SUPPORT_OPEN:0 SELLER_SUPPORT_UPDATE:0; do
+[[ "$write_profile_version" == 'safet-submit-appeal-email-review-v1' ]] || { echo "write_profile_invalid version=$write_profile_version" >&2; exit 1; }
+for spec in SAFE_T_SUBMIT:1 SAFE_T_APPEAL:1 SAFE_T_EMAIL_REVIEW:1 SAFE_T_EMAIL_REPLY:0 SELLER_SUPPORT_OPEN:0 SELLER_SUPPORT_UPDATE:0; do
     action="${spec%%:*}"; expected="${spec##*:}"; actual="$(profile_value "$action")"
     [[ "$actual" == "$expected" ]] || { echo "write_profile_flag_mismatch action=$action expected=$expected actual=$actual" >&2; exit 1; }
 done
@@ -251,6 +251,7 @@ emit "ownership_hash=$ownership_hash"
 emit "write_profile_version=$write_profile_version"
 emit "safe_t_submit_write_enabled=$(profile_value SAFE_T_SUBMIT)"
 emit "safe_t_appeal_write_enabled=$(profile_value SAFE_T_APPEAL)"
+emit "safe_t_email_review_write_enabled=$(profile_value SAFE_T_EMAIL_REVIEW)"
 emit "migration_policy_ok tenant_id=$tenant_id policy_d45_operational=true"
 emit 'migration_verification=ok'
 
