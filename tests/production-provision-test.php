@@ -61,6 +61,9 @@ ppAssert(str_contains($script,'cloudflare-certbot.ini'),'TLS renewals must retai
 ppAssert(str_contains($script,'-o root -g www-data -m 0770 "$shared"'),'Shared runtime directory must be group-writable by the service.');
 ppAssert(str_contains($script,'-o www-data -g www-data -m 0750 "$shared/evidence"'),'Evidence directory must be writable by the service user.');
 ppAssert(str_contains($script,'-o root -g root -m 0700 "$shared/private"'),'Private bootstrap secrets must remain root-only.');
+ppAssert(str_contains($script,'admin-password-rotation-request'),'Provisioning must support a protected one-shot admin password rotation request outside Git.');
+ppAssert(str_contains($script,'password_hash($argv[1], PASSWORD_DEFAULT)'),'Admin password rotation must store only a password hash in the environment.');
+ppAssert(str_contains($script,'rm -f -- "$rotation_request"'),'Admin password rotation request must be consumed after successful application.');
 ppAssert(substr_count($script,'runuser -u ubuntu -- git -C "$repo"') >= 2,'Root provisioning must run repository git reads as the checkout owner.');
 ppAssert(!str_contains($script,'--webroot'),'TLS issuance must not depend on public origin port 80.');
 ppAssert(str_contains($script,'SvAmazonReturnsRuntime::bootstrap($db,$context)'),'Provisioning must bootstrap only after resolving tenant context.');

@@ -11,6 +11,7 @@ target_user='amazon_returns_app'
 shared="$root/shared"
 releases="$root/releases"
 env_file="$shared/.env"
+rotation_request="$root/admin-password-rotation-request"
 sha="$(runuser -u ubuntu -- git -C "$repo" rev-parse --short=12 HEAD)"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 release="$releases/$stamp-$sha"
@@ -36,6 +37,19 @@ ensure_env_key() {
     tmp="$(mktemp "$shared/.env.identity.XXXXXX")"
     cp "$env_file" "$tmp"
     printf '%s=%s\n' "$key" "$value" >> "$tmp"
+    install -o root -g www-data -m 0640 "$tmp" "$env_file"
+    rm -f "$tmp"
+}
+
+set_env_key() {
+    local key="$1" value="$2" tmp
+    tmp="$(mktemp "$shared/.env.update.XXXXXX")"
+    awk -F= -v key="$key" -v value="$value" '''
+        BEGIN { updated=0 }
+        $1 == key { print key "=" value; updated=1; next }
+        { print }
+        END { if (!updated) print key "=" value }
+    ''' "$env_file" > "$tmp"
     install -o root -g www-data -m 0640 "$tmp" "$env_file"
     rm -f "$tmp"
 }
@@ -78,6 +92,19 @@ if [[ ! -f "$env_file" ]]; then
 else
     db_pass="$(awk -F= '$1=="AMAZON_RETURNS_DB_PASS"{sub(/^[^=]*=/,""); print; exit}' "$env_file")"
     [[ -n "$db_pass" ]] || { echo 'target DB password missing from env' >&2; exit 2; }
+fi
+
+if [[ -e "$rotation_request" ]]; then
+    [[ -f "$rotation_request" && ! -L "$rotation_request" ]] || { echo 'invalid admin password rotation request type' >&2; exit 2; }
+    [[ "$(stat -c '%U' "$rotation_request")" == 'ubuntu' && "$(stat -c '%a' "$rotation_request")" == '600' ]] || { echo 'admin password rotation request must be ubuntu-owned mode 600' >&2; exit 2; }
+    rotation_password="$(cat "$rotation_request")"
+    [[ -n "$rotation_password" ]] || { echo 'admin password rotation request is empty' >&2; exit 2; }
+    rotation_hash="$(php -r 'echo password_hash($argv[1], PASSWORD_DEFAULT);' "$rotation_password")"
+    set_env_key 'AMAZON_RETURNS_ADMIN_USERNAME' 'Fred'
+    set_env_key 'AMAZON_RETURNS_ADMIN_PASSWORD_HASH' "$rotation_hash"
+    unset rotation_password rotation_hash
+    rm -f -- "$rotation_request"
+    echo 'admin_password_rotation=applied'
 fi
 
 ensure_env_key 'AMAZON_RETURNS_TENANT_SLUG' 'shopvivaliz'

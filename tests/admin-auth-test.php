@@ -7,6 +7,7 @@ function aaAssert(bool $condition,string $message):void{if(!$condition)throw new
 $hash=password_hash('correct horse battery staple',PASSWORD_DEFAULT);
 $credentials=['username'=>'fred','password_hash'=>$hash];
 aaAssert(SvAmazonReturnsAdminAuth::verifyCredentials('fred','correct horse battery staple',$credentials),'Valid standalone credential must verify.');
+aaAssert(SvAmazonReturnsAdminAuth::verifyCredentials('Fred','correct horse battery staple',$credentials),'Username matching must be case-insensitive.');
 aaAssert(!SvAmazonReturnsAdminAuth::verifyCredentials('fred','wrong',$credentials),'Wrong password must fail.');
 aaAssert(!SvAmazonReturnsAdminAuth::verifyCredentials('other','correct horse battery staple',$credentials),'Wrong user must fail.');
 
