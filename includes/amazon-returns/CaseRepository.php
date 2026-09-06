@@ -131,7 +131,11 @@ final class SvAmazonReturnCaseRepository
         $params=$this->scopeParams();
         $allowed=['q','safe_t_id','state','review_status','program','physical_status','deadline','learned_rule','min_outstanding','max_outstanding'];
         foreach(array_keys($filters) as $key)if(!in_array($key,$allowed,true))throw new InvalidArgumentException('Unsupported case search filter: '.$key);
-        if(isset($filters['q'])){$q=$this->requiredText((string)$filters['q'],'search query',96);$where[]='(c.amazon_order_id LIKE :q OR c.safe_t_id LIKE :q OR c.sku LIKE :q OR c.asin LIKE :q)';$params[':q']='%'.$q.'%';}
+        if(isset($filters['q'])){
+            $q='%'.$this->requiredText((string)$filters['q'],'search query',96).'%';
+            $where[]='(c.amazon_order_id LIKE :q_order OR c.safe_t_id LIKE :q_safe_t OR c.sku LIKE :q_sku OR c.asin LIKE :q_asin)';
+            foreach([':q_order',':q_safe_t',':q_sku',':q_asin'] as $placeholder)$params[$placeholder]=$q;
+        }
         foreach(['safe_t_id','state','program','physical_status'] as $field){if(!isset($filters[$field]))continue;$where[]='c.'.$field.'=:'.$field;$params[':'.$field]=$filters[$field];}
         if(isset($filters['review_status'])){$where[]='EXISTS (SELECT 1 FROM amazon_return_reviews r WHERE r.tenant_id=c.tenant_id AND r.amazon_connection_id=c.amazon_connection_id AND r.case_id=c.id AND r.status=:review_status)';$params[':review_status']=$filters['review_status'];}
         $deadline='COALESCE(c.appeal_deadline_at,c.next_action_at,c.eligibility_at)';
