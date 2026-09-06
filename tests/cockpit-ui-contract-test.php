@@ -12,6 +12,9 @@ foreach(['viewport','cockpit.css','cockpit.js','Casos','Revisões','case-list','
 foreach(['Pesquisar','Estado','Ação','Programa','Físico','Prazo'] as $label)cuAssert(str_contains($page,$label),'Cockpit filter label missing '.$label);
 cuAssert(str_contains($page,'data-view="cases"'),'Cases tab required.');
 cuAssert(str_contains($page,'data-view="reviews"'),'Reviews tab required.');
+cuAssert(str_contains($page,'id="review-count"'),'Visible pending-review count target required.');
+cuAssert(str_contains($page,'id="review-alert"'),'Visible pending-review alert required.');
+cuAssert(str_contains($js,'pending_reviews'),'Cockpit JS must render pending review count from summary.');
 cuAssert(!str_contains($js,'innerHTML'),'API text must not be injected as HTML.');
 foreach(['textContent','createElement','loadCases','loadReviews','openCase','renderTimeline'] as $needle)cuAssert(str_contains($js,$needle),'Cockpit JS missing '.$needle);
 cuAssert(str_contains($js,"Intl.NumberFormat('pt-BR'"),'BRL formatter required.');

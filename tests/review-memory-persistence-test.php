@@ -25,7 +25,7 @@ foreach (['scripts/verify-migration.sh','scripts/verify-live-tenant-foundation.s
     $source=file_get_contents(__DIR__.'/../'.$path);
     foreach (['amazon_return_reviews','amazon_return_learned_rules','amazon_return_rule_applications','source_review_id','resulting_rule_id'] as $needle) rmAssert(str_contains($source,$needle),'Ownership verifier missing '.$path.':'.$needle);
 }
-foreach ([SvAmazonReviewRepository::class=>['open','lock','decide','saveSuggestion','recordAiFailure','find','forCase','openQueue','countOpen','countOpenForCase','countOpenByReason','countAiFailures'],
+foreach ([SvAmazonReviewRepository::class=>['open','lock','decide','saveSuggestion','recordAiFailure','find','forCase','openQueue','countOpen','countOpenForCase','countOpenByReason','countAiFailures','resolveOpenForCase'],
     SvAmazonLearnedRuleRepository::class=>['active','promote','revision','list','setStatus','incrementOutcome'],
     SvAmazonRuleApplicationRepository::class=>['record','forCase','countAll','pendingOutcomes','recordOutcome']] as $class=>$methods) {
     foreach ($methods as $method) rmAssert(method_exists($class,$method), 'Missing '.$class.'::'.$method);

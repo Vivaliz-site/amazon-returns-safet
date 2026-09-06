@@ -21,6 +21,10 @@ $normalized = SvAmazonSafeTStatus::normalize([
 stSame(true, $normalized['appeal_submitted'] ?? null, 'Normalized SAFE-T status must preserve appeal_submitted.');
 stSame(true, $normalized['appeal_denied'] ?? null, 'Normalized SAFE-T status must preserve appeal_denied.');
 stSame('APPEAL_DENIED_FINAL', SvAmazonSafeTStatusService::nextState('APPEAL_SUBMITTED', 'DENIED', true), 'Denied appeal must project APPEAL_DENIED_FINAL.');
+stSame('APPEAL_DENIED_FINAL', SvAmazonSafeTStatusService::nextState('CREDIT_PENDING', 'DENIED', true), 'Confirmed appeal denial must override stale CREDIT_PENDING.');
+foreach (['EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','CLOSED_LOSS'] as $completedStage) {
+    stSame($completedStage, SvAmazonSafeTStatusService::nextState($completedStage, 'DENIED', true), 'Repeated denial read must preserve completed stage '.$completedStage.'.');
+}
 stSame('SAFE_T_DENIED', SvAmazonSafeTStatusService::nextState('SAFE_T_SUBMITTED', 'DENIED', false), 'First denial must project SAFE_T_DENIED.');
 stSame('APPEAL_APPROVED', SvAmazonSafeTStatusService::nextState('APPEAL_SUBMITTED', 'APPROVED', false), 'Approval after appeal must project APPEAL_APPROVED.');
 stSame('SAFE_T_APPROVED', SvAmazonSafeTStatusService::nextState('SAFE_T_SUBMITTED', 'APPROVED', false), 'Initial claim approval must project SAFE_T_APPROVED.');

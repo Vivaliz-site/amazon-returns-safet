@@ -25,6 +25,12 @@ $examples=[
         'router_expected'=>'2026-06-25 03:00:00',
         'label'=>'Seller Central abbreviated English month',
     ],
+    [
+        'text'=>'Se a devolução ainda não estiver marcada como entregue, você será reembolsado proativamente até 12 August 2026',
+        'wait_expected'=>'2026-08-12 03:00:00',
+        'router_expected'=>'2026-08-13 03:00:00',
+        'label'=>'Seller Central day-first English month',
+    ],
 ];
 
 foreach($examples as $example){

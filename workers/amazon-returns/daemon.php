@@ -341,6 +341,10 @@ final class SvAmazonReturnsDaemon
                 $blockedWrites++;
                 continue;
             }
+            if(!$this->config->writeCaseAllowed($caseId)){
+                $blockedWrites++;
+                continue;
+            }
             $dependency=SvAmazonReturnsScheduler::dependencyForAction($action);
             if(!(($this->config->readiness()[$dependency]['ready'] ?? false))){
                 $blockedWrites++;
