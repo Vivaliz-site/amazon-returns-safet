@@ -122,8 +122,9 @@ final class SvAmazonRequestedWait
         elseif (($case['state']??'')==='APPEAL_DENIED_FINAL' || !empty($latest['payload']['appeal_denied'])) $action='SAFE_T_EMAIL_REVIEW';
         else {
             $deadline=self::timestamp($case['appeal_deadline_at']??null);
-            if ($deadline===null) return $base+['action'=>'HUMAN_REVIEW','reason'=>'RESUMPTION_APPEAL_WINDOW_UNRESOLVED'];
-            $action=$now > $deadline ? 'SAFE_T_EMAIL_REVIEW' : 'SAFE_T_APPEAL';
+            if ($deadline===null) return $base+['action'=>'HUMAN_REVIEW','reason'=>'RESUMPTION_APPEAL_WINDOW_UNRESOLVED','resume_scope'=>$scope];
+            if ($now>$deadline) return $base+['action'=>'HUMAN_REVIEW','reason'=>'INTERNAL_APPEAL_WINDOW_MISSED_REQUIRES_REVIEW','resume_scope'=>$scope];
+            $action='SAFE_T_APPEAL';
         }
         $scope=hash('sha256',$claim.'|'.$wait['instruction_hash'].'|'.$due->format(DATE_ATOM));
         return $base+['action'=>$action,'reason'=>'AMAZON_REQUESTED_DATE_REACHED_UNRECOVERED','resume_scope'=>$scope,'review_scope'=>$scope,
