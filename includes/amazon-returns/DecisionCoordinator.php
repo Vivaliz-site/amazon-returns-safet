@@ -8,6 +8,17 @@ final class SvAmazonDecisionCoordinator
     public function __construct(private SvAmazonSafeTDecisionEngine $base,private object $persistence,private ?object $config=null,private ?SvAmazonLearnedRuleEngine $ruleEngine=null){$this->ruleEngine??=new SvAmazonLearnedRuleEngine();}
     public function previewAction(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null):array{return $this->decide($case,$timeline,$policy,$now,false);}
     public function nextAction(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null):array{return $this->decide($case,$timeline,$policy,$now,true);}
+    public function buildReviewContext(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null): ?array
+    {
+        $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));$base=$this->base->nextAction($case,$timeline,$policy,$now);
+        if(!in_array($base['action']??'',['HUMAN_REVIEW','BLOCKED_REVIEW'],true))return null;
+        return SvAmazonReviewContext::build($case,$timeline,$policy,$base);
+    }
+    public function guardProposedEffect(array $effect,array $case,array $timeline,array $policy,?DateTimeImmutable $now=null): array
+    {
+        $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));$normalized=SvAmazonLearnedRuleEngine::normalizeEffect($effect,SvAmazonReviewContext::build($case,$timeline,$policy,['action'=>'HUMAN_REVIEW','reason'=>'PREVIEW'])['variables']);
+        return $this->base->guardLearnedEffect($normalized,$case,$timeline,$policy,$now);
+    }
     private function decide(array $case,array $timeline,array $policy,?DateTimeImmutable $now,bool $persist):array
     {
         $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));$base=$this->base->nextAction($case,$timeline,$policy,$now);

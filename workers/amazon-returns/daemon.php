@@ -61,6 +61,11 @@ final class SvAmazonReturnsDaemon
             $due=array_values(array_unique([...$due,'scheduler','sp_api','financial']));
             $state['opening_policy_revision']=$openingRevision;
         }
+        $ruleRevision=$this->persistence->learnedRules->revision();
+        if(($state['learned_rule_revision']??null)!==$ruleRevision){
+            $due=array_values(array_unique([...$due,'scheduler']));
+            $state['learned_rule_revision']=$ruleRevision;
+        }
         $writeRevision=$this->config->writeProfileVersion();
         if($writeRevision!==null && ($state['write_profile_revision']??null)!==$writeRevision){
             $due=array_values(array_unique([...$due,'scheduler']));
