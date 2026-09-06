@@ -8,9 +8,13 @@ final class SvAmazonReturnsConfig
     public function __construct(private array $override = []) {}
 
     public function enabled(): bool { return $this->bool('AMAZON_RETURNS_ENABLED', false); }
-    public function openAiKey(): string { return $this->get('OPENAI_API_KEY'); }
+    public function openAiKey(): string { return $this->aiSecret('OPENAI_API_KEY'); }
+    public function anthropicKey(): string { return $this->aiSecret('ANTHROPIC_API_KEY','CLAUDE_API_KEY'); }
+    public function geminiKey(): string { return $this->aiSecret('GEMINI_API_KEY','GOOGLE_API_KEY','GOOGLE_IMAGEN_API_KEY'); }
     public function reviewAiModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_MODEL','gpt-5.6-terra'); }
-    public function reviewAiReady(): bool { return $this->openAiKey()!=='' && $this->reviewAiModel()!==''; }
+    public function reviewAiAnthropicModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_ANTHROPIC_MODEL','claude-sonnet-4-6'); }
+    public function reviewAiGeminiModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_GEMINI_MODEL','gemini-2.5-flash'); }
+    public function reviewAiReady(): bool { return $this->openAiKey()!=='' || $this->anthropicKey()!=='' || $this->geminiKey()!==''; }
     public function learnedRuleExecutionEnabled(): bool { return $this->bool('AMAZON_RETURNS_LEARNED_RULE_EXECUTION', false); }
 
     public function mode(): string
@@ -118,6 +122,20 @@ final class SvAmazonReturnsConfig
         foreach ($keys as $key) {
             $value = $this->get($key);
             if ($value !== '') return $value;
+        }
+        return '';
+    }
+
+    private function aiSecret(string ...$keys): string
+    {
+        foreach($keys as $key){$value=$this->get($key);if($value!=='')return $value;}
+        $path=$this->get('AMAZON_RETURNS_AI_ENV_FILE','/home/ubuntu/amazon-returns-deploy/ai-secrets.env');
+        if($path===''||!is_file($path)||!is_readable($path))return '';
+        $wanted=array_fill_keys($keys,true);
+        foreach(file($path,FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES)?:[] as $line){
+            if(str_starts_with(ltrim($line),'#')||!str_contains($line,'='))continue;
+            [$key,$value]=array_map('trim',explode('=',$line,2));
+            if(isset($wanted[$key])&&$value!=='')return $value;
         }
         return '';
     }
