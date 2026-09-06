@@ -144,6 +144,21 @@ final class SvAmazonReviewRepository
     public function countOpenForCase(int $caseId): int { return $this->count("status='OPEN' AND case_id=:case_id",[':case_id'=>$caseId]); }
     public function countOpenByReason(string $reason): int { return $this->count("status='OPEN' AND reason=:reason",[':reason'=>$reason]); }
     public function countAiFailures(): int { return (int)$this->sql('SELECT COALESCE(SUM(ai_error_count),0) FROM '.self::TABLE.' WHERE '.$this->scope())->fetchColumn(); }
+    public function resolveOpenForCase(int $caseId): int
+    {
+        return $this->atomic(function () use ($caseId): int {
+            $this->owned('amazon_return_cases',$caseId,true);
+            $rows=$this->rows(self::TABLE,"case_id=:case_id AND status='OPEN'",[':case_id'=>$caseId],'FOR UPDATE');
+            foreach($rows as $row){
+                $version=(int)($row['version']??0);
+                $this->change(self::TABLE,(int)$row['id'],[
+                    'status'=>'RESOLVED','open_key'=>null,'version'=>$version+1,
+                    'actor'=>'SYSTEM','source_version'=>'decision-coordinator-v1','decided_at'=>self::now(),
+                ],"status='OPEN' AND version=:expected",[':expected'=>$version]);
+            }
+            return count($rows);
+        });
+    }
     private function count(string $where, array $params=[]): int { return (int)$this->sql('SELECT COUNT(*) FROM '.self::TABLE.' WHERE '.$this->scope().' AND '.$where,$params)->fetchColumn(); }
 
     public function recordOutcome(int $reviewId,string $outcome,array $evidenceRefs): array

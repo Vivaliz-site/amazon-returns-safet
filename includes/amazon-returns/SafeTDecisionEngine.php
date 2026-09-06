@@ -35,6 +35,7 @@ final class SvAmazonSafeTDecisionEngine
 
         $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
         if($safeTId==='' && ($policy['eligible']??false)===true){
+            if(trim((string)($case['refund_at']??''))==='')return $this->decision('WAIT','REFUND_NOT_CONFIRMED',$caseId);
             if(!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN){
                 return $this->decision('BLOCKED_REVIEW','REFUND_INITIATOR_UNKNOWN',$caseId);
             }
@@ -122,6 +123,7 @@ final class SvAmazonSafeTDecisionEngine
             return $this->decision('WAIT','SAFE_T_ALREADY_EXISTS',$caseId);
         }
 
+        if(trim((string)($case['refund_at']??''))==='')return $this->decision('WAIT','REFUND_NOT_CONFIRMED',$caseId);
         if(!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN){
             return $this->decision('BLOCKED_REVIEW','REFUND_INITIATOR_UNKNOWN',$caseId);
         }

@@ -49,6 +49,7 @@ try{
         'amazon_connection_id'=>$context->amazonConnectionId(),
         'money'=>$money,
         'health_gates'=>$gates,
+        'pending_reviews'=>$p->reviews->countOpen(),
         'total_cases'=>(int)($row['total_cases'] ?? 0),
         'recent_cases'=>$p->cases->recent(50),
         'checked_at'=>gmdate(DATE_ATOM),

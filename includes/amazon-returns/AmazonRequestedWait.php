@@ -17,7 +17,7 @@ final class SvAmazonRequestedWait
         if (str_contains($normalized, 'nao responderemos a outras comunicacoes') || str_contains($normalized, 'nao sera reconsiderada')) return $result;
         $weekday='(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s*,?\s*)?';
         $englishMonth='(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
-        $date = '(?:[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}[\/.][0-9]{1,2}[\/.][0-9]{4}|[0-9]{1,2}\s+de\s+[a-z]+\s+de\s+[0-9]{4}|'.$weekday.$englishMonth.'\s+[0-9]{1,2}\s*,?\s*[0-9]{4})';
+        $date = '(?:[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}[\/.][0-9]{1,2}[\/.][0-9]{4}|[0-9]{1,2}\s+de\s+[a-z]+\s+de\s+[0-9]{4}|[0-9]{1,2}\s+'.$englishMonth.'\s+[0-9]{4}|'.$weekday.$englishMonth.'\s+[0-9]{1,2}\s*,?\s*[0-9]{4})';
         $waitVerb='(?:aguarde|aguardar|espere|retorne|volte|reabra|reabrir)';
         $futureMoney='(?:(?:sera|serao)\s+(?:reembolsad[oa]|ressarcid[oa])|(?:reembolso|ressarcimento)\s+(?:sera|serao|previst[oa]))';
         $pattern = '/\b(?:'.$waitVerb.'|'.$futureMoney.')\b(?:(?!\b(?:foi|foram|ocorreu|ocorreram|ja|e|mas|porem)\b)[^.,;!?\n]){0,160}?\b(ate|a partir de|apos|depois de|em|para)\s+(?:o dia\s+|dia\s+)?('.$date.')\b/';
@@ -50,6 +50,7 @@ final class SvAmazonRequestedWait
         if (preg_match('/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/D', $raw, $m)) { $year=(int)$m[1];$month=(int)$m[2];$day=(int)$m[3]; }
         elseif (preg_match('/^([0-9]{1,2})[\/.]([0-9]{1,2})[\/.]([0-9]{4})$/D', $raw, $m)) { $year=(int)$m[3];$month=(int)$m[2];$day=(int)$m[1]; }
         elseif (preg_match('/^([0-9]{1,2})\s+de\s+([a-z]+)\s+de\s+([0-9]{4})$/D', $raw, $m)) { $year=(int)$m[3];$month=$monthNames[$m[2]]??0;$day=(int)$m[1]; }
+        elseif (preg_match('/^([0-9]{1,2})\s+([a-z]+)\s+([0-9]{4})$/D', $raw, $m)) { $year=(int)$m[3];$month=$englishMonths[$m[2]]??0;$day=(int)$m[1]; }
         elseif (preg_match('/^([a-z]+)\s+([0-9]{1,2})\s*,?\s*([0-9]{4})$/D', $raw, $m)) { $year=(int)$m[3];$month=$englishMonths[$m[1]]??0;$day=(int)$m[2]; }
         else return null;
         if ($year < 2000 || $year > 2100 || !checkdate($month, $day, $year)) return null;

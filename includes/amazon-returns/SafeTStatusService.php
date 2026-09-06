@@ -58,8 +58,9 @@ final class SvAmazonSafeTStatusService
         $claimStatus=strtoupper(trim($claimStatus));
         if(in_array($currentState,['RECOVERED','RECEIVED_OK'],true))return $currentState;
         if($claimStatus==='DENIED'){
-            if(in_array($currentState,['EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','CREDIT_PENDING','CLOSED_LOSS'],true))return $currentState;
-            if(!$appealDenied && in_array($currentState,['APPEAL_SUBMITTED','APPEAL_DENIED_FINAL'],true))return $currentState;
+            if(in_array($currentState,['EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','CLOSED_LOSS'],true))return $currentState;
+            if($appealDenied)return 'APPEAL_DENIED_FINAL';
+            if($currentState==='CREDIT_PENDING' || in_array($currentState,['APPEAL_SUBMITTED','APPEAL_DENIED_FINAL'],true))return $currentState;
         }
         if($claimStatus==='APPROVED' && in_array($currentState,['CREDIT_PENDING','APPEAL_APPROVED'],true))return $currentState;
         return match ($claimStatus) {

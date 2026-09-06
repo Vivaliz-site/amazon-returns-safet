@@ -43,6 +43,12 @@ sdSame($submit, $engine->nextAction(eligibleCase(), [], $eligiblePolicy), 'Same 
 
 sdSame('SAFE_T_SUBMIT', $engine->nextAction(eligibleCase(['seller_debit_at'=>null]), [], $eligiblePolicy)['action'], 'Once D45 eligibility is established, missing separate debit field is not a third blocker.');
 sdSame('BLOCKED_REVIEW', $engine->nextAction(eligibleCase(['refund_initiator'=>'UNKNOWN']), [], $eligiblePolicy)['action'], 'Unknown refund initiator must block a new auto-write.');
+$notRefunded=eligibleCase(['refund_at'=>null,'seller_debit_at'=>null,'refund_initiator'=>'UNKNOWN','expected_reimbursement_amount'=>'0.00']);
+$notRefundedDecision=$engine->nextAction($notRefunded, [], ['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED']);
+sdSame('WAIT', $notRefundedDecision['action'], 'No confirmed refund must remain automatic wait instead of creating a human review for a placeholder UNKNOWN initiator.');
+sdSame('REFUND_NOT_CONFIRMED', $notRefundedDecision['reason']??null, 'No-refund wait must be explicit.');
+$notRefundedFba=$notRefunded;$notRefundedFba['program']='FBA';
+sdSame('CHECK_FINANCES', $engine->nextAction($notRefundedFba, [], ['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'])['action'], 'Classic FBA without a confirmed refund must keep its separate automatic finance route.');
 sdSame('SAFE_T_SUBMIT', $engine->nextAction(eligibleCase(['physical_status'=>'RECEIVED_OK']), [], $eligiblePolicy)['action'], 'Physical return does not cancel D45 SAFE-T when Amazon refunded the customer and seller financial loss remains.');
 sdSame('WAIT', $engine->nextAction(eligibleCase(['reconciled_credit_amount'=>'199.90']), [], $eligiblePolicy)['action'], 'Existing Amazon credit stops duplicate recovery.');
 sdSame('WAIT', $engine->nextAction(eligibleCase(), [], ['eligible'=>false,'state'=>'AWAITING_RETURN'])['action'], 'Ineligible policy must wait.');

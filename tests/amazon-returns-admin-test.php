@@ -28,6 +28,7 @@ foreach(['admin/amazon-returns/api/case.php','admin/amazon-returns/api/intake.ph
 }
 $summary=source('admin/amazon-returns/api/summary.php');
 foreach(['unclassified','eligible_without_action','expired_without_treatment','credit_without_reconciliation'] as $gate)adAssert(str_contains($summary,$gate),'Summary must expose '.$gate);
+adAssert(str_contains($summary,"pending_reviews"),"Summary must expose pending review count.");
 foreach(['at_risk','eligible_now','safe_t_submitted','denied','appeal','support','approved_awaiting_credit','recovered','loss'] as $bucket)adAssert(str_contains($summary,$bucket),'Summary bucket '.$bucket);
 
 $intakePage=source('admin/amazon-returns/intake.php');

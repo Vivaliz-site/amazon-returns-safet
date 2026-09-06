@@ -167,6 +167,9 @@ final class SvAmazonReturnActionRouter
         if(preg_match_all('/(?:ate|until)\s+(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s*,?\s*)?([a-z]+)\s+(\d{1,2})\s*,?\s*(\d{4})\b/',$text,$matches,PREG_SET_ORDER)){
             foreach($matches as $m){$month=$englishMonths[$m[1]]??0;if(checkdate($month,(int)$m[2],(int)$m[3]))$dates[]=sprintf('%04d-%02d-%02d',$m[3],$month,$m[2]);}
         }
+        if(preg_match_all('/(?:ate|until)\s+(\d{1,2})\s+([a-z]+)\s*,?\s*(\d{4})\b/',$text,$matches,PREG_SET_ORDER)){
+            foreach($matches as $m){$month=$englishMonths[$m[2]]??0;if(checkdate($month,(int)$m[1],(int)$m[3]))$dates[]=sprintf('%04d-%02d-%02d',$m[3],$month,$m[1]);}
+        }
         $dates=array_values(array_unique($dates));
         if(count($dates)!==1)return null;
         return (new DateTimeImmutable($dates[0],new DateTimeZone('America/Sao_Paulo')))->modify('+1 day');

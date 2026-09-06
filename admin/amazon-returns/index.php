@@ -18,7 +18,8 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <section class="cards" id="money" aria-label="Resumo financeiro"></section>
 <section class="panel"><h2>Gates de saúde</h2><div class="gates" id="gates"></div><p class="muted">Casos sem classificação · Casos elegíveis sem ação · Prazo vencido sem tratamento · Crédito sem conciliação. Meta operacional: todos os indicadores em zero.</p></section>
 <section class="panel cockpit">
-<nav class="cockpit-tabs" aria-label="Painel SAFE-T"><button type="button" data-view="cases" aria-selected="true">Casos</button><button type="button" data-view="reviews" aria-selected="false">Revisões</button><button type="button" data-view="rules" aria-selected="false">Memória</button></nav>
+<nav class="cockpit-tabs" aria-label="Painel SAFE-T"><button type="button" data-view="cases" aria-selected="true">Casos</button><button type="button" data-view="reviews" aria-selected="false">Revisões <span id="review-count" class="review-count">0</span></button><button type="button" data-view="rules" aria-selected="false">Memória</button></nav>
+<button type="button" id="review-alert" class="review-alert hidden" aria-live="polite"></button>
 <div id="cockpit-error" class="error" role="alert"></div>
 <form id="filters" class="filters" onsubmit="return false">
 <label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, SAFE-T ou SKU"></label>

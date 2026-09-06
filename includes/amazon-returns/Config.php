@@ -54,6 +54,20 @@ final class SvAmazonReturnsConfig
         return is_array($profile)?(string)$profile['version']:null;
     }
 
+    public function writeCaseAllowed(int $caseId): bool
+    {
+        if ($caseId < 1) return false;
+        $raw=$this->get('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS');
+        if ($raw==='') return true;
+        $allowed=[];
+        foreach (explode(',',$raw) as $part) {
+            $part=trim($part);
+            if ($part==='' || preg_match('/^[1-9][0-9]*$/D',$part)!==1) return false;
+            $allowed[(int)$part]=true;
+        }
+        return isset($allowed[$caseId]);
+    }
+
     /** @return array<string,bool|string>|null */
     private function writeProfile(): ?array
     {

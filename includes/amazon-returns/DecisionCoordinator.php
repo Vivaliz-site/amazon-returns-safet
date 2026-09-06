@@ -22,7 +22,10 @@ final class SvAmazonDecisionCoordinator
     private function decide(array $case,array $timeline,array $policy,?DateTimeImmutable $now,bool $persist):array
     {
         $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));$base=$this->base->nextAction($case,$timeline,$policy,$now);
-        if(!in_array($base['action']??'',['HUMAN_REVIEW','BLOCKED_REVIEW'],true))return $base;
+        if(!in_array($base['action']??'',['HUMAN_REVIEW','BLOCKED_REVIEW'],true)){
+            if($persist && method_exists($this->persistence->reviews,'resolveOpenForCase'))$this->persistence->reviews->resolveOpenForCase((int)$case['id']);
+            return $base;
+        }
         $context=SvAmazonReviewContext::build($case,$timeline,$policy,$base);$match=$this->ruleEngine->match($context,$this->persistence->learnedRules->active());
         if($match['status']==='MATCH'){
             $executionEnabled=$this->config!==null && method_exists($this->config,'learnedRuleExecutionEnabled') && $this->config->learnedRuleExecutionEnabled();
