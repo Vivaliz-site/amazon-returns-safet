@@ -8,6 +8,7 @@ final class SvAmazonLearnedRuleRepository
     private const TABLE='amazon_return_learned_rules';
 
     public function active(): array { return $this->list(['status'=>'ACTIVE']); }
+    public function find(int $ruleId): ?array { return $this->rows(self::TABLE,'id=:id',[':id'=>$ruleId],'')[0]??null; }
     public function list(array $filters=[]): array
     {
         $where='1=1'; $params=[];

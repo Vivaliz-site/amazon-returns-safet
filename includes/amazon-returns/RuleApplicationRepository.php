@@ -33,6 +33,7 @@ final class SvAmazonRuleApplicationRepository
         });
     }
     public function forCase(int $caseId): array { return $this->rows(self::TABLE,'case_id=:case_id',[':case_id'=>$caseId]); }
+    public function forRule(int $ruleId,int $limit=200): array { if($limit<1||$limit>1000)throw new InvalidArgumentException('Invalid rule application limit.'); return $this->rows(self::TABLE,'rule_id=:rule_id',[':rule_id'=>$ruleId],'ORDER BY id DESC LIMIT '.$limit); }
     public function countAll(): int { return (int)$this->sql('SELECT COUNT(*) FROM '.self::TABLE.' WHERE '.$this->scope())->fetchColumn(); }
     public function pendingOutcomes(int $limit=500): array
     {

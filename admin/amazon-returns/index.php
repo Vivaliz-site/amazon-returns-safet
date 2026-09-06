@@ -6,6 +6,7 @@ SvAmazonReturnsAdminAuth::requireLogin(false);
 $reviewAiCsrf=SvAmazonReturnsCsrf::token('review-ai');
 $reviewPreviewCsrf=SvAmazonReturnsCsrf::token('review-preview');
 $reviewDecisionCsrf=SvAmazonReturnsCsrf::token('review-decision');
+$ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 ?>
 <!doctype html>
 <html lang="pt-BR"><head>
@@ -17,7 +18,7 @@ $reviewDecisionCsrf=SvAmazonReturnsCsrf::token('review-decision');
 <section class="cards" id="money" aria-label="Resumo financeiro"></section>
 <section class="panel"><h2>Gates de saúde</h2><div class="gates" id="gates"></div><p class="muted">Casos sem classificação · Casos elegíveis sem ação · Prazo vencido sem tratamento · Crédito sem conciliação. Meta operacional: todos os indicadores em zero.</p></section>
 <section class="panel cockpit">
-<nav class="cockpit-tabs" aria-label="Painel SAFE-T"><button type="button" data-view="cases" aria-selected="true">Casos</button><button type="button" data-view="reviews" aria-selected="false">Revisões</button></nav>
+<nav class="cockpit-tabs" aria-label="Painel SAFE-T"><button type="button" data-view="cases" aria-selected="true">Casos</button><button type="button" data-view="reviews" aria-selected="false">Revisões</button><button type="button" data-view="rules" aria-selected="false">Memória</button></nav>
 <div id="cockpit-error" class="error" role="alert"></div>
 <form id="filters" class="filters" onsubmit="return false">
 <label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, SAFE-T ou SKU"></label>
@@ -32,6 +33,7 @@ $reviewDecisionCsrf=SvAmazonReturnsCsrf::token('review-decision');
 <input type="hidden" id="review-ai-csrf" value="<?=htmlspecialchars($reviewAiCsrf,ENT_QUOTES,'UTF-8')?>">
 <input type="hidden" id="review-preview-csrf" value="<?=htmlspecialchars($reviewPreviewCsrf,ENT_QUOTES,'UTF-8')?>">
 <input type="hidden" id="review-decision-csrf" value="<?=htmlspecialchars($reviewDecisionCsrf,ENT_QUOTES,'UTF-8')?>">
+<input type="hidden" id="rule-status-csrf" value="<?=htmlspecialchars($ruleStatusCsrf,ENT_QUOTES,'UTF-8')?>">
 <div id="review-meta"></div><button type="button" id="review-suggest">Sugerir com IA</button><div id="review-suggestion" aria-live="polite"></div>
 <label>Ação final<select id="review-final-action"><option>CHECK_FINANCES</option><option>SAFE_T_APPEAL</option><option>SAFE_T_EMAIL_REVIEW</option><option>SAFE_T_EMAIL_REPLY</option><option>SELLER_SUPPORT_OPEN</option><option>SELLER_SUPPORT_UPDATE</option><option>WAIT</option><option>CLOSE_LOSS</option></select></label>
 <label>Vínculo de data<select id="review-date-binding"><option>NONE</option><option>PROMISED_DATE</option><option>APPEAL_DEADLINE</option></select></label>

@@ -22,6 +22,7 @@ require_once __DIR__ . '/../../includes/amazon-returns/FinancialRefresh.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialRevalidation.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialCheckEvidence.php';
 require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
+require_once __DIR__ . '/../../includes/amazon-returns/LearnedRuleOutcome.php';
 require_once __DIR__ . '/seller-central-worker.php';
 
 final class SvAmazonReturnsDaemon
@@ -94,6 +95,8 @@ final class SvAmazonReturnsDaemon
             }
             $state[$task]=$now->format(DATE_ATOM);
         }
+        try{$results['rule_outcomes']=$this->refreshRuleOutcomes();}
+        catch(Throwable $e){$results['rule_outcomes']=['status'=>'FAILED','error_class'=>$e::class];}
         if(($results['scheduler']['financial_recheck_requested']??false) && !isset($results['sp_api'])){
             $state['sp_api']=$now->modify('-1800 seconds')->format(DATE_ATOM);
             $state['financial']=$state['sp_api'];
@@ -110,6 +113,38 @@ final class SvAmazonReturnsDaemon
             'due'=>$due,
             'results'=>$results,
         ];
+    }
+
+    /** @return array<string,mixed> */
+    private function refreshRuleOutcomes(): array
+    {
+        $stats=['status'=>'OK','checked'=>0,'updated'=>0,'counted'=>0,'skipped'=>0,'errors'=>0];
+        foreach($this->persistence->ruleApplications->pendingOutcomes(500) as $application){
+            $stats['checked']++;
+            try{
+                $case=$this->persistence->cases->find((int)$application['case_id']);
+                if(!is_array($case)){ $stats['skipped']++; continue; }
+                $timeline=$this->persistence->events->eventsForCase((int)$case['id']);
+                $outcome=SvAmazonLearnedRuleOutcome::classify($case,$timeline);
+                $current=(string)($application['outcome']??'PENDING');
+                $refs=SvAmazonLearnedRuleOutcome::evidenceRefs($case,$timeline);
+                if($outcome!==$current){
+                    if($outcome==='PENDING'||$refs===[]){$stats['skipped']++;continue;}
+                    $this->persistence->ruleApplications->recordOutcome((int)$application['id'],$outcome,$refs);
+                    $stats['updated']++;
+                }
+                $this->persistence->learnedRules->incrementOutcome((int)$application['rule_id'],$outcome,(string)$application['application_key']);
+                $stats['counted']++;
+                if($outcome!=='PENDING' && $refs!==[]){
+                    $rule=$this->persistence->learnedRules->find((int)$application['rule_id']);
+                    if(is_array($rule) && (int)($rule['source_review_id']??0)>0){
+                        $this->persistence->reviews->recordOutcome((int)$rule['source_review_id'],$outcome,$refs);
+                    }
+                }
+            }catch(Throwable){$stats['errors']++;}
+        }
+        if($stats['errors']>0)$stats['status']='PARTIAL';
+        return $stats;
     }
 
     /** @return array<string,mixed> */

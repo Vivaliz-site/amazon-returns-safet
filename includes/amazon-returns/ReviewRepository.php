@@ -146,6 +146,21 @@ final class SvAmazonReviewRepository
     public function countAiFailures(): int { return (int)$this->sql('SELECT COALESCE(SUM(ai_error_count),0) FROM '.self::TABLE.' WHERE '.$this->scope())->fetchColumn(); }
     private function count(string $where, array $params=[]): int { return (int)$this->sql('SELECT COUNT(*) FROM '.self::TABLE.' WHERE '.$this->scope().' AND '.$where,$params)->fetchColumn(); }
 
+    public function recordOutcome(int $reviewId,string $outcome,array $evidenceRefs): array
+    {
+        self::outcome($outcome);
+        if($outcome!=='PENDING' && $evidenceRefs===[])throw new InvalidArgumentException('Review outcome requires evidence.');
+        return $this->atomic(function()use($reviewId,$outcome,$evidenceRefs):array{
+            $row=$this->owned(self::TABLE,$reviewId,true);
+            if(($row['status']??'')!=='DECIDED')throw new RuntimeException('Only decided reviews accept outcomes.');
+            $current=is_array($row['outcome']??null)?(string)($row['outcome']['classification']??''):'';
+            if($current===$outcome)return $row;
+            if(in_array($current,['RECOVERED','DENIED','CLOSED_LOSS'],true))return $row;
+            if($outcome==='PENDING')return $row;
+            $this->change(self::TABLE,$reviewId,['outcome_json'=>self::json(['classification'=>$outcome,'evidence_refs'=>$evidenceRefs]),'outcome_at'=>self::now()]);
+            return $this->owned(self::TABLE,$reviewId);
+        });
+    }
     public function decide(int $reviewId, int $expectedVersion, array $decision): array
     {
         if (!in_array($decision['decision_mode']??null,['APPROVED','EDITED_APPROVED','REJECTED','WAIT','EXCEPTION'],true)) throw new InvalidArgumentException('Invalid decision mode.');
