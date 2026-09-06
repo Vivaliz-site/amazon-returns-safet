@@ -166,7 +166,11 @@ target_current_cases="$(row_count "$target_db" amazon_return_cases "WHERE tenant
 }
 
 ownership_nulls=0
-for table in "${tables[@]}"; do
+# Memory tables have no legacy source counterpart; audit target ownership without
+# adding nonexistent source tables to the legacy content-hash comparison above.
+memory_tables=(amazon_return_reviews amazon_return_learned_rules amazon_return_rule_applications)
+for table in "${memory_tables[@]}"; do connection_owned[$table]=1; done
+for table in "${tables[@]}" "${memory_tables[@]}"; do
     null_where='WHERE tenant_id IS NULL'
     if [[ -n "${connection_owned[$table]:-}" ]]; then
         null_where='WHERE tenant_id IS NULL OR amazon_connection_id IS NULL'
@@ -178,7 +182,7 @@ case_connection_mismatches="$(mysql_scalar "$target_db" \
     "SELECT COUNT(*) FROM amazon_return_cases c LEFT JOIN amazon_return_connections a ON a.id=c.amazon_connection_id WHERE a.id IS NULL OR a.tenant_id<>c.tenant_id")"
 
 cross_tenant_children=0
-for table in amazon_return_events amazon_return_evidence amazon_return_outbox amazon_return_overrides; do
+for table in amazon_return_events amazon_return_evidence amazon_return_outbox amazon_return_overrides amazon_return_reviews amazon_return_rule_applications; do
     mismatch="$(mysql_scalar "$target_db" \
         "SELECT COUNT(*) FROM \`$table\` child LEFT JOIN amazon_return_cases parent ON parent.id=child.case_id WHERE parent.id IS NULL OR parent.tenant_id<>child.tenant_id OR parent.amazon_connection_id<>child.amazon_connection_id")"
     cross_tenant_children=$((cross_tenant_children + mismatch))
@@ -189,6 +193,11 @@ cross_tenant_children=$((cross_tenant_children + mismatch))
 mismatch="$(mysql_scalar "$target_db" \
     "SELECT COUNT(*) FROM amazon_return_source_cursors child LEFT JOIN amazon_return_connections parent ON parent.id=child.amazon_connection_id WHERE parent.id IS NULL OR parent.tenant_id<>child.tenant_id")"
 cross_tenant_children=$((cross_tenant_children + mismatch))
+for relation in 'amazon_return_learned_rules source_review_id amazon_return_reviews' 'amazon_return_rule_applications rule_id amazon_return_learned_rules' 'amazon_return_reviews resulting_rule_id amazon_return_learned_rules'; do
+    read -r child foreign_key parent <<< "$relation"
+    mismatch="$(mysql_scalar "$target_db" "SELECT COUNT(*) FROM \`$child\` child LEFT JOIN \`$parent\` parent ON parent.id=child.\`$foreign_key\` WHERE child.\`$foreign_key\` IS NOT NULL AND (parent.id IS NULL OR parent.tenant_id<>child.tenant_id OR parent.amazon_connection_id<>child.amazon_connection_id)")"
+    cross_tenant_children=$((cross_tenant_children + mismatch))
+done
 cross_tenant_mismatch_count=$((cross_tenant_children + case_connection_mismatches))
 
 [[ "$ownership_nulls" -eq 0 ]] || { echo "ownership_nulls=$ownership_nulls" >&2; exit 1; }

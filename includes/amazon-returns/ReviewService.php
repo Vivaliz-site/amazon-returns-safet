@@ -1,0 +1,35 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/DecisionCoordinator.php';
+require_once __DIR__.'/Projector.php';
+require_once __DIR__.'/PolicyEngine.php';
+require_once __DIR__.'/../../workers/amazon-returns/scheduler.php';
+final class SvAmazonReviewService
+{
+    public function __construct(private object $p,private SvAmazonDecisionCoordinator $coordinator,private ?SvAmazonReturnsScheduler $scheduler=null,private ?object $config=null){$this->scheduler??=new SvAmazonReturnsScheduler();}
+    public function preview(int $reviewId,array $humanDecision):array
+    {
+        $review=$this->p->reviews->find($reviewId);if(!is_array($review)||($review['status']??'')!=='OPEN')throw new RuntimeException('REVIEW_NOT_OPEN');
+        $definition=$this->ruleDefinition($review,$this->normalizeDecision($humanDecision,'preview'));
+        $matches=[];foreach($this->candidateCases() as $case){$bundle=$this->bundle($case);$ctx=$this->coordinator->buildReviewContext($bundle['case'],$bundle['timeline'],$bundle['policy']);if(!$ctx||!$this->matches($definition['match'],$ctx['signature']))continue;$guarded=$this->coordinator->guardProposedEffect($definition['effect'],$bundle['case'],$bundle['timeline'],$bundle['policy']);$matches[]=['id'=>(int)$case['id'],'amazon_order_id'=>$case['amazon_order_id']??null,'safe_t_id'=>$case['safe_t_id']??null,'state'=>$case['state']??null,'outstanding_amount'=>$this->outstanding($case),'projected_action'=>$guarded['action']??'HUMAN_REVIEW','projected_reason'=>$guarded['reason']??null];}
+        usort($matches,fn($a,$b)=>$a['id']<=>$b['id']);return ['signature'=>$definition['match'],'matching_cases'=>$matches,'rule_definition'=>$definition];
+    }
+    public function submit(int $reviewId,int $expectedVersion,array $humanDecision,string $actor):array
+    {
+        $decision=$this->normalizeDecision($humanDecision,$actor);$preview=$decision['decision_mode']==='EXCEPTION'?['matching_cases'=>[],'rule_definition'=>null]:$this->preview($reviewId,$decision);$db=$this->p->db();$db->beginTransaction();
+        try{$review=$this->p->reviews->lock($reviewId);if((int)($review['version']??0)!==$expectedVersion)throw new RuntimeException('STALE_REVIEW_VERSION',409);$decision['actor']=$actor;$decision['affected_case_preview']=array_column($preview['matching_cases'],'id');$saved=$this->p->reviews->decide($reviewId,$expectedVersion,$decision);$rule=$decision['decision_mode']==='EXCEPTION'?null:$this->p->learnedRules->promote($this->ruleDefinition($saved,$decision));$db->commit();}catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
+        if($rule===null)return ['re_evaluated'=>1,'changed'=>1,'unchanged'=>0,'blocked'=>0,'queued'=>0,'rule_id'=>null,'results'=>[['case_id'=>(int)$review['case_id'],'result'=>'EXCEPTION_ONLY']]];
+        $counts=['re_evaluated'=>0,'changed'=>0,'unchanged'=>0,'blocked'=>0,'queued'=>0,'rule_id'=>(int)$rule['id'],'results'=>[]];
+        foreach($preview['matching_cases'] as $m){try{$case=$this->p->cases->find((int)$m['id']);if(!is_array($case))throw new RuntimeException('CASE_NOT_FOUND');$b=$this->bundle($case);$d=$this->coordinator->nextAction($b['case'],$b['timeline'],$b['policy']);$counts['re_evaluated']++;$action=(string)($d['action']??'WAIT');if(in_array($action,['HUMAN_REVIEW','BLOCKED_REVIEW'],true))$counts['blocked']++;elseif($action===(string)$m['projected_action'])$counts['unchanged']++;else $counts['changed']++;$outbox=null;if(SvAmazonReturnsScheduler::isWriteAction($d)&&$this->writeAllowed($action)){$s=$this->scheduler->scheduleDecision($this->p->outbox,$b['case'],$d,$b['timeline']);$outbox=$s['outbox_id']??null;if($outbox!==null)$counts['queued']++;}$counts['results'][]=['case_id'=>(int)$m['id'],'action'=>$action,'outbox_id'=>$outbox];}catch(Throwable $e){$counts['re_evaluated']++;$counts['blocked']++;$counts['results'][]=['case_id'=>(int)$m['id'],'result'=>'FAILED','error_class'=>$e::class];}}
+        return $counts;
+    }
+    private function normalizeDecision(array $d,string $actor):array
+    { $mode=(string)($d['decision_mode']??'');if(!in_array($mode,['APPROVED','EDITED_APPROVED','REJECTED','WAIT','EXCEPTION'],true))throw new InvalidArgumentException('Invalid decision mode.');$action=(string)($d['final_action']??'');if($action==='')throw new InvalidArgumentException('Final action required.');$params=is_array($d['parameters']??null)?$d['parameters']:[];$binding=(string)($params['date_binding']??'NONE');if(!in_array($binding,['NONE','PROMISED_DATE','APPEAL_DEADLINE'],true))throw new InvalidArgumentException('Invalid reusable date binding.');if($mode!=='EXCEPTION'&&array_key_exists('date',$params))throw new InvalidArgumentException('Reusable decisions cannot contain literal custom dates.');if($mode!=='EXCEPTION'&&$action==='WAIT'&&$binding==='NONE')throw new InvalidArgumentException('Reusable WAIT decisions require a date binding.');$params['date_binding']=$binding;$d['actor']=$actor;$d['source_version']=(string)($d['source_version']??'cockpit-v1');$d['parameters']=$params;return $d; }
+    private function ruleDefinition(array $review,array $d):array
+    { $ctx=$review['context']??[];$match=is_array($ctx['signature']??null)?$ctx['signature']:[];if(($match['material_conflict']??false)===true)throw new RuntimeException('Material conflict cannot be promoted.');$effect=['action'=>$d['final_action'],'parameters'=>['date_binding'=>(string)($d['parameters']['date_binding']??'NONE')]];SvAmazonLearnedRuleEngine::normalizeEffect($effect,is_array($ctx['variables']??null)?$ctx['variables']:[]);return ['rule_family_key'=>hash('sha256',json_encode($match,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES)),'match'=>$match,'effect'=>$effect,'source_review_id'=>(int)$review['id'],'specificity'=>count($match)]; }
+    private function matches(array $match,array $signature):bool{foreach($match as $k=>$v)if(!array_key_exists($k,$signature)||$signature[$k]!==$v)return false;return true;}
+    private function candidateCases():array{return method_exists($this->p->cases,'openCases')?$this->p->cases->openCases(5000):[];}
+    private function bundle(array $case):array{if(method_exists($this->p->cases,'find')&&isset($case['id'])&&class_exists('SvAmazonReturnProjector')){try{$case=SvAmazonReturnProjector::project($this->p->cases,$this->p->events,(int)$case['id']);}catch(Throwable){}}$timeline=$this->p->events->eventsForCase((int)$case['id']);$case['policies']=$this->p->policies->allActive();$policy=SvAmazonReturnPolicyEngine::evaluate($case,new DateTimeImmutable('now',new DateTimeZone('UTC')));return ['case'=>$case,'timeline'=>$timeline,'policy'=>$policy];}
+    private function outstanding(array $case):float{return max(0,(float)($case['expected_reimbursement_amount']??0)-(float)($case['reconciled_credit_amount']??0));}
+    private function writeAllowed(string $action):bool{if(!$this->config||!method_exists($this->config,'externalWriteAllowed'))return false;if(!$this->config->externalWriteAllowed($action))return false;$dep=SvAmazonReturnsScheduler::dependencyForAction($action);$ready=$this->config->readiness()[$dep]['ready']??false;return $ready===true;}
+}

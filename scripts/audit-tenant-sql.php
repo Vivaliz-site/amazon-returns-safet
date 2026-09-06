@@ -34,6 +34,9 @@ $tenantTables=[
     'amazon_return_dead_letters',
     'amazon_return_source_cursors',
     'amazon_return_overrides',
+    'amazon_return_reviews',
+    'amazon_return_learned_rules',
+    'amazon_return_rule_applications',
 ];
 $allowlist=array_fill_keys([
     'includes/amazon-returns/Schema.php',
@@ -46,6 +49,9 @@ $allowlist=array_fill_keys([
     'includes/amazon-returns/SourceCursorStore.php',
     'includes/amazon-returns/TenantEventStore.php',
     'includes/amazon-returns/TenantOutbox.php',
+    'includes/amazon-returns/ReviewRepository.php',
+    'includes/amazon-returns/LearnedRuleRepository.php',
+    'includes/amazon-returns/RuleApplicationRepository.php',
 ],true);
 
 $files=[];

@@ -8,6 +8,10 @@ final class SvAmazonReturnsConfig
     public function __construct(private array $override = []) {}
 
     public function enabled(): bool { return $this->bool('AMAZON_RETURNS_ENABLED', false); }
+    public function openAiKey(): string { return $this->get('OPENAI_API_KEY'); }
+    public function reviewAiModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_MODEL','gpt-5.6-terra'); }
+    public function reviewAiReady(): bool { return $this->openAiKey()!=='' && $this->reviewAiModel()!==''; }
+    public function learnedRuleExecutionEnabled(): bool { return $this->bool('AMAZON_RETURNS_LEARNED_RULE_EXECUTION', false); }
 
     public function mode(): string
     {

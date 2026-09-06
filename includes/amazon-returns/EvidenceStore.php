@@ -82,6 +82,19 @@ final class SvAmazonReturnEvidenceStore
         return $rows;
     }
 
+    /** @return list<array<string,mixed>> */
+    public function projectionForCase(int $caseId): array
+    {
+        $allowed=array_flip([
+            'id','case_id','kind','source','external_id','content_sha256',
+            'storage_ref','metadata','captured_at','created_at',
+        ]);
+        return array_map(
+            static fn(array $row):array=>array_intersect_key($row,$allowed),
+            $this->forCase($caseId)
+        );
+    }
+
     /** @param array<string,mixed> $evidence @return array<string,mixed> */
     private function normalize(array $evidence): array
     {

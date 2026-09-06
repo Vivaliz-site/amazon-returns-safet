@@ -36,7 +36,7 @@ target_current_cases="$(scalar "SELECT COUNT(*) FROM amazon_return_cases WHERE t
 }
 
 ownership_nulls=0
-for table in amazon_return_cases amazon_return_events amazon_return_outbox amazon_return_dead_letters amazon_return_evidence amazon_return_source_cursors amazon_return_overrides; do
+for table in amazon_return_cases amazon_return_events amazon_return_outbox amazon_return_dead_letters amazon_return_evidence amazon_return_source_cursors amazon_return_overrides amazon_return_reviews amazon_return_learned_rules amazon_return_rule_applications; do
     count="$(scalar "SELECT COUNT(*) FROM \`$table\` WHERE tenant_id IS NULL OR amazon_connection_id IS NULL")"
     ownership_nulls=$((ownership_nulls + count))
 done
@@ -49,7 +49,7 @@ ownership_nulls=$((ownership_nulls + count))
 
 case_connection_mismatches="$(scalar "SELECT COUNT(*) FROM amazon_return_cases c LEFT JOIN amazon_return_connections a ON a.id=c.amazon_connection_id WHERE a.id IS NULL OR a.tenant_id<>c.tenant_id")"
 cross_tenant_children=0
-for table in amazon_return_events amazon_return_evidence amazon_return_outbox amazon_return_overrides; do
+for table in amazon_return_events amazon_return_evidence amazon_return_outbox amazon_return_overrides amazon_return_reviews amazon_return_rule_applications; do
     count="$(scalar "SELECT COUNT(*) FROM \`$table\` child LEFT JOIN amazon_return_cases parent ON parent.id=child.case_id WHERE parent.id IS NULL OR parent.tenant_id<>child.tenant_id OR parent.amazon_connection_id<>child.amazon_connection_id")"
     cross_tenant_children=$((cross_tenant_children + count))
 done
@@ -67,8 +67,15 @@ count="$(scalar "SELECT COUNT(*) FROM amazon_return_feature_flags child LEFT JOI
 cross_tenant_children=$((cross_tenant_children + count))
 count="$(scalar "SELECT COUNT(*) FROM amazon_return_feature_flags flag JOIN amazon_return_tenant_users user ON user.id=flag.updated_by_user_id WHERE user.tenant_id<>flag.tenant_id")"
 cross_tenant_children=$((cross_tenant_children + count))
+for relation in 'amazon_return_learned_rules source_review_id amazon_return_reviews' 'amazon_return_rule_applications rule_id amazon_return_learned_rules' 'amazon_return_reviews resulting_rule_id amazon_return_learned_rules'; do
+    read -r child foreign_key parent <<< "$relation"
+    count="$(scalar "SELECT COUNT(*) FROM \`$child\` child LEFT JOIN \`$parent\` parent ON parent.id=child.\`$foreign_key\` WHERE child.\`$foreign_key\` IS NOT NULL AND (parent.id IS NULL OR parent.tenant_id<>child.tenant_id OR parent.amazon_connection_id<>child.amazon_connection_id)")"
+    cross_tenant_children=$((cross_tenant_children + count))
+done
 cross_tenant_mismatch_count=$((cross_tenant_children + case_connection_mismatches))
 processing_jobs="$(scalar "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING'")"
+pending_outbox="$(scalar "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status IN ('PENDING','PROCESSING')")"
+dead_letters="$(scalar "SELECT COUNT(*) FROM amazon_return_dead_letters WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id")"
 
 [[ "$ownership_nulls" -eq 0 ]] || { echo "ownership_nulls=$ownership_nulls" >&2; exit 1; }
 [[ "$cross_tenant_mismatch_count" -eq 0 ]] || { echo "cross_tenant_mismatch_count=$cross_tenant_mismatch_count" >&2; exit 1; }
@@ -82,6 +89,8 @@ env_value() {
         printf '%s' "${!key:-0}"
     fi
 }
+learned_rule_execution_raw="$(env_value AMAZON_RETURNS_LEARNED_RULE_EXECUTION)"
+case "${learned_rule_execution_raw,,}" in 1|true|yes|on) learned_rule_execution_enabled=1 ;; *) learned_rule_execution_enabled=0 ;; esac
 if [[ "$tenant_slug" == shopvivaliz ]]; then
     operational_policies="$(scalar "SELECT COUNT(*) FROM amazon_return_policies WHERE tenant_id=$tenant_id AND status='ACTIVE' AND policy_key='RETURN_NOT_RECEIVED_D45_REFUND_V2' AND marketplace_id='A2Q3Y263D00KWC' AND eligibility_days=45 AND basis='REFUND_AT' AND effective_to IS NULL AND ((program='STANDARD' AND effective_from='2020-01-01') OR (program IN ('FBA_ONSITE','DELIVERY_BY_AMAZON') AND effective_from='2026-04-21'))")"
     bad_policy="$(scalar "SELECT COUNT(*) FROM amazon_return_policies WHERE tenant_id=$tenant_id AND status='ACTIVE' AND policy_key LIKE 'RETURN_NOT_RECEIVED%' AND NOT (policy_key='RETURN_NOT_RECEIVED_D45_REFUND_V2' AND marketplace_id='A2Q3Y263D00KWC' AND eligibility_days=45 AND basis='REFUND_AT' AND effective_to IS NULL AND ((program='STANDARD' AND effective_from='2020-01-01') OR (program IN ('FBA_ONSITE','DELIVERY_BY_AMAZON') AND effective_from='2026-04-21')))")"
@@ -111,6 +120,9 @@ emit "cross_tenant_children=$cross_tenant_children"
 emit "case_connection_mismatches=$case_connection_mismatches"
 emit "cross_tenant_mismatch_count=$cross_tenant_mismatch_count"
 emit "processing_jobs=$processing_jobs"
+emit "pending_outbox=$pending_outbox"
+emit "dead_letters=$dead_letters"
+emit "learned_rule_execution_enabled=$learned_rule_execution_enabled"
 emit "write_profile_version=$write_profile_version"
 emit "safe_t_submit_write_enabled=$(profile_value SAFE_T_SUBMIT)"
 emit "safe_t_appeal_write_enabled=$(profile_value SAFE_T_APPEAL)"

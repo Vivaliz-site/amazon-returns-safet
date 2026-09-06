@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__ . '/../../includes/amazon-returns/PolicyEngine.php';
 require_once __DIR__ . '/../../includes/amazon-returns/Projector.php';
 require_once __DIR__ . '/../../includes/amazon-returns/SafeTDecisionEngine.php';
+require_once __DIR__ . '/../../includes/amazon-returns/DecisionCoordinator.php';
 require_once __DIR__ . '/../../includes/amazon-returns/SpApi.php';
 require_once __DIR__ . '/../../includes/amazon-returns/SpApiEventSink.php';
 require_once __DIR__ . '/../../includes/amazon-returns/ReturnsReport.php';
@@ -21,6 +22,7 @@ require_once __DIR__ . '/../../includes/amazon-returns/FinancialRefresh.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialRevalidation.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialCheckEvidence.php';
 require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
+require_once __DIR__ . '/../../includes/amazon-returns/LearnedRuleOutcome.php';
 require_once __DIR__ . '/seller-central-worker.php';
 
 final class SvAmazonReturnsDaemon
@@ -60,6 +62,11 @@ final class SvAmazonReturnsDaemon
             $due=array_values(array_unique([...$due,'scheduler','sp_api','financial']));
             $state['opening_policy_revision']=$openingRevision;
         }
+        $ruleRevision=$this->persistence->learnedRules->revision();
+        if(($state['learned_rule_revision']??null)!==$ruleRevision){
+            $due=array_values(array_unique([...$due,'scheduler']));
+            $state['learned_rule_revision']=$ruleRevision;
+        }
         $writeRevision=$this->config->writeProfileVersion();
         if($writeRevision!==null && ($state['write_profile_revision']??null)!==$writeRevision){
             $due=array_values(array_unique([...$due,'scheduler']));
@@ -88,6 +95,8 @@ final class SvAmazonReturnsDaemon
             }
             $state[$task]=$now->format(DATE_ATOM);
         }
+        try{$results['rule_outcomes']=$this->refreshRuleOutcomes();}
+        catch(Throwable $e){$results['rule_outcomes']=['status'=>'FAILED','error_class'=>$e::class];}
         if(($results['scheduler']['financial_recheck_requested']??false) && !isset($results['sp_api'])){
             $state['sp_api']=$now->modify('-1800 seconds')->format(DATE_ATOM);
             $state['financial']=$state['sp_api'];
@@ -104,6 +113,38 @@ final class SvAmazonReturnsDaemon
             'due'=>$due,
             'results'=>$results,
         ];
+    }
+
+    /** @return array<string,mixed> */
+    private function refreshRuleOutcomes(): array
+    {
+        $stats=['status'=>'OK','checked'=>0,'updated'=>0,'counted'=>0,'skipped'=>0,'errors'=>0];
+        foreach($this->persistence->ruleApplications->pendingOutcomes(500) as $application){
+            $stats['checked']++;
+            try{
+                $case=$this->persistence->cases->find((int)$application['case_id']);
+                if(!is_array($case)){ $stats['skipped']++; continue; }
+                $timeline=$this->persistence->events->eventsForCase((int)$case['id']);
+                $outcome=SvAmazonLearnedRuleOutcome::classify($case,$timeline);
+                $current=(string)($application['outcome']??'PENDING');
+                $refs=SvAmazonLearnedRuleOutcome::evidenceRefs($case,$timeline);
+                if($outcome!==$current){
+                    if($outcome==='PENDING'||$refs===[]){$stats['skipped']++;continue;}
+                    $this->persistence->ruleApplications->recordOutcome((int)$application['id'],$outcome,$refs);
+                    $stats['updated']++;
+                }
+                $this->persistence->learnedRules->incrementOutcome((int)$application['rule_id'],$outcome,(string)$application['application_key']);
+                $stats['counted']++;
+                if($outcome!=='PENDING' && $refs!==[]){
+                    $rule=$this->persistence->learnedRules->find((int)$application['rule_id']);
+                    if(is_array($rule) && (int)($rule['source_review_id']??0)>0){
+                        $this->persistence->reviews->recordOutcome((int)$rule['source_review_id'],$outcome,$refs);
+                    }
+                }
+            }catch(Throwable){$stats['errors']++;}
+        }
+        if($stats['errors']>0)$stats['status']='PARTIAL';
+        return $stats;
     }
 
     /** @return array<string,mixed> */
@@ -192,18 +233,28 @@ final class SvAmazonReturnsDaemon
                 if(!is_array($case))throw new RuntimeException('SAFE-T email case not found.');
                 $timeline=$this->persistence->events->eventsForCase($caseId);
                 $kind=strtoupper((string)($row['kind'] ?? ''));
+                $payload=is_array($row['payload'] ?? null)?$row['payload']:[];
+                $snapshot=is_array($payload['write_snapshot'] ?? null)?$payload['write_snapshot']:[];
+                $snapshotV2=(int)($snapshot['format_version'] ?? 0)===2;
+                $storedMessage=is_array($snapshot['message'] ?? null)?$snapshot['message']:null;
+                $writeContentSha256=is_string($snapshot['content_sha256'] ?? null)
+                    && preg_match('/^[a-f0-9]{64}$/i',(string)$snapshot['content_sha256'])===1
+                    ? strtolower((string)$snapshot['content_sha256']) : null;
+                if($snapshotV2 && ($storedMessage===null || $writeContentSha256===null)){
+                    throw new LogicException('WRITE_SNAPSHOT_MISSING');
+                }
                 if($kind==='SAFE_T_EMAIL_REPLY'){
-                    $message=SvAmazonSafeTEmailReview::composeReply($case,$timeline,null,SvAmazonRequestedWait::jobResumeScope($row));
+                    $message=$snapshotV2?$storedMessage:SvAmazonSafeTEmailReview::composeReply($case,$timeline,null,SvAmazonRequestedWait::jobResumeScope($row));
                     $sent=$gmail->sendReplyOnce(
-                        $message['to'],$message['subject'],$message['body'],$message['thread_id'],
-                        $message['in_reply_to'],(string)$row['idempotency_key']
+                        (string)$message['to'],(string)$message['subject'],(string)$message['body'],(string)$message['thread_id'],
+                        (string)$message['in_reply_to'],(string)$row['idempotency_key']
                     );
                     $eventType='SAFE_T_EMAIL_REPLY_SENT';
                     $result['reply_sent']++;
                 }else{
-                    $message=SvAmazonSafeTEmailReview::compose($case,$timeline);
+                    $message=$snapshotV2?$storedMessage:SvAmazonSafeTEmailReview::compose($case,$timeline);
                     $sent=$gmail->sendOnce(
-                        $message['to'],$message['subject'],$message['body'],
+                        (string)$message['to'],(string)$message['subject'],(string)$message['body'],
                         (string)$row['idempotency_key']
                     );
                     $eventType='SAFE_T_EMAIL_REVIEW_SENT';
@@ -224,6 +275,8 @@ final class SvAmazonReturnsDaemon
                         'safe_t_id'=>$case['safe_t_id'] ?? null,
                         'gmail_message_id'=>$sent['message_id'],
                         'gmail_thread_id'=>$sent['thread_id'],
+                        'outbox_id'=>(int)$row['id'],
+                        'write_content_sha256'=>$writeContentSha256,
                     ],
                     'evidence_sha256'=>null,
                 ]);
@@ -246,6 +299,7 @@ final class SvAmazonReturnsDaemon
         $cases=$this->persistence->cases->openCases(500);
         $policies=$this->persistence->policies->allActive();
         $engine=new SvAmazonSafeTDecisionEngine();
+        $coordinator=new SvAmazonDecisionCoordinator($engine,$this->persistence,$this->config);
         $decisions=0;
         $enqueued=0;
         $blockedWrites=0;
@@ -263,7 +317,7 @@ final class SvAmazonReturnsDaemon
             $projected['policies']=$policies;
             $policy=SvAmazonReturnPolicyEngine::evaluate($projected,$now);
             $timeline=$this->persistence->events->eventsForCase($caseId);
-            $decision=$engine->nextAction($projected,$timeline,$policy,$now);
+            $decision=$coordinator->nextAction($projected,$timeline,$policy,$now);
             $timing=['eligibility_at'=>$policy['eligibility_at']??null,'policy_version_id'=>$policy['policy_version_id']??null];
             if(array_key_exists('next_action_at',$decision))$timing['next_action_at']=$decision['next_action_at'];
             elseif(trim((string)($projected['safe_t_id']??''))==='')$timing['next_action_at']=$policy['eligibility_at']??null;
@@ -292,8 +346,8 @@ final class SvAmazonReturnsDaemon
                 $blockedWrites++;
                 continue;
             }
-            $scheduled=(new SvAmazonReturnsScheduler($engine))->schedule(
-                $this->persistence->outbox,$projected,$timeline,$policy,$now
+            $scheduled=(new SvAmazonReturnsScheduler($engine))->scheduleDecision(
+                $this->persistence->outbox,$projected,$decision,$timeline
             );
             if(($scheduled['outbox_id'] ?? null)!==null)$enqueued++;
         }

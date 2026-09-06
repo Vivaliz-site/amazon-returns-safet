@@ -22,4 +22,10 @@ $raw=base64_decode(strtr((string)($post[3]['raw'] ?? ''),'-_','+/'));
 gtAssert(is_string($raw) && str_contains($raw,'In-Reply-To: <amazon-rfc-message@example.com>'),'Reply MIME must include In-Reply-To.');
 gtAssert(str_contains((string)$raw,'Message-ID: <amazon-returns-'),'Reply must retain deterministic RFC Message-ID idempotency.');
 
+
+$daemonSource=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
+gtAssert(str_contains($daemonSource,"write_snapshot"),'Gmail executor must consume persisted write snapshot.');
+gtAssert(str_contains($daemonSource,"write_content_sha256"),'Gmail sent event must reference persisted content hash.');
+gtAssert(str_contains($daemonSource,"outbox_id"),'Gmail sent event must reference outbox id.');
+
 echo "gmail-thread-reply-test: OK\n";

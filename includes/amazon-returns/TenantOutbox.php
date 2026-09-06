@@ -118,6 +118,27 @@ final class SvAmazonTenantReturnsOutbox
         }
     }
 
+    /** @return list<array<string,mixed>> */
+    public function historyForCase(int $caseId): array
+    {
+        $caseId=$this->positiveId($caseId,'case ID');
+        $this->assertOwnedCase($caseId);
+        $stmt=$this->prepare(
+            'SELECT * FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
+            . 'AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id '
+            . 'ORDER BY created_at,id'
+        );
+        $stmt->execute($this->scopeParams([':case_id'=>$caseId]));
+        $rows=array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+        foreach($rows as &$row){
+            $this->assertOwnedRow($row);
+            $row['payload']=$this->decodePayload($row['payload_json']??null);
+            unset($row['payload_json']);
+        }
+        unset($row);
+        return $rows;
+    }
+
     public function countPendingProcessing(): int
     {
         $stmt=$this->prepare(

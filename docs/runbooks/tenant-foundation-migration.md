@@ -285,3 +285,11 @@ O registro final deve conter:
 - decisão de aceitar ou executar rollback, com responsável e horário UTC.
 
 A habilitação futura de `SAFE_T_SUBMIT`, recurso, revisão por e-mail, Seller Support e reconciliação é uma sequência independente. Cada canal requer teste de produção, read-back, idempotência e aceite próprio antes do próximo.
+
+## Learned SAFE-T memory rollout gate
+
+Learned-rule execution is provisioned fail-closed with `AMAZON_RETURNS_LEARNED_RULE_EXECUTION=0`. Keep deterministic base rules and the SAFE-T submit/appeal write profile unchanged while shadow replay is evaluated.
+
+Before activation, run `php scripts/replay-learned-rules.php --all-open --json=/tmp/learned-rule-replay.json` and require: `mutation_free=true`, `hard_gate_bypass_count=0`, `malformed_effect_count=0`, `tenant_scope_violation_count=0`, `pending_outbox=0`, `dead_letters=0`, full tests/CI green and live tenant verification green. Conflicts are acceptable only when their projected action remains human review and creates no external write.
+
+Only after those gates pass may the protected environment be changed to `AMAZON_RETURNS_LEARNED_RULE_EXECUTION=1`; restart only `amazon-returns-safet.service`, confirm health reports `learned_rule_execution_enabled=true`, then run the scheduler and validate read-backs. Never create or overwrite `OPENAI_API_KEY` during provisioning; preserve the protected runtime value when present.

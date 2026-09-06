@@ -123,6 +123,35 @@ final class SvAmazonReturnCaseRepository
         return isset($resolved['id']) ? (int)$resolved['id'] : null;
     }
 
+    /** @return array{items:list<array<string,mixed>>,page:int,per_page:int,total:int} */
+    public function search(array $filters,int $page=1,int $perPage=50): array
+    {
+        $page=max(1,$page);$perPage=max(1,min(1000,$perPage));
+        $where=['c.tenant_id=:tenant_id','c.amazon_connection_id=:amazon_connection_id'];
+        $params=$this->scopeParams();
+        $allowed=['q','safe_t_id','state','review_status','program','physical_status','deadline','learned_rule','min_outstanding','max_outstanding'];
+        foreach(array_keys($filters) as $key)if(!in_array($key,$allowed,true))throw new InvalidArgumentException('Unsupported case search filter: '.$key);
+        if(isset($filters['q'])){$q=$this->requiredText((string)$filters['q'],'search query',96);$where[]='(c.amazon_order_id LIKE :q OR c.safe_t_id LIKE :q OR c.sku LIKE :q OR c.asin LIKE :q)';$params[':q']='%'.$q.'%';}
+        foreach(['safe_t_id','state','program','physical_status'] as $field){if(!isset($filters[$field]))continue;$where[]='c.'.$field.'=:'.$field;$params[':'.$field]=$filters[$field];}
+        if(isset($filters['review_status'])){$where[]='EXISTS (SELECT 1 FROM amazon_return_reviews r WHERE r.tenant_id=c.tenant_id AND r.amazon_connection_id=c.amazon_connection_id AND r.case_id=c.id AND r.status=:review_status)';$params[':review_status']=$filters['review_status'];}
+        $deadline='COALESCE(c.appeal_deadline_at,c.next_action_at,c.eligibility_at)';
+        if(($filters['deadline']??null)==='overdue')$where[]="$deadline<UTC_TIMESTAMP()";
+        elseif(($filters['deadline']??null)==='today')$where[]="DATE($deadline)=UTC_DATE()";
+        elseif(($filters['deadline']??null)==='7d')$where[]="$deadline BETWEEN UTC_TIMESTAMP() AND DATE_ADD(UTC_TIMESTAMP(),INTERVAL 7 DAY)";
+        if(($filters['learned_rule']??null)==='applied')$where[]='EXISTS (SELECT 1 FROM amazon_return_rule_applications a WHERE a.tenant_id=c.tenant_id AND a.amazon_connection_id=c.amazon_connection_id AND a.case_id=c.id)';
+        elseif(($filters['learned_rule']??null)==='none')$where[]='NOT EXISTS (SELECT 1 FROM amazon_return_rule_applications a WHERE a.tenant_id=c.tenant_id AND a.amazon_connection_id=c.amazon_connection_id AND a.case_id=c.id)';
+        elseif(($filters['learned_rule']??null)==='conflict')$where[]="EXISTS (SELECT 1 FROM amazon_return_reviews r WHERE r.tenant_id=c.tenant_id AND r.amazon_connection_id=c.amazon_connection_id AND r.case_id=c.id AND r.status='OPEN' AND r.reason='LEARNED_RULE_CONFLICT')";
+        $outstanding='GREATEST((CASE WHEN c.expected_reimbursement_amount>0 THEN c.expected_reimbursement_amount ELSE c.refund_amount END)-c.reconciled_credit_amount,0)';
+        if(isset($filters['min_outstanding'])){$where[]="$outstanding>=:min_outstanding";$params[':min_outstanding']=$filters['min_outstanding'];}
+        if(isset($filters['max_outstanding'])){$where[]="$outstanding<=:max_outstanding";$params[':max_outstanding']=$filters['max_outstanding'];}
+        $whereSql=implode(' AND ',$where);
+        $count=$this->prepare('SELECT COUNT(*) FROM amazon_return_cases c WHERE '.$whereSql);$count->execute($params);$total=max(0,(int)$count->fetchColumn());
+        $offset=($page-1)*$perPage;
+        $order="ORDER BY CASE WHEN EXISTS (SELECT 1 FROM amazon_return_reviews rr WHERE rr.tenant_id=c.tenant_id AND rr.amazon_connection_id=c.amazon_connection_id AND rr.case_id=c.id AND rr.status='OPEN') THEN 0 ELSE 1 END, CASE WHEN $deadline<UTC_TIMESTAMP() THEN 0 ELSE 1 END, $deadline IS NULL, $deadline, c.updated_at DESC,c.id DESC";
+        $stmt=$this->prepare('SELECT c.* FROM amazon_return_cases c WHERE '.$whereSql.' '.$order.' LIMIT '.$perPage.' OFFSET '.$offset);$stmt->execute($params);
+        return ['items'=>array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array')),'page'=>$page,'per_page'=>$perPage,'total'=>$total];
+    }
+
     /** @return list<array<string,mixed>> */
     public function openCases(int $limit = 250): array
     {

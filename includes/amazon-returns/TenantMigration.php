@@ -18,10 +18,29 @@ final class SvAmazonTenantMigration
         'amazon_return_dead_letters'=>['tenant_id','amazon_connection_id'],
         'amazon_return_source_cursors'=>['tenant_id','amazon_connection_id'],
         'amazon_return_overrides'=>['tenant_id','amazon_connection_id'],
+        'amazon_return_reviews'=>['tenant_id','amazon_connection_id'],
+        'amazon_return_learned_rules'=>['tenant_id','amazon_connection_id'],
+        'amazon_return_rule_applications'=>['tenant_id','amazon_connection_id'],
     ];
 
     /** @var array<string,array<string,array{unique:bool,columns:list<string>}>> */
     private const INDEXES = [
+        'amazon_return_reviews'=>[
+            'uq_review_open_key'=>['unique'=>true,'columns'=>['tenant_id','amazon_connection_id','open_key']],
+            'idx_review_queue'=>['unique'=>false,'columns'=>['tenant_id','amazon_connection_id','status','reason','created_at','id']],
+            'idx_review_case'=>['unique'=>false,'columns'=>['tenant_id','amazon_connection_id','case_id','id']],
+        ],
+        'amazon_return_learned_rules'=>[
+            'uq_learned_rule_version'=>['unique'=>true,'columns'=>['tenant_id','amazon_connection_id','rule_family_key','version']],
+            'idx_learned_rule_active'=>['unique'=>false,'columns'=>['tenant_id','amazon_connection_id','status','specificity','id']],
+            'idx_learned_rule_source'=>['unique'=>false,'columns'=>['tenant_id','amazon_connection_id','source_review_id']],
+        ],
+        'amazon_return_rule_applications'=>[
+            'uq_rule_application_key'=>['unique'=>true,'columns'=>['tenant_id','amazon_connection_id','application_key']],
+            'idx_rule_application_case'=>['unique'=>false,'columns'=>['tenant_id','amazon_connection_id','case_id','id']],
+            'idx_rule_application_outcome'=>['unique'=>false,'columns'=>['tenant_id','amazon_connection_id','outcome','id']],
+            'idx_rule_application_rule'=>['unique'=>false,'columns'=>['tenant_id','amazon_connection_id','rule_id','id']],
+        ],
         'amazon_return_cases'=>[
             'uq_amazon_return_case_order_item'=>['unique'=>true,'columns'=>['tenant_id','amazon_connection_id','amazon_order_id','amazon_order_item_id']],
             'idx_amazon_return_cases_state_action'=>['unique'=>false,'columns'=>['tenant_id','amazon_connection_id','state','next_action_at']],
@@ -136,7 +155,7 @@ final class SvAmazonTenantMigration
         );
 
         $crossTenantChildren = 0;
-        foreach (['amazon_return_events','amazon_return_evidence','amazon_return_outbox','amazon_return_overrides'] as $table) {
+        foreach (['amazon_return_events','amazon_return_evidence','amazon_return_outbox','amazon_return_overrides','amazon_return_reviews','amazon_return_rule_applications'] as $table) {
             $crossTenantChildren += self::count($db,
                 "SELECT COUNT(*) FROM `{$table}` child "
                 . 'LEFT JOIN amazon_return_cases parent ON parent.id=child.case_id '
@@ -156,6 +175,17 @@ final class SvAmazonTenantMigration
             . 'WHERE parent.id IS NULL OR parent.tenant_id<>child.tenant_id'
         );
         $caseCount = $scoped['amazon_return_cases'] ?? 0;
+        foreach ([
+            ['amazon_return_learned_rules','source_review_id','amazon_return_reviews'],
+            ['amazon_return_rule_applications','rule_id','amazon_return_learned_rules'],
+            ['amazon_return_reviews','resulting_rule_id','amazon_return_learned_rules'],
+        ] as [$child,$foreignKey,$parent]) {
+            $crossTenantChildren += self::count($db,
+                "SELECT COUNT(*) FROM `{$child}` child LEFT JOIN `{$parent}` parent ON parent.id=child.`{$foreignKey}` "
+                . "WHERE child.`{$foreignKey}` IS NOT NULL AND (parent.id IS NULL OR parent.tenant_id<>child.tenant_id "
+                . 'OR parent.amazon_connection_id<>child.amazon_connection_id)'
+            );
+        }
         return [
             'tables'=>$tables,
             'scoped_tables'=>$scoped,

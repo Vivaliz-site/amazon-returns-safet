@@ -222,7 +222,24 @@ function reasonFor(job) {
   return null;
 }
 
+function snapshotNarrative(job, max) {
+  const snapshot = job.payload?.write_snapshot;
+  if (snapshot?.format_version !== 2) return null;
+  const narrative = text(snapshot.narrative);
+  return narrative ? narrative.slice(0, max) : '';
+}
+
+function writeSnapshotFailure(job) {
+  const snapshot = job.payload?.write_snapshot;
+  if (snapshot?.format_version === 2 && !text(snapshot.narrative)) {
+    return bridgeResult('FAILED', { reason: 'WRITE_SNAPSHOT_MISSING', retry_safe: false });
+  }
+  return null;
+}
+
 function narrativeFor(job, max = 1000) {
+  const persisted = snapshotNarrative(job, max);
+  if (persisted !== null) return persisted;
   const supplied = text(job.payload?.narrative);
   if (supplied) return supplied.slice(0, max);
   const order = text(job.case?.order_id);
@@ -243,6 +260,8 @@ function narrativeFor(job, max = 1000) {
 }
 
 async function safeTSubmit(cdp, job) {
+  const snapshotFailure = writeSnapshotFailure(job);
+  if (snapshotFailure) return snapshotFailure;
   await cdp.navigate(`${SAFE_T_BASE}/create-v2?ref_=ag_sfdcf_cont_safet`, 5000);
   const auth = await authGate(cdp, 'safet-v1');
   if (auth) return auth;
@@ -333,6 +352,8 @@ async function safeTSubmit(cdp, job) {
 }
 
 async function safeTAppeal(cdp, job) {
+  const snapshotFailure = writeSnapshotFailure(job);
+  if (snapshotFailure) return snapshotFailure;
   const safeTId = text(job.case?.safe_t_id);
   if (!/^\d{5}-\d{5}-\d{7}$/.test(safeTId)) return bridgeResult('FAILED', { reason: 'SAFE_T_ID_REQUIRED' });
   await cdp.navigate(`${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 5000);
@@ -397,6 +418,8 @@ async function waitFrameHas(cdp, phrase, timeoutMs = 20000) {
 }
 
 async function supportOpen(cdp, job) {
+  const snapshotFailure = writeSnapshotFailure(job);
+  if (snapshotFailure) return snapshotFailure;
   const existing = await findSupportCase(cdp, job);
   if (existing) return bridgeResult('ALREADY_EXISTS', { external_id: existing, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   const orderId = text(job.case?.order_id);
@@ -458,6 +481,8 @@ async function supportOpen(cdp, job) {
 }
 
 async function supportUpdate(cdp, job) {
+  const snapshotFailure = writeSnapshotFailure(job);
+  if (snapshotFailure) return snapshotFailure;
   const caseId = text(job.case?.support_case_id);
   if (!/^\d{8,14}$/.test(caseId)) return supportOpen(cdp, job);
   await cdp.navigate(`https://sellercentral.amazon.com.br/cu/case-dashboard/view-case?caseID=${encodeURIComponent(caseId)}`, 5000);
