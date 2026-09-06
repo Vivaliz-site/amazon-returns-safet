@@ -17,11 +17,12 @@ The cockpit is the authoritative human-facing view for SAFE-T operations. It mus
 
 1. **Human-approved learning.** AI may suggest; the user's approved or edited decision is authoritative.
 2. **Deterministic execution.** Learned decisions become structured, versioned rules evaluated by the deterministic engine.
-3. **Existing + future propagation.** Rule promotion immediately re-evaluates all current matching cases and governs future matching cases.
-4. **Evidence first.** Every recommendation and rule application must reference the facts/evidence used.
-5. **Full auditability.** Every review, rule version, application, external write, read-back, status observation and financial observation remains traceable.
-6. **Fail closed.** Missing evidence, conflicting rules or unsafe ambiguity returns the case to review instead of guessing.
-7. **Safety gates always win.** Learned memory cannot bypass hard business or write-safety gates.
+3. **Known rules run automatically.** An already-defined business rule or active learned rule does not require another human approval; matching existing and future cases continue through the normal deterministic flow automatically.
+4. **Existing + future propagation.** Rule promotion immediately re-evaluates all current matching cases and governs future matching cases.
+5. **Evidence first.** Every recommendation and rule application must reference the facts/evidence used.
+6. **Full auditability.** Every review, rule version, application, external write, read-back, status observation and financial observation remains traceable.
+7. **Fail closed.** Missing evidence, conflicting rules or unsafe ambiguity returns the case to review instead of guessing.
+8. **Safety gates always win.** Learned memory cannot bypass hard business or write-safety gates.
 ## 3. Cockpit information architecture
 
 The admin area becomes one operational workspace with three primary views.
@@ -44,7 +45,7 @@ Filters must support order ID, SAFE-T ID, state, action, review status, program,
 
 ### 3.2 Review queue
 
-A dedicated queue contains `HUMAN_REVIEW`, review-gated `BLOCKED_REVIEW`, conflicting learned rules, low-confidence AI suggestions and any case explicitly sent back to review.
+A dedicated queue contains only cases that remain unresolved after evaluating hard business rules and active learned memory: `HUMAN_REVIEW`, review-gated `BLOCKED_REVIEW`, conflicting learned rules, low-confidence AI suggestions and any case explicitly sent back to review. A case fully matched by an existing deterministic rule or active learned rule must bypass the queue and continue automatically.
 
 Each review card must show enough context to decide without navigating to separate systems for ordinary cases. A user can still open the full case detail before deciding.
 
@@ -78,7 +79,7 @@ The detail view must distinguish **observation**, **decision**, **external write
 For one SAFE-T, the user must be able to answer from this page alone: what we knew, what we decided, what we sent, what Amazon showed afterward, what money was recovered, and what action is next.
 ## 5. Review workflow with AI suggestion
 
-When a case requires review, the system builds a normalized ReviewContext from deterministic facts already persisted for the case. The AI receives only the minimum context required to reason about the case and returns a structured suggestion; it never performs an external write.
+When a case remains unresolved after all applicable deterministic business rules and active learned rules have been evaluated, the system builds a normalized ReviewContext from deterministic facts already persisted for the case. The AI receives only the minimum context required to reason about the novel or ambiguous case and returns a structured suggestion; it never performs an external write. Existing approved logic is not re-sent for human approval.
 
 The review panel displays:
 
@@ -173,7 +174,7 @@ Immediately after a reusable decision is approved:
 
 This propagation is not a bulk blind write. It is a bulk **re-decision**; each case independently passes the same safety checks it would have passed without learned memory.
 
-For future cases, the learned-rule evaluation happens before emitting a review request. A fully matching safe rule resolves the ambiguity automatically. A partial match, conflict or new material fact creates review.
+For both existing and future cases, hard business rules and active learned rules are evaluated before emitting a review request. A fully matching safe rule continues through scheduling and execution automatically without new human approval. A partial match, conflict or new material fact creates review.
 
 The rule engine must be replayable against historical facts so a rule can be regression-tested before and after later version changes.
 
@@ -285,7 +286,7 @@ The feature is complete only when all of the following are demonstrated end to e
 5. Approved reusable decisions create a versioned learned rule with immutable origin/audit data.
 6. Before confirmation, UI shows the exact existing cases matching the proposed rule signature.
 7. After approval, all matching existing cases are re-evaluated and per-case results are visible.
-8. A future materially identical case uses the learned rule without requiring redundant human review.
+8. Existing and future cases that match an already-defined business rule or active learned rule proceed automatically without redundant human approval.
 9. A materially different fact or incompatible learned rule returns the case to review instead of guessing.
 10. Hard gates remain authoritative, including damaged-return initial manual opening and exact Amazon wait/deadline handling.
 11. Rule application never directly performs an external write; writes still traverse scheduler/outbox/bridge/idempotency/read-back.
