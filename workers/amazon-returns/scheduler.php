@@ -27,6 +27,11 @@ final class SvAmazonReturnsScheduler
         ?DateTimeImmutable $now=null
     ): array {
         $decision = $this->engine->nextAction($case, $timeline, $policy, $now);
+        return $this->scheduleDecision($target,$case,$decision,$timeline);
+    }
+
+    public function scheduleDecision(SvAmazonTenantReturnsOutbox $target,array $case,array $decision,array $timeline=[]): array
+    {
         if (!self::isWriteAction($decision)) return ['decision'=>$decision,'outbox_id'=>null];
         $key = (string)($decision['idempotency_key'] ?? '');
         if ($key === '') throw new LogicException('Write decision missing idempotency key.');
@@ -38,9 +43,7 @@ final class SvAmazonReturnsScheduler
             'decision'=>$decision,
         ];
         if (isset($case['appeal_deadline_at'])) $payload['deadline_at'] = $case['appeal_deadline_at'];
-        $outboxId=$target->enqueue(
-            (string)$decision['action'],$caseId,$payload,$key
-        );
+        $outboxId=$target->enqueue((string)$decision['action'],$caseId,$payload,$key);
         return ['decision'=>$decision,'outbox_id'=>$outboxId];
     }
 }

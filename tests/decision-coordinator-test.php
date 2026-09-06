@@ -1,0 +1,19 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/../includes/amazon-returns/DecisionCoordinator.php';
+function dcSame($a,$b,$m){if($a!==$b)throw new RuntimeException($m.' want='.json_encode($a).' got='.json_encode($b));}
+class DcRules{public array $rows=[];function active(){return $this->rows;}}
+class DcReviews{public array $rows=[];function open($caseId,$reason,$hash,$context){$k=$caseId.'|'.$hash;foreach($this->rows as $r)if($r['k']===$k)return $r;$r=['id'=>count($this->rows)+1,'case_id'=>$caseId,'reason'=>$reason,'k'=>$k,'context'=>$context];$this->rows[]=$r;return $r;}function countOpenForCase($id){return count(array_filter($this->rows,fn($r)=>$r['case_id']===$id));}}
+class DcApps{public array $rows=[];function record($a){$this->rows[]=$a;return count($this->rows);}}
+class DcEvents{public array $rows=[];function append($e){$this->rows[]=$e;return count($this->rows);}}
+class DcP{public $learnedRules,$reviews,$ruleApplications,$events;function __construct(){$this->learnedRules=new DcRules;$this->reviews=new DcReviews;$this->ruleApplications=new DcApps;$this->events=new DcEvents;}}
+$now=new DateTimeImmutable('2026-09-06T03:00:00Z');$p=new DcP;$base=new SvAmazonSafeTDecisionEngine();$c=new SvAmazonDecisionCoordinator($base,$p,null);
+$eligible=['id'=>77,'amazon_order_id'=>'702-x','safe_t_id'=>null,'state'=>'REFUND_DETECTED','physical_status'=>'NOT_RECEIVED','refund_at'=>'2026-07-20 00:00:00','refund_initiator'=>'AMAZON_AUTOMATIC','expected_reimbursement_amount'=>'100','reconciled_credit_amount'=>'0','marketplace_id'=>'A2Q3Y263D00KWC','program'=>'STANDARD'];
+$policy=['eligible'=>true,'eligibility_at'=>'2026-09-03 00:00:00','policy_version_id'=>'v2'];
+$r=$c->nextAction($eligible,[],$policy,$now);dcSame('SAFE_T_SUBMIT',$r['action'],'base known');dcSame(0,$p->reviews->countOpenForCase(77),'base no review');
+$amb=$eligible;$amb['id']=88;$amb['refund_initiator']='UNKNOWN';$baseReview=$base->nextAction($amb,[],$policy,$now);$ctx=SvAmazonReviewContext::build($amb,[],$policy,$baseReview);
+$p->learnedRules->rows=[['id'=>9,'version'=>1,'status'=>'ACTIVE','match'=>['review_reason'=>$ctx['signature']['review_reason'],'refund_initiator'=>'UNKNOWN'],'effect'=>['action'=>'CHECK_FINANCES','parameters'=>['date_binding'=>'NONE']]]];
+$preview=$c->previewAction($amb,[],$policy,$now);dcSame('CHECK_FINANCES',$preview['action'],'preview learned');dcSame(0,count($p->ruleApplications->rows),'preview no app');dcSame(0,count($p->events->rows),'preview no event');
+$r=$c->nextAction($amb,[],$policy,$now);dcSame('CHECK_FINANCES',$r['action'],'learned memory resolves');dcSame(0,$p->reviews->countOpenForCase(88),'learned no review');dcSame(1,count($p->ruleApplications->rows),'application audit');dcSame(1,count($p->events->rows),'event audit');
+$p2=new DcP;$c2=new SvAmazonDecisionCoordinator($base,$p2,null);$r=$c2->nextAction($amb,[],$policy,$now);dcSame('BLOCKED_REVIEW',$r['action'],'none remains review gated');dcSame(1,$p2->reviews->countOpenForCase(88),'one review');$c2->nextAction($amb,[],$policy,$now);dcSame(1,$p2->reviews->countOpenForCase(88),'idempotent review');
+echo "decision-coordinator-test: OK\n";

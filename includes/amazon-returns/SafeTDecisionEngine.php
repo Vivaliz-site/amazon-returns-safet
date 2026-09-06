@@ -138,6 +138,33 @@ final class SvAmazonSafeTDecisionEngine
         ];
     }
 
+    /** Guard a learned effect with the same non-negotiable business invariants. */
+    public function guardLearnedEffect(array $effect,array $case,array $timeline,array $policy,DateTimeImmutable $now): array
+    {
+        $caseId=(int)($case['id']??0);$action=(string)($effect['action']??'');$safeTId=trim((string)($case['safe_t_id']??''));
+        if($this->hasRecoveredCredit($case))return $this->decision('WAIT','ALREADY_REIMBURSED',$caseId);
+        if($action==='SAFE_T_SUBMIT'){
+            if($safeTId!=='')return $this->decision('WAIT','SAFE_T_ALREADY_EXISTS',$caseId);
+            if($this->sellerAppConfirmedPhysicalReceipt($case,$timeline))return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
+            $initiator=(string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN);
+            $confirmed=trim((string)($case['refund_at']??''))!=='' && in_array($initiator,[SvAmazonRefundInitiators::AMAZON_AUTOMATIC,SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,SvAmazonRefundInitiators::A_TO_Z],true);
+            if(!$confirmed)return $this->decision('WAIT','AMAZON_CUSTOMER_REFUND_NOT_CONFIRMED',$caseId);
+            if(($policy['eligible']??false)!==true)return $this->decision('HUMAN_REVIEW','LEARNED_RULE_D45_GATE_BLOCKED',$caseId);
+            if(($case['physical_status']??'')===SvAmazonReturnPhysicalStatuses::RECEIVED_DISCREPANT)return $this->decision('HUMAN_REVIEW','DAMAGED_RETURN_INITIAL_CLAIM_MANUAL_ONLY',$caseId);
+        }
+        if($action==='WAIT' && trim((string)($effect['parameters']['resolved_date']??''))==='')return $this->decision('HUMAN_REVIEW','LEARNED_RULE_WAIT_DATE_UNRESOLVED',$caseId);
+        if($action==='SAFE_T_APPEAL'){
+            if(($case['state']??'')===SvAmazonReturnStates::APPEAL_SUBMITTED)return $this->decision('WAIT','APPEAL_ALREADY_SUBMITTED',$caseId);
+            $deadline=SvAmazonRequestedWait::timestamp($case['appeal_deadline_at']??null);
+            if($safeTId==='' || $deadline===null || $now>$deadline)return $this->decision('HUMAN_REVIEW','LEARNED_RULE_APPEAL_GATE_BLOCKED',$caseId);
+        }
+        if(in_array($action,['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true) && $safeTId==='')return $this->decision('HUMAN_REVIEW','LEARNED_RULE_SAFE_T_REQUIRED',$caseId);
+        $decision=['action'=>$action,'reason'=>'LEARNED_RULE_APPROVED','case_id'=>$caseId];
+        if(isset($effect['parameters']['resolved_date']))$decision['next_action_at']=$effect['parameters']['resolved_date'];
+        if(in_array($action,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))$decision['idempotency_key']=hash('sha256','learned|'.$action.'|'.$caseId.'|'.$safeTId.'|'.json_encode($effect));
+        return $decision;
+    }
+
     /** @return array<string,mixed> */
     private function emailReviewResponseAction(array $case,array $timeline,string $safeTId,int $caseId): array
     {

@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__ . '/../../includes/amazon-returns/PolicyEngine.php';
 require_once __DIR__ . '/../../includes/amazon-returns/Projector.php';
 require_once __DIR__ . '/../../includes/amazon-returns/SafeTDecisionEngine.php';
+require_once __DIR__ . '/../../includes/amazon-returns/DecisionCoordinator.php';
 require_once __DIR__ . '/../../includes/amazon-returns/SpApi.php';
 require_once __DIR__ . '/../../includes/amazon-returns/SpApiEventSink.php';
 require_once __DIR__ . '/../../includes/amazon-returns/ReturnsReport.php';
@@ -246,6 +247,7 @@ final class SvAmazonReturnsDaemon
         $cases=$this->persistence->cases->openCases(500);
         $policies=$this->persistence->policies->allActive();
         $engine=new SvAmazonSafeTDecisionEngine();
+        $coordinator=new SvAmazonDecisionCoordinator($engine,$this->persistence,$this->config);
         $decisions=0;
         $enqueued=0;
         $blockedWrites=0;
@@ -263,7 +265,7 @@ final class SvAmazonReturnsDaemon
             $projected['policies']=$policies;
             $policy=SvAmazonReturnPolicyEngine::evaluate($projected,$now);
             $timeline=$this->persistence->events->eventsForCase($caseId);
-            $decision=$engine->nextAction($projected,$timeline,$policy,$now);
+            $decision=$coordinator->nextAction($projected,$timeline,$policy,$now);
             $timing=['eligibility_at'=>$policy['eligibility_at']??null,'policy_version_id'=>$policy['policy_version_id']??null];
             if(array_key_exists('next_action_at',$decision))$timing['next_action_at']=$decision['next_action_at'];
             elseif(trim((string)($projected['safe_t_id']??''))==='')$timing['next_action_at']=$policy['eligibility_at']??null;
@@ -292,8 +294,8 @@ final class SvAmazonReturnsDaemon
                 $blockedWrites++;
                 continue;
             }
-            $scheduled=(new SvAmazonReturnsScheduler($engine))->schedule(
-                $this->persistence->outbox,$projected,$timeline,$policy,$now
+            $scheduled=(new SvAmazonReturnsScheduler($engine))->scheduleDecision(
+                $this->persistence->outbox,$projected,$decision,$timeline
             );
             if(($scheduled['outbox_id'] ?? null)!==null)$enqueued++;
         }
