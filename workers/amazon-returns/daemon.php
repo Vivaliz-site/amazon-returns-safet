@@ -198,18 +198,28 @@ final class SvAmazonReturnsDaemon
                 if(!is_array($case))throw new RuntimeException('SAFE-T email case not found.');
                 $timeline=$this->persistence->events->eventsForCase($caseId);
                 $kind=strtoupper((string)($row['kind'] ?? ''));
+                $payload=is_array($row['payload'] ?? null)?$row['payload']:[];
+                $snapshot=is_array($payload['write_snapshot'] ?? null)?$payload['write_snapshot']:[];
+                $snapshotV2=(int)($snapshot['format_version'] ?? 0)===2;
+                $storedMessage=is_array($snapshot['message'] ?? null)?$snapshot['message']:null;
+                $writeContentSha256=is_string($snapshot['content_sha256'] ?? null)
+                    && preg_match('/^[a-f0-9]{64}$/i',(string)$snapshot['content_sha256'])===1
+                    ? strtolower((string)$snapshot['content_sha256']) : null;
+                if($snapshotV2 && ($storedMessage===null || $writeContentSha256===null)){
+                    throw new LogicException('WRITE_SNAPSHOT_MISSING');
+                }
                 if($kind==='SAFE_T_EMAIL_REPLY'){
-                    $message=SvAmazonSafeTEmailReview::composeReply($case,$timeline,null,SvAmazonRequestedWait::jobResumeScope($row));
+                    $message=$snapshotV2?$storedMessage:SvAmazonSafeTEmailReview::composeReply($case,$timeline,null,SvAmazonRequestedWait::jobResumeScope($row));
                     $sent=$gmail->sendReplyOnce(
-                        $message['to'],$message['subject'],$message['body'],$message['thread_id'],
-                        $message['in_reply_to'],(string)$row['idempotency_key']
+                        (string)$message['to'],(string)$message['subject'],(string)$message['body'],(string)$message['thread_id'],
+                        (string)$message['in_reply_to'],(string)$row['idempotency_key']
                     );
                     $eventType='SAFE_T_EMAIL_REPLY_SENT';
                     $result['reply_sent']++;
                 }else{
-                    $message=SvAmazonSafeTEmailReview::compose($case,$timeline);
+                    $message=$snapshotV2?$storedMessage:SvAmazonSafeTEmailReview::compose($case,$timeline);
                     $sent=$gmail->sendOnce(
-                        $message['to'],$message['subject'],$message['body'],
+                        (string)$message['to'],(string)$message['subject'],(string)$message['body'],
                         (string)$row['idempotency_key']
                     );
                     $eventType='SAFE_T_EMAIL_REVIEW_SENT';
@@ -230,6 +240,8 @@ final class SvAmazonReturnsDaemon
                         'safe_t_id'=>$case['safe_t_id'] ?? null,
                         'gmail_message_id'=>$sent['message_id'],
                         'gmail_thread_id'=>$sent['thread_id'],
+                        'outbox_id'=>(int)$row['id'],
+                        'write_content_sha256'=>$writeContentSha256,
                     ],
                     'evidence_sha256'=>null,
                 ]);

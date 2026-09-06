@@ -181,6 +181,14 @@ final class SvAmazonReturnsBridgeService
         if(!is_string($snapshot) || preg_match('/^[a-f0-9]{64}$/i',$snapshot)!==1){
             $snapshot=null;
         }
+        $rowPayload=is_array($row['payload'] ?? null)?$row['payload']:[];
+        $writeSnapshot=is_array($rowPayload['write_snapshot'] ?? null)?$rowPayload['write_snapshot']:[];
+        $writeContentSha256=$writeSnapshot['content_sha256'] ?? null;
+        if(!is_string($writeContentSha256) || preg_match('/^[a-f0-9]{64}$/i',$writeContentSha256)!==1){
+            $writeContentSha256=null;
+        }else{
+            $writeContentSha256=strtolower($writeContentSha256);
+        }
         return $this->p->events->append([
             'case_id'=>(int)$row['case_id'],
             'event_type'=>'SELLER_CENTRAL_ACTION_RESULT',
@@ -198,6 +206,8 @@ final class SvAmazonReturnsBridgeService
                 'block_reason'=>$this->safeText($result['block_reason'] ?? null),
                 'next_allowed_at'=>$result['next_allowed_at'],
                 'reason'=>$this->safeText($result['reason'] ?? null),
+                'outbox_id'=>(int)$row['id'],
+                'write_content_sha256'=>$writeContentSha256,
             ],
             'evidence_sha256'=>$snapshot,
         ]);

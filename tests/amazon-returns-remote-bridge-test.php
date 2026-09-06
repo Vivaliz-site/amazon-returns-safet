@@ -173,6 +173,11 @@ rbAssert(!str_contains($statusEndpointSource, "\$_GET['token']"), 'Status bridge
 $workerSource = (string)file_get_contents($windowsWorker);
 $statusWorkerSource = (string)file_get_contents($statusWorker);
 rbAssert(str_contains($workerSource, 'bridge.token'), 'Windows worker must read token from protected file.');
+rbAssert(str_contains($workerSource, 'write_snapshot'), 'Windows writer must consume persisted write snapshots.');
+rbAssert(str_contains($workerSource, 'WRITE_SNAPSHOT_MISSING'), 'Version-2 writer jobs must fail closed when persisted narrative is missing.');
+$bridgeServiceSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/BridgeService.php');
+rbAssert(str_contains($bridgeServiceSource, "'write_content_sha256'"), 'Seller Central result event must reference persisted write content hash.');
+rbAssert(str_contains($bridgeServiceSource, "'outbox_id'"), 'Seller Central result event must reference outbox id.');
 rbAssert(str_contains($workerSource, '127.0.0.1:9225'), 'Windows worker must use local headless CDP only.');
 rbAssert(str_contains($statusWorkerSource, 'SAFE_T_READ'), 'Status worker must support SAFE_T_READ.');
 rbAssert(str_contains($statusWorkerSource, 'SAFE_T_DISCOVERY'), 'Status worker must support read-only SAFE_T discovery.');

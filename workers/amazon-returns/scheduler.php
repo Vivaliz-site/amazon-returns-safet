@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../includes/amazon-returns/SafeTDecisionEngine.php';
 require_once __DIR__ . '/../../includes/amazon-returns/TenantOutbox.php';
+require_once __DIR__ . '/../../includes/amazon-returns/ExternalWritePayload.php';
 
 final class SvAmazonReturnsScheduler
 {
@@ -41,7 +42,7 @@ final class SvAmazonReturnsScheduler
             'order_id'=>(string)($case['amazon_order_id'] ?? ''),
             'safe_t_id'=>$case['safe_t_id'] ?? null,
             'decision'=>$decision,
-        ];
+        ] + SvAmazonExternalWritePayload::build($decision,$case,$timeline);
         if (isset($case['appeal_deadline_at'])) $payload['deadline_at'] = $case['appeal_deadline_at'];
         $outboxId=$target->enqueue((string)$decision['action'],$caseId,$payload,$key);
         return ['decision'=>$decision,'outbox_id'=>$outboxId];
