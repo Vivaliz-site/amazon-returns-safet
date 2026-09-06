@@ -70,8 +70,9 @@ async function ensureBrowser() {
 }
 
 class Cdp {
-  constructor(ws) {
+  constructor(ws, targetId = null) {
     this.ws = ws;
+    this.targetId = targetId;
     this.id = 0;
     this.pending = new Map();
     ws.addEventListener('message', event => {
@@ -85,15 +86,16 @@ class Cdp {
 
   static async connect() {
     await ensureBrowser();
-    const tabs = await (await fetch(`${CDP_BASE}/json`)).json();
-    const page = tabs.find(tab => tab.type === 'page');
-    if (!page?.webSocketDebuggerUrl) throw new Error('no CDP page target');
+    const response = await fetch(`${CDP_BASE}/json/new?${encodeURIComponent('about:blank')}`, { method: 'PUT' });
+    if (!response.ok) throw new Error(`could not create isolated CDP target (${response.status})`);
+    const page = await response.json();
+    if (!page?.id || !page?.webSocketDebuggerUrl) throw new Error('isolated CDP page target unavailable');
     const ws = new WebSocket(page.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => {
       ws.addEventListener('open', resolve, { once: true });
       ws.addEventListener('error', reject, { once: true });
     });
-    return new Cdp(ws);
+    return new Cdp(ws, page.id);
   }
 
   send(method, params = {}) {
@@ -162,6 +164,7 @@ class Cdp {
 
   close() {
     try { this.ws.close(); } catch {}
+    if (this.targetId) fetch(`${CDP_BASE}/json/close/${encodeURIComponent(this.targetId)}`).catch(() => {});
   }
 }
 

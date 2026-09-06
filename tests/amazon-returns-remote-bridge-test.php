@@ -88,6 +88,9 @@ $readCase = array_replace($case, ['safe_t_id'=>'98143-99485-9285859']);
 $readJob = SvAmazonReturnsRemoteBridge::jobEnvelope(array_replace($row, ['kind'=>'SAFE_T_READ']), $readCase, []);
 rbSame('SAFE_T_READ', $readJob['action'], 'Read-only SAFE-T status job must be an approved bridge action.');
 rbSame(false, $readJob['write_enabled'], 'SAFE-T status reads must not require or imply a write flag.');
+$discoveryJob = SvAmazonReturnsRemoteBridge::jobEnvelope(array_replace($row, ['kind'=>'SAFE_T_DISCOVERY']), $case, []);
+rbSame('SAFE_T_DISCOVERY', $discoveryJob['action'], 'Read-only SAFE-T discovery must be an approved bridge action.');
+rbSame(false, $discoveryJob['write_enabled'], 'SAFE-T discovery must never require or imply a write flag.');
 
 $valid = SvAmazonReturnsRemoteBridge::validateResult([
     'status' => 'ACCEPTED',
@@ -162,7 +165,7 @@ foreach([$endpointSource,$statusEndpointSource] as $endpointContract){
         rbAssert(!str_contains($endpointContract,$table),'Thin bridge endpoint must not contain tenant-table SQL.');
     }
 }
-rbAssert(str_contains((string)file_get_contents(__DIR__.'/../includes/amazon-returns/StatusBridgeService.php'), "'SAFE_T_READ'"), 'Status service may claim SAFE_T_READ jobs only.');
+rbAssert(str_contains((string)file_get_contents(__DIR__.'/../includes/amazon-returns/StatusBridgeService.php'), "'SAFE_T_DISCOVERY'"), 'Status service must support read-only SAFE-T discovery jobs.');
 rbAssert(str_contains($endpointSource, 'apache_request_headers'), 'Bridge endpoint must fall back to apache_request_headers() for Authorization (Apache mod_php does not reliably populate $_SERVER[HTTP_AUTHORIZATION]).');
 rbAssert(str_contains($statusEndpointSource, 'apache_request_headers'), 'Status bridge must preserve Apache Authorization fallback.');
 rbAssert(!str_contains($endpointSource, "\$_GET['token']"), 'Bridge token must never be accepted from query string.');
@@ -171,13 +174,18 @@ $workerSource = (string)file_get_contents($windowsWorker);
 $statusWorkerSource = (string)file_get_contents($statusWorker);
 rbAssert(str_contains($workerSource, 'bridge.token'), 'Windows worker must read token from protected file.');
 rbAssert(str_contains($workerSource, '127.0.0.1:9225'), 'Windows worker must use local headless CDP only.');
-rbAssert(str_contains($statusWorkerSource, 'SAFE_T_READ'), 'Status worker must be constrained to SAFE_T_READ.');
+rbAssert(str_contains($statusWorkerSource, 'SAFE_T_READ'), 'Status worker must support SAFE_T_READ.');
+rbAssert(str_contains($statusWorkerSource, 'SAFE_T_DISCOVERY'), 'Status worker must support read-only SAFE_T discovery.');
 rbAssert(!str_contains($statusWorkerSource, 'SAFE_T_SUBMIT'), 'Read-only status worker must not contain SAFE-T submission action.');
 rbAssert(!str_contains($statusWorkerSource, 'SAFE_T_APPEAL'), 'Read-only status worker must not contain appeal write action.');
 rbAssert(!str_contains($statusWorkerSource, 'if (import.meta.url === `file://${process.argv[1]}`)'), 'Persistent Windows worker must not use a POSIX-only import.meta entrypoint guard.');
 rbAssert(str_contains($statusWorkerSource, "addEventListener('close'"), 'Status worker must reject pending CDP requests when browser WebSocket closes.');
 rbAssert(str_contains($statusWorkerSource, "addEventListener('error'"), 'Status worker must reject pending CDP requests on browser WebSocket error.');
 rbAssert(str_contains($statusWorkerSource, 'rejectPending'), 'Status worker must centrally drain/reject pending CDP waiters.');
+foreach([$workerSource,$statusWorkerSource] as $isolatedWorker){
+    rbAssert(str_contains($isolatedWorker, '/json/new?'), 'Each Seller Central job must create an isolated CDP page target.');
+    rbAssert(!str_contains($isolatedWorker, "tabs.find(tab => tab.type === 'page')"), 'Workers must never reuse the first shared CDP page target.');
+}
 
 $installerSource=(string)file_get_contents(__DIR__.'/../scripts/install-amazon-returns-windows-bridge.ps1');
 rbAssert(!str_contains($installerSource,'New-ScheduledTaskTrigger -AtStartup,'),'Windows bridge installer must use valid trigger expressions without a trailing command comma.');

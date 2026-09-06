@@ -8,13 +8,16 @@ final class SvAmazonRequestedWait
     {
         $text = preg_split('/(?m)^\s*(?:>|On .+wrote:|Em .+escreveu:|De: |From: |-----Original Message)/u', $text, 2)[0];
         $text = html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('/[\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]/u', '', $text) ?? $text;
         $normalized = strtolower(iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text) ?: $text);
         $normalized = preg_replace('/[ \t]+/', ' ', $normalized) ?? $normalized;
         $intent = preg_match('/\b(?:aguard(?:e|ar)|espere|retorne|volte|reabr(?:a|ir))\b|\b(?:reembolsad[oa]|ressarcid[oa]).{0,100}(?:proativ|automatic)|\b(?:reembolso|ressarcimento).{0,100}\bate\b/s', $normalized) === 1;
         if (!$intent || preg_match('/nao (?:precisa|deve|e necessario).{0,25}\b(?:aguardar|esperar)\b/', $normalized)) return null;
         $result = ['next_action_at'=>null, 'instruction_hash'=>hash('sha256', trim($normalized)), 'date_precision'=>'unknown'];
         if (str_contains($normalized, 'nao responderemos a outras comunicacoes') || str_contains($normalized, 'nao sera reconsiderada')) return $result;
-        $date = '(?:[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}[\/.][0-9]{1,2}[\/.][0-9]{4}|[0-9]{1,2}\s+de\s+[a-z]+\s+de\s+[0-9]{4})';
+        $weekday='(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s*,?\s*)?';
+        $englishMonth='(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+        $date = '(?:[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}[\/.][0-9]{1,2}[\/.][0-9]{4}|[0-9]{1,2}\s+de\s+[a-z]+\s+de\s+[0-9]{4}|'.$weekday.$englishMonth.'\s+[0-9]{1,2}\s*,?\s*[0-9]{4})';
         $waitVerb='(?:aguarde|aguardar|espere|retorne|volte|reabra|reabrir)';
         $futureMoney='(?:(?:sera|serao)\s+(?:reembolsad[oa]|ressarcid[oa])|(?:reembolso|ressarcimento)\s+(?:sera|serao|previst[oa]))';
         $pattern = '/\b(?:'.$waitVerb.'|'.$futureMoney.')\b(?:(?!\b(?:foi|foram|ocorreu|ocorreram|ja|e|mas|porem)\b)[^.,;!?\n]){0,160}?\b(ate|a partir de|apos|depois de|em|para)\s+(?:o dia\s+|dia\s+)?('.$date.')\b/';
@@ -42,9 +45,12 @@ final class SvAmazonRequestedWait
     private static function calendarDate(string $raw): ?DateTimeImmutable
     {
         $monthNames = ['janeiro'=>1,'fevereiro'=>2,'marco'=>3,'abril'=>4,'maio'=>5,'junho'=>6,'julho'=>7,'agosto'=>8,'setembro'=>9,'outubro'=>10,'novembro'=>11,'dezembro'=>12];
+        $englishMonths = ['jan'=>1,'january'=>1,'feb'=>2,'february'=>2,'mar'=>3,'march'=>3,'apr'=>4,'april'=>4,'may'=>5,'jun'=>6,'june'=>6,'jul'=>7,'july'=>7,'aug'=>8,'august'=>8,'sep'=>9,'sept'=>9,'september'=>9,'oct'=>10,'october'=>10,'nov'=>11,'november'=>11,'dec'=>12,'december'=>12];
+        $raw = preg_replace('/^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s*,?\s*/', '', $raw) ?? $raw;
         if (preg_match('/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/D', $raw, $m)) { $year=(int)$m[1];$month=(int)$m[2];$day=(int)$m[3]; }
         elseif (preg_match('/^([0-9]{1,2})[\/.]([0-9]{1,2})[\/.]([0-9]{4})$/D', $raw, $m)) { $year=(int)$m[3];$month=(int)$m[2];$day=(int)$m[1]; }
         elseif (preg_match('/^([0-9]{1,2})\s+de\s+([a-z]+)\s+de\s+([0-9]{4})$/D', $raw, $m)) { $year=(int)$m[3];$month=$monthNames[$m[2]]??0;$day=(int)$m[1]; }
+        elseif (preg_match('/^([a-z]+)\s+([0-9]{1,2})\s*,?\s*([0-9]{4})$/D', $raw, $m)) { $year=(int)$m[3];$month=$englishMonths[$m[1]]??0;$day=(int)$m[2]; }
         else return null;
         if ($year < 2000 || $year > 2100 || !checkdate($month, $day, $year)) return null;
         return new DateTimeImmutable(sprintf('%04d-%02d-%02d 00:00:00',$year,$month,$day), new DateTimeZone('America/Sao_Paulo'));

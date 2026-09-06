@@ -8,6 +8,7 @@ final class SvAmazonReturnsRemoteBridge
 {
     private const KINDS = [
         'SAFE_T_READ',
+        'SAFE_T_DISCOVERY',
         'SAFE_T_SUBMIT',
         'SAFE_T_APPEAL',
         'SELLER_SUPPORT_READ',

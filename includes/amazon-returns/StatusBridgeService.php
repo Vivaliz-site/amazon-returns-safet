@@ -41,6 +41,22 @@ final class SvAmazonReturnsStatusBridgeService
             ],$key);
             $ensured++;
         }
+        $scope='seller-central-order-discovery-v1|'.$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');
+        foreach($this->p->cases->casesWithoutSafeTId(250) as $case){
+            $caseId=(int)($case['id'] ?? 0);
+            $orderId=trim((string)($case['amazon_order_id'] ?? ''));
+            if($caseId<1 || $orderId==='')continue;
+            if($this->p->outbox->hasActive($caseId,'SAFE_T_DISCOVERY'))continue;
+            $key=$this->p->outbox->deterministicKey('SAFE_T_DISCOVERY',$caseId,$scope);
+            $this->p->outbox->enqueue('SAFE_T_DISCOVERY',$caseId,[
+                'case_id'=>$caseId,
+                'order_id'=>$orderId,
+                'order_item_id'=>(string)($case['amazon_order_item_id'] ?? ''),
+                'read_only'=>true,
+                'lookback_days'=>90,
+            ],$key);
+            $ensured++;
+        }
         return $ensured;
     }
 
@@ -48,7 +64,7 @@ final class SvAmazonReturnsStatusBridgeService
     public function pull(DateTimeImmutable $now): array
     {
         $ensured=$this->ensureJobs($now);
-        $rows=$this->p->outbox->claimBatch(1,['SAFE_T_READ']);
+        $rows=$this->p->outbox->claimBatch(1,['SAFE_T_READ','SAFE_T_DISCOVERY']);
         if($rows===[])return ['status'=>'NO_JOB','ensured'=>$ensured];
         $row=$rows[0];
         $case=$this->p->cases->find((int)$row['case_id']);
@@ -79,8 +95,9 @@ final class SvAmazonReturnsStatusBridgeService
             ];
         }
         $row=$this->p->outbox->findOwned($jobId);
+        $kind=is_array($row)?strtoupper((string)($row['kind'] ?? '')):'';
         if(!is_array($row)
-            || strtoupper((string)($row['kind'] ?? ''))!=='SAFE_T_READ'
+            || !in_array($kind,['SAFE_T_READ','SAFE_T_DISCOVERY'],true)
             || !hash_equals((string)$row['idempotency_key'],$idempotencyKey)){
             return ['status'=>'JOB_NOT_FOUND','http_status'=>404];
         }
@@ -93,7 +110,13 @@ final class SvAmazonReturnsStatusBridgeService
 
         $status=(string)$result['status'];
         if($status==='ACCEPTED' && is_array($result['read'] ?? null)){
-            return $this->completeObservation($row,$result);
+            return $kind==='SAFE_T_DISCOVERY'
+                ? $this->completeDiscovery($row,$result)
+                : $this->completeObservation($row,$result);
+        }
+        if($kind==='SAFE_T_DISCOVERY' && $status==='NOT_FOUND'){
+            $this->p->outbox->markSucceeded((int)$row['id']);
+            return ['status'=>'ACK','job_id'=>(int)$row['id'],'result_status'=>'NOT_FOUND','completed'=>true];
         }
         if(in_array($status,['AUTH_REQUIRED','HUMAN_CHALLENGE','UI_DRIFT'],true)){
             $hours=$status==='UI_DRIFT'?6:1;
@@ -113,6 +136,52 @@ final class SvAmazonReturnsStatusBridgeService
         return [
             'status'=>'ACK','job_id'=>$jobId,'result_status'=>$status,'completed'=>false,
         ];
+    }
+
+    /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */
+    private function completeDiscovery(array $row,array $result): array
+    {
+        $read=$result['read'];
+        $caseId=(int)$row['case_id'];
+        $case=$this->p->cases->find($caseId);
+        if(!is_array($case))return ['status'=>'JOB_NOT_FOUND','http_status'=>404];
+        $safeTId=trim((string)($read['safe_t_id'] ?? ''));
+        $orderId=trim((string)($read['order_id'] ?? ''));
+        $expectedOrder=trim((string)($case['amazon_order_id'] ?? ''));
+        if(preg_match('/^\d{5}-\d{5}-\d{7}$/',$safeTId)!==1 || $orderId==='' || !hash_equals($expectedOrder,$orderId)){
+            throw new RuntimeException('SAFE-T discovery identity did not match the scoped case.');
+        }
+        $snapshot=$result['evidence']['snapshot_sha256'] ?? null;
+        if(!is_string($snapshot) || preg_match('/^[a-f0-9]{64}$/i',$snapshot)!==1)$snapshot=null;
+        $db=$this->p->db();
+        $db->beginTransaction();
+        try{
+            $this->p->cases->assertOwned($caseId);
+            $case=$this->p->cases->find($caseId);
+            if(!is_array($case))throw new RuntimeException('Owned discovery case disappeared.');
+            $known=trim((string)($case['safe_t_id'] ?? ''));
+            if($known!=='' && !hash_equals($known,$safeTId))throw new RuntimeException('SAFE-T identity changed during discovery.');
+            $discovered=$known==='';
+            if($discovered){
+                $this->p->cases->update($caseId,['safe_t_id'=>$safeTId]);
+                $this->p->events->append([
+                    'case_id'=>$caseId,
+                    'event_type'=>'SAFE_T_ID_DISCOVERED',
+                    'source'=>'SELLER_CENTRAL',
+                    'source_event_id'=>$safeTId,
+                    'idempotency_key'=>SvAmazonTenantReturnEventStore::deterministicKey('safe-t-id-discovered',(string)$caseId,$safeTId),
+                    'occurred_at'=>gmdate('Y-m-d H:i:s'),
+                    'payload'=>['safe_t_id'=>$safeTId,'order_id'=>$orderId,'discovery'=>'SELLER_CENTRAL_ORDER_MATCH'],
+                    'evidence_sha256'=>$snapshot,
+                ]);
+            }
+            $this->p->outbox->markSucceeded((int)$row['id']);
+            $db->commit();
+            return ['status'=>'ACK','job_id'=>(int)$row['id'],'safe_t_id'=>$safeTId,'discovered'=>$discovered];
+        }catch(Throwable $e){
+            if($db->inTransaction())$db->rollBack();
+            throw $e;
+        }
     }
 
     /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */

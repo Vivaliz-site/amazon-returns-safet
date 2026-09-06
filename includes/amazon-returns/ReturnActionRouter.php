@@ -21,7 +21,7 @@ final class SvAmazonReturnActionRouter
         if($claim==='' && self::amazonCustomerRefund($case) && ($policy['eligible']??false)===true && self::hasOutstandingSellerLoss($case)){
             return null;
         }
-        if(($case['program']??'')==='FBA')return self::decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$case);
+        if(($case['program']??'')==='FBA' && $claim==='')return self::decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$case);
         $sent=self::latest($events,['SAFE_T_EMAIL_REVIEW_SENT','SAFE_T_EMAIL_REPLY_SENT']);
         $reply=self::latest($events,['SAFE_T_EMAIL_REVIEW_RESPONSE']);
         if($sent!==null && ($reply===null || self::rank($sent)>self::rank($reply)))return self::decision('WAIT','EXISTING_EMAIL_REVIEW_AWAITING_RESPONSE',$case);
@@ -138,6 +138,7 @@ final class SvAmazonReturnActionRouter
     private static function normalized(string $s): string
     {
         $s=mb_strtolower(html_entity_decode(strip_tags($s),ENT_QUOTES|ENT_HTML5,'UTF-8'),'UTF-8');
+        $s=preg_replace('/[\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]/u','',$s)??$s;
         return trim(preg_replace('/\s+/',' ',iconv('UTF-8','ASCII//TRANSLIT//IGNORE',$s)?:$s)??$s);
     }
     private static function date(mixed $value): ?DateTimeImmutable
@@ -161,6 +162,10 @@ final class SvAmazonReturnActionRouter
         $months=['janeiro'=>1,'fevereiro'=>2,'marco'=>3,'abril'=>4,'maio'=>5,'junho'=>6,'julho'=>7,'agosto'=>8,'setembro'=>9,'outubro'=>10,'novembro'=>11,'dezembro'=>12];
         if(preg_match_all('/(?:ate|until)\s+(\d{1,2}) de ([a-z]+) de (\d{4})\b/',$text,$matches,PREG_SET_ORDER)){
             foreach($matches as $m){$month=$months[$m[2]]??0;if(checkdate($month,(int)$m[1],(int)$m[3]))$dates[]=sprintf('%04d-%02d-%02d',$m[3],$month,$m[1]);}
+        }
+        $englishMonths=['jan'=>1,'january'=>1,'feb'=>2,'february'=>2,'mar'=>3,'march'=>3,'apr'=>4,'april'=>4,'may'=>5,'jun'=>6,'june'=>6,'jul'=>7,'july'=>7,'aug'=>8,'august'=>8,'sep'=>9,'sept'=>9,'september'=>9,'oct'=>10,'october'=>10,'nov'=>11,'november'=>11,'dec'=>12,'december'=>12];
+        if(preg_match_all('/(?:ate|until)\s+(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s*,?\s*)?([a-z]+)\s+(\d{1,2})\s*,?\s*(\d{4})\b/',$text,$matches,PREG_SET_ORDER)){
+            foreach($matches as $m){$month=$englishMonths[$m[1]]??0;if(checkdate($month,(int)$m[2],(int)$m[3]))$dates[]=sprintf('%04d-%02d-%02d',$m[3],$month,$m[2]);}
         }
         $dates=array_values(array_unique($dates));
         if(count($dates)!==1)return null;

@@ -76,8 +76,9 @@ async function ensureBrowser() {
 }
 
 class Cdp {
-  constructor(ws) {
+  constructor(ws, targetId = null) {
     this.ws = ws;
+    this.targetId = targetId;
     this.id = 0;
     this.pending = new Map();
     ws.addEventListener('message', event => {
@@ -99,15 +100,16 @@ class Cdp {
 
   static async connect() {
     await ensureBrowser();
-    const tabs = await (await fetch(`${CDP_BASE}/json`)).json();
-    const page = tabs.find(tab => tab.type === 'page');
-    if (!page?.webSocketDebuggerUrl) throw new Error('no CDP page target');
+    const response = await fetch(`${CDP_BASE}/json/new?${encodeURIComponent('about:blank')}`, { method: 'PUT' });
+    if (!response.ok) throw new Error(`could not create isolated CDP target (${response.status})`);
+    const page = await response.json();
+    if (!page?.id || !page?.webSocketDebuggerUrl) throw new Error('isolated CDP page target unavailable');
     const ws = new WebSocket(page.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => {
       ws.addEventListener('open', resolve, { once: true });
       ws.addEventListener('error', reject, { once: true });
     });
-    return new Cdp(ws);
+    return new Cdp(ws, page.id);
   }
 
   send(method, params = {}) {
@@ -134,7 +136,10 @@ class Cdp {
     return JSON.parse(raw || '{}');
   }
 
-  close() { try { this.ws.close(); } catch {} }
+  close() {
+    try { this.ws.close(); } catch {}
+    if (this.targetId) fetch(`${CDP_BASE}/json/close/${encodeURIComponent(this.targetId)}`).catch(() => {});
+  }
 }
 
 function authState(state) {
@@ -156,6 +161,37 @@ function evidence(state) {
     body_sha256: sha(state.text || ''),
   };
   return { ...safe, snapshot_sha256: sha(JSON.stringify(safe)) };
+}
+
+async function safeTDiscovery(job) {
+  const orderId = clean(job.case?.order_id);
+  if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return result('FAILED', { reason: 'ORDER_ID_REQUIRED_FOR_DISCOVERY' });
+  const days = Math.max(1, Math.min(90, Number(job.payload?.lookback_days || 90)));
+  const cdp = await Cdp.connect();
+  try {
+    await cdp.navigate(`${SAFE_T_BASE}?pageSize=100&dateFilterValue=${days}`, 4500);
+    let state = await cdp.pageState();
+    let auth = authState(state);
+    if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
+    if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: 'CAPTCHA_PRESENT', evidence: evidence(state) });
+    const expected = JSON.stringify(orderId);
+    const raw = await cdp.evaluate(`JSON.stringify([...document.querySelectorAll('div[id^="claim-content-wrapper-"]')].map(e=>{const safe=(e.id.match(/\\d{5}-\\d{5}-\\d{7}/)||[])[0]||'';const href=e.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';const order=(href.match(/\\d{3}-\\d{7}-\\d{7}/)||[])[0]||'';return {safe,order}}).filter(x=>x.order===${expected}))`);
+    const matches = JSON.parse(raw || '[]');
+    const ids = [...new Set(matches.map(x => clean(x.safe)).filter(x => /^\d{5}-\d{5}-\d{7}$/.test(x)))];
+    if (ids.length === 0) return result('NOT_FOUND', { reason: 'SAFE_T_NOT_FOUND_FOR_ORDER', retry_safe: true, evidence: evidence(state) });
+    if (ids.length !== 1) return result('FAILED', { reason: 'MULTIPLE_SAFE_T_CLAIMS_FOR_ORDER', retry_safe: false, evidence: evidence(state) });
+    const safeTId = ids[0];
+    await cdp.navigate(`${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 4500);
+    state = await cdp.pageState();
+    auth = authState(state);
+    if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
+    if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: 'CAPTCHA_PRESENT', evidence: evidence(state) });
+    if (!String(state.text || '').includes(orderId)) return result('UI_DRIFT', { reason: 'DISCOVERED_CLAIM_ORDER_MISMATCH', evidence: evidence(state) });
+    const read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
+    return result('ACCEPTED', { external_id: safeTId, retry_safe: true, reason: 'SAFE_T_DISCOVERED_BY_ORDER', evidence: evidence(state), read });
+  } finally {
+    cdp.close();
+  }
 }
 
 async function safeTRead(job) {
@@ -201,8 +237,9 @@ async function runOnce() {
   log('job_received', job);
   let readResult;
   try {
-    if (job.action !== 'SAFE_T_READ') readResult = result('FAILED', { reason: 'UNSUPPORTED_READ_ACTION' });
-    else readResult = await safeTRead(job);
+    if (job.action === 'SAFE_T_READ') readResult = await safeTRead(job);
+    else if (job.action === 'SAFE_T_DISCOVERY') readResult = await safeTDiscovery(job);
+    else readResult = result('FAILED', { reason: 'UNSUPPORTED_READ_ACTION' });
   } catch (error) {
     readResult = result('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: false });
   }
