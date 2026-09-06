@@ -28,7 +28,7 @@ final class SvAmazonReturnsAdminAuth
         $expected = trim((string)($credentials['username'] ?? ''));
         $hash = trim((string)($credentials['password_hash'] ?? ''));
         if ($expected === '' || $hash === '' || trim($username) === '' || $password === '') return false;
-        return hash_equals($expected, trim($username)) && password_verify($password, $hash);
+        return strcasecmp($expected, trim($username)) === 0 && password_verify($password, $hash);
     }
 
     public static function login(string $username, string $password): bool
