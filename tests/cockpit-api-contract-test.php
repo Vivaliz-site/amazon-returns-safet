@@ -1,0 +1,85 @@
+<?php
+declare(strict_types=1);
+
+$root=dirname(__DIR__);
+function caAssert(bool $condition,string $message):void{if(!$condition)throw new RuntimeException($message);}
+function caSame(mixed $expected,mixed $actual,string $message):void{
+    if($expected!==$actual)throw new RuntimeException($message.' Expected '.var_export($expected,true).' got '.var_export($actual,true));
+}
+function caSource(string $relative):string{
+    $path=dirname(__DIR__).'/'.$relative;
+    if(!is_file($path))throw new RuntimeException('Missing cockpit API file: '.$relative);
+    return (string)file_get_contents($path);
+}
+
+$filterFile=$root.'/includes/amazon-returns/CockpitFilters.php';
+if(!is_file($filterFile))throw new RuntimeException('CockpitFilters.php missing');
+require_once $filterFile;
+require_once $root.'/includes/amazon-returns/TenantContext.php';
+require_once $root.'/includes/amazon-returns/CaseRepository.php';
+
+$filters=SvAmazonCockpitFilters::fromQuery([
+    'q'=>'98143-99485-9285859','state'=>'SAFE_T_DENIED','action'=>'SAFE_T_APPEAL',
+    'review_status'=>'OPEN','program'=>'STANDARD','physical_status'=>'NOT_RECEIVED',
+    'deadline'=>'7d','learned_rule'=>'applied','min_outstanding'=>'10.50','max_outstanding'=>'900',
+    'page'=>'2','per_page'=>'999',
+]);
+caSame(2,$filters->page(),'Page parsing.');
+caSame(100,$filters->perPage(),'Per-page must clamp to 100.');
+caSame('SAFE_T_APPEAL',$filters->action(),'Action filter normalized.');
+caSame(true,$filters->requiresDecisionFilter(),'Action requires pure decision preview filter.');
+$thrown=false;
+try{SvAmazonCockpitFilters::fromQuery(['tenant_id'=>'999']);}catch(InvalidArgumentException){$thrown=true;}
+caAssert($thrown,'Request tenant_id must be rejected, never trusted.');
+$thrown=false;
+try{SvAmazonCockpitFilters::fromQuery(['amazon_connection_id'=>'999']);}catch(InvalidArgumentException){$thrown=true;}
+caAssert($thrown,'Request amazon_connection_id must be rejected.');
+
+final class CaPdo extends PDO{
+    public array $responses=[];
+    public array $executed=[];
+    public function __construct(){}
+    public function queue(array $response):void{$this->responses[]=$response;}
+    public function prepare(string $query,array $options=[]):PDOStatement|false{return new CaStatement($this,$query,array_shift($this->responses)??[]);}
+}
+final class CaStatement extends PDOStatement{
+    public function __construct(private CaPdo $db,private string $sql,private array $response){}
+    public function execute(?array $params=null):bool{$this->db->executed[]=['sql'=>$this->sql,'params'=>$params??[]];return true;}
+    public function fetch(int $mode=PDO::FETCH_DEFAULT,int $cursorOrientation=PDO::FETCH_ORI_NEXT,int $cursorOffset=0):mixed{return $this->response['fetch']??false;}
+    public function fetchAll(int $mode=PDO::FETCH_DEFAULT,mixed ...$args):array{return $this->response['rows']??[];}
+    public function fetchColumn(int $column=0):mixed{return $this->response['column']??false;}
+}
+$db=new CaPdo();
+$db->queue(['column'=>1]);
+$db->queue(['rows'=>[['id'=>77,'tenant_id'=>1,'amazon_connection_id'=>10,'amazon_order_id'=>'702-1234567-7654321','safe_t_id'=>'98143-99485-9285859']]]);
+$repo=new SvAmazonReturnCaseRepository($db,new SvAmazonTenantContext(1,10));
+$result=$repo->search(['safe_t_id'=>'98143-99485-9285859','review_status'=>'OPEN'],1,50);
+caSame(1,$result['total']??null,'Search total.');
+caSame(1,count($result['items']??[]),'Search rows.');
+$sql=implode("\n",array_column($db->executed,'sql'));
+$params=[];foreach($db->executed as $execution)$params+=$execution['params'];
+caAssert(str_contains($sql,'tenant_id=:tenant_id'),'Case search must scope tenant.');
+caAssert(str_contains($sql,'amazon_connection_id=:amazon_connection_id'),'Case search must scope connection.');
+caSame(1,$params[':tenant_id']??null,'Tenant binding comes from context.');
+caSame(10,$params[':amazon_connection_id']??null,'Connection binding comes from context.');
+caSame('98143-99485-9285859',$params[':safe_t_id']??null,'SAFE-T filter must be bound.');
+caSame('OPEN',$params[':review_status']??null,'Review status filter must be bound.');
+
+$apis=['admin/amazon-returns/api/cases.php','admin/amazon-returns/api/reviews.php','admin/amazon-returns/api/review.php','admin/amazon-returns/api/case.php'];
+foreach($apis as $api){
+    $src=caSource($api);
+    caAssert(str_contains($src,'AdminAuth.php'),$api.' requires admin auth.');
+    caAssert(str_contains($src,'TenantRegistry'),$api.' resolves tenant server-side.');
+    caAssert(str_contains($src,'TenantPersistence'),$api.' uses tenant persistence.');
+    caAssert(!preg_match('/(?:_GET|_POST|_REQUEST).*tenant_id/s',$src),$api.' must never accept request tenant_id.');
+}
+$casesSrc=caSource('admin/amazon-returns/api/cases.php');
+caAssert(str_contains($casesSrc,'previewAction('),'Case listing must use side-effect-free previewAction.');
+caAssert(!str_contains($casesSrc,'->nextAction('),'Read-only case listing must never call mutating nextAction.');
+$caseSrc=caSource('admin/amazon-returns/api/case.php');
+caAssert(str_contains($caseSrc,'SvAmazonCockpitTimeline'),'Case detail must use 360 timeline projector.');
+caAssert(str_contains($caseSrc,"'timeline'"),'Case detail must expose timeline.');
+caAssert(str_contains($caseSrc,"'current_review'"),'Case detail must expose current review.');
+caAssert(str_contains($caseSrc,"'rule_applications'"),'Case detail must expose rule applications.');
+
+echo "cockpit-api-contract-test: OK\n";
