@@ -11,7 +11,7 @@ The Amazon eligibility check must still run. Record BLOCKED_UNTIL and the date a
 
 ## Channel and evidence safeguards
 Use SAFE-T only for applicable seller-fulfilled claims. Lost/damaged shipment, standard FBA, physical damage, existing appeal, active support and email reply each require their appropriate channel and evidence; D+45 alone is not authorization to use the wrong channel.
-An existing claim is resumed, not submitted as a new duplicate. A valid appeal window is required; expired appeals route to detailed review instead of being resubmitted blindly.
+An existing claim is resumed, not submitted as a new duplicate. A valid appeal window is required. If Amazon asks the seller to wait beyond the official internal SAFE-T appeal deadline, the internal appeal deadline preempts that wait and the existing SAFE-T is appealed while the window is still open. If that deadline is missing, fail closed to human review; if it already expired during the conflicting wait, record the missed-window conflict instead of pretending an internal appeal is still available.
 A review-email response uses its existing thread. An existing support case is updated instead of opening another.
 No date, approval, rejection, email promise or successful request is proof of recovered money. Only reconciled real financial credit closes financial recovery.
 

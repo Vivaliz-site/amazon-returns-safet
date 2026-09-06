@@ -98,12 +98,22 @@ final class SvAmazonRequestedWait
         $base=['case_id'=>(int)($case['id']??0),'next_action_at'=>$wait['next_action_at'],'wait_source_hash'=>$wait['instruction_hash']];
         $due=self::timestamp($wait['next_action_at']);
         if ($due===null) return $base+['action'=>'HUMAN_REVIEW','reason'=>'AMAZON_WAIT_DATE_UNRESOLVED'];
+        $claim=trim((string)($case['safe_t_id']??''));
+        $scope=hash('sha256',$claim.'|'.$wait['instruction_hash'].'|'.$due->format(DATE_ATOM));
+        if($claim!=='' && self::internalAppealPending($case) && $now<$due){
+            if(self::alreadyResumed($case,$timeline,$scope,$now))return $base+['action'=>'WAIT','reason'=>'AMAZON_DATED_RESUMPTION_ALREADY_SENT','resume_scope'=>$scope];
+            $deadline=self::timestamp($case['appeal_deadline_at']??null);
+            if($deadline===null)return $base+['action'=>'HUMAN_REVIEW','reason'=>'OFFICIAL_APPEAL_DEADLINE_UNRESOLVED_DURING_AMAZON_WAIT','resume_scope'=>$scope];
+            if($now>$deadline)return $base+['action'=>'HUMAN_REVIEW','reason'=>'OFFICIAL_APPEAL_WINDOW_EXPIRED_DURING_AMAZON_WAIT','resume_scope'=>$scope];
+            if($due>=$deadline)return $base+[
+                'action'=>'SAFE_T_APPEAL','reason'=>'APPEAL_DEADLINE_PREEMPTS_AMAZON_WAIT','resume_scope'=>$scope,'review_scope'=>$scope,
+                'idempotency_key'=>hash('sha256','dated-resume|'.$scope),
+            ];
+        }
         if ($now < $due) return $base+['action'=>'WAIT','reason'=>'AMAZON_REQUESTED_WAIT'];
-        $scope=hash('sha256',trim((string)($case['safe_t_id']??'')).'|'.$wait['instruction_hash'].'|'.$due->format(DATE_ATOM));
         if(self::alreadyResumed($case,$timeline,$scope,$now))return $base+['action'=>'WAIT','reason'=>'AMAZON_DATED_RESUMPTION_ALREADY_SENT','resume_scope'=>$scope];
         if (!self::financiallyRechecked($case,$timeline,$due,$now)) return $base+['action'=>'CHECK_FINANCES','reason'=>'AMAZON_WAIT_DATE_REACHED_RECHECK_CREDIT'];
         if ((float)($case['expected_reimbursement_amount']??0)<=0) return $base+['action'=>'HUMAN_REVIEW','reason'=>'REIMBURSEMENT_AMOUNT_UNRESOLVED'];
-        $claim=trim((string)($case['safe_t_id']??''));
         if ($claim==='') return null; // Original submit path retains its original idempotency key and policy gates.
         $support=trim((string)($case['support_case_id']??''));
         $thread=trim((string)($latest['payload']['gmail_thread_id']??''));
@@ -118,6 +128,11 @@ final class SvAmazonRequestedWait
         $scope=hash('sha256',$claim.'|'.$wait['instruction_hash'].'|'.$due->format(DATE_ATOM));
         return $base+['action'=>$action,'reason'=>'AMAZON_REQUESTED_DATE_REACHED_UNRECOVERED','resume_scope'=>$scope,'review_scope'=>$scope,
             'support_case_id'=>$support!==''?$support:null,'idempotency_key'=>hash('sha256','dated-resume|'.$scope)];
+    }
+
+    private static function internalAppealPending(array $case): bool
+    {
+        return in_array((string)($case['state']??''),['SAFE_T_DENIED','APPEAL_REQUIRED','SAFE_T_INFO_REQUESTED'],true);
     }
 
     private static function alreadyResumed(array $case,array $timeline,string $scope,DateTimeImmutable $now): bool
