@@ -15,6 +15,15 @@ frtSame('0.00',$under['outstanding_amount']??null,'A tolerated residual must not
 frtSame(true,$under['residual_tolerance_applied']??null,'Sub-5-percent settlement must be auditable.');
 frtSame('4.00',$under['tolerated_residual_amount']??null,'The tolerated residual amount must be retained for audit.');
 
+$multi=$case;
+$multi['quantity_ordered']=2;
+$multi['quantity_refunded']=2;
+$multi['expected_reimbursement_amount']='200.00';
+$multiUnder=$reconciler->reconcile($multi,[frtTx('multi-under-five','192.50')]);
+frtSame('RECOVERED',$multiUnder['state']??null,'The approved percentage tolerance applies to a verified multi-unit reimbursement too.');
+frtSame('0.00',$multiUnder['outstanding_amount']??null,'A verified multi-unit residual below 5 percent must not create another claim.');
+frtSame(true,$multiUnder['residual_tolerance_applied']??null,'Multi-unit tolerance must remain auditable.');
+
 $boundary=$reconciler->reconcile($case,[frtTx('exact-five','95.00')]);
 frtSame('CREDIT_PENDING',$boundary['state']??null,'Exactly 5 percent residual must remain pending.');
 frtSame('5.00',$boundary['outstanding_amount']??null,'Exactly 5 percent residual must remain recoverable.');
