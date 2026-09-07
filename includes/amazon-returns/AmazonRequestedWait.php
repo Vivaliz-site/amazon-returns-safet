@@ -100,7 +100,7 @@ final class SvAmazonRequestedWait
         $due=self::timestamp($wait['next_action_at']);
         if ($due===null) return $base+['action'=>'HUMAN_REVIEW','reason'=>'AMAZON_WAIT_DATE_UNRESOLVED'];
         $claim=trim((string)($case['safe_t_id']??''));
-        if($claim!=='' && ($case['state']??'')==='APPEAL_SUBMITTED')return null;
+        if($claim!=='' && ($case['state']??'')==='APPEAL_SUBMITTED')return $base+['action'=>'WAIT','reason'=>'APPEAL_ALREADY_SUBMITTED'];
         $scope=hash('sha256',$claim.'|'.$wait['instruction_hash'].'|'.$due->format(DATE_ATOM));
         if($claim!=='' && self::internalAppealPending($case) && $now<$due){
             if(self::alreadyResumed($case,$timeline,$scope,$now))return $base+['action'=>'WAIT','reason'=>'AMAZON_DATED_RESUMPTION_ALREADY_SENT','resume_scope'=>$scope];
