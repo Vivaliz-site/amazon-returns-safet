@@ -81,14 +81,42 @@ final class SvAmazonSpApiEventSink
             if (!is_numeric($raw) || (float)$raw >= 0) continue;
             $currency = strtoupper(trim((string)($money['currency'] ?? '')));
             $unitAmount = number_format(abs((float)$raw), 2, '.', '');
+            $id = trim((string)($tx['transaction_id'] ?? ''));
             $related = $tx['related_identifiers'] ?? $tx['relatedIdentifiers'] ?? [];
-            $relatedKey = is_array($related) ? hash('sha256', json_encode($related, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '[]') : '';
+            $refundId = '';
+            $lifecycleIds = $id !== '' ? [$id] : [];
+            $hasLifecycleLink = false;
+            if (is_array($related)) {
+                foreach ($related as $identifier) {
+                    if (!is_array($identifier)) continue;
+                    $name = strtoupper(trim((string)($identifier['name'] ?? $identifier['relatedIdentifierName'] ?? $identifier['type'] ?? '')));
+                    $value = trim((string)($identifier['value'] ?? $identifier['relatedIdentifierValue'] ?? $identifier['id'] ?? ''));
+                    if ($name === 'REFUND_ID' && $value !== '') {
+                        $refundId = $value;
+                        continue;
+                    }
+                    if (in_array($name, ['DEFERRED_TRANSACTION_ID','RELEASE_TRANSACTION_ID'], true) && $value !== '') {
+                        $lifecycleIds[] = $value;
+                        $hasLifecycleLink = true;
+                    }
+                }
+            }
+            if ($refundId !== '') {
+                $relatedKey = 'REFUND_ID|' . $refundId;
+            } elseif ($hasLifecycleLink && $id !== '') {
+                $lifecycleIds = array_values(array_unique($lifecycleIds));
+                sort($lifecycleIds, SORT_STRING);
+                $relatedKey = 'LIFECYCLE|' . implode('|', $lifecycleIds);
+            } else {
+                $relatedKey = is_array($related)
+                    ? hash('sha256', json_encode($related, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '[]')
+                    : '';
+            }
             $key = $type . '|' . $unitAmount . '|' . $currency . '|' . $relatedKey;
             if (!isset($groups[$key])) $groups[$key] = ['amount'=>(float)$unitAmount,'statuses'=>[]];
             $groups[$key]['statuses'][$status] = (int)($groups[$key]['statuses'][$status] ?? 0) + 1;
             $date = self::utcSql($tx['posted_at'] ?? null);
             if ($date !== null) $dates[] = $date;
-            $id = trim((string)($tx['transaction_id'] ?? ''));
             if ($id !== '') $ids[] = $id;
         }
         if ($groups === [] || $dates === []) return null;
