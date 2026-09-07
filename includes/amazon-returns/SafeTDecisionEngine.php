@@ -55,7 +55,11 @@ final class SvAmazonSafeTDecisionEngine
             if(is_string($raw) && preg_match('/^(\d{4})-(\d{2})-(\d{2})[ T]/',$raw,$parts)===1 && checkdate((int)$parts[2],(int)$parts[3],(int)$parts[1])){
                 try{$candidate=new DateTimeImmutable($raw,new DateTimeZone('UTC'));if(DateTimeImmutable::getLastErrors()===false)$deadline=$candidate;}catch(Throwable){}
             }
-            if($deadline===null || $now>$deadline)return $this->decision('HUMAN_REVIEW',$deadline===null?'OFFICIAL_APPEAL_DEADLINE_UNRESOLVED':'OFFICIAL_APPEAL_WINDOW_EXPIRED',$caseId);
+            if($deadline===null)return $this->decision('HUMAN_REVIEW','OFFICIAL_APPEAL_DEADLINE_UNRESOLVED',$caseId);
+            if($now>$deadline)return [
+                'action'=>'SAFE_T_APPEAL','reason'=>'MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT','case_id'=>$caseId,
+                'idempotency_key'=>hash('sha256','missed-appeal-recovery|'.$safeTId.'|'.$deadline->format(DATE_ATOM)),
+            ];
         }
 
         if($safeTId!==''){

@@ -43,7 +43,8 @@ final class SvAmazonReturnActionRouter
         if($claim!==''){
             if(in_array($case['state']??'',['SAFE_T_DENIED','APPEAL_REQUIRED','SAFE_T_INFO_REQUESTED'],true)){
                 $deadline=self::date($case['appeal_deadline_at']??null);
-                if($deadline===null || $deadline<$now)return self::decision('HUMAN_REVIEW',$deadline===null?'OFFICIAL_APPEAL_DEADLINE_MISSING':'APPEAL_WINDOW_EXPIRED',$case);
+                if($deadline===null)return self::decision('HUMAN_REVIEW','OFFICIAL_APPEAL_DEADLINE_MISSING',$case);
+                if($deadline<$now)return self::decision('SAFE_T_APPEAL','MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT',$case);
             }
             return null;
         }

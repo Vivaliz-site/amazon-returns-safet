@@ -100,12 +100,14 @@ final class SvAmazonRequestedWait
         $due=self::timestamp($wait['next_action_at']);
         if ($due===null) return $base+['action'=>'HUMAN_REVIEW','reason'=>'AMAZON_WAIT_DATE_UNRESOLVED'];
         $claim=trim((string)($case['safe_t_id']??''));
+        if($claim!=='' && ($case['state']??'')==='APPEAL_SUBMITTED')return null;
         $scope=hash('sha256',$claim.'|'.$wait['instruction_hash'].'|'.$due->format(DATE_ATOM));
         if($claim!=='' && self::internalAppealPending($case) && $now<$due){
             if(self::alreadyResumed($case,$timeline,$scope,$now))return $base+['action'=>'WAIT','reason'=>'AMAZON_DATED_RESUMPTION_ALREADY_SENT','resume_scope'=>$scope];
             $deadline=self::timestamp($case['appeal_deadline_at']??null);
             if($deadline===null)return $base+['action'=>'HUMAN_REVIEW','reason'=>'OFFICIAL_APPEAL_DEADLINE_UNRESOLVED_DURING_AMAZON_WAIT','resume_scope'=>$scope];
-            if($now>$deadline)return $base+['action'=>'HUMAN_REVIEW','reason'=>'OFFICIAL_APPEAL_WINDOW_EXPIRED_DURING_AMAZON_WAIT','resume_scope'=>$scope];
+            if($now>$deadline)return $base+['action'=>'SAFE_T_APPEAL','reason'=>'MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT','resume_scope'=>$scope,'review_scope'=>$scope,
+                'idempotency_key'=>hash('sha256','missed-appeal-recovery|'.$claim.'|'.$deadline->format(DATE_ATOM))];
             if($due>=$deadline)return $base+[
                 'action'=>'SAFE_T_APPEAL','reason'=>'APPEAL_DEADLINE_PREEMPTS_AMAZON_WAIT','resume_scope'=>$scope,'review_scope'=>$scope,
                 'idempotency_key'=>hash('sha256','dated-resume|'.$scope),
@@ -124,7 +126,8 @@ final class SvAmazonRequestedWait
         else {
             $deadline=self::timestamp($case['appeal_deadline_at']??null);
             if ($deadline===null) return $base+['action'=>'HUMAN_REVIEW','reason'=>'RESUMPTION_APPEAL_WINDOW_UNRESOLVED','resume_scope'=>$scope];
-            if ($now>$deadline) return $base+['action'=>'HUMAN_REVIEW','reason'=>'INTERNAL_APPEAL_WINDOW_MISSED_REQUIRES_REVIEW','resume_scope'=>$scope];
+            if ($now>$deadline) return $base+['action'=>'SAFE_T_APPEAL','reason'=>'MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT','resume_scope'=>$scope,'review_scope'=>$scope,
+                'idempotency_key'=>hash('sha256','missed-appeal-recovery|'.$claim.'|'.$deadline->format(DATE_ATOM))];
             $action='SAFE_T_APPEAL';
         }
         $scope=hash('sha256',$claim.'|'.$wait['instruction_hash'].'|'.$due->format(DATE_ATOM));
