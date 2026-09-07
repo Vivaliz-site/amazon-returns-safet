@@ -74,9 +74,9 @@ function Stop-SellerCentralBrowser {
 
 try {
     Set-Location '$InstallDir'
-    & '$node' '$readWorker' --once *>> '$logDir\safe-t-read-bridge.log'
+    & '$node' '$readWorker' --drain *>> '$logDir\safe-t-read-bridge.log'
     if (`$LASTEXITCODE -ne 0) { throw "SAFE-T read worker failed with exit code `$LASTEXITCODE" }
-    & '$node' '$worker' --once *>> '$logDir\bridge.log'
+    & '$node' '$worker' --drain *>> '$logDir\bridge.log'
     if (`$LASTEXITCODE -ne 0) { throw "Seller Central write worker failed with exit code `$LASTEXITCODE" }
 }
 finally {

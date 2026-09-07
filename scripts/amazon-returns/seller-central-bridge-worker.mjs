@@ -588,6 +588,10 @@ async function main() {
     process.stdout.write(`${JSON.stringify(heartbeat)}\n`);
     return;
   }
+  if (process.argv.includes('--drain')) {
+    while (await runOnce()) {}
+    return;
+  }
   if (process.argv.includes('--once')) {
     await runOnce();
     return;

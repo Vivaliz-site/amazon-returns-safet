@@ -276,6 +276,10 @@ async function main() {
     return;
   }
   try {
+    if (process.argv.includes('--drain')) {
+      while (await runOnce()) {}
+      return;
+    }
     if (process.argv.includes('--once')) {
       await runOnce();
       return;
