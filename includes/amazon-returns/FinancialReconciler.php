@@ -61,11 +61,15 @@ final class SvAmazonFinancialReconciler
         $ordered = filter_var($case['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
         $refunded = filter_var($case['quantity_refunded'] ?? null, FILTER_VALIDATE_INT);
         $singleRefundedUnit = $ordered === 1 && $refunded === 1;
-        // A released, non-reversed Amazon reimbursement is the settlement evidence for a
-        // single refunded item. Legacy expected amounts were historically based on the
-        // customer debit and can include non-reimbursable fee components; retaining that
-        // difference is useful for audit, but it must not create a duplicate recovery claim.
-        $explicitSettled = $singleRefundedUnit && $explicitNet > 0 && !$unsettledLedger;
+        $releasedExplicitCredit = $singleRefundedUnit && $explicitNet > 0 && !$unsettledLedger;
+        $residualToleranceApplied = $releasedExplicitCredit
+            && $expected > 0
+            && $legacyGap > 0
+            && ($legacyGap * 100) < ($expected * 5);
+        // A released explicit reimbursement only settles a short payment when the residual
+        // is below the approved 5% tolerance. Exactly 5% or more remains recoverable.
+        $explicitSettled = $releasedExplicitCredit
+            && ($expected <= 0 || $legacyGap === 0 || $residualToleranceApplied);
         $outstanding = $explicitSettled ? 0 : $legacyGap;
         $previous = (string)($case['state'] ?? SvAmazonReturnStates::AWAITING_RETURN);
         $state = $previous;
@@ -76,6 +80,8 @@ final class SvAmazonFinancialReconciler
             'legacy_expected_gap_amount'=>self::money($legacyGap),
             'explicit_reimbursement_settled'=>$explicitSettled,
             'explicit_reimbursement_net_amount'=>self::money(max(0,$explicitNet)),
+            'residual_tolerance_applied'=>$residualToleranceApplied,
+            'tolerated_residual_amount'=>self::money($residualToleranceApplied ? $legacyGap : 0),
             'reopened'=>$previous === SvAmazonReturnStates::RECOVERED && $outstanding > 0,
             'transaction_ids'=>array_values(array_unique($ids)), 'unclassified_transactions'=>$unclassified,
             'corroborating_sources'=>$positive['v0'] > 0 && $positive['ledger'] > 0,
