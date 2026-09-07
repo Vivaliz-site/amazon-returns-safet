@@ -82,7 +82,19 @@ final class SvAmazonSpApiEventSink
             $currency = strtoupper(trim((string)($money['currency'] ?? '')));
             $unitAmount = number_format(abs((float)$raw), 2, '.', '');
             $related = $tx['related_identifiers'] ?? $tx['relatedIdentifiers'] ?? [];
-            $relatedKey = is_array($related) ? hash('sha256', json_encode($related, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '[]') : '';
+            $refundId = '';
+            if (is_array($related)) {
+                foreach ($related as $identifier) {
+                    if (!is_array($identifier)) continue;
+                    $name = strtoupper(trim((string)($identifier['name'] ?? $identifier['relatedIdentifierName'] ?? $identifier['type'] ?? '')));
+                    if ($name !== 'REFUND_ID') continue;
+                    $refundId = trim((string)($identifier['value'] ?? $identifier['relatedIdentifierValue'] ?? $identifier['id'] ?? ''));
+                    if ($refundId !== '') break;
+                }
+            }
+            $relatedKey = $refundId !== ''
+                ? 'REFUND_ID|' . $refundId
+                : (is_array($related) ? hash('sha256', json_encode($related, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '[]') : '');
             $key = $type . '|' . $unitAmount . '|' . $currency . '|' . $relatedKey;
             if (!isset($groups[$key])) $groups[$key] = ['amount'=>(float)$unitAmount,'statuses'=>[]];
             $groups[$key]['statuses'][$status] = (int)($groups[$key]['statuses'][$status] ?? 0) + 1;
