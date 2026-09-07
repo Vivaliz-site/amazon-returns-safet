@@ -31,7 +31,7 @@ final class SvAmazonSafeTDecisionEngine
             SvAmazonRefundInitiators::A_TO_Z,
         ],true);
         $customerRefundConfirmed=$amazonCustomerRefund || $deliveryBackedUnknownRefund;
-        if($safeTId==='' && $this->hasReimbursementEvidence($case,$timeline)){
+        if($safeTId==='' && (!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN) && $this->hasReimbursementEvidence($case,$timeline)){
             return $this->decision('CHECK_FINANCES','PARTIAL_REIMBURSEMENT_VERIFY_BEFORE_NEW_CLAIM',$caseId);
         }
         if($safeTId!=='' && in_array($state,[SvAmazonReturnStates::SAFE_T_DENIED,SvAmazonReturnStates::APPEAL_REQUIRED],true)
