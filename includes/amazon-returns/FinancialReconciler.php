@@ -61,15 +61,16 @@ final class SvAmazonFinancialReconciler
         $ordered = filter_var($case['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
         $refunded = filter_var($case['quantity_refunded'] ?? null, FILTER_VALIDATE_INT);
         $singleRefundedUnit = $ordered === 1 && $refunded === 1;
-        $releasedExplicitCredit = $singleRefundedUnit && $explicitNet > 0 && !$unsettledLedger;
+        $releasedExplicitCredit = $explicitNet > 0 && !$unsettledLedger;
         $residualToleranceApplied = $releasedExplicitCredit
             && $expected > 0
             && $legacyGap > 0
             && ($legacyGap * 100) < ($expected * 5);
         // A released explicit reimbursement only settles a short payment when the residual
         // is below the approved 5% tolerance. Exactly 5% or more remains recoverable.
-        $explicitSettled = $releasedExplicitCredit
-            && ($expected <= 0 || $legacyGap === 0 || $residualToleranceApplied);
+        // The historical no-baseline behavior remains limited to a single refunded unit.
+        $explicitSettled = $residualToleranceApplied
+            || ($singleRefundedUnit && $releasedExplicitCredit && ($expected <= 0 || $legacyGap === 0));
         $outstanding = $explicitSettled ? 0 : $legacyGap;
         $previous = (string)($case['state'] ?? SvAmazonReturnStates::AWAITING_RETURN);
         $state = $previous;
