@@ -27,3 +27,7 @@ O agente faz a validação e o merge do SHA revisado; o **auto gate existente** 
 
 ## Decisao de 05/09/2026: devolucao danificada
 Produtos que retornarem danificados terao a abertura inicial tratada manualmente pelo usuario. O aplicativo nao deve abrir automaticamente uma nova reivindicacao SAFE-T para `RECEIVED_DISCREPANT`/dano fisico. Depois que o usuario abrir manualmente e existir um SAFE-T ID, se a Amazon negar a reivindicacao, o aplicativo pode assumir o acompanhamento e os recursos subsequentes, respeitando prazo oficial, evidencia, deduplicacao e demais gates do canal.
+
+
+## Decisao de 07/09/2026: Seller Central browser somente sob demanda
+O Fred-Win nao deve manter os workers de Seller Central nem o Opera dedicado da porta 9225 residentes quando nao houver trabalho. SP-API, Finances, Returns e Gmail permanecem como fontes primarias. Operacoes exclusivas da interface Seller Central devem ser executadas por um dispatcher curto e serializado, chamando os workers com `--once`; o navegador dedicado deve ser encerrado ao fim da execucao. As antigas tarefas persistentes de leitura e escrita devem ser substituidas por esse dispatcher, sem remover gates de escrita, elegibilidade, idempotencia ou reconciliacao financeira.
