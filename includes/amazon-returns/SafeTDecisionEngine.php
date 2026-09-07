@@ -24,11 +24,13 @@ final class SvAmazonSafeTDecisionEngine
 
         if($this->hasRecoveredCredit($case))return $this->decision('WAIT','ALREADY_REIMBURSED',$caseId);
         $initiator=(string)($case['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN);
+        $deliveryBackedUnknownRefund=$this->deliveryBackedUnknownRefund($case);
         $amazonCustomerRefund=trim((string)($case['refund_at']??''))!=='' && in_array($initiator,[
             SvAmazonRefundInitiators::AMAZON_AUTOMATIC,
             SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
             SvAmazonRefundInitiators::A_TO_Z,
         ],true);
+        $customerRefundConfirmed=$amazonCustomerRefund || $deliveryBackedUnknownRefund;
         if($safeTId==='' && $this->sellerAppConfirmedPhysicalReceipt($case,$timeline)){
             return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
         }
@@ -36,10 +38,10 @@ final class SvAmazonSafeTDecisionEngine
         $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
         if($safeTId==='' && ($policy['eligible']??false)===true){
             if(trim((string)($case['refund_at']??''))==='')return $this->decision('WAIT','REFUND_NOT_CONFIRMED',$caseId);
-            if(!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN){
+            if((!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN) && !$deliveryBackedUnknownRefund){
                 return $this->decision('BLOCKED_REVIEW','REFUND_INITIATOR_UNKNOWN',$caseId);
             }
-            if(!$amazonCustomerRefund){
+            if(!$customerRefundConfirmed){
                 return $this->decision('WAIT','AMAZON_CUSTOMER_REFUND_NOT_CONFIRMED',$caseId);
             }
         }
@@ -124,18 +126,19 @@ final class SvAmazonSafeTDecisionEngine
         }
 
         if(trim((string)($case['refund_at']??''))==='')return $this->decision('WAIT','REFUND_NOT_CONFIRMED',$caseId);
-        if(!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN){
+        if((!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN) && !$deliveryBackedUnknownRefund){
             return $this->decision('BLOCKED_REVIEW','REFUND_INITIATOR_UNKNOWN',$caseId);
         }
-        if(!$amazonCustomerRefund)return $this->decision('WAIT','AMAZON_CUSTOMER_REFUND_NOT_CONFIRMED',$caseId);
+        if(!$customerRefundConfirmed)return $this->decision('WAIT','AMAZON_CUSTOMER_REFUND_NOT_CONFIRMED',$caseId);
         if(($policy['state'] ?? null)===SvAmazonReturnStates::POLICY_REVIEW_REQUIRED)return $this->decision('BLOCKED_REVIEW','POLICY_REVIEW_REQUIRED',$caseId);
         if(($policy['eligible'] ?? false)!==true)return $this->decision('WAIT','NOT_YET_ELIGIBLE',$caseId);
 
         $policyId=(string)($policy['policy_version_id'] ?? 'unknown');
         $eligibilityAt=(string)($policy['eligibility_at'] ?? 'unknown');
+        $reason=$deliveryBackedUnknownRefund?'DELIVERED_CUSTOMER_REFUNDED_UNPAID':'FIRST_ELIGIBLE_ATTEMPT';
         return [
             'action'=>'SAFE_T_SUBMIT',
-            'reason'=>'FIRST_ELIGIBLE_ATTEMPT',
+            'reason'=>$reason,
             'idempotency_key'=>hash('sha256','safe-t-submit|'.$caseId.'|'.$orderId.'|'.$policyId.'|'.$eligibilityAt),
         ];
     }
@@ -150,6 +153,7 @@ final class SvAmazonSafeTDecisionEngine
             if($this->sellerAppConfirmedPhysicalReceipt($case,$timeline))return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
             $initiator=(string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN);
             $confirmed=trim((string)($case['refund_at']??''))!=='' && in_array($initiator,[SvAmazonRefundInitiators::AMAZON_AUTOMATIC,SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,SvAmazonRefundInitiators::A_TO_Z],true);
+            $confirmed=$confirmed || $this->deliveryBackedUnknownRefund($case);
             if(!$confirmed)return $this->decision('WAIT','AMAZON_CUSTOMER_REFUND_NOT_CONFIRMED',$caseId);
             if(($policy['eligible']??false)!==true)return $this->decision('HUMAN_REVIEW','LEARNED_RULE_D45_GATE_BLOCKED',$caseId);
             if(($case['physical_status']??'')===SvAmazonReturnPhysicalStatuses::RECEIVED_DISCREPANT)return $this->decision('HUMAN_REVIEW','DAMAGED_RETURN_INITIAL_CLAIM_MANUAL_ONLY',$caseId);
@@ -234,6 +238,13 @@ final class SvAmazonSafeTDecisionEngine
             if((int)($payload['quantity']??0)>0)return true;
         }
         return false;
+    }
+
+    private function deliveryBackedUnknownRefund(array $case): bool
+    {
+        return ($case['customer_delivery_confirmed']??false)===true
+            && trim((string)($case['refund_at']??''))!==''
+            && (string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN)===SvAmazonRefundInitiators::UNKNOWN;
     }
 
     private function hasRecoveredCredit(array $case): bool
