@@ -32,6 +32,16 @@ final class SvAmazonExternalWritePayload
         $order=trim((string)($case['amazon_order_id']??''));
         $safeT=trim((string)($case['safe_t_id']??''));
         $reason=trim((string)($decision['reason']??''));
+        if($action==='SAFE_T_SUBMIT' && $reason==='DELIVERED_CUSTOMER_REFUNDED_UNPAID'){
+            $tracking=[];
+            foreach(is_array($case['customer_tracking_ids']??null)?$case['customer_tracking_ids']:[] as $value){
+                $value=trim((string)$value);if($value!=='')$tracking[]=$value;
+            }
+            $trackingText=$tracking!==[]?' Rastreio: '.implode(', ',array_values(array_unique($tracking))).'.':'';
+            return 'Pedido '.$order.'. A entrega ao cliente foi confirmada pela Amazon.'.$trackingText.' '
+                .'O comprador recebeu reembolso e a conciliação financeira mais recente confirma que o vendedor ainda não recebeu '
+                .'o ressarcimento correspondente. Solicito o ressarcimento devido ao vendedor.';
+        }
         if(in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){
             return 'SAFE-T '.$safeT.', pedido '.$order.'. A devolução permanece não recebida fisicamente pelo vendedor. '
                 .'A nova negativa repetiu a justificativa sem responder aos fatos e às evidências apresentados. '

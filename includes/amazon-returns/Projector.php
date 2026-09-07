@@ -54,6 +54,9 @@ final class SvAmazonReturnProjector
             'order_at' => null,
             'exposed_quantity' => 0,
             'has_physical_discrepancy' => false,
+            'customer_delivery_confirmed' => false,
+            'customer_tracking_ids' => [],
+            'customer_delivery_carriers' => [],
         ];
     }
 
@@ -78,6 +81,13 @@ final class SvAmazonReturnProjector
 
         switch ($type) {
             case 'ORDER_SYNCED':
+                if (($payload['customer_delivery_confirmed'] ?? false) === true) {
+                    $facts['customer_delivery_confirmed'] = true;
+                    self::mergeTextList($facts, $payload, 'customer_tracking_ids');
+                    self::mergeTextList($facts, $payload, 'customer_delivery_carriers');
+                }
+                break;
+
             case 'CASE_CREATED':
                 break;
 
@@ -236,6 +246,23 @@ final class SvAmazonReturnProjector
             return;
         }
         $target[$key] = $value;
+    }
+
+    /** @param array<string,mixed> $target @param array<string,mixed> $source */
+    private static function mergeTextList(array &$target,array $source,string $key): void
+    {
+        $values=$source[$key]??[];
+        if(!is_array($values))return;
+        $clean=[];
+        foreach($values as $value){
+            if(!is_scalar($value))continue;
+            $text=trim((string)$value);
+            if($text!=='')$clean[]=$text;
+        }
+        $target[$key]=array_values(array_unique(array_merge(
+            is_array($target[$key]??null)?$target[$key]:[],
+            $clean
+        )));
     }
 
     private static function nonNegativeInt(mixed $value, string $name): int

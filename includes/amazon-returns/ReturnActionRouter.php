@@ -18,6 +18,12 @@ final class SvAmazonReturnActionRouter
             if($claim==='')return self::decision('HUMAN_REVIEW','DAMAGED_RETURN_INITIAL_CLAIM_MANUAL_ONLY',$case);
             return null;
         }
+        if($claim==='' && self::deliveryBackedUnknownRefund($case) && ($policy['eligible']??false)===true && self::hasOutstandingSellerLoss($case)){
+            if(!self::freshUnpaidFinance($events,$now->modify('-2 hours'),$now)){
+                return self::decision('CHECK_FINANCES','DELIVERED_CUSTOMER_REFUNDED_VERIFY_FINANCES',$case);
+            }
+            return null;
+        }
         if($claim==='' && self::amazonCustomerRefund($case) && ($policy['eligible']??false)===true && self::hasOutstandingSellerLoss($case)){
             return null;
         }
@@ -65,6 +71,13 @@ final class SvAmazonReturnActionRouter
         if(($policy['eligible']??false)!==true)return null;
         if(in_array($status,['retornando ao vendedor','returning to seller','return to seller in transit'],true))return null;
         return self::decision('HUMAN_REVIEW','RETURN_TRANSPORT_STATUS_UNVERIFIED',$case);
+    }
+
+    private static function deliveryBackedUnknownRefund(array $case): bool
+    {
+        return ($case['customer_delivery_confirmed']??false)===true
+            && trim((string)($case['refund_at']??''))!==''
+            && (string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN)===SvAmazonRefundInitiators::UNKNOWN;
     }
 
     private static function amazonCustomerRefund(array $case): bool

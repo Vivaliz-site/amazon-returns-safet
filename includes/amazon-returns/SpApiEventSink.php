@@ -38,6 +38,32 @@ final class SvAmazonSpApiEventSink
         return SvAmazonReturnPrograms::UNKNOWN;
     }
 
+    /** @return array{confirmed:bool,tracking_ids:list<string>,carriers:list<string>} */
+    public static function customerDeliveryObservation(array $order,array $item,bool $single): array
+    {
+        $itemId=trim((string)($item['orderItemId']??$item['order_item_id']??''));
+        $packages=is_array($order['packages']??null)?array_values(array_filter($order['packages'],'is_array')):[];
+        $confirmed=false;$tracking=[];$carriers=[];
+        foreach($packages as $package){
+            $statusData=is_array($package['packageStatus']??null)?$package['packageStatus']:[];
+            $status=strtoupper(trim((string)($statusData['status']??$package['status']??'')));
+            if($status!=='DELIVERED')continue;
+            $packageItems=is_array($package['packageItems']??null)?array_values(array_filter($package['packageItems'],'is_array')):[];
+            $matches=$single && $packageItems===[];
+            foreach($packageItems as $packageItem){
+                $packageItemId=trim((string)($packageItem['orderItemId']??$packageItem['order_item_id']??''));
+                if($itemId!=='' && $packageItemId!=='' && hash_equals($itemId,$packageItemId)){$matches=true;break;}
+            }
+            if(!$matches)continue;
+            $confirmed=true;
+            $trackingId=trim((string)($package['trackingNumber']??$package['trackingId']??''));
+            if($trackingId!=='')$tracking[]=$trackingId;
+            $carrier=trim((string)($package['carrier']??$package['carrierCode']??''));
+            if($carrier!=='')$carriers[]=$carrier;
+        }
+        return ['confirmed'=>$confirmed,'tracking_ids'=>array_values(array_unique($tracking)),'carriers'=>array_values(array_unique($carriers))];
+    }
+
     /** @return array<string,mixed>|null */
     public static function refundObservation(array $transactions): ?array
     {
@@ -101,7 +127,7 @@ final class SvAmazonSpApiEventSink
         foreach ($items as $item) {
             $caseId = self::upsertCaseScoped($p, $order, $item, $single);
             $caseIds[] = $caseId;
-            self::appendOrderEventScoped($p->events, $caseId, $order, $item);
+            self::appendOrderEventScoped($p->events, $caseId, $order, $item, $single);
         }
         foreach ($caseIds as $caseId) {
             self::appendTransactionsScoped($p->events, $caseId, $transactions, $single);
@@ -299,12 +325,14 @@ final class SvAmazonSpApiEventSink
         SvAmazonTenantReturnEventStore $events,
         int $caseId,
         array $order,
-        array $item
+        array $item,
+        bool $single
     ): int {
         $orderId = trim((string)$order['order_id']);
         $itemId = trim((string)($item['orderItemId'] ?? $item['order_item_id'] ?? ''));
         $occurred = self::utcSql($order['created_at'] ?? null) ?? gmdate('Y-m-d H:i:s');
         $requestId = trim((string)($order['request_id'] ?? ''));
+        $delivery=self::customerDeliveryObservation($order,$item,$single);
         return $events->append([
             'case_id'=>$caseId,
             'event_type'=>'ORDER_SYNCED',
@@ -321,6 +349,10 @@ final class SvAmazonSpApiEventSink
                 'quantity_ordered'=>max(1, (int)($item['quantityOrdered'] ?? $item['quantity'] ?? 1)),
                 'program'=>self::programFromOrder($order),
                 'marketplace_id'=>$order['marketplace_id'] ?? null,
+                'customer_delivery_confirmed'=>$delivery['confirmed'],
+                'customer_tracking_ids'=>$delivery['tracking_ids'],
+                'customer_delivery_carriers'=>$delivery['carriers'],
+                'customer_delivery_evidence_source'=>'SP_API_ORDERS_PACKAGES',
                 'financial_truth'=>false,
             ],
             'evidence_sha256'=>null,
@@ -362,16 +394,6 @@ final class SvAmazonSpApiEventSink
         }
     }
 
-    /**
-     * Matches one official Returns Report row against an existing case by
-     * (order_id, order_item_id) and, only when the refund initiator can be
-     * confidently derived (A-to-Z claim or Amazon's automatic first-scan
-     * refund), appends an evidencing event. Rows that don't match a known
-     * case, or whose initiator stays ambiguous, are skipped without guessing.
-     *
-     * @param array<string,string> $row
-     * @return array{matched:bool,applied:bool}
-     */
     /** @return array{matched:bool,applied:bool} */
     public static function persistReturnsReportRow(
         SvAmazonTenantPersistence $target,

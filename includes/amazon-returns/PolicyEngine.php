@@ -23,7 +23,11 @@ final class SvAmazonReturnPolicyEngine
         }
 
         $initiator = (string) ($case['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN);
-        if ($initiator === SvAmazonRefundInitiators::UNKNOWN || !SvAmazonRefundInitiators::isValid($initiator)) {
+        $deliveryBackedUnknownRefund = $initiator === SvAmazonRefundInitiators::UNKNOWN
+            && ($case['customer_delivery_confirmed'] ?? false) === true
+            && trim((string)($case['refund_at'] ?? '')) !== '';
+        if ((!SvAmazonRefundInitiators::isValid($initiator) || $initiator === SvAmazonRefundInitiators::UNKNOWN)
+            && !$deliveryBackedUnknownRefund) {
             return self::decision(
                 false,
                 null,
