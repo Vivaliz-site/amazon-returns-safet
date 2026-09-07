@@ -49,7 +49,7 @@ final class SvAmazonDecisionCoordinator
             || !method_exists($this->persistence->reviews,'openQueue')
             || !method_exists($this->persistence->reviews,'resolveOpenForCase')
             || !method_exists($this->persistence->cases,'find'))return;
-        foreach($this->persistence->reviews->openQueue(500) as $review){
+        foreach(array_slice($this->persistence->reviews->openQueue(),0,500) as $review){
             $caseId=(int)($review['case_id']??0);
             if($caseId<1)continue;
             $case=$this->persistence->cases->find($caseId);
