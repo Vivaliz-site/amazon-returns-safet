@@ -7,7 +7,7 @@ param(
     [string]$TaskName = 'ShopVivaliz Amazon Returns Browser Dispatcher',
     [string]$BridgeEndpoint = 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php',
     [string]$StatusBridgeEndpoint = 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php',
-    [int]$PollMinutes = 1,
+    [int]$PollMinutes = 5,
     [string]$OperaPath = '',
     [string]$ProfilePath = ''
 )
@@ -133,7 +133,7 @@ Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force | Out-Null
 Start-ScheduledTask -TaskName $TaskName
 
 Write-Output 'AMAZON_RETURNS_WINDOWS_BRIDGE_INSTALLED=true'
-Write-Output 'EXECUTION_MODE=ON_DEMAND_ONCE'
+Write-Output 'EXECUTION_MODE=ON_DEMAND_DRAIN'
 Write-Output "TASK_NAME=$TaskName"
 Write-Output "POLL_MINUTES=$PollMinutes"
 Write-Output "BRIDGE_HOST=$env:COMPUTERNAME"
