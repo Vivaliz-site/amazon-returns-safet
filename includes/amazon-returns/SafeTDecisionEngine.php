@@ -31,6 +31,10 @@ final class SvAmazonSafeTDecisionEngine
             SvAmazonRefundInitiators::A_TO_Z,
         ],true);
         $customerRefundConfirmed=$amazonCustomerRefund || $deliveryBackedUnknownRefund;
+        if($safeTId!=='' && in_array($state,[SvAmazonReturnStates::SAFE_T_DENIED,SvAmazonReturnStates::APPEAL_REQUIRED],true)
+            && $this->hasReimbursementEvidence($case,$timeline)){
+            return $this->decision('CHECK_FINANCES','PARTIAL_REIMBURSEMENT_VERIFY_BEFORE_RECOVERY_APPEAL',$caseId);
+        }
         if($safeTId==='' && $this->sellerAppConfirmedPhysicalReceipt($case,$timeline)){
             return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
         }
@@ -245,6 +249,20 @@ final class SvAmazonSafeTDecisionEngine
         return ($case['customer_delivery_confirmed']??false)===true
             && trim((string)($case['refund_at']??''))!==''
             && (string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN)===SvAmazonRefundInitiators::UNKNOWN;
+    }
+
+    private function hasReimbursementEvidence(array $case,array $timeline): bool
+    {
+        if((float)($case['reconciled_credit_amount']??0)>0.00001)return true;
+        $caseId=(int)($case['id']??0);
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='SAFE_T_REIMBURSEMENT_OBSERVED')continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            $money=is_array($payload['reimbursed_amount']??null)?$payload['reimbursed_amount']:[];
+            if(is_numeric($money['amount']??null) && (float)$money['amount']>0.00001)return true;
+        }
+        return false;
     }
 
     private function hasRecoveredCredit(array $case): bool
