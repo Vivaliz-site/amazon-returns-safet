@@ -198,8 +198,11 @@ rbAssert(!str_contains($installerSource,'C:\\Users\\FRED'),'Windows bridge insta
 rbAssert(str_contains($installerSource,'LOCALAPPDATA'),'Windows bridge installer must discover Opera from the current host profile.');
 rbAssert(str_contains($installerSource,'-AllowStartIfOnBatteries'),'Windows writer task must be allowed to start on battery.');
 rbAssert(str_contains($installerSource,'-DontStopIfGoingOnBatteries'),'Windows writer task must keep running when switching to battery.');
-rbAssert(str_contains($installerSource,"if (\$state -ne 'Running')"),'Windows bridge installer must fail unless the scheduled task is actually Running.');
-rbAssert(str_contains($installerSource,'WRITER_PROCESS_COUNT'),'Windows bridge installer must verify the specific writer process count.');
+rbAssert(str_contains($installerSource,'ShopVivaliz Amazon Returns Browser Dispatcher'),'Windows bridge installer must register the transient browser dispatcher.');
+rbAssert(str_contains($installerSource,'--once'),'Windows bridge dispatcher must run finite worker invocations.');
+rbAssert(str_contains($installerSource,'RepetitionInterval'),'Windows bridge dispatcher must use a recurring finite trigger.');
+rbAssert(str_contains($installerSource,'Stop-SellerCentralBrowser'),'Windows bridge dispatcher must clean up the dedicated browser after each invocation.');
+rbAssert(!str_contains($installerSource,'WRITER_PROCESS_COUNT'),'Windows bridge installer must not require a resident writer process.');
 rbAssert(str_contains($installerSource,'SELLER_CENTRAL_BRIDGE_ENDPOINT'),'Windows runner must pin the authenticated production bridge endpoint explicitly.');
 $qaWorkflow=(string)file_get_contents(__DIR__.'/../.github/workflows/ci.yml');
 rbAssert(str_contains($qaWorkflow,'node --check scripts/amazon-returns/seller-central-bridge-worker.mjs'),'CI must syntax-check the persistent Seller Central bridge worker.');

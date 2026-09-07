@@ -1,31 +1,31 @@
 > Superseded rule clarification (2026-09-05): the owner requires FIRST opening at D+45. Later waits follow the exact date requested by Amazon, not a new global 60/75-day threshold. See `docs/runbooks/shopvivaliz-d45-operational-policy.md`.
 
-# Fred-Win SAFE-T reader: single-instance recovery
+# Fred-Win SAFE-T browser dispatcher: transient execution
 
 ## Scope
-Prevent duplicate readers from claiming jobs and navigating the same CDP page.
-No policy, database schema, financial state, or external write flag is changed.
-D+45 operational opening remains unchanged. A SAFE-T approval is not proof of reconciled credit.
+Seller Central browser automation on Fred-Win is a fallback for operations not covered by SP-API/Gmail/API. Routine monitoring and financial reconciliation remain API-first. The Fred-Win browser workers must not stay resident when there is no Seller Central job.
 
-## Process-owned lease
-The reader reserves 127.0.0.1:19225 before its first pull or CDP operation.
-SELLER_CENTRAL_STATUS_LOCK_PORT may select a different reserved local port.
-All runners for the same browser must use the same lease port.
-A duplicate logs worker_already_running and exits without claiming a job.
-The lease is released by node process exit, including an orphaned runner's child.
-The --heartbeat operation does not need the browser lease.
-The --once operation does need it and will not run beside the daemon.
-This does not serialize a separate write worker: keep writes OFF until that channel is audited.
+## Runtime model
+A single scheduled task, `ShopVivaliz Amazon Returns Browser Dispatcher`, runs at a short recurring interval. Each invocation is finite:
+
+1. run the read worker with `--once`;
+2. run the write worker with `--once`;
+3. if a job actually needs Seller Central, the dedicated Opera profile on CDP port 9225 is opened by the worker;
+4. after the invocation, terminate only the dedicated Seller Central Opera tree for port 9225/profile;
+5. exit, leaving no persistent Node or dedicated Opera process.
+
+The legacy tasks `ShopVivaliz Amazon Returns SAFE-T Read Bridge` and `ShopVivaliz Amazon Returns Seller Central Bridge` are removed by the installer. The dispatcher uses `MultipleInstances IgnoreNew`, so read/write work is serialized on the shared profile.
+
+## API-first boundary
+SP-API, Finances, Returns and Gmail remain the primary sources. Seller Central UI is used only for jobs that require browser-only read/write behavior. External writes still obey server-side channel gates, idempotency, eligibility and production acceptance rules.
 
 ## Verification
-Run php tests/amazon-returns-read-worker-test.php and the full PHP suite.
-The regression starts two real node workers against a loopback NO_JOB service.
-Before this fix both claimed work; after it only the owner can pull.
-It also verifies heartbeat access, lease recovery on exit, and CDP close/error rejection.
+Run:
 
-## Live recovery evidence (2026-09-05 UTC)
-After removing a duplicate, the 06:45:13-06:46:34 batch completed 13/13 reads.
-Results: 8 DENIED, 5 APPROVED, 0 UNKNOWN, 0 unmatched read jobs.
-These observations do not establish financial credit or complete channel acceptance.
-The live case count is 39, versus the earlier 37-case migration snapshot; audit remains required.
-Preserve the disabled legacy runtime until full production acceptance.
+- `php tests/windows-bridge-on-demand-install-test.php`
+- `php tests/windows-bridge-tracking-helper-install-test.php`
+- `php tests/amazon-returns-read-worker-test.php`
+- `php tests/amazon-returns-remote-bridge-test.php`
+- full PHP suite and syntax checks required by `docs/REGRAS-DE-ENTREGA.md`
+
+On Fred-Win, verify that the dispatcher returns to `Ready`, no legacy Amazon bridge task remains, no bridge `node.exe` remains after the invocation, and no Opera process using the dedicated port 9225/profile remains when the queue is idle.
