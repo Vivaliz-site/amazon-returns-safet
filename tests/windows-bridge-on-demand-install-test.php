@@ -9,6 +9,8 @@ $required = [
     'ShopVivaliz Amazon Returns Browser Dispatcher',
     '--drain',
     'RepetitionInterval',
+    'PollMinutes = 5',
+    'EXECUTION_MODE=ON_DEMAND_DRAIN',
     'Stop-SellerCentralBrowser',
     'Stop-LegacyBridgeProcesses',
     'ShopVivaliz Amazon Returns SAFE-T Read Bridge',
