@@ -17,6 +17,7 @@ final class SvAmazonFinancialReconciler
             $unique[$id !== '' ? $id : hash('sha256', json_encode($tx, JSON_THROW_ON_ERROR))] = $tx;
         }
         $ids = []; $unclassified = 0; $groups = []; $positive = ['v0'=>0, 'ledger'=>0]; $debits = 0;
+        $explicit = ['v0'=>0, 'ledger'=>0];
         $unsettledLedger = false;
         foreach ($unique as $tx) {
             $source = ($tx['source'] ?? '') === 'SP_API_FINANCES_V0' ? 'v0' : 'ledger';
@@ -26,13 +27,14 @@ final class SvAmazonFinancialReconciler
             if ($currency !== '' && $txCurrency !== '' && $currency !== $txCurrency) { $unclassified++; continue; }
             $status = strtoupper(trim((string)($tx['transaction_status'] ?? '')));
             $type = strtoupper(trim((string)($tx['transaction_type'] ?? '')));
-            $reimbursementAdjustment = $this->isReimbursementAdjustment($tx);
+            $explicitReimbursement = $this->isExplicitReimbursement($tx, $source);
             if ($source === 'ledger' && $status !== '' && !in_array($status, ['RELEASED','DEFERRED_RELEASED'], true)
-                && (str_contains($type, 'REIMBURSE') || str_contains($type, 'COMPENSATION') || str_contains($type, 'SAFE_T') || $reimbursementAdjustment)) {
+                && $explicitReimbursement) {
                 $unsettledLedger = true;
             }
             $effect = $this->sellerEffect($tx);
             if ($effect === null) { $unclassified++; continue; }
+            if ($explicitReimbursement) $explicit[$source] += $effect;
             $id = trim((string)($tx['transaction_id'] ?? ''));
             if ($id !== '') $ids[] = $id;
             if ($type !== '' && in_array($status, ['RELEASED','DEFERRED_RELEASED'], true)) {
@@ -54,13 +56,26 @@ final class SvAmazonFinancialReconciler
         // A current held observation prevents stale v0 evidence overriding that hold.
         $released = $unsettledLedger ? $positive['ledger'] : max($positive['v0'], $positive['ledger']);
         $credit = max(0, $released + $debits);
-        $outstanding = max(0, $expected - $credit);
+        $legacyGap = max(0, $expected - $credit);
+        $explicitNet = $unsettledLedger ? $explicit['ledger'] : max($explicit['v0'], $explicit['ledger']);
+        $ordered = filter_var($case['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
+        $refunded = filter_var($case['quantity_refunded'] ?? null, FILTER_VALIDATE_INT);
+        $singleRefundedUnit = $ordered === 1 && $refunded === 1;
+        // A released, non-reversed Amazon reimbursement is the settlement evidence for a
+        // single refunded item. Legacy expected amounts were historically based on the
+        // customer debit and can include non-reimbursable fee components; retaining that
+        // difference is useful for audit, but it must not create a duplicate recovery claim.
+        $explicitSettled = $singleRefundedUnit && $explicitNet > 0 && !$unsettledLedger;
+        $outstanding = $explicitSettled ? 0 : $legacyGap;
         $previous = (string)($case['state'] ?? SvAmazonReturnStates::AWAITING_RETURN);
         $state = $previous;
-        if ($expected > 0 && $outstanding === 0) $state = SvAmazonReturnStates::RECOVERED;
+        if (($expected > 0 && $outstanding === 0) || $explicitSettled) $state = SvAmazonReturnStates::RECOVERED;
         elseif (in_array($previous, [SvAmazonReturnStates::SAFE_T_APPROVED, SvAmazonReturnStates::APPEAL_APPROVED, SvAmazonReturnStates::CREDIT_PENDING, SvAmazonReturnStates::RECOVERED], true)) $state = SvAmazonReturnStates::CREDIT_PENDING;
         return [
             'state'=>$state, 'credit_amount'=>self::money($credit), 'outstanding_amount'=>self::money($outstanding),
+            'legacy_expected_gap_amount'=>self::money($legacyGap),
+            'explicit_reimbursement_settled'=>$explicitSettled,
+            'explicit_reimbursement_net_amount'=>self::money(max(0,$explicitNet)),
             'reopened'=>$previous === SvAmazonReturnStates::RECOVERED && $outstanding > 0,
             'transaction_ids'=>array_values(array_unique($ids)), 'unclassified_transactions'=>$unclassified,
             'corroborating_sources'=>$positive['v0'] > 0 && $positive['ledger'] > 0,
@@ -83,6 +98,14 @@ final class SvAmazonFinancialReconciler
         $amount = self::cents($money['amount'] ?? null);
         if ($amount === null) return null;
         return str_contains($type, 'REVERSAL') ? -abs($amount) : $amount;
+    }
+
+    private function isExplicitReimbursement(array $tx,string $source): bool
+    {
+        if ($source === 'v0') return true;
+        $type = strtoupper(trim((string)($tx['transaction_type'] ?? '')));
+        return str_contains($type, 'REIMBURSE') || str_contains($type, 'COMPENSATION')
+            || str_contains($type, 'SAFE_T') || $this->isReimbursementAdjustment($tx);
     }
 
     private function isReimbursementAdjustment(array $tx): bool
