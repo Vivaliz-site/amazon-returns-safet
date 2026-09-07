@@ -340,11 +340,28 @@ final class SvAmazonReturnsSpApi
             'transaction_id' => trim((string)($transaction['transactionId'] ?? $transaction['id'] ?? '')),
             'transaction_type' => trim((string)($transaction['transactionType'] ?? $transaction['type'] ?? '')),
             'transaction_status' => self::nullableString($transaction['transactionStatus'] ?? $transaction['status'] ?? null),
+            'description' => self::nullableString($transaction['description'] ?? $transaction['Description'] ?? null),
             'posted_at' => self::nullableString($transaction['postedDate'] ?? $transaction['postedTime'] ?? null),
             'order_id' => $orderId,
             'related_identifiers' => array_values($normalizedRelated),
             'total_amount' => self::moneyOnly($transaction['totalAmount'] ?? $transaction['amount'] ?? null),
+            'breakdowns' => self::normalizeBreakdowns($transaction['breakdowns'] ?? $transaction['Breakdowns'] ?? []),
         ];
+    }
+
+    /** @return list<array{breakdown_type:string,breakdown_amount:?array{amount:string,currency:string}}> */
+    private static function normalizeBreakdowns(mixed $breakdowns): array
+    {
+        if (!is_array($breakdowns)) return [];
+        $normalized = [];
+        foreach ($breakdowns as $breakdown) {
+            if (!is_array($breakdown)) continue;
+            $type = trim((string)($breakdown['breakdownType'] ?? $breakdown['type'] ?? ''));
+            $money = self::moneyOnly($breakdown['breakdownAmount'] ?? $breakdown['amount'] ?? null);
+            if ($type === '' && $money === null) continue;
+            $normalized[] = ['breakdown_type'=>$type, 'breakdown_amount'=>$money];
+        }
+        return $normalized;
     }
 
     /** @return array{posted_at:string,safe_t_claim_id:string,reimbursed_amount:array{amount:string,currency:string},reason_code:?string,items:list<array<string,mixed>>} */
