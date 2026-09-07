@@ -1,19 +1,35 @@
 <?php
 declare(strict_types=1);
-$cases=file_get_contents(__DIR__.'/../includes/amazon-returns/CaseRepository.php');
-$coordinator=file_get_contents(__DIR__.'/../includes/amazon-returns/DecisionCoordinator.php');
-if(!is_string($cases)||!is_string($coordinator)){fwrite(STDERR,"case/review scheduler sources missing\n");exit(1);}
-$errors=[];
-if(strpos($cases,"OR EXISTS (SELECT 1 FROM amazon_return_reviews")===false){
-    $errors[]='openCases() must temporarily include closed/terminal cases while they still have an OPEN review.';
+require_once __DIR__.'/../includes/amazon-returns/DecisionCoordinator.php';
+
+final class TerminalReviewFakeReviews {
+    public array $resolved=[];
+    public function openQueue(int $limit=200): array {
+        return [
+            ['case_id'=>491,'status'=>'OPEN'],
+            ['case_id'=>501,'status'=>'OPEN'],
+            ['case_id'=>999,'status'=>'OPEN'],
+        ];
+    }
+    public function resolveOpenForCase(int $caseId): void {$this->resolved[]=$caseId;}
 }
-if(strpos($cases,"r.status='OPEN'")===false){
-    $errors[]='The terminal-case exception must be limited to OPEN reviews.';
+final class TerminalReviewFakeCases {
+    public function find(int $caseId): ?array {
+        return match($caseId){
+            491=>['id'=>491,'state'=>'RECOVERED','closed_at'=>'2026-09-07 17:00:00'],
+            501=>['id'=>501,'state'=>'POLICY_REVIEW_REQUIRED','closed_at'=>null],
+            999=>['id'=>999,'state'=>'CLOSED_LOSS','closed_at'=>'2026-09-07 17:05:00'],
+            default=>null,
+        };
+    }
 }
-if(strpos($cases,'r.case_id=amazon_return_cases.id')===false){
-    $errors[]='The stale-review exception must be bound to the same case.';
+$reviews=new TerminalReviewFakeReviews();
+$persistence=(object)['reviews'=>$reviews,'cases'=>new TerminalReviewFakeCases()];
+new SvAmazonDecisionCoordinator(new SvAmazonSafeTDecisionEngine(),$persistence);
+sort($reviews->resolved);
+$expected=[491,999];
+if($reviews->resolved!==$expected){
+    fwrite(STDERR,'Terminal/closed reviews must be resolved automatically. expected='.json_encode($expected).' actual='.json_encode($reviews->resolved)."\n");
+    exit(1);
 }
-if(strpos($coordinator,'resolveOpenForCase')===false){
-    $errors[]='DecisionCoordinator must resolve an open review after the terminal case yields a non-review decision.';
-}
-if($errors){fwrite(STDERR,implode("\n",$errors)."\n");exit(1);}echo "terminal-review-cleanup-test: OK\n";
+echo "terminal-review-cleanup-test: OK\n";
