@@ -14,7 +14,7 @@ $timeline=[
 $errors=[];
 $decision=$engine->nextAction($case,$timeline,$policy,$now);
 if(($decision['action']??null)!=='SAFE_T_APPEAL')$errors[]='Expired promised-credit appeal must trigger a recovery appeal attempt, not human review. got='.json_encode($decision);
-if(($decision['reason']??null)!=='MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT')$errors[]='Recovery attempt must be auditable. got='.json_encode($decision);
+if(($decision['reason']??null)!=='AMAZON_REQUESTED_DATE_REACHED_UNRECOVERED')$errors[]='Post-promise recovery attempt must be auditable as an Amazon requested-date resumption. got='.json_encode($decision);
 $late=$case;$late['id']=507;$late['amazon_order_id']='702-2458327-9625858';$late['safe_t_id']='31163-36572-5421246';$late['appeal_deadline_at']='2026-07-30 18:00:00';$late['expected_reimbursement_amount']='286.22';
 $lateTimeline=[['id'=>4,'case_id'=>507,'event_type'=>'SAFE_T_STATUS_OBSERVED','source'=>'SELLER_CENTRAL','occurred_at'=>'2026-09-07 04:48:17','payload'=>['safe_t_id'=>'31163-36572-5421246','claim_status'=>'DENIED','appeal_submitted'=>false,'decision_text'=>'Sua reivindicação SAFE-T para este pedido não foi registrada dentro do período elegível. Todas as reivindicações SAFE-T devem ser registradas até 52 dias depois que o Seller Central debita débito na conta de vendedor.','appeal_deadline_at'=>'2026-07-30 18:00:00']]];
 $lateDecision=$engine->nextAction($late,$lateTimeline,$policy,$now);

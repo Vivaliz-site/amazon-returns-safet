@@ -12,8 +12,8 @@ $finance=['id'=>3,'case_id'=>505,'event_type'=>'FINANCIAL_RECONCILIATION_CONFIRM
     'payload'=>['refresh_complete'=>true,'source_refreshed_at'=>'2026-09-10 11:55:00','source_observation_id'=>2,'credit_amount'=>'0.00']];
 $policy=['eligible'=>true,'policy_version_id'=>1];$now=new DateTimeImmutable('2026-09-10T12:00:00Z');
 $missed=$engine->nextAction($case,[$wait,$refresh,$finance],$policy,$now);
-ersSame('HUMAN_REVIEW',$missed['action'],'missed internal appeal cannot masquerade as second-stage email review');
-ersSame('INTERNAL_APPEAL_WINDOW_MISSED_REQUIRES_REVIEW',$missed['reason'],'missed first-stage appeal must be explicit');
+ersSame('SAFE_T_APPEAL',$missed['action'],'Amazon-directed wait preserves recovery on the same SAFE-T after its promised date');
+ersSame('AMAZON_REQUESTED_DATE_REACHED_UNRECOVERED',$missed['reason'],'post-promise unpaid recovery must remain explicit and auditable');
 $appealDenied=$case;$appealDenied['state']='APPEAL_DENIED_FINAL';
 $secondStage=$engine->nextAction($appealDenied,[$wait,$refresh,$finance],$policy,$now);
 ersSame('SAFE_T_EMAIL_REVIEW',$secondStage['action'],'denied internal appeal remains eligible for automatic second-stage email review');
