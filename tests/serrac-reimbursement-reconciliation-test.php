@@ -25,7 +25,9 @@ srSame('Reimbursements',$tx['breakdowns'][0]['breakdown_type']??null,'Finances n
 $case=['expected_reimbursement_amount'=>'112.50','state'=>'POLICY_REVIEW_REQUIRED','marketplace_id'=>'A2Q3Y263D00KWC'];
 $result=(new SvAmazonFinancialReconciler())->reconcile($case,$transactions);
 srSame('111.25',$result['credit_amount'],'Released SERRAC reimbursement must count as seller credit.');
-srSame('1.25',$result['outstanding_amount'],'Only the residual may remain after the explicit Amazon reimbursement.');
+srSame('0.00',$result['outstanding_amount'],'A residual below 5 percent after a real released reimbursement must be tolerated.');
+srSame(true,$result['residual_tolerance_applied']??null,'Tolerated SERRAC residual must be auditable.');
+srSame('1.25',$result['tolerated_residual_amount']??null,'The tolerated residual amount must be retained for audit.');
 srSame(0,$result['unclassified_transactions'],'Explicit reimbursement adjustment must not remain unclassified.');
 $generic=$tx;$generic['transaction_id']='adj-generic';$generic['description']='OtherAdjustment';$generic['breakdowns']=[];
 $result=(new SvAmazonFinancialReconciler())->reconcile($case,[$generic]);
