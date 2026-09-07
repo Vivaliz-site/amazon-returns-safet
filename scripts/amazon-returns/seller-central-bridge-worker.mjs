@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\bridge.token';
@@ -262,11 +263,12 @@ function narrativeFor(job, max = 1000) {
 async function safeTSubmit(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
+  const orderId = text(job.case?.order_id);
+  if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'INVALID_ORDER_ID' });
+  const trackingEvidence = await captureTrackingEvidence(cdp, orderId);
   await cdp.navigate(`${SAFE_T_BASE}/create-v2?ref_=ag_sfdcf_cont_safet`, 5000);
   const auth = await authGate(cdp, 'safet-v1');
   if (auth) return auth;
-  const orderId = text(job.case?.order_id);
-  if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'INVALID_ORDER_ID' });
   if (!(await cdp.setKat('kat-input[placeholder="Número do pedido"]', orderId))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ORDER_INPUT_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
@@ -313,12 +315,18 @@ async function safeTSubmit(cdp, job) {
   }
   await sleep(2200);
   const needsEvidence = reason.reason !== 'RNOTR' && reason.reason !== 'LBLOT';
-  const evidencePaths = Array.isArray(job.payload?.evidence_paths) ? job.payload.evidence_paths.filter(path => typeof path === 'string' && fs.existsSync(path)) : [];
+  const suppliedEvidence = Array.isArray(job.payload?.evidence_paths) ? job.payload.evidence_paths : [];
+  const evidencePaths = [...new Set([...suppliedEvidence, ...(trackingEvidence.path ? [trackingEvidence.path] : [])]
+    .filter(file => typeof file === 'string' && fs.existsSync(file)))];
   if (needsEvidence && evidencePaths.length === 0) {
     return bridgeResult('FAILED', { reason: 'DISCREPANCY_EVIDENCE_REQUIRED', retry_safe: false, evidence: await evidence(cdp, 'safet-v1') });
   }
+  let uploadResult = { attached: false, files: [] };
   if (evidencePaths.length > 0) {
-    return bridgeResult('FAILED', { reason: 'FILE_UPLOAD_BRIDGE_NOT_PROVISIONED', retry_safe: false, evidence: await evidence(cdp, 'safet-v1') });
+    uploadResult = await attachFiles(cdp, evidencePaths);
+    if (!uploadResult.attached) {
+      return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_EVIDENCE_UPLOAD_FAILED', retry_safe: true, evidence: withTrackingEvidence(await evidence(cdp, 'safet-v1'), trackingEvidence, uploadResult) });
+    }
   }
   if (!(await cdp.clickKat('kat-button[label="Próximo"]'))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_EVIDENCE_NEXT_MISSING', evidence: await evidence(cdp, 'safet-v1') });
@@ -347,7 +355,7 @@ async function safeTSubmit(cdp, job) {
     external_id: text(readBack),
     retry_safe: true,
     reason: 'SAFE_T_SUBMITTED_AND_READ_BACK',
-    evidence: await evidence(cdp, 'safet-v1'),
+    evidence: withTrackingEvidence(await evidence(cdp, 'safet-v1'), trackingEvidence, uploadResult),
   });
 }
 
@@ -356,6 +364,8 @@ async function safeTAppeal(cdp, job) {
   if (snapshotFailure) return snapshotFailure;
   const safeTId = text(job.case?.safe_t_id);
   if (!/^\d{5}-\d{5}-\d{7}$/.test(safeTId)) return bridgeResult('FAILED', { reason: 'SAFE_T_ID_REQUIRED' });
+  const orderId = text(job.case?.order_id);
+  const trackingEvidence = await captureTrackingEvidence(cdp, orderId);
   await cdp.navigate(`${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 5000);
   const auth = await authGate(cdp, 'safet-v1');
   if (auth) return auth;
@@ -369,6 +379,13 @@ async function safeTAppeal(cdp, job) {
   }
   if (!(await cdp.setKat('kat-textarea.description-textbox', narrative))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_APPEAL_FIELD_NOT_WRITABLE', evidence: await evidence(cdp, 'safet-v1') });
+  }
+  let uploadResult = { attached: false, files: [] };
+  if (trackingEvidence.path) {
+    uploadResult = await attachFiles(cdp, [trackingEvidence.path]);
+    if (!uploadResult.attached) {
+      return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_APPEAL_TRACKING_UPLOAD_FAILED', retry_safe: true, evidence: withTrackingEvidence(await evidence(cdp, 'safet-v1'), trackingEvidence, uploadResult) });
+    }
   }
   const sendSelector = 'kat-button.right-floated[label="Enviar"]';
   if (!(await cdp.clickKat(sendSelector))) {
@@ -384,7 +401,7 @@ async function safeTAppeal(cdp, job) {
     external_id: safeTId,
     retry_safe: true,
     reason: 'SAFE_T_APPEAL_SUBMITTED_AND_READ_BACK',
-    evidence: await evidence(cdp, 'safet-v1'),
+    evidence: withTrackingEvidence(await evidence(cdp, 'safet-v1'), trackingEvidence, uploadResult),
   });
 }
 
