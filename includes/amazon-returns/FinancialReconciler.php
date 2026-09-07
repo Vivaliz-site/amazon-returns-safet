@@ -52,12 +52,13 @@ final class SvAmazonFinancialReconciler
             if ($effect < 0) $debits += $effect;
             else $positive[$group['source']] += $effect;
         }
-        // APIs corroborate the same money. Never add their totals together.
-        // A current held observation prevents stale v0 evidence overriding that hold.
-        $released = $unsettledLedger ? $positive['ledger'] : max($positive['v0'], $positive['ledger']);
+        // Finances v0 SAFE-T reimbursement events corroborate Amazon's declaration but do not
+        // prove that money reached the seller account. Only a released ledger movement counts
+        // as actual seller credit. v0 remains available below as corroborating-source metadata.
+        $released = $positive['ledger'];
         $credit = max(0, $released + $debits);
         $legacyGap = max(0, $expected - $credit);
-        $explicitNet = $unsettledLedger ? $explicit['ledger'] : max($explicit['v0'], $explicit['ledger']);
+        $explicitNet = $explicit['ledger'];
         $ordered = filter_var($case['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
         $refunded = filter_var($case['quantity_refunded'] ?? null, FILTER_VALIDATE_INT);
         $singleRefundedUnit = $ordered === 1 && $refunded === 1;
