@@ -8,8 +8,8 @@ Seller Central browser automation on Fred-Win is a fallback for operations not c
 ## Runtime model
 A single scheduled task, `ShopVivaliz Amazon Returns Browser Dispatcher`, runs at a short recurring interval. Each invocation is finite:
 
-1. run the read worker with `--once`;
-2. run the write worker with `--once`;
+1. run the read worker with `--drain`;
+2. run the write worker with `--drain`;
 3. if a job actually needs Seller Central, the dedicated Opera profile on CDP port 9225 is opened by the worker;
 4. after the invocation, terminate only the dedicated Seller Central Opera tree for port 9225/profile;
 5. exit, leaving no persistent Node or dedicated Opera process.
@@ -17,7 +17,7 @@ A single scheduled task, `ShopVivaliz Amazon Returns Browser Dispatcher`, runs a
 The legacy tasks `ShopVivaliz Amazon Returns SAFE-T Read Bridge` and `ShopVivaliz Amazon Returns Seller Central Bridge` are removed by the installer. The dispatcher uses `MultipleInstances IgnoreNew`, so read/write work is serialized on the shared profile.
 
 ## API-first boundary
-SP-API, Finances, Returns and Gmail remain the primary sources. Seller Central UI is used only for jobs that require browser-only read/write behavior. External writes still obey server-side channel gates, idempotency, eligibility and production acceptance rules.
+SP-API, Finances, Returns and Gmail remain the primary sources. Seller Central UI is used only for jobs that require browser-only read/write behavior. External writes still obey server-side channel gates, idempotency, eligibility and production acceptance rules. SAFE-T browser status polling is a six-hour safety net per claim, not a primary monitoring loop; when several browser jobs are due, the finite dispatcher drains that due batch before exiting.
 
 ## Verification
 Run:

@@ -7,7 +7,7 @@ $required = [
     'seller-central-safe-t-read-worker.mjs',
     'safe-t-status-parser.mjs',
     'ShopVivaliz Amazon Returns Browser Dispatcher',
-    '--once',
+    '--drain',
     'RepetitionInterval',
     'Stop-SellerCentralBrowser',
     'Stop-LegacyBridgeProcesses',

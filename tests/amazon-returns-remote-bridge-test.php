@@ -199,7 +199,7 @@ rbAssert(str_contains($installerSource,'LOCALAPPDATA'),'Windows bridge installer
 rbAssert(str_contains($installerSource,'-AllowStartIfOnBatteries'),'Windows writer task must be allowed to start on battery.');
 rbAssert(str_contains($installerSource,'-DontStopIfGoingOnBatteries'),'Windows writer task must keep running when switching to battery.');
 rbAssert(str_contains($installerSource,'ShopVivaliz Amazon Returns Browser Dispatcher'),'Windows bridge installer must register the transient browser dispatcher.');
-rbAssert(str_contains($installerSource,'--once'),'Windows bridge dispatcher must run finite worker invocations.');
+rbAssert(str_contains($installerSource,'--drain'),'Windows bridge dispatcher must run finite worker invocations.');
 rbAssert(str_contains($installerSource,'RepetitionInterval'),'Windows bridge dispatcher must use a recurring finite trigger.');
 rbAssert(str_contains($installerSource,'Stop-SellerCentralBrowser'),'Windows bridge dispatcher must clean up the dedicated browser after each invocation.');
 rbAssert(!str_contains($installerSource,'WRITER_PROCESS_COUNT'),'Windows bridge installer must not require a resident writer process.');

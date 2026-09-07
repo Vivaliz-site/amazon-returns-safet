@@ -8,7 +8,7 @@ final class SvAmazonSafeTStatusService
     {
         if ($caseId < 1 || trim($safeTId) === '') throw new InvalidArgumentException('SAFE-T read key requires case and claim.');
         $ts = DateTimeImmutable::createFromInterface($now)->setTimezone(new DateTimeZone('UTC'))->getTimestamp();
-        $bucket = intdiv($ts, 900) * 900;
+        $bucket = intdiv($ts, 21600) * 21600;
         return hash('sha256', 'safe-t-read|' . $caseId . '|' . trim($safeTId) . '|' . gmdate('YmdHi', $bucket));
     }
 
