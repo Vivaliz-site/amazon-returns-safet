@@ -27,10 +27,14 @@ final class SvAmazonFinancialCheckEvidence
         foreach(['credit_amount','outstanding_amount'] as $field){
             if(!is_string($result[$field]??null) || preg_match('/^[0-9]+\.[0-9]{2}$/D',$result[$field])!==1)throw new UnexpectedValueException('Invalid financial verification amount.');
         }
+        $tolerance=($result['residual_tolerance_applied']??false)===true;
+        $tolerated=$tolerance?(string)($result['tolerated_residual_amount']??''):'0.00';
+        if(preg_match('/^[0-9]+\.[0-9]{2}$/D',$tolerated)!==1)throw new UnexpectedValueException('Invalid tolerated residual amount.');
         $payload=[
             'refresh_complete'=>true,'financial_truth'=>false,
             'refresh_observed_at'=>$latest['occurred_at'],
             'credit_amount'=>$result['credit_amount'],'outstanding_amount'=>$result['outstanding_amount'],
+            'residual_tolerance_applied'=>$tolerance,'tolerated_residual_amount'=>$tolerated,
             'unclassified_transactions'=>(int)($result['unclassified_transactions']??0),
         ];
         $key=hash('sha256','finance-check|'.$caseId.'|'.($latest['id']??0).'|'.json_encode($payload,JSON_THROW_ON_ERROR));

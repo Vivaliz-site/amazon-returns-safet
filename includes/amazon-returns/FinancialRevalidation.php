@@ -33,10 +33,14 @@ final class SvAmazonFinancialRevalidation
         if($checked===null || $refreshed===null || $checked<$refreshed || $checked->getTimestamp()-$refreshed->getTimestamp()>3600)return null;
         $credit=(string)($result['credit_amount']??'');$outstanding=(string)($result['outstanding_amount']??'');
         if(!preg_match('/^\d+\.\d{2}$/D',$credit) || !preg_match('/^\d+\.\d{2}$/D',$outstanding))return null;
+        $tolerance=($result['residual_tolerance_applied']??false)===true;
+        $tolerated=$tolerance?(string)($result['tolerated_residual_amount']??''):'0.00';
+        if(!preg_match('/^\d+\.\d{2}$/D',$tolerated))return null;
         return ['case_id'=>$caseId,'event_type'=>'FINANCIAL_RECONCILIATION_CONFIRMED','source'=>'SP_API_FINANCES','source_event_id'=>null,
-            'idempotency_key'=>hash('sha256','financial-recheck|'.$caseId.'|'.$source['id'].'|'.$credit.'|'.$outstanding),
+            'idempotency_key'=>hash('sha256','financial-recheck|'.$caseId.'|'.$source['id'].'|'.$credit.'|'.$outstanding.'|'.(int)$tolerance.'|'.$tolerated),
             'occurred_at'=>$at,'payload'=>['refresh_complete'=>true,'source_refreshed_at'=>$source['occurred_at'],
-                'source_observation_id'=>(int)$source['id'],'credit_amount'=>$credit,'outstanding_amount'=>$outstanding],
+                'source_observation_id'=>(int)$source['id'],'credit_amount'=>$credit,'outstanding_amount'=>$outstanding,
+                'residual_tolerance_applied'=>$tolerance,'tolerated_residual_amount'=>$tolerated],
             'evidence_sha256'=>null];
     }
 }

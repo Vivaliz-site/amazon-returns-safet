@@ -46,6 +46,8 @@ final class SvAmazonReturnsRuntimeAudit
             'credit_before'=>(string)($case['reconciled_credit_amount'] ?? '0.00'),
             'credit_amount'=>(string)($result['credit_amount'] ?? '0.00'),
             'outstanding_amount'=>(string)($result['outstanding_amount'] ?? '0.00'),
+            'residual_tolerance_applied'=>($result['residual_tolerance_applied'] ?? false)===true,
+            'tolerated_residual_amount'=>(string)($result['tolerated_residual_amount'] ?? '0.00'),
             'transaction_count'=>count($transactions),
             'transaction_ids'=>array_values($result['transaction_ids'] ?? []),
             'unclassified_transactions'=>(int)($result['unclassified_transactions'] ?? 0),
