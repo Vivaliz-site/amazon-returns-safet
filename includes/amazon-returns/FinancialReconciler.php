@@ -26,8 +26,9 @@ final class SvAmazonFinancialReconciler
             if ($currency !== '' && $txCurrency !== '' && $currency !== $txCurrency) { $unclassified++; continue; }
             $status = strtoupper(trim((string)($tx['transaction_status'] ?? '')));
             $type = strtoupper(trim((string)($tx['transaction_type'] ?? '')));
+            $reimbursementAdjustment = $this->isReimbursementAdjustment($tx);
             if ($source === 'ledger' && $status !== '' && !in_array($status, ['RELEASED','DEFERRED_RELEASED'], true)
-                && (str_contains($type, 'REIMBURSE') || str_contains($type, 'COMPENSATION') || str_contains($type, 'SAFE_T'))) {
+                && (str_contains($type, 'REIMBURSE') || str_contains($type, 'COMPENSATION') || str_contains($type, 'SAFE_T') || $reimbursementAdjustment)) {
                 $unsettledLedger = true;
             }
             $effect = $this->sellerEffect($tx);
@@ -75,12 +76,28 @@ final class SvAmazonFinancialReconciler
         if (isset($tx['seller_effect_amount'])) return self::cents($tx['seller_effect_amount']);
         if ($status === '' || trim((string)($tx['transaction_id'] ?? '')) === '') return null;
         $type = strtoupper(trim((string)($tx['transaction_type'] ?? '')));
-        if (!str_contains($type, 'REIMBURSE') && !str_contains($type, 'COMPENSATION') && !str_contains($type, 'SAFE_T')) return null;
+        if (!str_contains($type, 'REIMBURSE') && !str_contains($type, 'COMPENSATION') && !str_contains($type, 'SAFE_T')
+            && !$this->isReimbursementAdjustment($tx)) return null;
         $money = is_array($tx['total_amount'] ?? null) ? $tx['total_amount'] : [];
         if (preg_match('/^[A-Z]{3}$/', strtoupper((string)($money['currency'] ?? ''))) !== 1) return null;
         $amount = self::cents($money['amount'] ?? null);
         if ($amount === null) return null;
         return str_contains($type, 'REVERSAL') ? -abs($amount) : $amount;
+    }
+
+    private function isReimbursementAdjustment(array $tx): bool
+    {
+        if (strtoupper(trim((string)($tx['transaction_type'] ?? ''))) !== 'ADJUSTMENT') return false;
+        $description = strtoupper(trim((string)($tx['description'] ?? '')));
+        if (str_contains($description, 'REIMBURSEMENT')) return true;
+        $breakdowns = $tx['breakdowns'] ?? [];
+        if (!is_array($breakdowns)) return false;
+        foreach ($breakdowns as $breakdown) {
+            if (!is_array($breakdown)) continue;
+            $type = strtoupper(trim((string)($breakdown['breakdown_type'] ?? $breakdown['breakdownType'] ?? '')));
+            if ($type === 'REIMBURSEMENTS') return true;
+        }
+        return false;
     }
 
     private static function cents(mixed $value): ?int
