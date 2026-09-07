@@ -10,6 +10,9 @@ function fcsEvent(array $tx,int $id,string $created):array{return ['event_type'=
 $tx=fcsTx('same-credit','60.00');
 $v0=['event_type'=>'SAFE_T_REIMBURSEMENT_OBSERVED','created_at'=>'2026-09-05 01:00:00','id'=>1,'payload'=>['safe_t_claim_id'=>'11111-22222-3333333','posted_at'=>'2026-09-01T00:00:00Z','reimbursed_amount'=>['amount'=>'60.00','currency'=>'BRL']]];
 $ledger=fcsEvent($tx,2,'2026-09-05 01:00:01');
+$v0Only=$worker->reconcileCase($case,$worker->transactionsFromEvents([$v0]));
+fcsSame('0.00',$v0Only['credit_amount'],'SAFE-T reimbursement declaration without a released ledger movement is not seller payment proof.');
+fcsSame('CREDIT_PENDING',$v0Only['state'],'A reimbursement declaration alone must keep the seller credit pending.');
 $r=$worker->reconcileCase($case,$worker->transactionsFromEvents([$v0,$ledger]));
 fcsSame('60.00',$r['credit_amount'],'corroborating APIs must not double a payment');
 fcsSame('CREDIT_PENDING',$r['state'],'partial corroborated credit cannot close a case');

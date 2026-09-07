@@ -59,7 +59,7 @@ rlSame(true,$reversed['reopened'],'Reversal of recovered case must be flagged.')
 
 $worker=new SvAmazonReturnsReconcileWorker();
 rlSame([], $worker->transactionsFromEvents([]), 'No financial event must remain no credit, not denial.');
-$safeTTransactions=$worker->transactionsFromEvents([[
+$safeTDeclaration=[
     'event_type'=>'SAFE_T_REIMBURSEMENT_OBSERVED',
     'payload'=>[
         'safe_t_claim_id'=>'98143-99485-9285859',
@@ -67,11 +67,21 @@ $safeTTransactions=$worker->transactionsFromEvents([[
         'reimbursed_amount'=>['amount'=>'100.00','currency'=>'BRL'],
         'response_sha256'=>[str_repeat('a',64)],
     ],
-]]);
-rlSame(1,count($safeTTransactions),'SAFE-T reimbursement must become one authoritative credit.');
-rlSame('SAFE_T_REIMBURSEMENT',$safeTTransactions[0]['transaction_type']??null,'SAFE-T credit classification must be explicit.');
-rlSame('100.00',$safeTTransactions[0]['total_amount']['amount']??null,'SAFE-T credit amount must remain exact.');
-rlSame('RECOVERED',$worker->reconcileCase($case,$safeTTransactions)['state'],'SAFE-T approval closes only after the reimbursement credit is observed.');
+];
+$safeTTransactions=$worker->transactionsFromEvents([$safeTDeclaration]);
+rlSame(1,count($safeTTransactions),'SAFE-T reimbursement declaration must remain available as corroborating evidence.');
+rlSame('SAFE_T_REIMBURSEMENT',$safeTTransactions[0]['transaction_type']??null,'SAFE-T declaration classification must be explicit.');
+rlSame('100.00',$safeTTransactions[0]['total_amount']['amount']??null,'SAFE-T declared amount must remain exact.');
+rlSame('CREDIT_PENDING',$worker->reconcileCase($case,$safeTTransactions)['state'],'SAFE-T declaration alone cannot prove seller payment.');
+$ledgerCredit=[
+    'event_type'=>'FINANCIAL_TRANSACTION_OBSERVED','id'=>20,'created_at'=>'2026-08-05 14:31:00',
+    'payload'=>['transaction'=>[
+        'transaction_id'=>'ledger-safe-t-1','transaction_type'=>'SAFE_T_REIMBURSEMENT','transaction_status'=>'RELEASED',
+        'posted_at'=>'2026-08-05T14:31:00Z','total_amount'=>['amount'=>'100.00','currency'=>'BRL'],
+    ]],
+];
+$verified=$worker->transactionsFromEvents([$safeTDeclaration,$ledgerCredit]);
+rlSame('RECOVERED',$worker->reconcileCase($case,$verified)['state'],'A real released ledger credit may close the SAFE-T recovery.');
 
 rlSame(false,SvAmazonReturnsScheduler::isWriteAction(['action'=>'WAIT']),'WAIT is not a write.');
 rlSame(true,SvAmazonReturnsScheduler::isWriteAction(['action'=>'SELLER_SUPPORT_OPEN']),'Support open is a write.');
