@@ -5,7 +5,11 @@ require_once __DIR__.'/ReviewContext.php';
 require_once __DIR__.'/LearnedRuleEngine.php';
 final class SvAmazonDecisionCoordinator
 {
-    public function __construct(private SvAmazonSafeTDecisionEngine $base,private object $persistence,private ?object $config=null,private ?SvAmazonLearnedRuleEngine $ruleEngine=null){$this->ruleEngine??=new SvAmazonLearnedRuleEngine();}
+    public function __construct(private SvAmazonSafeTDecisionEngine $base,private object $persistence,private ?object $config=null,private ?SvAmazonLearnedRuleEngine $ruleEngine=null)
+    {
+        $this->ruleEngine??=new SvAmazonLearnedRuleEngine();
+        $this->resolveTerminalReviews();
+    }
     public function previewAction(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null):array{return $this->decide($case,$timeline,$policy,$now,false);}
     public function nextAction(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null):array{return $this->decide($case,$timeline,$policy,$now,true);}
     public function buildReviewContext(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null): ?array
@@ -38,6 +42,23 @@ final class SvAmazonDecisionCoordinator
         $reason=$match['status']==='CONFLICT'?'LEARNED_RULE_CONFLICT':(string)($base['reason']??'UNRESOLVED_REVIEW');
         if($persist)$this->persistence->reviews->open((int)$case['id'],$reason,$context['signature_hash'],$context);
         return $base+['review_reason'=>$reason,'review_context'=>$context,'learned_rule_conflicts'=>$match['conflicts']??[]];
+    }
+    private function resolveTerminalReviews():void
+    {
+        if(!isset($this->persistence->reviews,$this->persistence->cases)
+            || !method_exists($this->persistence->reviews,'openQueue')
+            || !method_exists($this->persistence->reviews,'resolveOpenForCase')
+            || !method_exists($this->persistence->cases,'find'))return;
+        foreach($this->persistence->reviews->openQueue(500) as $review){
+            $caseId=(int)($review['case_id']??0);
+            if($caseId<1)continue;
+            $case=$this->persistence->cases->find($caseId);
+            if(!is_array($case))continue;
+            $state=(string)($case['state']??'');
+            $closed=trim((string)($case['closed_at']??''))!=='';
+            if(!$closed && !in_array($state,[SvAmazonReturnStates::RECOVERED,SvAmazonReturnStates::CLOSED_LOSS,SvAmazonReturnStates::RECEIVED_OK],true))continue;
+            $this->persistence->reviews->resolveOpenForCase($caseId);
+        }
     }
     private function auditMatch(array $case,array $context,array $rule,array $effect,array $decision):void
     {
