@@ -70,6 +70,8 @@ function Stop-SellerCentralBrowser {
     foreach (`$process in `$roots) {
         & "`$env:SystemRoot\System32\taskkill.exe" /PID `$process.ProcessId /T /F *> `$null
     }
+    `$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    Remove-ItemProperty -Path `$runKey -Name 'Opera Developer' -ErrorAction SilentlyContinue
 }
 
 try {
@@ -119,6 +121,7 @@ if ($existingDispatcher) {
     Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 }
 Stop-LegacyBridgeProcesses
+Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Opera Developer' -ErrorAction SilentlyContinue
 
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$runner`""
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `

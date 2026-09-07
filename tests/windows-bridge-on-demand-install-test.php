@@ -12,6 +12,8 @@ $required = [
     'PollMinutes = 5',
     'EXECUTION_MODE=ON_DEMAND_DRAIN',
     'Stop-SellerCentralBrowser',
+    'Remove-ItemProperty',
+    'Opera Developer',
     'Stop-LegacyBridgeProcesses',
     'ShopVivaliz Amazon Returns SAFE-T Read Bridge',
     'ShopVivaliz Amazon Returns Seller Central Bridge',
