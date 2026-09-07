@@ -1,5 +1,6 @@
 param(
     [string]$WorkerSource = "$PSScriptRoot\amazon-returns\seller-central-bridge-worker.mjs",
+    [string]$TrackingEvidenceSource = "$PSScriptRoot\amazon-returns\TrackingEvidence.mjs",
     [string]$InstallDir = 'C:\ShopVivaliz\amazon-returns-bridge',
     [string]$TaskName = 'ShopVivaliz Amazon Returns Seller Central Bridge',
     [string]$BridgeEndpoint = 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php',
@@ -22,13 +23,16 @@ $opera = $OperaPath
 $profile = $ProfilePath
 $token = Join-Path $InstallDir 'bridge.token'
 $worker = Join-Path $InstallDir 'seller-central-bridge-worker.mjs'
+$trackingEvidence = Join-Path $InstallDir 'TrackingEvidence.mjs'
 $logDir = Join-Path $InstallDir 'logs'
+$evidenceDir = Join-Path $InstallDir 'evidence'
 
-foreach ($required in @($WorkerSource, $opera, $profile, $token)) {
+foreach ($required in @($WorkerSource, $TrackingEvidenceSource, $opera, $profile, $token)) {
     if (-not (Test-Path $required)) { throw "Required bridge dependency missing: $required" }
 }
-New-Item -ItemType Directory -Force $InstallDir, $logDir | Out-Null
+New-Item -ItemType Directory -Force $InstallDir, $logDir, $evidenceDir | Out-Null
 Copy-Item -Force $WorkerSource $worker
+Copy-Item -Force $TrackingEvidenceSource $trackingEvidence
 $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $tokenAcl = Get-Acl $token
 $tokenAcl.SetAccessRuleProtection($true, $false)
@@ -43,6 +47,7 @@ $runnerBody = @"
 `$env:SELLER_CENTRAL_BRIDGE_TOKEN_FILE = '$token'
 `$env:SELLER_CENTRAL_PROFILE = '$profile'
 `$env:SELLER_CENTRAL_OPERA = '$opera'
+`$env:SELLER_CENTRAL_EVIDENCE_DIR = '$evidenceDir'
 Set-Location '$InstallDir'
 & '$node' '$worker' *>> '$logDir\bridge.log'
 exit `$LASTEXITCODE
