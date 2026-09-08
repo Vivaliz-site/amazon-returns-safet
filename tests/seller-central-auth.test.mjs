@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   classifyAmazonAuthState,
+  ensureSellerCentralAuthenticated,
   parseTotpOutput,
   requestRemoteTotp,
 } from '../scripts/amazon-returns/seller-central-auth.mjs';
@@ -57,4 +58,62 @@ test('remote TOTP request never accepts command noise or failed ssh', async () =
     host: 'amazon-totp@10.0.0.8', keyFile: '/tmp/key', knownHostsFile: '/tmp/known',
     runner: async () => ({ exitCode: 255, stdout: '', stderr: 'permission denied' }),
   }), /remote TOTP unavailable/i);
+});
+
+test('reuses an authenticated Seller Central session without touching credentials or TOTP', async () => {
+  const cdp = { pageState: async () => ({ href: 'https://sellercentral.amazon.com.br/home', title: 'Seller Central', text: 'Início' }) };
+  const result = await ensureSellerCentralAuthenticated(cdp, {
+    readSecret: () => { throw new Error('must not read credentials'); },
+    totpRequester: async () => { throw new Error('must not request TOTP'); },
+  });
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REUSED' });
+});
+
+test('performs one username/password plus remote TOTP flow and never returns secrets', async () => {
+  const states = [
+    { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: 'E-mail Senha' },
+    { href: 'https://www.amazon.com/ap/mfa', title: 'Verificação em duas etapas', text: 'Aplicativo autenticador' },
+    { href: 'https://sellercentral.amazon.com.br/home', title: 'Seller Central', text: 'Início' },
+  ];
+  let stateIndex = 0;
+  const applied = [];
+  const cdp = { pageState: async () => states[Math.min(stateIndex, states.length - 1)] };
+  const result = await ensureSellerCentralAuthenticated(cdp, {
+    usernameFile: '/secure/account',
+    passwordFile: '/secure/password',
+    readSecret: file => file.endsWith('account') ? 'account-test-value' : 'password-test-value',
+    applyCredentials: async (_cdp, username, password) => {
+      applied.push(['credentials', username, password]);
+      stateIndex++;
+      return true;
+    },
+    totpRequester: async () => '654321',
+    applyTotp: async (_cdp, code) => {
+      applied.push(['totp', code]);
+      stateIndex++;
+      return true;
+    },
+    sleep: async () => {},
+  });
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
+  assert.deepEqual(applied, [
+    ['credentials', 'account-test-value', 'password-test-value'],
+    ['totp', '654321'],
+  ]);
+  assert.doesNotMatch(JSON.stringify(result), /account-test-value|password-test-value|654321/);
+});
+
+test('fails closed on a human or unknown Amazon challenge without requesting a TOTP', async () => {
+  for (const state of [
+    { href: 'https://www.amazon.com/ap/cvf', title: 'Verifique sua identidade', text: 'CAPTCHA' },
+    { href: 'https://www.amazon.com/ap/unknown', title: 'Amazon', text: 'Etapa inesperada' },
+  ]) {
+    let requested = false;
+    const result = await ensureSellerCentralAuthenticated({ pageState: async () => state }, {
+      readSecret: () => { throw new Error('must not read credentials'); },
+      totpRequester: async () => { requested = true; return '123456'; },
+    });
+    assert.equal(requested, false);
+    assert.ok(['HUMAN_CHALLENGE', 'AUTH_REQUIRED'].includes(result.status));
+  }
 });
