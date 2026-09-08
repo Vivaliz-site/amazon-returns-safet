@@ -25,6 +25,8 @@ $intakePage=intakeUxRead('admin/amazon-returns/intake.php');
 intakeUxAssert(str_contains($intakePage,'sales_invoice_number'),'Intake must offer a sales invoice number field.');
 intakeUxAssert(str_contains($intakePage,'/admin/amazon-returns/api/intake-lookup.php'),'Intake lookup must use the on-demand sync endpoint.');
 intakeUxAssert(str_contains($intakePage,'Nenhuma devolução encontrada'),'Intake must retain a clear no-result message.');
+intakeUxAssert(str_contains($intakePage,'Number(c.quantity_refunded||0)>0'),'Known refunded quantity must take precedence in the intake UI.');
+intakeUxAssert(str_contains($intakePage,'Math.max(1,Number(c.quantity_ordered||0))'),'Ordered quantity must be only the fallback when refund quantity is not known yet.');
 
 $lookup=intakeUxRead('admin/amazon-returns/api/intake-lookup.php');
 intakeUxAssert(str_contains($lookup,'$p->cases->forOrder($orderId)'),'Lookup must check the local case store first.');
@@ -35,9 +37,16 @@ intakeUxAssert(str_contains($lookup,'SvAmazonSpApiEventSink::persist'),'Lookup m
 $intakeApi=intakeUxRead('admin/amazon-returns/api/intake.php');
 intakeUxAssert(str_contains($intakeApi,'$input[\'sales_invoice_number\']'),'Receipt API must accept the sales invoice number.');
 intakeUxAssert(str_contains($intakeApi,"'sales_invoice_number'=>\$salesInvoiceNumber"),'Receipt event must persist the sales invoice number.');
-intakeUxAssert(str_contains($intakeApi,'max((int)$case[\'quantity_ordered\'],(int)$case[\'quantity_refunded\'])'),'Physical receipt quantity must not depend only on refund projection.');
+intakeUxAssert(str_contains($intakeApi,"$knownRefundQuantity=(int)$case['quantity_refunded'];"),'Receipt API must distinguish a known refund quantity from a not-yet-projected refund.');
+intakeUxAssert(str_contains($intakeApi,"$expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case['quantity_ordered']);"),'Receipt API must prefer known refunded quantity and only fall back to ordered quantity.');
+
+$caseRepository=intakeUxRead('includes/amazon-returns/CaseRepository.php');
+intakeUxAssert(str_contains($caseRepository,'sales_invoice_number'),'Case search must include the sales invoice number recorded at intake.');
+intakeUxAssert(str_contains($caseRepository,'JSON_EXTRACT'),'NF search must read the scoped physical-receipt event payload without exposing internal event details.');
+intakeUxAssert(str_contains($caseRepository,':q_invoice'),'NF search must use a bound search parameter.');
 
 $index=intakeUxRead('admin/amazon-returns/index.php');
+intakeUxAssert(str_contains($index,'Pedido, NF, SAFE-T ou SKU'),'Cockpit search must tell the user that NF is searchable.');
 intakeUxAssert(str_contains($index,'/admin/amazon-returns/assets/ux-polish.js'),'Cockpit must load the plain-language/collapsible-history polish.');
 $ux=intakeUxRead('admin/amazon-returns/assets/ux-polish.js');
 intakeUxAssert(str_contains($ux,"document.createElement('details')"),'Case timeline must be collapsible.');
