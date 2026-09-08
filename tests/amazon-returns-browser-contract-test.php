@@ -167,4 +167,17 @@ $thrown = false;
 try { $worker->execute(['kind'=>'DELETE_ANYTHING','payload'=>[]], static fn(array $payload): array => []); } catch (InvalidArgumentException) { $thrown = true; }
 bcAssert($thrown, 'Worker must reject unapproved operation kinds.');
 
+$bridgeSource = (string)file_get_contents(__DIR__ . '/../scripts/amazon-returns/seller-central-bridge-worker.mjs');
+$readSource = (string)file_get_contents(__DIR__ . '/../scripts/amazon-returns/seller-central-safe-t-read-worker.mjs');
+foreach ([$bridgeSource, $readSource] as $workerSource) {
+    bcAssert(str_contains($workerSource, "from './seller-central-auth.mjs'"), 'Seller Central workers must share the authentication helper.');
+    bcAssert(str_contains($workerSource, 'SELLER_CENTRAL_BROWSER'), 'Seller Central workers must use the host-neutral browser executable setting.');
+    bcAssert(str_contains($workerSource, 'SELLER_CENTRAL_OPERA'), 'Existing Opera configuration must remain a backward-compatible fallback.');
+}
+bcAssert(str_contains($bridgeSource, 'SELLER_CENTRAL_WORKER_ID'), 'Write worker ID must be configurable per host.');
+bcAssert(str_contains($readSource, 'SELLER_CENTRAL_STATUS_WORKER_ID'), 'Read worker ID must be configurable per host.');
+bcAssert(!str_contains($bridgeSource, 'C:\\Users\\FRED'), 'Write worker must not hard-code a Fred-only browser executable path.');
+bcAssert(str_contains($bridgeSource, 'ensureSellerCentralAuthenticated'), 'Write worker must attempt the shared safe reauthentication path.');
+bcAssert(str_contains($readSource, 'ensureSellerCentralAuthenticated'), 'Read worker must attempt the shared safe reauthentication path.');
+
 echo "amazon-returns-browser-contract-test: OK\n";

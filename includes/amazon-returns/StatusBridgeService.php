@@ -10,12 +10,24 @@ final class SvAmazonReturnsStatusBridgeService
     public function __construct(private SvAmazonTenantPersistence $p) {}
 
     /** @return array<string,mixed> */
-    public function heartbeat(SvAmazonReturnsConfig $config): array
+    public function heartbeat(SvAmazonReturnsConfig $config,?string $workerId=null,?string $authStatus=null): array
     {
+        $worker=$this->workerId($workerId,'read-worker');
+        $this->p->cursors->save('SELLER_CENTRAL','read_process_heartbeat',$worker,[
+            'status'=>'ALIVE','role'=>'READ',
+        ]);
+        $auth=$this->authStatus($authStatus);
+        if($auth!==null){
+            $this->p->cursors->save('SELLER_CENTRAL','browser_auth',$worker,[
+                'status'=>$auth,
+            ]);
+        }
         return [
             'status'=>'OK',
             'tenant_id'=>$this->p->context()->tenantId(),
             'amazon_connection_id'=>$this->p->context()->amazonConnectionId(),
+            'worker_id'=>$worker,
+            'auth_status'=>$auth,
             'read_only'=>true,
             'enabled'=>$config->enabled(),
             'mode'=>$config->mode(),
@@ -23,6 +35,18 @@ final class SvAmazonReturnsStatusBridgeService
         ];
     }
 
+    private function workerId(?string $value,string $fallback): string
+    {
+        $value=trim((string)$value);
+        return preg_match('/^[A-Za-z0-9._:-]{1,128}$/D',$value)===1 ? $value : $fallback;
+    }
+
+    private function authStatus(?string $value): ?string
+    {
+        $value=strtoupper(trim((string)$value));
+        if($value==='')return null;
+        return preg_match('/^[A-Z0-9_:-]{2,64}$/D',$value)===1 ? $value : 'INVALID_AUTH_STATUS';
+    }
     public function ensureJobs(DateTimeImmutable $now): int
     {
         $ensured=0;

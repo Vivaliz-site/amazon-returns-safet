@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/amazon-returns/GmailParser.php';
 require_once __DIR__ . '/../includes/amazon-returns/GmailApi.php';
 require_once __DIR__ . '/../includes/amazon-returns/GmailEventSink.php';
+require_once __DIR__ . '/../includes/amazon-returns/Projector.php';
 require_once __DIR__ . '/../workers/amazon-returns/gmail-ingest.php';
 
 function gmAssert(bool $condition, string $message): void { if (!$condition) throw new RuntimeException($message); }
@@ -52,6 +53,18 @@ $refundPatch = SvAmazonGmailEventSink::casePatch($refund[0]);
 gmSame('POLICY_REVIEW_REQUIRED', $refundPatch['state'], 'Gmail-only refund must remain blocked for policy review.');
 gmAssert(!array_key_exists('seller_debit_at', $refundPatch), 'Gmail refund must not assert seller debit truth.');
 gmAssert(!array_key_exists('refund_initiator', $refundPatch), 'Gmail refund must not infer refund initiator.');
+gmSame('2026-09-01 17:30:27', $refundPatch['refund_at'] ?? null, 'Refund-start email must project the buyer refund timestamp as non-financial evidence.');
+gmSame('128.25', $refundPatch['refund_amount'] ?? null, 'Refund-start email may project the observed buyer refund amount.');
+$gmailProjection = SvAmazonReturnProjector::projectFrom([
+    'id'=>1,'quantity_ordered'=>1,'physical_status'=>'NOT_RECEIVED','state'=>'POLICY_REVIEW_REQUIRED',
+], [[
+    'case_id'=>1,'event_type'=>'REFUND_ISSUED_EMAIL','source'=>'GMAIL','occurred_at'=>'2026-09-01 17:30:27',
+    'payload'=>['refund_at'=>'2026-09-01 17:30:27','refund_amount'=>'128.25','financial_truth'=>false],
+]]);
+gmSame('2026-09-01 17:30:27',$gmailProjection['refund_at'],'Refund-start Gmail evidence must survive a later projection replay.');
+gmSame('128.25',$gmailProjection['refund_amount'],'Refund-start Gmail amount must survive a later projection replay.');
+gmSame(null,$gmailProjection['seller_debit_at'],'Buyer refund email must never create seller debit truth.');
+gmSame(0,$gmailProjection['quantity_refunded'],'Buyer refund email alone must not infer refunded item quantity.');
 $registeredPatch = SvAmazonGmailEventSink::casePatch($registered[0]);
 gmSame('98143-99485-9285859', $registeredPatch['safe_t_id'], 'SAFE-T email may attach the observed claim ID.');
 gmSame('SAFE_T_SUBMITTED', $registeredPatch['state'], 'Registered SAFE-T email updates observational state only.');
@@ -113,6 +126,7 @@ $transport = static function(string $method, string $url, array $headers, ?array
     if (str_contains($url, '/profile')) return ['status'=>200,'json'=>['historyId'=>'200']];
     if (str_contains($url, '/history?')) return ['status'=>200,'json'=>['history'=>[['messagesAdded'=>[['message'=>['id'=>'m-api-1']],['message'=>['id'=>'m-api-gone']]]]]]];
     if (str_contains($url, '/messages?') && str_contains($url, 'rfc822msgid')) return ['status'=>200,'json'=>$sentCreated ? ['messages'=>[['id'=>'sent-1','threadId'=>'sent-thread-1']]] : []];
+if (str_contains($url, '/messages?') && str_contains(urldecode($url), 'reembolso iniciado')) return ['status'=>200,'json'=>['messages'=>[['id'=>'m-api-1']]]];
     if (str_contains($url, '/messages?')) return ['status'=>200,'json'=>['messages'=>[]]];
     if (str_contains($url, '/messages/send')) { $sentCreated = true; return ['status'=>200,'json'=>['id'=>'sent-1','threadId'=>'sent-thread-1']]; }
     if (str_contains($url, '/messages/m-api-gone?')) return ['status'=>404,'json'=>[]];
@@ -158,5 +172,13 @@ $bootstrapCalls = array_slice($calls, $bootstrapStart);
 $bootstrapUrl = '';
 foreach ($bootstrapCalls as $call) if (str_contains($call[1], '/messages?')) { $bootstrapUrl = $call[1]; break; }
 gmAssert(str_contains(urldecode($bootstrapUrl), 'Safe-T-Review@amazon.com'), 'Gmail bootstrap/recovery query must include detailed SAFE-T review replies.');
+$searchStart=count($calls);
+$refundSearch=$gmailApi->searchMessages('newer_than:90d "reembolso iniciado"',500);
+gmSame(1,count($refundSearch),'Daily refund reconciliation search must return matching normalized messages.');
+gmSame('m-api-1',$refundSearch[0]['message_id'],'Daily refund reconciliation must fetch the matched Gmail message.');
+$searchCalls=array_slice($calls,$searchStart);
+$searchListUrl='';
+foreach($searchCalls as $call)if(str_contains($call[1],'/messages?')){$searchListUrl=$call[1];break;}
+gmAssert(str_contains(urldecode($searchListUrl),'reembolso iniciado'),'Daily reconciliation must issue the explicit Gmail phrase search requested by the owner.');
 
 echo "amazon-returns-gmail-test: OK\n";

@@ -71,7 +71,7 @@ try{
     $context=SvAmazonTenantRegistry::resolveCurrent($db,$config);
     $p=SvAmazonTenantPersistence::create($db,$context);
     $service=new SvAmazonReturnsStatusBridgeService($p);
-    if($operation==='heartbeat')sv_amz_status_reply($service->heartbeat($config));
+    if($operation==='heartbeat')sv_amz_status_reply($service->heartbeat($config,(string)($input['worker_id'] ?? ''),(string)($input['auth_status'] ?? '')));
     if($operation==='pull'){
         sv_amz_status_service_reply(
             $service->pull(new DateTimeImmutable('now',new DateTimeZone('UTC')))

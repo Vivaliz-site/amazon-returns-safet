@@ -13,7 +13,18 @@ import { parseSafeTStatus } from '../scripts/amazon-returns/safe-t-status-parser
 
 const worker = fileURLToPath(new URL('../scripts/amazon-returns/seller-central-safe-t-read-worker.mjs', import.meta.url));
 const source = fs.readFileSync(worker, 'utf8');
-const cdpSource = source.slice(source.indexOf('class Cdp {'), source.indexOf('\nfunction authState'));
+const cdpStart = source.indexOf('class Cdp {');
+const cdpEnd = source.indexOf('\nfunction authState');
+assert.ok(cdpStart >= 0 && cdpEnd > cdpStart, 'CDP fixture markers must match the real read-worker source');
+const cdpSource = source.slice(cdpStart, cdpEnd);
+
+test('reader worker is host-neutral and uses shared authentication recovery', () => {
+  assert.match(source, /seller-central-auth\.mjs/);
+  assert.match(source, /SELLER_CENTRAL_STATUS_WORKER_ID/);
+  assert.match(source, /SELLER_CENTRAL_BROWSER/);
+  assert.match(source, /ensureSellerCentralAuthenticated/);
+  assert.doesNotMatch(source, /C:\\Users\\FRED\\/);
+});
 const Cdp = vm.runInNewContext(`${cdpSource}\nCdp`, { Error });
 class FakeSocket extends EventTarget { send() {} close() { this.dispatchEvent(new Event('close')); } }
 for (const event of ['close', 'error']) {
@@ -127,4 +138,14 @@ test('new Amazon denial after seller appeal remains denied', () => {
   ].join('\n');
   const observation = parseSafeTStatus(body, { safe_t_id: '45092-65513-7280005', order_id: '702-4847212-7165801' });
   assert.equal(observation.claim_status, 'DENIED');
+});
+
+
+test('read worker is host-neutral and delegates authentication to the shared helper', () => {
+  assert.match(source, /from '\.\/seller-central-auth\.mjs'/);
+  assert.match(source, /SELLER_CENTRAL_STATUS_WORKER_ID/);
+  assert.match(source, /SELLER_CENTRAL_BROWSER/);
+  assert.match(source, /SELLER_CENTRAL_OPERA/);
+  assert.match(source, /ensureSellerCentralAuthenticated/);
+  assert.doesNotMatch(source, /StrictHostKeyChecking=no/);
 });

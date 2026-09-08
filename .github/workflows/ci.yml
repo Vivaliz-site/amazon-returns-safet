@@ -13,6 +13,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
@@ -26,11 +28,32 @@ jobs:
           for test in tests/*.php; do php "$test"; done
           php scripts/audit-tenant-sql.php
           php tests/amazon-returns-tenant-isolation-test.php
-      - name: Syntax
+      - name: Node tests
+        run: |
+          set -e
+          node --test tests/*.test.mjs
+      - name: TOTP tests
+        run: |
+          set -e
+          python3 tests/totp-current.test.py
+          python3 -m py_compile scripts/amazon-returns/totp-current.py
+      - name: Syntax and security contracts
         run: |
           set -e
           find includes api admin workers scripts -name '*.php' -print0 | xargs -0 -n1 php -l
           node --check scripts/amazon-returns/safe-t-status-parser.mjs
+          node --check scripts/amazon-returns/seller-central-auth.mjs
           node --check scripts/amazon-returns/seller-central-safe-t-read-worker.mjs
           node --check scripts/amazon-returns/seller-central-bridge-worker.mjs
           bash -n scripts/install-service.sh
+          bash -n scripts/auto-deploy.sh
+          bash -n scripts/provision-production.sh
+          bash -n scripts/verify-live-tenant-foundation.sh
+          bash -n scripts/amazon-returns/run-seller-central-daily.sh
+          bash -n scripts/provision-seller-central-browser-host.sh
+          bash -n scripts/provision-amazon-totp-authenticator.sh
+          if git grep -n -E 'StrictHostKeyChecking=no|BEGIN OPENSSH PRIVATE KEY|otpauth://' -- scripts deploy includes api admin workers; then
+            echo 'Prohibited secret/SSH weakening marker found.' >&2
+            exit 1
+          fi
+          git diff --check HEAD^

@@ -3,12 +3,14 @@ import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
+import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\bridge.token';
 const CDP_BASE = process.env.SELLER_CENTRAL_CDP_URL || 'http://127.0.0.1:9225';
 const PROFILE = process.env.SELLER_CENTRAL_PROFILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\profile';
-const OPERA = process.env.SELLER_CENTRAL_OPERA || 'C:\\Users\\FRED\\AppData\\Local\\Programs\\Opera developer\\opera.exe';
+const BROWSER = process.env.SELLER_CENTRAL_BROWSER || process.env.SELLER_CENTRAL_OPERA || '';
+const WORKER_ID = process.env.SELLER_CENTRAL_WORKER_ID || 'fred-win-seller-central';
 const POLL_MS = Math.max(10000, Number(process.env.SELLER_CENTRAL_BRIDGE_POLL_MS || 30000));
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
 const HELP_URL = 'https://sellercentral.amazon.com.br/help/center?redirectSource=Hill';
@@ -53,8 +55,8 @@ async function cdpReady() {
 
 async function ensureBrowser() {
   if (await cdpReady()) return;
-  if (!fs.existsSync(OPERA) || !fs.existsSync(PROFILE)) throw new Error('headless Opera profile unavailable');
-  const child = spawn(OPERA, [
+  if (!BROWSER || !fs.existsSync(BROWSER) || !fs.existsSync(PROFILE)) throw new Error('Seller Central browser profile unavailable');
+  const child = spawn(BROWSER, [
     '--headless=new',
     '--disable-gpu',
     '--remote-debugging-port=9225',
@@ -67,7 +69,7 @@ async function ensureBrowser() {
     await sleep(500);
     if (await cdpReady()) return;
   }
-  throw new Error('headless Opera did not expose CDP');
+  throw new Error('Seller Central browser did not expose CDP');
 }
 
 class Cdp {
@@ -170,10 +172,10 @@ class Cdp {
 }
 
 function authenticationState(state) {
-  const combined = `${state.href || ''}\n${state.title || ''}\n${state.text || ''}`.toLowerCase();
-  if (combined.includes('/signin') || combined.includes('iniciar sessão') || combined.includes('sign in')) return 'AUTH_REQUIRED';
-  if (combined.includes('captcha') || combined.includes('digite os caracteres')) return 'HUMAN_CHALLENGE';
-  return 'OK';
+  const classified = classifyAmazonAuthState(state);
+  if (classified === 'AUTHENTICATED') return 'OK';
+  if (classified === 'HUMAN_CHALLENGE') return 'HUMAN_CHALLENGE';
+  return 'AUTH_REQUIRED';
 }
 
 function bridgeResult(status, extra = {}) {
@@ -201,11 +203,19 @@ async function evidence(cdp, uiContract) {
   return { ...safe, snapshot_sha256: sha(JSON.stringify(safe)) };
 }
 
-async function authGate(cdp, uiContract) {
-  const state = await cdp.pageState();
-  const auth = authenticationState(state);
-  if (auth === 'AUTH_REQUIRED') return bridgeResult('AUTH_REQUIRED', { reason: 'SESSION_NOT_AUTHENTICATED', evidence: await evidence(cdp, uiContract) });
+async function authGate(cdp, uiContract, targetUrl = null, waitMs = 5000) {
+  let state = await cdp.pageState();
+  let auth = authenticationState(state);
+  if (auth === 'OK') return null;
   if (auth === 'HUMAN_CHALLENGE') return bridgeResult('HUMAN_CHALLENGE', { reason: 'CAPTCHA_PRESENT', evidence: await evidence(cdp, uiContract) });
+  const recovery = await ensureSellerCentralAuthenticated(cdp);
+  if (recovery.status === 'HUMAN_CHALLENGE') return bridgeResult('HUMAN_CHALLENGE', { reason: recovery.reason, evidence: await evidence(cdp, uiContract) });
+  if (recovery.status !== 'AUTHENTICATED') return bridgeResult('AUTH_REQUIRED', { reason: recovery.reason || 'SESSION_NOT_AUTHENTICATED', evidence: await evidence(cdp, uiContract) });
+  if (targetUrl) await cdp.navigate(targetUrl, waitMs);
+  state = await cdp.pageState();
+  auth = authenticationState(state);
+  if (auth === 'HUMAN_CHALLENGE') return bridgeResult('HUMAN_CHALLENGE', { reason: 'CAPTCHA_PRESENT', evidence: await evidence(cdp, uiContract) });
+  if (auth !== 'OK') return bridgeResult('AUTH_REQUIRED', { reason: 'SESSION_NOT_AUTHENTICATED', evidence: await evidence(cdp, uiContract) });
   return null;
 }
 
@@ -267,7 +277,7 @@ async function safeTSubmit(cdp, job) {
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'INVALID_ORDER_ID' });
   const trackingEvidence = await captureTrackingEvidence(cdp, orderId);
   await cdp.navigate(`${SAFE_T_BASE}/create-v2?ref_=ag_sfdcf_cont_safet`, 5000);
-  const auth = await authGate(cdp, 'safet-v1');
+  const auth = await authGate(cdp, 'safet-v1', `${SAFE_T_BASE}/create-v2?ref_=ag_sfdcf_cont_safet`, 5000);
   if (auth) return auth;
   if (!(await cdp.setKat('kat-input[placeholder="Número do pedido"]', orderId))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ORDER_INPUT_MISSING', evidence: await evidence(cdp, 'safet-v1') });
@@ -367,7 +377,7 @@ async function safeTAppeal(cdp, job) {
   const orderId = text(job.case?.order_id);
   const trackingEvidence = await captureTrackingEvidence(cdp, orderId);
   await cdp.navigate(`${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 5000);
-  const auth = await authGate(cdp, 'safet-v1');
+  const auth = await authGate(cdp, 'safet-v1', `${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 5000);
   if (auth) return auth;
   const narrative = narrativeFor(job, 1500);
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative)})`);
@@ -409,7 +419,7 @@ async function findSupportCase(cdp, job) {
   const known = text(job.case?.support_case_id);
   if (/^\d{8,14}$/.test(known)) return known;
   await cdp.navigate(CASE_LOBBY, 4500);
-  const auth = await authGate(cdp, 'help-v1');
+  const auth = await authGate(cdp, 'help-v1', CASE_LOBBY, 4500);
   if (auth) return null;
   const orderId = text(job.case?.order_id);
   const safeTId = text(job.case?.safe_t_id);
@@ -442,7 +452,7 @@ async function supportOpen(cdp, job) {
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'SUPPORT_ORDER_ID_REQUIRED' });
   await cdp.navigate(HELP_URL, 6000);
-  const auth = await authGate(cdp, 'help-v1');
+  const auth = await authGate(cdp, 'help-v1', HELP_URL, 6000);
   if (auth) return auth;
   if (!(await clickFrameIncludes(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon'))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_FBA_CARD_MISSING', evidence: await evidence(cdp, 'help-v1') });
@@ -503,7 +513,7 @@ async function supportUpdate(cdp, job) {
   const caseId = text(job.case?.support_case_id);
   if (!/^\d{8,14}$/.test(caseId)) return supportOpen(cdp, job);
   await cdp.navigate(`https://sellercentral.amazon.com.br/cu/case-dashboard/view-case?caseID=${encodeURIComponent(caseId)}`, 5000);
-  const auth = await authGate(cdp, 'help-v1');
+  const auth = await authGate(cdp, 'help-v1', `https://sellercentral.amazon.com.br/cu/case-dashboard/view-case?caseID=${encodeURIComponent(caseId)}`, 5000);
   if (auth) return auth;
   const narrative = narrativeFor(job, 9000);
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
@@ -557,7 +567,7 @@ function log(event, data = {}) {
 }
 
 async function runOnce() {
-  const pulled = await bridge('pull', { worker_id: 'fred-win-seller-central' });
+  const pulled = await bridge('pull', { worker_id: WORKER_ID });
   if (pulled.status === 'NO_JOB') return false;
   if (pulled.status !== 'JOB' || !pulled.job) throw new Error(`unexpected pull status ${text(pulled.status)}`);
   const job = pulled.job;
@@ -584,7 +594,7 @@ async function main() {
     return;
   }
   if (process.argv.includes('--heartbeat')) {
-    const heartbeat = await bridge('heartbeat', { worker_id: 'fred-win-seller-central' });
+    const heartbeat = await bridge('heartbeat', { worker_id: WORKER_ID });
     process.stdout.write(`${JSON.stringify(heartbeat)}\n`);
     return;
   }

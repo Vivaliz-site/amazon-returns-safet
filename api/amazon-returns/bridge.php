@@ -71,7 +71,7 @@ try{
     $context=SvAmazonTenantRegistry::resolveCurrent($db,$config);
     $p=SvAmazonTenantPersistence::create($db,$context);
     $service=new SvAmazonReturnsBridgeService($p,$config);
-    if($operation==='heartbeat')sv_amz_bridge_reply($service->heartbeat());
+    if($operation==='heartbeat')sv_amz_bridge_reply($service->heartbeat((string)($input['worker_id'] ?? '')));
     if($operation==='pull')sv_amz_bridge_service_reply($service->pull());
 
     $jobId=filter_var($input['job_id'] ?? null,FILTER_VALIDATE_INT,[

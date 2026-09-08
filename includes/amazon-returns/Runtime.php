@@ -6,6 +6,7 @@ require_once __DIR__ . '/Schema.php';
 require_once __DIR__ . '/PolicySeeder.php';
 require_once __DIR__ . '/TenantContext.php';
 require_once __DIR__ . '/TenantPersistence.php';
+require_once __DIR__ . '/BridgeLiveness.php';
 
 final class SvAmazonReturnsRuntime
 {
@@ -13,13 +14,14 @@ final class SvAmazonReturnsRuntime
     public static function cadences(): array
     {
         return [
-            'gmail'=>300,
-            'scheduler'=>600,
-            'review_operations'=>300,
-            'seller_central'=>300,
-            'financial'=>1800,
-            'sp_api'=>1800,
-            'returns_report'=>7200,
+            'gmail'=>14400,
+            'gmail_refund_reconciliation'=>86400,
+            'scheduler'=>86400,
+            'review_operations'=>14400,
+            'seller_central'=>86400,
+            'financial'=>14400,
+            'sp_api'=>14400,
+            'returns_report'=>14400,
             'health'=>900,
             'policy_monitor'=>86400,
         ];
@@ -77,8 +79,16 @@ final class SvAmazonReturnsRuntime
         )?->fetchColumn();
         $reviewNotifyEmail=trim($config->get('AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL'));
         $reviewNotificationReady=filter_var($reviewNotifyEmail,FILTER_VALIDATE_EMAIL)!==false;
+        $readiness=$config->readiness();
+        $bridgeRequired=$config->enabled() && (($readiness['seller_central_bridge']['ready'] ?? false)===true);
+        $browserLiveness=SvAmazonBridgeLiveness::evaluate(
+            $p->cursors->load('SELLER_CENTRAL','browser_auth'),
+            new DateTimeImmutable('now',new DateTimeZone('UTC')),
+            $bridgeRequired
+        );
+        $healthStatus=($browserLiveness['status'] ?? '')==='DEGRADED' ? 'DEGRADED' : 'OK';
         return [
-            'status'=>'OK',
+            'status'=>$healthStatus,
             'tenant_id'=>$p->context()->tenantId(),
             'amazon_connection_id'=>$p->context()->amazonConnectionId(),
             'tables'=>$tables,
@@ -104,7 +114,8 @@ final class SvAmazonReturnsRuntime
             'source_cursors'=>$p->cursors->count(),
             'mode'=>$config->mode(),
             'enabled'=>$config->enabled(),
-            'readiness'=>$config->readiness(),
+            'readiness'=>$readiness,
+            'seller_central_browser'=>$browserLiveness,
             'write_flags'=>$config->writeFlags(),
         ];
     }

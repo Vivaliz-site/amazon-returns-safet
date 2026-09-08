@@ -50,8 +50,12 @@ rtAssert(!str_contains($daemon,'config/constants.php'),'Daemon cannot load websi
 rtAssert(!str_contains($daemon,'includes/pdo-database.php'),'Daemon cannot load website DB layer.');
 
 $cadence=SvAmazonReturnsRuntime::cadences();
-rtSame(300,$cadence['gmail'],'Gmail cadence.');
-rtSame(600,$cadence['scheduler'],'Scheduler cadence.');
-rtSame(1800,$cadence['financial'],'Financial cadence.');
+foreach(['gmail','review_operations','financial','sp_api','returns_report'] as $task){
+    rtSame(14400,$cadence[$task],$task.' API cadence must be four hours.');
+}
+foreach(['scheduler','seller_central','policy_monitor'] as $task){
+    rtSame(86400,$cadence[$task],$task.' non-API cadence must be daily.');
+}
+rtSame(900,$cadence['health'],'Health monitoring remains frequent and is not an external business routine.');
 
 echo "amazon-returns-runtime-test: OK\n";

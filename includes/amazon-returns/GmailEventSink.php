@@ -11,9 +11,22 @@ final class SvAmazonGmailEventSink
     public const BR_MARKETPLACE_ID = 'A2Q3Y263D00KWC';
 
     /** @return array<string,mixed> */
-    public static function casePatch(array $event): array
+    public static function casePatch(array $event,array $existing=[]): array
     {
         $type = strtoupper(trim((string)($event['event_type'] ?? '')));
+        if ($type === 'REFUND_ISSUED_EMAIL') {
+            $patch = ['state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED];
+            $occurredAt = trim((string)($event['occurred_at'] ?? ''));
+            if ($occurredAt !== '' && trim((string)($existing['refund_at'] ?? '')) === '') {
+                $patch['refund_at'] = $occurredAt;
+            }
+            $amount = $event['amount'] ?? null;
+            if (is_numeric($amount) && (float)$amount >= 0
+                && !is_numeric($existing['refund_amount'] ?? null)) {
+                $patch['refund_amount'] = number_format((float)$amount, 2, '.', '');
+            }
+            return $patch;
+        }
         if ($type === 'SAFE_T_REGISTERED_EMAIL') {
             return ['safe_t_id'=>trim((string)($event['safe_t_id'] ?? '')),'state'=>SvAmazonReturnStates::SAFE_T_SUBMITTED];
         }
@@ -48,7 +61,11 @@ final class SvAmazonGmailEventSink
         $orderId = trim((string)($event['order_id'] ?? ''));
         if ($orderId === '') throw new InvalidArgumentException('Gmail event order_id is required.');
         [$caseId,$itemId] = self::ensureTargetCaseScoped($p, $orderId, $event);
-        $patch = self::casePatch($event);
+        $existing=[];
+        foreach($p->cases->forOrder($orderId) as $row){
+            if((int)($row['id']??0)===$caseId){$existing=$row;break;}
+        }
+        $patch = self::casePatch($event,$existing);
         if ($itemId !== self::UNRESOLVED_ITEM_ID
             && ($patch['state'] ?? null) === SvAmazonReturnStates::POLICY_REVIEW_REQUIRED) {
             unset($patch['state']);
@@ -134,6 +151,10 @@ final class SvAmazonGmailEventSink
             'safe_t_id'=>$event['safe_t_id'] ?? null,
             'amount'=>$event['amount'] ?? null,
             'currency'=>$event['currency'] ?? null,
+            'refund_at'=>strtoupper(trim((string)($event['event_type'] ?? ''))) === 'REFUND_ISSUED_EMAIL'
+                ? ($event['occurred_at'] ?? null) : null,
+            'refund_amount'=>strtoupper(trim((string)($event['event_type'] ?? ''))) === 'REFUND_ISSUED_EMAIL'
+                ? ($event['amount'] ?? null) : null,
             'review_outcome'=>$event['review_outcome'] ?? null,
             'review_suggested_action'=>$event['review_suggested_action'] ?? null,
             'review_reason'=>$event['review_reason'] ?? null,
@@ -145,6 +166,4 @@ final class SvAmazonGmailEventSink
             'content_sha256'=>$event['content_sha256'] ?? null,
         ];
     }
-
-
 }
