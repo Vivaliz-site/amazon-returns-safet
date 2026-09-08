@@ -21,7 +21,8 @@ tpAssert(str_contains($script,$forcedCommandPlain)||str_contains($script,$forced
 
 tpAssert(str_contains($script,'flock'),'Authenticator command must serialize/rate-limit requests.');
 tpAssert(str_contains($script,'SEED_NOT_CONFIGURED'),'Missing production seed must fail closed.');
-tpAssert(str_contains($script,'/var/lib/shopvivaliz/amazon-totp/seed.base32'),'Seed must use the dedicated private path.');
+tpAssert(str_contains($script,'BASE_DIR="/var/lib/shopvivaliz/amazon-totp"'),'Authenticator must use the dedicated private base path.');
+tpAssert(str_contains($script,'SEED_FILE="$BASE_DIR/seed.base32"'),'Seed file must live under the dedicated private base path.');
 tpAssert(!str_contains($script,'StrictHostKeyChecking=no'),'Provisioner must never weaken SSH host verification.');
 tpAssert(!preg_match('/otpauth:\/\//i',$script),'Provisioner must not embed an enrollment URI.');
 tpAssert(!preg_match('/GEZDGNBVGY3TQOJQ/i',$script),'Provisioner must not embed even the test seed.');
