@@ -97,7 +97,11 @@ try{
         'financial_refreshed'=>$financialRefreshed,
     ]);
 }catch(InvalidArgumentException $e){
-    sv_amz_intake_lookup_reply(['success'=>false,'error'=>$e->getMessage()],422);
+    error_log('[amazon-returns-intake-lookup-invalid] '.get_class($e));
+    sv_amz_intake_lookup_reply([
+        'success'=>false,
+        'error'=>'Não foi possível consultar este pedido na Amazon.',
+    ],422);
 }catch(Throwable $e){
     error_log('[amazon-returns-intake-lookup] '.get_class($e));
     sv_amz_intake_lookup_reply([
