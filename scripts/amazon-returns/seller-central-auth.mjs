@@ -129,7 +129,8 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
   const applyCredentials = options.applyCredentials || defaultApplyCredentials;
   const applyTotp = options.applyTotp || defaultApplyTotp;
   const sleep = options.sleep || defaultSleep;
-  const credentialStage = options.credentialStage || defaultCredentialStage;
+  const credentialStage = options.credentialStage
+    || (typeof cdp.evaluate === 'function' ? defaultCredentialStage : null);
   const usernameFile = options.usernameFile ?? process.env.SELLER_CENTRAL_USERNAME_FILE;
   const passwordFile = options.passwordFile ?? process.env.SELLER_CENTRAL_PASSWORD_FILE;
   const totpRequester = options.totpRequester || (() => requestRemoteTotp({
@@ -154,10 +155,13 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
     ? Math.max(1, Math.min(20, Math.floor(configuredStagePolls))) : 10;
   while (auth === 'SIGN_IN') {
     let detectedStage = 'UNKNOWN';
-    try {
-      detectedStage = await credentialStage(cdp);
-    } catch {}
-    if (previousCredentialStage !== null && detectedStage !== 'UNKNOWN' && detectedStage === previousCredentialStage) {
+    if (credentialStage) {
+      try {
+        detectedStage = await credentialStage(cdp);
+      } catch {}
+    }
+    if (credentialStage && previousCredentialStage !== null
+      && (detectedStage === 'UNKNOWN' || detectedStage === previousCredentialStage)) {
       if (++unchangedPolls >= maxStagePolls) return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
       await sleep(500);
       state = await cdp.pageState();

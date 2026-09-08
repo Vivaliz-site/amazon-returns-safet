@@ -272,3 +272,35 @@ test('preserves a legacy boolean credential hook across identifier and password 
   assert.deepEqual(submissions, ['IDENTIFIER', 'PASSWORD']);
   assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
 });
+
+test('waits through a transient unknown stage after a legacy boolean submit', async () => {
+  let stage = 'IDENTIFIER';
+  let auth = 'SIGN_IN';
+  let unknownPolls = 0;
+  const submissions = [];
+  const cdp = { pageState: async () => auth === 'TOTP'
+    ? { href: 'https://www.amazon.com/ap/mfa', title: 'Verificação em duas etapas', text: 'Aplicativo autenticador' }
+    : auth === 'AUTHENTICATED'
+      ? { href: 'https://sellercentral.amazon.com.br/home', title: 'Seller Central', text: 'Início' }
+      : { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: stage } };
+  const result = await ensureSellerCentralAuthenticated(cdp, {
+    usernameFile: '/secure/account', passwordFile: '/secure/password', readSecret: () => 'secret-test-value',
+    credentialStage: async () => {
+      if (stage !== 'TRANSITION') return stage;
+      unknownPolls++;
+      if (unknownPolls >= 3) stage = 'PASSWORD';
+      return stage === 'PASSWORD' ? 'PASSWORD' : 'UNKNOWN';
+    },
+    applyCredentials: async () => {
+      submissions.push(stage);
+      if (stage === 'IDENTIFIER') stage = 'TRANSITION';
+      else if (stage === 'PASSWORD') auth = 'TOTP';
+      return true;
+    },
+    sleep: async () => {},
+    totpRequester: async () => '654321', applyTotp: async () => { auth = 'AUTHENTICATED'; return true; },
+  });
+  assert.deepEqual(submissions, ['IDENTIFIER', 'PASSWORD']);
+  assert.ok(unknownPolls >= 3);
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
+});
