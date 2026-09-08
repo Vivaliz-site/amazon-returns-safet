@@ -152,10 +152,14 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
     if (!applied) return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_UI_UNSUPPORTED' };
     reauthenticated = true;
     await sleep(1200);
+    const previousState = JSON.stringify([state.href ?? '', state.title ?? '', state.text ?? '']);
     state = await cdp.pageState();
     auth = classifyAmazonAuthState(state);
     if (auth === 'HUMAN_CHALLENGE') return { status: 'HUMAN_CHALLENGE', reason: 'AMAZON_HUMAN_CHALLENGE' };
     if (auth === 'UNKNOWN') return { status: 'AUTH_REQUIRED', reason: 'UNKNOWN_AUTH_CHALLENGE' };
+    if (auth === 'SIGN_IN' && JSON.stringify([state.href ?? '', state.title ?? '', state.text ?? '']) === previousState) {
+      return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
+    }
   }
   if (auth === 'SIGN_IN') return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
 
