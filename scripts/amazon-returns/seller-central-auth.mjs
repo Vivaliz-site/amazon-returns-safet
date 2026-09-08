@@ -99,7 +99,7 @@ async function defaultApplyCredentials(cdp, username, password, previousStage = 
     + `const stage=pass?'PASSWORD':(email?'IDENTIFIER':'UNSUPPORTED');if(stage==='UNSUPPORTED')return 'UNSUPPORTED';if(stage===${previous})return 'STAGE_UNCHANGED';\n`
     + `let touched=false;if(email)touched=set(email,${u})||touched;if(pass)touched=set(pass,${p})||touched;if(!touched)return 'UNSUPPORTED';\n`
     + `const button=(pass?document.querySelector('#signInSubmit,input[type="submit"],button[type="submit"]'):document.querySelector('#continue,input[type="submit"],button[type="submit"]'))||document.querySelector('#signInSubmit,#continue');\n`
-    + `if(!button||button.disabled)return 'UNSUPPORTED';button.click();return stage+'_SUBMITTED'})()`;
+    + `if(!button)return 'UNSUPPORTED';if(button.disabled)return 'STAGE_PENDING';button.click();return stage+'_SUBMITTED'})()`;
   return cdp.evaluate(expression);
 }
 
@@ -167,7 +167,7 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
       password = null;
     }
     if (!applied || applied === 'UNSUPPORTED') return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_UI_UNSUPPORTED' };
-    if (applied === 'STAGE_UNCHANGED') {
+    if (applied === 'STAGE_UNCHANGED' || applied === 'STAGE_PENDING') {
       if (++unchangedPolls >= maxStagePolls) return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
       await sleep(500);
       state = await cdp.pageState();

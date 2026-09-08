@@ -218,3 +218,32 @@ test('waits after one password submit without posting it twice', async () => {
   assert.equal(submissions, 1);
   assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
 });
+
+test('retries a pending credential stage without counting a submission', async () => {
+  let auth = 'SIGN_IN';
+  let applyCalls = 0;
+  const cdp = { pageState: async () => auth === 'TOTP'
+    ? { href: 'https://www.amazon.com/ap/mfa', title: 'Verificação em duas etapas', text: 'Aplicativo autenticador' }
+    : auth === 'AUTHENTICATED'
+      ? { href: 'https://sellercentral.amazon.com.br/home', title: 'Seller Central', text: 'Início' }
+      : { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: 'Senha' } };
+  const result = await ensureSellerCentralAuthenticated(cdp, {
+    usernameFile: '/secure/account', passwordFile: '/secure/password', readSecret: () => 'secret-test-value',
+    applyCredentials: async () => {
+      applyCalls++;
+      if (applyCalls < 3) return 'STAGE_PENDING';
+      auth = 'TOTP'; return 'PASSWORD_SUBMITTED';
+    },
+    sleep: async () => {},
+    totpRequester: async () => '654321', applyTotp: async () => { auth = 'AUTHENTICATED'; return true; },
+  });
+  assert.equal(applyCalls, 3);
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
+});
+
+test('default credential helper marks a disabled submit button as pending', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../scripts/amazon-returns/seller-central-auth.mjs', import.meta.url), 'utf8');
+  assert.match(source, /button\.disabled\)return 'STAGE_PENDING'/);
+  assert.doesNotMatch(source, /button\.disabled\)return 'UNSUPPORTED'/);
+});

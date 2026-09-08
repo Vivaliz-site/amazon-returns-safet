@@ -11,4 +11,7 @@ $drain=strpos($installer,"'\$readWorker' --drain");
 wbhAssert($heartbeat!==false,'Windows dispatcher must emit read-process heartbeat before draining.');
 wbhAssert($drain!==false,'Windows dispatcher must still drain the SAFE-T read worker.');
 wbhAssert($heartbeat<$drain,'Windows dispatcher heartbeat must precede the read drain.');
+$between=substr($installer,$heartbeat,$drain-$heartbeat);
+wbhAssert(!str_contains($between,'throw'),'A failed monitoring heartbeat must never abort the Windows drain.');
+wbhAssert(str_contains($between,'Write-Warning'),'Heartbeat failure must remain observable while drain continues.');
 echo "windows-bridge-heartbeat-test: OK\n";
