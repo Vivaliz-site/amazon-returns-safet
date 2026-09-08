@@ -8,6 +8,11 @@ param(
     [string]$TaskName = 'ShopVivaliz Amazon Returns Browser Dispatcher',
     [string]$BridgeEndpoint = 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php',
     [string]$StatusBridgeEndpoint = 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php',
+    [string]$UsernameFile = '',
+    [string]$PasswordFile = '',
+    [string]$TotpHost = '',
+    [string]$TotpKeyFile = '',
+    [string]$TotpKnownHostsFile = '',
     [int]$PollMinutes = 1440,
     [string]$OperaPath = '',
     [string]$ProfilePath = ''
@@ -16,6 +21,7 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($PollMinutes -ne 1440) { throw 'PollMinutes must be 1440 to preserve the approved daily browser cadence.' }
 $node = (Get-Command node.exe -ErrorAction Stop).Source
+$ssh = (Get-Command ssh.exe -ErrorAction Stop).Source
 if ([string]::IsNullOrWhiteSpace($OperaPath)) {
     $OperaPath = Join-Path $env:LOCALAPPDATA 'Programs\Opera developer\opera.exe'
     if (-not (Test-Path $OperaPath)) {
@@ -35,8 +41,13 @@ $trackingEvidence = Join-Path $InstallDir 'TrackingEvidence.mjs'
 $statusParser = Join-Path $InstallDir 'safe-t-status-parser.mjs'
 $logDir = Join-Path $InstallDir 'logs'
 $evidenceDir = Join-Path $InstallDir 'evidence'
+if ([string]::IsNullOrWhiteSpace($UsernameFile)) { $UsernameFile = Join-Path $InstallDir 'amazon.username' }
+if ([string]::IsNullOrWhiteSpace($PasswordFile)) { $PasswordFile = Join-Path $InstallDir 'amazon.password' }
+if ([string]::IsNullOrWhiteSpace($TotpKeyFile)) { $TotpKeyFile = Join-Path $InstallDir 'totp_ed25519' }
+if ([string]::IsNullOrWhiteSpace($TotpKnownHostsFile)) { $TotpKnownHostsFile = Join-Path $InstallDir 'totp_known_hosts' }
+if ([string]::IsNullOrWhiteSpace($TotpHost)) { throw 'TotpHost is required.' }
 
-foreach ($required in @($WorkerSource, $ReadWorkerSource, $AuthSource, $TrackingEvidenceSource, $StatusParserSource, $opera, $profile, $token)) {
+foreach ($required in @($WorkerSource, $ReadWorkerSource, $AuthSource, $TrackingEvidenceSource, $StatusParserSource, $opera, $profile, $token, $UsernameFile, $PasswordFile, $TotpKeyFile, $TotpKnownHostsFile)) {
     if (-not (Test-Path $required)) { throw "Required bridge dependency missing: $required" }
 }
 New-Item -ItemType Directory -Force $InstallDir, $logDir, $evidenceDir | Out-Null
@@ -46,29 +57,61 @@ Copy-Item -Force $AuthSource $authHelper
 Copy-Item -Force $TrackingEvidenceSource $trackingEvidence
 Copy-Item -Force $StatusParserSource $statusParser
 $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-$tokenAcl = Get-Acl $token
-$tokenAcl.SetAccessRuleProtection($true, $false)
-$tokenRule = New-Object System.Security.AccessControl.FileSystemAccessRule($currentUser, 'Read', 'Allow')
-$tokenAcl.SetAccessRule($tokenRule)
-Set-Acl -Path $token -AclObject $tokenAcl
+function Protect-SecretReadFile([string]$Path) {
+    $acl = Get-Acl $Path
+    $acl.SetAccessRuleProtection($true, $false)
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($currentUser, 'Read', 'Allow')
+    $acl.SetAccessRule($rule)
+    Set-Acl -Path $Path -AclObject $acl
+}
+Protect-SecretReadFile $token
+Protect-SecretReadFile $UsernameFile
+Protect-SecretReadFile $PasswordFile
+Protect-SecretReadFile $TotpKeyFile
+Protect-SecretReadFile $TotpKnownHostsFile
+
+function Escape-PowerShellSingleQuoted([string]$Value) { return $Value.Replace("'", "''") }
+$safeBridgeEndpoint=Escape-PowerShellSingleQuoted $BridgeEndpoint
+$safeStatusBridgeEndpoint=Escape-PowerShellSingleQuoted $StatusBridgeEndpoint
+$safeToken=Escape-PowerShellSingleQuoted $token
+$safeProfile=Escape-PowerShellSingleQuoted $profile
+$safeOpera=Escape-PowerShellSingleQuoted $opera
+$safeEvidenceDir=Escape-PowerShellSingleQuoted $evidenceDir
+$safeUsernameFile=Escape-PowerShellSingleQuoted $UsernameFile
+$safePasswordFile=Escape-PowerShellSingleQuoted $PasswordFile
+$safeTotpHost=Escape-PowerShellSingleQuoted $TotpHost
+$safeTotpKeyFile=Escape-PowerShellSingleQuoted $TotpKeyFile
+$safeTotpKnownHostsFile=Escape-PowerShellSingleQuoted $TotpKnownHostsFile
+$safeSsh=Escape-PowerShellSingleQuoted $ssh
+$safeInstallDir=Escape-PowerShellSingleQuoted $InstallDir
+$safeNode=Escape-PowerShellSingleQuoted $node
+$safeReadWorker=Escape-PowerShellSingleQuoted $readWorker
+$safeWorker=Escape-PowerShellSingleQuoted $worker
+$safeLogDir=Escape-PowerShellSingleQuoted $logDir
 
 $runner = Join-Path $InstallDir 'run-browser-dispatcher.ps1'
 $runnerBody = @"
 `$ErrorActionPreference = 'Stop'
-`$env:SELLER_CENTRAL_BRIDGE_ENDPOINT = '$BridgeEndpoint'
-`$env:SELLER_CENTRAL_STATUS_BRIDGE_ENDPOINT = '$StatusBridgeEndpoint'
-`$env:SELLER_CENTRAL_BRIDGE_TOKEN_FILE = '$token'
-`$env:SELLER_CENTRAL_PROFILE = '$profile'
-`$env:SELLER_CENTRAL_OPERA = '$opera'
+`$env:SELLER_CENTRAL_BRIDGE_ENDPOINT = '$safeBridgeEndpoint'
+`$env:SELLER_CENTRAL_STATUS_BRIDGE_ENDPOINT = '$safeStatusBridgeEndpoint'
+`$env:SELLER_CENTRAL_BRIDGE_TOKEN_FILE = '$safeToken'
+`$env:SELLER_CENTRAL_PROFILE = '$safeProfile'
+`$env:SELLER_CENTRAL_OPERA = '$safeOpera'
 `$env:SELLER_CENTRAL_CDP_URL = 'http://127.0.0.1:9225'
 `$env:SELLER_CENTRAL_STATUS_LOCK_PORT = '19225'
-`$env:SELLER_CENTRAL_EVIDENCE_DIR = '$evidenceDir'
+`$env:SELLER_CENTRAL_EVIDENCE_DIR = '$safeEvidenceDir'
+`$env:SELLER_CENTRAL_USERNAME_FILE = '$safeUsernameFile'
+`$env:SELLER_CENTRAL_PASSWORD_FILE = '$safePasswordFile'
+`$env:SELLER_CENTRAL_TOTP_HOST = '$safeTotpHost'
+`$env:SELLER_CENTRAL_TOTP_KEY_FILE = '$safeTotpKeyFile'
+`$env:SELLER_CENTRAL_TOTP_KNOWN_HOSTS_FILE = '$safeTotpKnownHostsFile'
+`$env:SELLER_CENTRAL_TOTP_SSH_BINARY = '$safeSsh'
 
 function Stop-SellerCentralBrowser {
     `$roots = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         `$_.Name -eq 'opera.exe' -and
         `$_.CommandLine -like '*--remote-debugging-port=9225*' -and
-        `$_.CommandLine -like '*--user-data-dir=$profile*'
+        `$_.CommandLine -like '*--user-data-dir=$safeProfile*'
     })
     foreach (`$process in `$roots) {
         & "`$env:SystemRoot\System32\taskkill.exe" /PID `$process.ProcessId /T /F *> `$null
@@ -78,14 +121,14 @@ function Stop-SellerCentralBrowser {
 }
 
 try {
-    Set-Location '$InstallDir'
-    & '$node' '$readWorker' --heartbeat *>> '$logDir\safe-t-read-bridge.log'
+    Set-Location '$safeInstallDir'
+    & '$safeNode' '$safeReadWorker' --heartbeat *>> '$safeLogDir\safe-t-read-bridge.log'
     if (`$LASTEXITCODE -ne 0) { Write-Warning "SAFE-T read heartbeat failed with exit code `$LASTEXITCODE; continuing dispatcher" }
-    & '$node' '$readWorker' --auth-check *>> '$logDir\safe-t-read-bridge.log'
+    & '$safeNode' '$safeReadWorker' --auth-check *>> '$safeLogDir\safe-t-read-bridge.log'
     if (`$LASTEXITCODE -ne 0) { Write-Warning "Seller Central auth check failed with exit code `$LASTEXITCODE; continuing drain" }
-    & '$node' '$readWorker' --drain *>> '$logDir\safe-t-read-bridge.log'
+    & '$safeNode' '$safeReadWorker' --drain *>> '$safeLogDir\safe-t-read-bridge.log'
     if (`$LASTEXITCODE -ne 0) { throw "SAFE-T read worker failed with exit code `$LASTEXITCODE" }
-    & '$node' '$worker' --drain *>> '$logDir\bridge.log'
+    & '$safeNode' '$safeWorker' --drain *>> '$safeLogDir\bridge.log'
     if (`$LASTEXITCODE -ne 0) { throw "Seller Central write worker failed with exit code `$LASTEXITCODE" }
 }
 finally {
