@@ -247,3 +247,28 @@ test('default credential helper marks a disabled submit button as pending', asyn
   assert.match(source, /button\.disabled\)return 'STAGE_PENDING'/);
   assert.doesNotMatch(source, /button\.disabled\)return 'UNSUPPORTED'/);
 });
+
+test('preserves a legacy boolean credential hook across identifier and password stages', async () => {
+  let stage = 'IDENTIFIER';
+  let auth = 'SIGN_IN';
+  const submissions = [];
+  const cdp = { pageState: async () => auth === 'TOTP'
+    ? { href: 'https://www.amazon.com/ap/mfa', title: 'Verificação em duas etapas', text: 'Aplicativo autenticador' }
+    : auth === 'AUTHENTICATED'
+      ? { href: 'https://sellercentral.amazon.com.br/home', title: 'Seller Central', text: 'Início' }
+      : { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: stage } };
+  const result = await ensureSellerCentralAuthenticated(cdp, {
+    usernameFile: '/secure/account', passwordFile: '/secure/password', readSecret: () => 'secret-test-value',
+    credentialStage: async () => stage,
+    applyCredentials: async () => {
+      submissions.push(stage);
+      if (stage === 'IDENTIFIER') stage = 'PASSWORD';
+      else auth = 'TOTP';
+      return true;
+    },
+    sleep: async () => {},
+    totpRequester: async () => '654321', applyTotp: async () => { auth = 'AUTHENTICATED'; return true; },
+  });
+  assert.deepEqual(submissions, ['IDENTIFIER', 'PASSWORD']);
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
+});

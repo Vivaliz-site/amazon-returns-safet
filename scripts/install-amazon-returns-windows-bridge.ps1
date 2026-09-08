@@ -1,19 +1,20 @@
 param(
     [string]$WorkerSource = "$PSScriptRoot\amazon-returns\seller-central-bridge-worker.mjs",
     [string]$ReadWorkerSource = "$PSScriptRoot\amazon-returns\seller-central-safe-t-read-worker.mjs",
+    [string]$AuthSource = "$PSScriptRoot\amazon-returns\seller-central-auth.mjs",
     [string]$TrackingEvidenceSource = "$PSScriptRoot\amazon-returns\TrackingEvidence.mjs",
     [string]$StatusParserSource = "$PSScriptRoot\amazon-returns\safe-t-status-parser.mjs",
     [string]$InstallDir = 'C:\ShopVivaliz\amazon-returns-bridge',
     [string]$TaskName = 'ShopVivaliz Amazon Returns Browser Dispatcher',
     [string]$BridgeEndpoint = 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php',
     [string]$StatusBridgeEndpoint = 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php',
-    [int]$PollMinutes = 5,
+    [int]$PollMinutes = 1440,
     [string]$OperaPath = '',
     [string]$ProfilePath = ''
 )
 
 $ErrorActionPreference = 'Stop'
-if ($PollMinutes -lt 1 -or $PollMinutes -gt 60) { throw 'PollMinutes must be between 1 and 60.' }
+if ($PollMinutes -ne 1440) { throw 'PollMinutes must be 1440 to preserve the approved daily browser cadence.' }
 $node = (Get-Command node.exe -ErrorAction Stop).Source
 if ([string]::IsNullOrWhiteSpace($OperaPath)) {
     $OperaPath = Join-Path $env:LOCALAPPDATA 'Programs\Opera developer\opera.exe'
@@ -29,17 +30,19 @@ $profile = $ProfilePath
 $token = Join-Path $InstallDir 'bridge.token'
 $worker = Join-Path $InstallDir 'seller-central-bridge-worker.mjs'
 $readWorker = Join-Path $InstallDir 'seller-central-safe-t-read-worker.mjs'
+$authHelper = Join-Path $InstallDir 'seller-central-auth.mjs'
 $trackingEvidence = Join-Path $InstallDir 'TrackingEvidence.mjs'
 $statusParser = Join-Path $InstallDir 'safe-t-status-parser.mjs'
 $logDir = Join-Path $InstallDir 'logs'
 $evidenceDir = Join-Path $InstallDir 'evidence'
 
-foreach ($required in @($WorkerSource, $ReadWorkerSource, $TrackingEvidenceSource, $StatusParserSource, $opera, $profile, $token)) {
+foreach ($required in @($WorkerSource, $ReadWorkerSource, $AuthSource, $TrackingEvidenceSource, $StatusParserSource, $opera, $profile, $token)) {
     if (-not (Test-Path $required)) { throw "Required bridge dependency missing: $required" }
 }
 New-Item -ItemType Directory -Force $InstallDir, $logDir, $evidenceDir | Out-Null
 Copy-Item -Force $WorkerSource $worker
 Copy-Item -Force $ReadWorkerSource $readWorker
+Copy-Item -Force $AuthSource $authHelper
 Copy-Item -Force $TrackingEvidenceSource $trackingEvidence
 Copy-Item -Force $StatusParserSource $statusParser
 $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -76,6 +79,8 @@ function Stop-SellerCentralBrowser {
 
 try {
     Set-Location '$InstallDir'
+    & '$node' '$readWorker' --auth-check *>> '$logDir\safe-t-read-bridge.log'
+    if (`$LASTEXITCODE -ne 0) { Write-Warning "SAFE-T browser auth check failed with exit code `$LASTEXITCODE; continuing drain" }
     & '$node' '$readWorker' --heartbeat *>> '$logDir\safe-t-read-bridge.log'
     if (`$LASTEXITCODE -ne 0) { Write-Warning "SAFE-T read heartbeat failed with exit code `$LASTEXITCODE; continuing drain" }
     & '$node' '$readWorker' --drain *>> '$logDir\safe-t-read-bridge.log'

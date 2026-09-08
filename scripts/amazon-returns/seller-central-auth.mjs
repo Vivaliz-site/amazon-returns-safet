@@ -88,6 +88,16 @@ export function readSecretFile(file) {
 
 const defaultSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+async function defaultCredentialStage(cdp) {
+  if (!cdp || typeof cdp.evaluate !== 'function') return 'UNKNOWN';
+  try {
+    const stage = String(await cdp.evaluate(`(()=>{const pass=document.querySelector('#ap_password,input[name="password"],input[type="password"]');const email=document.querySelector('#ap_email,input[name="email"],input[type="email"]');return pass?'PASSWORD':(email?'IDENTIFIER':'UNKNOWN')})()`));
+    return stage === 'PASSWORD' || stage === 'IDENTIFIER' ? stage : 'UNKNOWN';
+  } catch {
+    return 'UNKNOWN';
+  }
+}
+
 async function defaultApplyCredentials(cdp, username, password, previousStage = null) {
   const u = JSON.stringify(String(username));
   const p = JSON.stringify(String(password));
@@ -119,6 +129,7 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
   const applyCredentials = options.applyCredentials || defaultApplyCredentials;
   const applyTotp = options.applyTotp || defaultApplyTotp;
   const sleep = options.sleep || defaultSleep;
+  const credentialStage = options.credentialStage || defaultCredentialStage;
   const usernameFile = options.usernameFile ?? process.env.SELLER_CENTRAL_USERNAME_FILE;
   const passwordFile = options.passwordFile ?? process.env.SELLER_CENTRAL_PASSWORD_FILE;
   const totpRequester = options.totpRequester || (() => requestRemoteTotp({
@@ -142,6 +153,19 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
   const maxStagePolls = Number.isFinite(configuredStagePolls)
     ? Math.max(1, Math.min(20, Math.floor(configuredStagePolls))) : 10;
   while (auth === 'SIGN_IN') {
+    let detectedStage = 'UNKNOWN';
+    try {
+      detectedStage = await credentialStage(cdp);
+    } catch {}
+    if (previousCredentialStage !== null && detectedStage !== 'UNKNOWN' && detectedStage === previousCredentialStage) {
+      if (++unchangedPolls >= maxStagePolls) return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
+      await sleep(500);
+      state = await cdp.pageState();
+      auth = classifyAmazonAuthState(state);
+      if (auth === 'HUMAN_CHALLENGE') return { status: 'HUMAN_CHALLENGE', reason: 'AMAZON_HUMAN_CHALLENGE' };
+      if (auth === 'UNKNOWN') return { status: 'AUTH_REQUIRED', reason: 'UNKNOWN_AUTH_CHALLENGE' };
+      continue;
+    }
     if (credentialSubmissions >= 2 || previousCredentialStage === 'UNKNOWN') {
       if (++unchangedPolls >= maxStagePolls) return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
       await sleep(500);
@@ -177,7 +201,8 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
       continue;
     }
     const submittedStage = applied === 'IDENTIFIER_SUBMITTED' ? 'IDENTIFIER'
-      : applied === 'PASSWORD_SUBMITTED' ? 'PASSWORD' : 'UNKNOWN';
+      : applied === 'PASSWORD_SUBMITTED' ? 'PASSWORD'
+        : applied === true && (detectedStage === 'IDENTIFIER' || detectedStage === 'PASSWORD') ? detectedStage : 'UNKNOWN';
     previousCredentialStage = submittedStage;
     credentialSubmissions++;
     unchangedPolls = 0;
