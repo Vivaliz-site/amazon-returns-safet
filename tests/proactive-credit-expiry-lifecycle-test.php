@@ -12,12 +12,13 @@ $case=[
     'safe_t_id'=>'44235-16847-8784913','state'=>'CREDIT_PENDING','physical_status'=>'NOT_RECEIVED',
     'refund_at'=>'2026-06-24 15:01:01','seller_debit_at'=>'2026-06-24 15:01:01',
     'expected_reimbursement_amount'=>'109.01','reconciled_credit_amount'=>'64.05',
-    'appeal_deadline_at'=>'2026-09-08 12:59:00',
+    'appeal_deadline_at'=>null,
 ];
 $promise=[
     'id'=>1,'case_id'=>23,'event_type'=>'SAFE_T_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
     'occurred_at'=>'2026-09-05 15:31:06','payload'=>[
         'safe_t_id'=>'44235-16847-8784913','claim_status'=>'APPROVED','appeal_submitted'=>false,
+        'appeal_deadline_at'=>'2026-09-08 12:59:00',
         'decision_text'=>'Voce sera reembolsado proativamente ate 12 August 2026. Caso voce nao receba o reembolso no prazo mencionado, apresente um recurso referente a esta reivindicacao.',
     ],
 ];
@@ -30,7 +31,7 @@ $finance=[
     ],
 ];
 $decision=SvAmazonReturnActionRouter::decide($case,[$promise,$finance],['eligible'=>false],$now);
-pclSame('SAFE_T_APPEAL',$decision['action']??null,'Expired proactive promise with verified unpaid seller balance must attempt recovery appeal even when the prior window was missed by the automation');
+pclSame('SAFE_T_APPEAL',$decision['action']??null,'Expired proactive promise with verified unpaid seller balance must use the official status-event appeal deadline when the case projection lags');
 pclSame('MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT',$decision['reason']??null,'Recovery attempt must remain auditable');
 
 $accepted=[
