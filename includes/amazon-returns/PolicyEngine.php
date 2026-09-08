@@ -26,8 +26,14 @@ final class SvAmazonReturnPolicyEngine
         $deliveryBackedUnknownRefund = $initiator === SvAmazonRefundInitiators::UNKNOWN
             && ($case['customer_delivery_confirmed'] ?? false) === true
             && trim((string)($case['refund_at'] ?? '')) !== '';
+        $expectedReimbursement = (float)($case['expected_reimbursement_amount'] ?? 0);
+        $reconciledCredit = (float)($case['reconciled_credit_amount'] ?? 0);
+        $reimbursementBackedUnknownRefund = $initiator === SvAmazonRefundInitiators::UNKNOWN
+            && trim((string)($case['refund_at'] ?? '')) !== ''
+            && $reconciledCredit > 0.00001
+            && $expectedReimbursement > $reconciledCredit + 0.00001;
         if ((!SvAmazonRefundInitiators::isValid($initiator) || $initiator === SvAmazonRefundInitiators::UNKNOWN)
-            && !$deliveryBackedUnknownRefund) {
+            && !$deliveryBackedUnknownRefund && !$reimbursementBackedUnknownRefund) {
             return self::decision(
                 false,
                 null,

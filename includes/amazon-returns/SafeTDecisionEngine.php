@@ -25,17 +25,19 @@ final class SvAmazonSafeTDecisionEngine
         if($this->hasRecoveredCredit($case))return $this->decision('WAIT','ALREADY_REIMBURSED',$caseId);
         $initiator=(string)($case['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN);
         $deliveryBackedUnknownRefund=$this->deliveryBackedUnknownRefund($case);
+        $reimbursementBackedUnknownRefund=$this->partialReimbursementBackedUnknownRefund($case);
         $amazonCustomerRefund=trim((string)($case['refund_at']??''))!=='' && in_array($initiator,[
             SvAmazonRefundInitiators::AMAZON_AUTOMATIC,
             SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
             SvAmazonRefundInitiators::A_TO_Z,
         ],true);
-        $customerRefundConfirmed=$amazonCustomerRefund || $deliveryBackedUnknownRefund;
+        $customerRefundConfirmed=$amazonCustomerRefund || $deliveryBackedUnknownRefund || $reimbursementBackedUnknownRefund;
         $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
         if($safeTId==='' && ($case['program']??'')==='FBA'){
             return $this->classicFbaRecovery($case,$timeline,$now);
         }
-        if($safeTId==='' && (!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN) && $this->hasReimbursementEvidence($case,$timeline)){
+        if($safeTId==='' && (!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN)
+            && $this->hasReimbursementEvidence($case,$timeline) && !$this->hasFreshConfirmedResidual($case,$timeline,$now)){
             return $this->decision('CHECK_FINANCES','PARTIAL_REIMBURSEMENT_VERIFY_BEFORE_NEW_CLAIM',$caseId);
         }
         if($safeTId!=='' && in_array($state,[SvAmazonReturnStates::SAFE_T_DENIED,SvAmazonReturnStates::APPEAL_REQUIRED],true)
@@ -48,7 +50,8 @@ final class SvAmazonSafeTDecisionEngine
 
         if($safeTId==='' && ($policy['eligible']??false)===true){
             if(trim((string)($case['refund_at']??''))==='')return $this->decision('WAIT','REFUND_NOT_CONFIRMED',$caseId);
-            if((!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN) && !$deliveryBackedUnknownRefund){
+            if((!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN)
+                && !$deliveryBackedUnknownRefund && !$reimbursementBackedUnknownRefund){
                 return $this->decision('BLOCKED_REVIEW','REFUND_INITIATOR_UNKNOWN',$caseId);
             }
             if(!$customerRefundConfirmed){
@@ -57,6 +60,17 @@ final class SvAmazonSafeTDecisionEngine
         }
         $requestedWait=SvAmazonRequestedWait::decision($case,$timeline,$now);
         if($requestedWait!==null)return $requestedWait;
+        if($safeTId==='' && $reimbursementBackedUnknownRefund && ($policy['eligible']??false)===true
+            && $this->hasFreshConfirmedResidual($case,$timeline,$now)){
+            $policyId=(string)($policy['policy_version_id']??'unknown');
+            $eligibilityAt=(string)($policy['eligibility_at']??'unknown');
+            return [
+                'action'=>'SAFE_T_SUBMIT',
+                'reason'=>'PARTIAL_REIMBURSEMENT_RESIDUAL_UNPAID',
+                'case_id'=>$caseId,
+                'idempotency_key'=>hash('sha256','safe-t-submit|'.$caseId.'|'.$orderId.'|'.$policyId.'|'.$eligibilityAt),
+            ];
+        }
         $route=SvAmazonReturnActionRouter::decide($case,$timeline,$policy,$now);
         if($route!==null)return $route;
 
@@ -136,7 +150,8 @@ final class SvAmazonSafeTDecisionEngine
         }
 
         if(trim((string)($case['refund_at']??''))==='')return $this->decision('WAIT','REFUND_NOT_CONFIRMED',$caseId);
-        if((!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN) && !$deliveryBackedUnknownRefund){
+        if((!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN)
+            && !$deliveryBackedUnknownRefund && !$reimbursementBackedUnknownRefund){
             return $this->decision('BLOCKED_REVIEW','REFUND_INITIATOR_UNKNOWN',$caseId);
         }
         if(!$customerRefundConfirmed)return $this->decision('WAIT','AMAZON_CUSTOMER_REFUND_NOT_CONFIRMED',$caseId);
@@ -145,7 +160,9 @@ final class SvAmazonSafeTDecisionEngine
 
         $policyId=(string)($policy['policy_version_id'] ?? 'unknown');
         $eligibilityAt=(string)($policy['eligibility_at'] ?? 'unknown');
-        $reason=$deliveryBackedUnknownRefund?'DELIVERED_CUSTOMER_REFUNDED_UNPAID':'FIRST_ELIGIBLE_ATTEMPT';
+        $reason=$reimbursementBackedUnknownRefund
+            ?'PARTIAL_REIMBURSEMENT_RESIDUAL_UNPAID'
+            :($deliveryBackedUnknownRefund?'DELIVERED_CUSTOMER_REFUNDED_UNPAID':'FIRST_ELIGIBLE_ATTEMPT');
         return [
             'action'=>'SAFE_T_SUBMIT',
             'reason'=>$reason,
@@ -285,6 +302,32 @@ final class SvAmazonSafeTDecisionEngine
         return ($case['customer_delivery_confirmed']??false)===true
             && trim((string)($case['refund_at']??''))!==''
             && (string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN)===SvAmazonRefundInitiators::UNKNOWN;
+    }
+
+    private function partialReimbursementBackedUnknownRefund(array $case): bool
+    {
+        $expected=(float)($case['expected_reimbursement_amount']??0);
+        $credited=(float)($case['reconciled_credit_amount']??0);
+        return (string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN)===SvAmazonRefundInitiators::UNKNOWN
+            && trim((string)($case['refund_at']??''))!==''
+            && $credited>0.00001 && $expected>$credited+0.00001;
+    }
+
+    private function hasFreshConfirmedResidual(array $case,array $timeline,DateTimeImmutable $now): bool
+    {
+        $caseId=(int)($case['id']??0);
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='FINANCIAL_RECONCILIATION_CHECKED' || ($event['source']??'')!=='SP_API_FINANCES')continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            if($at>$now || $at<$now->modify('-2 hours'))continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if(($payload['refresh_complete']??false)!==true)continue;
+            if(($payload['unsettled_financial_evidence']??null)!==false)continue;
+            if(($payload['ambiguous_reimbursement_transactions']??null)!==0)continue;
+            if(is_numeric($payload['outstanding_amount']??null) && (float)$payload['outstanding_amount']>0.00001)return true;
+        }
+        return false;
     }
 
     private function hasReimbursementEvidence(array $case,array $timeline): bool
