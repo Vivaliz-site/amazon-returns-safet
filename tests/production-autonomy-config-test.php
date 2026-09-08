@@ -2,10 +2,10 @@
 declare(strict_types=1);
 require_once __DIR__.'/../includes/amazon-returns/Runtime.php';
 $cadence=SvAmazonReturnsRuntime::cadences();
-foreach(['gmail','financial','sp_api','returns_report'] as $task){
+foreach(['gmail','review_operations','financial','sp_api','returns_report'] as $task){
     if(($cadence[$task]??null)!==14400)throw new RuntimeException($task.' API task must run every four hours.');
 }
-foreach(['scheduler','review_operations','seller_central','policy_monitor'] as $task){
+foreach(['scheduler','seller_central','policy_monitor'] as $task){
     if(($cadence[$task]??null)!==86400)throw new RuntimeException($task.' non-API task must run daily.');
 }
 if(($cadence['gmail_refund_reconciliation']??null)!==86400){
