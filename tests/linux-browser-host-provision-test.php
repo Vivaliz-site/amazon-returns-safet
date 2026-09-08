@@ -27,4 +27,9 @@ foreach(['SELLER_CENTRAL_TOTP_HOST','SELLER_CENTRAL_TOTP_KEY_FILE','SELLER_CENTR
 }
 lbAssert(!preg_match('/SELLER_CENTRAL_PASSWORD=[^_]/',$prov),'Provisioner must not inline an Amazon password.');
 lbAssert(!str_contains($prov,'StrictHostKeyChecking=no'),'Provisioner must never weaken TOTP host verification.');
+$prod=(string)file_get_contents($root.'/scripts/provision-production.sh');
+foreach(['amazon-returns-seller-central-browser.service','amazon-returns-seller-central-browser.timer'] as $unit){
+    lbAssert(str_contains($prod,$unit),'Production provisioning must install browser unit: '.$unit);
+}
+lbAssert(!str_contains($prod,'enable --now amazon-returns-seller-central-browser.timer'),'Production deploy must not activate browser automation before TOTP enrollment.');
 echo "linux-browser-host-provision-test: OK\n";

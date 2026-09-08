@@ -223,6 +223,8 @@ apache2ctl configtest
 systemctl reload apache2
 
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-safet.service" /etc/systemd/system/amazon-returns-safet.service
+install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-browser.service" /etc/systemd/system/amazon-returns-seller-central-browser.service
+install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-browser.timer" /etc/systemd/system/amazon-returns-seller-central-browser.timer
 systemctl daemon-reload
 systemctl enable amazon-returns-safet.service >/dev/null
 systemctl restart amazon-returns-safet.service
