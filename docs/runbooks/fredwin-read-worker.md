@@ -29,3 +29,11 @@ Run:
 - full PHP suite and syntax checks required by `docs/REGRAS-DE-ENTREGA.md`
 
 On Fred-Win, verify that the dispatcher returns to `Ready`, no legacy Amazon bridge task remains, no bridge `node.exe` remains after the invocation, and no Opera process using the dedicated port 9225/profile remains when the queue is idle.
+
+
+## Cadencia operacional vigente (2026-09-08)
+
+- APIs: SP-API, Finances, Returns Report e Gmail API a cada 4 horas.
+- Seller Central/browser: uma execucao diaria, serializada e on-demand.
+- Fred-Win deixa de ser dependencia principal; a VM Linux assume o browser principal e KOCEPSV fica como fallback.
+- Nenhuma mudanca de cadencia habilita canais de escrita; os gates existentes continuam obrigatorios.

@@ -13,13 +13,13 @@ final class SvAmazonReturnsRuntime
     public static function cadences(): array
     {
         return [
-            'gmail'=>300,
-            'scheduler'=>600,
-            'review_operations'=>300,
-            'seller_central'=>300,
-            'financial'=>1800,
-            'sp_api'=>1800,
-            'returns_report'=>7200,
+            'gmail'=>14400,
+            'scheduler'=>86400,
+            'review_operations'=>86400,
+            'seller_central'=>86400,
+            'financial'=>14400,
+            'sp_api'=>14400,
+            'returns_report'=>14400,
             'health'=>900,
             'policy_monitor'=>86400,
         ];
