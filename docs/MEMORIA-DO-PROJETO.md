@@ -34,3 +34,10 @@ O Fred-Win nao deve manter os workers de Seller Central nem o Opera dedicado da 
 
 ## Decisao de 08/09/2026: cadencia API e browser
 A decisao de 07/09/2026 sobre bloco de seis horas foi supersedida. Rotinas que dependem de navegador ou outra automacao nao-API devem executar apenas uma vez por dia. Rotinas respaldadas por API, incluindo SP-API, Finances, Returns/Reports e Gmail API, executam a cada quatro horas. O health interno pode continuar mais frequente porque e monitoramento de disponibilidade e nao uma rotina de negocio externa. A mudanca de cadencia nao habilita nenhum gate de escrita.
+
+## Decisão de 08/09/2026: cliente alega não recebimento, mas rastreio confirma entrega
+Quando a mensagem da Amazon ou do cliente alegar que o pedido não foi recebido, mas existir evidência confiável do pedido original marcada como entregue ao destinatário e houver código de rastreamento associado, essa divergência não deve, isoladamente, gerar revisão humana.
+
+O sistema deve responder automaticamente no canal já existente do caso, citando o código de rastreamento e a confirmação de entrega e pedindo que a Amazon revise a inconsistência entre a alegação de não recebimento e o rastreio oficial. A automação deve ser idempotente e reutilizar a mesma SAFE-T/thread, sem abrir fluxo duplicado.
+
+Revisão humana continua obrigatória se houver outra ambiguidade material independente, como ausência de evidência confiável de entrega, rastreamento sem identificação, problema de correlação com o pedido/item, prazo oficial indispensável não resolvido ou outro bloqueio de segurança do canal.
