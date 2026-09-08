@@ -12,10 +12,12 @@ foreach([
     'no-port-forwarding',
     'no-pty',
     'no-X11-forwarding',
-    'command="/usr/local/lib/shopvivaliz/amazon-totp/current"',
 ] as $needle){
     tpAssert(str_contains($script,$needle),'Forced-key restriction missing: '.$needle);
 }
+$forcedCommandPlain='command="/usr/local/lib/shopvivaliz/amazon-totp/current"';
+$forcedCommandEscaped='command=\\"/usr/local/lib/shopvivaliz/amazon-totp/current\\"';
+tpAssert(str_contains($script,$forcedCommandPlain)||str_contains($script,$forcedCommandEscaped),'Forced command must be pinned to the TOTP wrapper.');
 
 tpAssert(str_contains($script,'flock'),'Authenticator command must serialize/rate-limit requests.');
 tpAssert(str_contains($script,'SEED_NOT_CONFIGURED'),'Missing production seed must fail closed.');
