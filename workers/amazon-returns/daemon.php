@@ -303,7 +303,7 @@ final class SvAmazonReturnsDaemon
         $gate=$this->dependencyGate('gmail');
         if(($gate['status'] ?? '')!=='READY_NO_RUNTIME_PROVIDER')return $gate;
         $gmail=new SvAmazonGmailApiClient($this->config);
-        $messages=$gmail->searchMessages('newer_than:90d reembolso iniciado',500);
+        $messages=$gmail->searchMessages('newer_than:90d "reembolso iniciado"',500);
         $ingestor=new SvAmazonGmailIngestor();
         $ingested=$ingestor->ingest(
             $messages,
@@ -312,7 +312,7 @@ final class SvAmazonReturnsDaemon
         );
         return [
             'status'=>'OK',
-            'query'=>'newer_than:90d reembolso iniciado',
+            'query'=>'newer_than:90d "reembolso iniciado"',
             'messages'=>$ingested['messages'],
             'events'=>$ingested['events'],
             'financial_truth'=>false,
