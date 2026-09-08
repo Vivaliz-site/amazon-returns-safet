@@ -31,6 +31,10 @@ final class SvAmazonSafeTDecisionEngine
             SvAmazonRefundInitiators::A_TO_Z,
         ],true);
         $customerRefundConfirmed=$amazonCustomerRefund || $deliveryBackedUnknownRefund;
+        $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        if($safeTId==='' && ($case['program']??'')==='FBA'){
+            return $this->classicFbaRecovery($case,$timeline,$now);
+        }
         if($safeTId==='' && (!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN) && $this->hasReimbursementEvidence($case,$timeline)){
             return $this->decision('CHECK_FINANCES','PARTIAL_REIMBURSEMENT_VERIFY_BEFORE_NEW_CLAIM',$caseId);
         }
@@ -42,7 +46,6 @@ final class SvAmazonSafeTDecisionEngine
             return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
         }
 
-        $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
         if($safeTId==='' && ($policy['eligible']??false)===true){
             if(trim((string)($case['refund_at']??''))==='')return $this->decision('WAIT','REFUND_NOT_CONFIRMED',$caseId);
             if((!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN) && !$deliveryBackedUnknownRefund){
@@ -232,6 +235,36 @@ final class SvAmazonSafeTDecisionEngine
     private function decision(string $action,string $reason,int $caseId): array
     {
         return ['action'=>$action,'reason'=>$reason,'case_id'=>$caseId];
+    }
+
+    private function classicFbaRecovery(array $case,array $timeline,DateTimeImmutable $now): array
+    {
+        $caseId=(int)($case['id']??0);
+        $latest=null;$rank=[0,0];
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='FINANCIAL_RECONCILIATION_CHECKED' || ($event['source']??'')!=='SP_API_FINANCES')continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            $r=[$at->getTimestamp(),(int)($event['id']??0)];
+            if($r>$rank){$latest=$event;$rank=$r;}
+        }
+        if($latest===null)return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
+        $at=(new DateTimeImmutable((string)$latest['occurred_at'],new DateTimeZone('UTC')));
+        $payload=is_array($latest['payload']??null)?$latest['payload']:[];
+        $fresh=$at<=$now && $at>=$now->modify('-2 hours')
+            && ($payload['refresh_complete']??false)===true
+            && ($payload['ambiguous_reimbursement_transactions']??null)===0
+            && ($payload['unsettled_financial_evidence']??null)===false
+            && is_numeric($payload['outstanding_amount']??null)
+            && (float)$payload['outstanding_amount']>0;
+        if(!$fresh || trim((string)($case['refund_at']??''))==='')return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
+        if($this->hasActiveSupportCase($case))return $this->decision('WAIT','SUPPORT_ESCALATION_ALREADY_ACTIVE',$caseId);
+        return [
+            'action'=>'SELLER_SUPPORT_OPEN',
+            'reason'=>'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION',
+            'case_id'=>$caseId,
+            'idempotency_key'=>hash('sha256','classic-fba-support-open|'.$caseId.'|'.(int)($latest['id']??0).'|'.(string)$payload['outstanding_amount']),
+        ];
     }
 
     private function sellerAppConfirmedPhysicalReceipt(array $case,array $timeline): bool

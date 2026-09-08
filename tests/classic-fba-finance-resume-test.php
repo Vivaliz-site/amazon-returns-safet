@@ -1,0 +1,45 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/../includes/amazon-returns/SafeTDecisionEngine.php';
+
+function cffrSame(mixed $want,mixed $got,string $why):void{
+    if($want!==$got)throw new RuntimeException($why.' expected='.json_encode($want).' actual='.json_encode($got));
+}
+
+$engine=new SvAmazonSafeTDecisionEngine();
+$now=new DateTimeImmutable('2026-09-08 14:30:00',new DateTimeZone('UTC'));
+$policy=['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'];
+$base=[
+    'id'=>496,'amazon_order_id'=>'702-2751217-8386605','program'=>'FBA','safe_t_id'=>null,
+    'state'=>'POLICY_REVIEW_REQUIRED','physical_status'=>'NOT_RECEIVED',
+    'refund_at'=>'2026-04-28 21:06:57','seller_debit_at'=>'2026-04-28 21:06:57',
+    'refund_initiator'=>'UNKNOWN','expected_reimbursement_amount'=>'106.14','reconciled_credit_amount'=>'0.00',
+];
+$finance=[
+    'id'=>1,'case_id'=>496,'event_type'=>'FINANCIAL_RECONCILIATION_CHECKED','source'=>'SP_API_FINANCES',
+    'occurred_at'=>'2026-09-08 14:01:33','payload'=>[
+        'refresh_complete'=>true,'credit_amount'=>'0.00','outstanding_amount'=>'106.14',
+        'unclassified_transactions'=>3,'ambiguous_reimbursement_transactions'=>0,
+        'unsettled_financial_evidence'=>false,
+    ],
+];
+$fresh=$engine->nextAction($base,[$finance],$policy,$now);
+cffrSame('SELLER_SUPPORT_OPEN',$fresh['action']??null,'Classic FBA with fresh verified unpaid balance must leave CHECK_FINANCES and open Seller Support');
+cffrSame('CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION',$fresh['reason']??null,'Classic FBA escalation reason must be auditable');
+
+$partial=$base;
+$partial['id']=508;$partial['amazon_order_id']='702-5835321-5101017';
+$partial['expected_reimbursement_amount']='71.31';$partial['reconciled_credit_amount']='64.42';
+$financePartial=$finance;$financePartial['case_id']=508;
+$financePartial['payload']['credit_amount']='64.42';$financePartial['payload']['outstanding_amount']='6.89';
+$partialDecision=$engine->nextAction($partial,[$financePartial],$policy,$now);
+cffrSame('SELLER_SUPPORT_OPEN',$partialDecision['action']??null,'Classic FBA partial reimbursement above tolerance must resume to Seller Support after finance verification');
+
+$stale=$finance;$stale['occurred_at']='2026-09-08 10:00:00';
+cffrSame('CHECK_FINANCES',$engine->nextAction($base,[$stale],$policy,$now)['action']??null,'Classic FBA requires a fresh finance receipt before escalation');
+
+$active=$base;$active['support_case_id']='12345678901';$active['support_case_status']='OPEN';
+$wait=$engine->nextAction($active,[$finance],$policy,$now);
+cffrSame('WAIT',$wait['action']??null,'Existing Seller Support case must suppress duplicate FBA escalation');
+cffrSame('SUPPORT_ESCALATION_ALREADY_ACTIVE',$wait['reason']??null,'Duplicate Seller Support suppression must remain auditable');
+echo "classic-fba-finance-resume-test: OK\n";
