@@ -15,6 +15,7 @@ final class SvAmazonReturnsRuntime
         return [
             'gmail'=>300,
             'scheduler'=>600,
+            'review_operations'=>300,
             'seller_central'=>300,
             'financial'=>1800,
             'sp_api'=>1800,
@@ -74,6 +75,8 @@ final class SvAmazonReturnsRuntime
             "SELECT COUNT(*) FROM information_schema.tables "
             . "WHERE table_schema=DATABASE() AND table_name LIKE 'amazon_return_%'"
         )?->fetchColumn();
+        $reviewNotifyEmail=trim($config->get('AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL'));
+        $reviewNotificationReady=filter_var($reviewNotifyEmail,FILTER_VALIDATE_EMAIL)!==false;
         return [
             'status'=>'OK',
             'tenant_id'=>$p->context()->tenantId(),
@@ -87,6 +90,7 @@ final class SvAmazonReturnsRuntime
             'rule_applications'=>$p->ruleApplications->countAll(),
             'ai_suggestion_failures'=>$p->reviews->countAiFailures(),
             'review_ai_ready'=>$config->reviewAiReady(),
+            'review_notification_ready'=>$reviewNotificationReady,
             'learned_rule_execution_enabled'=>$config->learnedRuleExecutionEnabled(),
             'review_memory'=>[
                 'pending_reviews'=>$p->reviews->countOpen(),
@@ -94,6 +98,7 @@ final class SvAmazonReturnsRuntime
                 'rule_applications'=>$p->ruleApplications->countAll(),
                 'ai_suggestion_failures'=>$p->reviews->countAiFailures(),
                 'review_ai_ready'=>$config->reviewAiReady(),
+                'review_notification_ready'=>$reviewNotificationReady,
                 'learned_rule_execution_enabled'=>$config->learnedRuleExecutionEnabled(),
             ],
             'source_cursors'=>$p->cursors->count(),
