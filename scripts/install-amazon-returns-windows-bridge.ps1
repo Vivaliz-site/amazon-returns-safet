@@ -76,6 +76,10 @@ function Stop-SellerCentralBrowser {
 
 try {
     Set-Location '$InstallDir'
+    & '$node' '$readWorker' --heartbeat *>> '$logDir\safe-t-read-bridge.log'
+    if (`$LASTEXITCODE -ne 0) { Write-Warning "SAFE-T read heartbeat failed with exit code `$LASTEXITCODE; continuing dispatcher" }
+    & '$node' '$readWorker' --auth-check *>> '$logDir\safe-t-read-bridge.log'
+    if (`$LASTEXITCODE -ne 0) { Write-Warning "Seller Central auth check failed with exit code `$LASTEXITCODE; continuing drain" }
     & '$node' '$readWorker' --drain *>> '$logDir\safe-t-read-bridge.log'
     if (`$LASTEXITCODE -ne 0) { throw "SAFE-T read worker failed with exit code `$LASTEXITCODE" }
     & '$node' '$worker' --drain *>> '$logDir\bridge.log'

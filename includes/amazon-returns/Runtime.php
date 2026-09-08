@@ -84,7 +84,8 @@ final class SvAmazonReturnsRuntime
         $browserLiveness=SvAmazonBridgeLiveness::evaluate(
             $p->cursors->load('SELLER_CENTRAL','browser_auth'),
             new DateTimeImmutable('now',new DateTimeZone('UTC')),
-            $bridgeRequired
+            $bridgeRequired,
+            $p->cursors->load('SELLER_CENTRAL','read_process_heartbeat')
         );
         $healthStatus=($browserLiveness['status'] ?? '')==='DEGRADED' ? 'DEGRADED' : 'OK';
         return [
