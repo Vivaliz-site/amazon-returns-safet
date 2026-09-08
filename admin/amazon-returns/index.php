@@ -22,14 +22,14 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <button type="button" id="review-alert" class="review-alert hidden" aria-live="polite"></button>
 <div id="cockpit-error" class="error" role="alert"></div>
 <form id="filters" class="filters" onsubmit="return false">
-<label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, SAFE-T ou SKU"></label>
+<label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, NF, SAFE-T ou SKU"></label>
 <label>Situação<select data-filter="state"><option value="">Todas</option><option value="SAFE_T_DENIED">SAFE-T negado</option><option value="APPEAL_REQUIRED">Recurso necessário</option><option value="APPEAL_SUBMITTED">Recurso enviado</option><option value="CREDIT_PENDING">Crédito pendente</option><option value="RECOVERED">Ressarcido</option></select></label>
 <label>Próxima ação<select data-filter="action"><option value="">Todas</option><option value="SAFE_T_SUBMIT">Solicitar ressarcimento SAFE-T</option><option value="SAFE_T_APPEAL">Recorrer no SAFE-T</option><option value="SAFE_T_EMAIL_REVIEW">Revisar e-mail do SAFE-T</option><option value="SELLER_SUPPORT_OPEN">Abrir chamado no Suporte ao Vendedor</option><option value="WAIT">Aguardar</option><option value="HUMAN_REVIEW">Precisa da sua decisão</option></select></label>
 <label>Tipo de logística<select data-filter="program"><option value="">Todos</option><option value="STANDARD">Padrão</option><option value="FBA_ONSITE">FBA no local</option><option value="DELIVERY_BY_AMAZON">Entrega pela Amazon</option></select></label>
 <label>Recebimento<select data-filter="physical_status"><option value="">Todos</option><option value="NOT_RECEIVED">Não recebido</option><option value="RECEIVED_OK">Recebido sem divergência</option><option value="RECEIVED_DISCREPANT">Recebido com divergência</option></select></label>
 <label>Prazo<select data-filter="deadline"><option value="">Todos</option><option value="overdue">Vencido</option><option value="today">Hoje</option><option value="7d">Próximos 7 dias</option></select></label>
 </form>
-<div class="workspace"><section><div class="result-head"><h2 id="result-count">Casos</h2><span class="muted">Clique em Abrir para ver todo o histórico.</span></div><section id="case-list" class="case-list" aria-live="polite"></section><div id="pager" class="pager"></div></section><aside id="case-detail" class="case-detail" aria-label="Detalhes do caso"><h2>Detalhes do caso</h2><p class="muted">Selecione um caso para ver valores, prazos, histórico de ações e mensagens.</p></aside></div>
+<div class="workspace"><section><div class="result-head"><h2 id="result-count">Casos</h2><span class="muted">Clique em Abrir para ver a situação atual. O histórico fica fechado até você solicitar.</span></div><section id="case-list" class="case-list" aria-live="polite"></section><div id="pager" class="pager"></div></section><aside id="case-detail" class="case-detail" aria-label="Detalhes do caso"><h2>Detalhes do caso</h2><p class="muted">Selecione um caso para ver a situação atual, valores e prazos. O histórico completo fica recolhido.</p></aside></div>
 <section id="review-panel" class="review-panel hidden" aria-label="Caso que precisa da sua decisão">
 <input type="hidden" id="review-ai-csrf" value="<?=htmlspecialchars($reviewAiCsrf,ENT_QUOTES,'UTF-8')?>">
 <input type="hidden" id="review-preview-csrf" value="<?=htmlspecialchars($reviewPreviewCsrf,ENT_QUOTES,'UTF-8')?>">
@@ -43,4 +43,4 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <div class="review-submit"><button type="button" id="review-preview">Ver casos afetados</button><button type="button" id="review-confirm" disabled>Confirmar decisão</button></div>
 </section>
 </section>
-</main><script src="/admin/amazon-returns/assets/cockpit.js" defer></script><script src="/admin/amazon-returns/assets/operator-language.js" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=review-open-1" defer></script></body></html>
+</main><script src="/admin/amazon-returns/assets/cockpit.js" defer></script><script src="/admin/amazon-returns/assets/operator-language.js" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=review-open-1" defer></script><script src="/admin/amazon-returns/assets/ux-polish.js?v=1" defer></script></body></html>

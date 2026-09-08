@@ -2,14 +2,11 @@
 declare(strict_types=1);
 require_once __DIR__.'/../includes/amazon-returns/Runtime.php';
 $cadence=SvAmazonReturnsRuntime::cadences();
-foreach(['gmail','review_operations','financial','sp_api','returns_report'] as $task){
-    if(($cadence[$task]??null)!==14400)throw new RuntimeException($task.' API task must run every four hours.');
+foreach(['gmail','gmail_refund_reconciliation','financial','sp_api','returns_report','scheduler','seller_central','policy_monitor'] as $task){
+    if(($cadence[$task]??null)!==86400)throw new RuntimeException($task.' external business task must run daily.');
 }
-foreach(['scheduler','seller_central','policy_monitor'] as $task){
-    if(($cadence[$task]??null)!==86400)throw new RuntimeException($task.' non-API task must run daily.');
-}
-if(($cadence['gmail_refund_reconciliation']??null)!==86400){
-    throw new RuntimeException('Gmail buyer-refund reconciliation must run daily.');
+if(($cadence['review_operations']??null)!==14400){
+    throw new RuntimeException('Internal review follow-up may remain every four hours.');
 }
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 if(!str_contains($daemon,'gmail_refund_reconciliation') || !str_contains($daemon,'reembolso iniciado')){

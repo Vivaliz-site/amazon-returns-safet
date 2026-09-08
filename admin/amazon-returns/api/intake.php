@@ -143,6 +143,12 @@ if($caseId===false){
     ],422);
 }
 $note=mb_substr(trim((string)($input['note'] ?? '')),0,2000,'UTF-8');
+$salesInvoiceNumber=trim((string)($input['sales_invoice_number'] ?? ''));
+if($salesInvoiceNumber!=='' && preg_match('/^[0-9]{1,20}$/',$salesInvoiceNumber)!==1){
+    sv_amz_intake_reply([
+        'success'=>false,'error'=>'Informe somente os números da NF de venda.',
+    ],422);
+}
 $db=amazon_returns_pdo();
 if(!$db instanceof PDO){
     sv_amz_intake_reply(['success'=>false,'error'=>'Banco indisponível.'],503);
@@ -157,9 +163,9 @@ try{
     $p->cases->assertOwned((int)$caseId);
     $case=$p->cases->find((int)$caseId);
     if(!is_array($case))throw new OutOfBoundsException('Caso não encontrado.');
-    $outstanding=max(
-        0,(int)$case['quantity_refunded']-(int)$case['quantity_received']
-    );
+    $knownRefundQuantity=(int)$case['quantity_refunded'];
+    $expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case['quantity_ordered']);
+    $outstanding=max(0,$expectedQuantity-(int)$case['quantity_received']);
     if($quantity>$outstanding){
         throw new InvalidArgumentException(
             'Quantidade recebida excede a quantidade ainda pendente.'
@@ -194,10 +200,11 @@ try{
             'quantity'=>(int)$quantity,
             'condition'=>$condition,
             'note'=>$note,
+            'sales_invoice_number'=>$salesInvoiceNumber!=='' ? $salesInvoiceNumber : null,
             'operator_id'=>crc32(SvAmazonReturnsAdminAuth::username()),
         ],
         'evidence_sha256'=>hash(
-            'sha256',implode('|',$photoHashes).'|'.$condition.'|'.$note
+            'sha256',implode('|',$photoHashes).'|'.$condition.'|'.$note.'|'.$salesInvoiceNumber
         ),
     ]);
     foreach($stored as $photo){

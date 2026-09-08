@@ -41,3 +41,14 @@ Quando a mensagem da Amazon ou do cliente alegar que o pedido não foi recebido,
 O sistema deve responder automaticamente no canal já existente do caso, citando o código de rastreamento e a confirmação de entrega e pedindo que a Amazon revise a inconsistência entre a alegação de não recebimento e o rastreio oficial. A automação deve ser idempotente e reutilizar a mesma SAFE-T/thread, sem abrir fluxo duplicado.
 
 Revisão humana continua obrigatória se houver outra ambiguidade material independente, como ausência de evidência confiável de entrega, rastreamento sem identificação, problema de correlação com o pedido/item, prazo oficial indispensável não resolvido ou outro bloqueio de segurança do canal.
+
+## Decisão de 08/09/2026: consultas rotineiras de negócio uma vez por dia
+Esta decisão supersede a regra anterior de consultas por API a cada quatro horas. Consultas rotineiras de negócio em fontes externas — Gmail API, SP-API Orders/Finances, Returns/Reports e Seller Central — devem executar **uma vez por dia**. O monitoramento técnico de saúde pode continuar mais frequente porque não consulta o estado comercial dos casos.
+
+A redução de cadência não se aplica a uma consulta manual solicitada pelo usuário na interface. Ao informar um número de pedido em **Registrar devolução recebida**, o aplicativo deve verificar o banco local e, se o pedido ainda não existir, consultar a Amazon imediatamente e sincronizá-lo antes de informar que não encontrou. Um pedido existente na Amazon não pode ser apresentado como inexistente apenas porque a ingestão automática diária ainda não o trouxe para o banco local.
+
+O registro de recebimento deve aceitar opcionalmente o **número da NF de venda** e preservar essa informação no evento de recebimento. A quantidade física recebida deve ser validada contra a quantidade vendida/pedida, e não ficar impossibilitada apenas porque a projeção do reembolso ainda não foi atualizada.
+
+Na interface do usuário, revisão e consulta de caso devem priorizar linguagem simples e objetiva. Termos/códigos internos permanecem no backend. A revisão deve mostrar primeiro o que aconteceu e o que já foi verificado, depois explicar por que uma decisão é necessária e apresentar a recomendação. A linha do tempo deve ficar recolhida por padrão e abrir somente quando o usuário escolher **Ver histórico**.
+
+A cadência diária não pode atrasar uma ação que já tenha data oficial conhecida (por exemplo, retomada solicitada pela Amazon ou prazo de recurso). Essas ações continuam obedecendo à data registrada, com as verificações de segurança e idempotência do fluxo.
