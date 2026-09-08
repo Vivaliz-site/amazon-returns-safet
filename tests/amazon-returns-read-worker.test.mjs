@@ -128,3 +128,13 @@ test('new Amazon denial after seller appeal remains denied', () => {
   const observation = parseSafeTStatus(body, { safe_t_id: '45092-65513-7280005', order_id: '702-4847212-7165801' });
   assert.equal(observation.claim_status, 'DENIED');
 });
+
+
+test('read worker is host-neutral and delegates authentication to the shared helper', () => {
+  assert.match(source, /from '\.\/seller-central-auth\.mjs'/);
+  assert.match(source, /SELLER_CENTRAL_STATUS_WORKER_ID/);
+  assert.match(source, /SELLER_CENTRAL_BROWSER/);
+  assert.match(source, /SELLER_CENTRAL_OPERA/);
+  assert.match(source, /ensureSellerCentralAuthenticated/);
+  assert.doesNotMatch(source, /StrictHostKeyChecking=no/);
+});
