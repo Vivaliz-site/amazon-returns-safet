@@ -44,6 +44,7 @@ $allowlist=array_fill_keys([
     'includes/amazon-returns/TenantRegistry.php',
     'includes/amazon-returns/CaseRepository.php',
     'includes/amazon-returns/EvidenceStore.php',
+    'includes/amazon-returns/InvoiceSearch.php',
     'includes/amazon-returns/PolicyRepository.php',
     'includes/amazon-returns/ShadowAuditRepository.php',
     'includes/amazon-returns/SourceCursorStore.php',
