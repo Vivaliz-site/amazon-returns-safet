@@ -44,15 +44,17 @@ rtAssert(str_contains($daemon,"['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_
 rtAssert(str_contains($daemon,'amazon_returns_pdo()'),'Daemon must use standalone DB bootstrap.');
 rtAssert(str_contains($daemon,'listSafeTReimbursements'),'Daemon must read documented Finances v0 SAFE-T reimbursements.');
 rtAssert(str_contains($daemon,'persistSafeTReimbursements'),'Daemon must persist SAFE-T reimbursements through tenant-scoped stores.');
+rtAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'Internal scheduler must be able to force a fresh financial read when a decision reaches its recheck point.');
 rtAssert(!str_contains($daemon,'EventStore.php'),'Daemon cannot load global EventStore.');
 rtAssert(!str_contains($daemon,'Outbox.php'),'Daemon cannot load global Outbox.');
 rtAssert(!str_contains($daemon,'config/constants.php'),'Daemon cannot load website constants.');
 rtAssert(!str_contains($daemon,'includes/pdo-database.php'),'Daemon cannot load website DB layer.');
 
 $cadence=SvAmazonReturnsRuntime::cadences();
-foreach(['gmail','gmail_refund_reconciliation','financial','sp_api','returns_report','scheduler','seller_central','policy_monitor'] as $task){
+foreach(['gmail','gmail_refund_reconciliation','financial','sp_api','returns_report','seller_central','policy_monitor'] as $task){
     rtSame(86400,$cadence[$task],$task.' external business consultation must be daily.');
 }
+rtSame(300,$cadence['scheduler'],'Internal deadline/action scheduler must run every five minutes.');
 rtSame(14400,$cadence['review_operations'],'Internal review follow-up is not an external business consultation.');
 rtSame(900,$cadence['health'],'Health monitoring remains frequent and is not an external business routine.');
 

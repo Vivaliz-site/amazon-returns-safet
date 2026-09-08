@@ -16,7 +16,7 @@ final class SvAmazonReturnsRuntime
         return [
             'gmail'=>86400,
             'gmail_refund_reconciliation'=>86400,
-            'scheduler'=>86400,
+            'scheduler'=>300,
             'review_operations'=>14400,
             'seller_central'=>86400,
             'financial'=>86400,
