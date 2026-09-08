@@ -9,6 +9,7 @@ require_once dirname(__DIR__,2).'/includes/amazon-returns/TenantRegistry.php';
 require_once dirname(__DIR__,2).'/includes/amazon-returns/TenantPersistence.php';
 require_once dirname(__DIR__,2).'/includes/amazon-returns/RemoteBridge.php';
 require_once dirname(__DIR__,2).'/includes/amazon-returns/BridgeService.php';
+require_once dirname(__DIR__,2).'/includes/amazon-returns/HttpJsonRequest.php';
 
 header_remove('X-Powered-By');
 header('Content-Type: application/json; charset=utf-8');
@@ -50,8 +51,13 @@ if(strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? ''))!=='POST'){
 if((int)($_SERVER['CONTENT_LENGTH'] ?? 0)>131072){
     sv_amz_bridge_reply(['status'=>'PAYLOAD_TOO_LARGE'],413);
 }
-$input=json_decode((string)file_get_contents('php://input'),true);
-if(!is_array($input))sv_amz_bridge_reply(['status'=>'INVALID_JSON'],400);
+try{
+    $input=SvAmazonReturnsHttpJsonRequest::decodeObject((string)file_get_contents('php://input'),131072);
+}catch(LengthException){
+    sv_amz_bridge_reply(['status'=>'PAYLOAD_TOO_LARGE'],413);
+}catch(UnexpectedValueException){
+    sv_amz_bridge_reply(['status'=>'INVALID_JSON'],400);
+}
 $operation=strtolower(trim((string)($input['operation'] ?? '')));
 if(!in_array($operation,['heartbeat','pull','result'],true)){
     sv_amz_bridge_reply(['status'=>'INVALID_OPERATION'],400);
