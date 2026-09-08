@@ -41,6 +41,13 @@ foreach([
     'actionLabel(suggestion.action)',
     'localizedJson(ctx.facts)',
 ] as $needle) cuAssert(str_contains($js,$needle),'Operator data is still not localized through '.$needle);
+foreach([
+    "REFUND_DETECTED:'Reembolso detectado'",
+    "SAFE_T_APPROVED:'SAFE-T aprovado'",
+    "IN_TRANSIT:'Em trânsito'",
+    "UNKNOWN:'Programa não identificado'",
+    "return 'Código interno não reconhecido'",
+] as $needle) cuAssert(str_contains($js,$needle),'Portuguese fallback/state coverage missing: '.$needle);
 $rawSnippets=[
     <<<'RAW'
 `${c.state||'—'} · ${c.physical_status||'—'}`
