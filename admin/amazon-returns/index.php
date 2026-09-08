@@ -43,4 +43,4 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <div class="review-submit"><button type="button" id="review-preview">Ver casos afetados</button><button type="button" id="review-confirm" disabled>Confirmar decisão</button></div>
 </section>
 </section>
-</main><script src="/admin/amazon-returns/assets/cockpit.js" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=review-open-1" defer></script></body></html>
+</main><script src="/admin/amazon-returns/assets/cockpit.js" defer></script><script src="/admin/amazon-returns/assets/operator-language.js" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=review-open-1" defer></script></body></html>
