@@ -20,24 +20,27 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$SELLER_CENTRAL_PROFILE"
 
-if ! curl -fsS --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then
-  "$SELLER_CENTRAL_BROWSER" \
-    --headless=new \
-    --disable-gpu \
-    --remote-debugging-address=127.0.0.1 \
-    "--remote-debugging-port=$CDP_PORT" \
-    "--user-data-dir=$SELLER_CENTRAL_PROFILE" \
-    --no-first-run \
-    --no-default-browser-check \
-    about:blank >/dev/null 2>&1 &
-  browser_pid="$!"
-  ready=0
-  for _ in $(seq 1 40); do
-    if curl -fsS --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then ready=1; break; fi
-    sleep 0.5
-  done
-  [[ "$ready" -eq 1 ]] || { echo "Seller Central CDP did not become ready" >&2; exit 75; }
+if curl -fsS --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then
+  echo "PREEXISTING_CDP_UNOWNED" >&2
+  exit 76
 fi
+
+"$SELLER_CENTRAL_BROWSER" \
+  --headless=new \
+  --disable-gpu \
+  --remote-debugging-address=127.0.0.1 \
+  "--remote-debugging-port=$CDP_PORT" \
+  "--user-data-dir=$SELLER_CENTRAL_PROFILE" \
+  --no-first-run \
+  --no-default-browser-check \
+  about:blank >/dev/null 2>&1 &
+browser_pid="$!"
+ready=0
+for _ in $(seq 1 40); do
+  if curl -fsS --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then ready=1; break; fi
+  sleep 0.5
+done
+[[ "$ready" -eq 1 ]] || { echo "Seller Central CDP did not become ready" >&2; exit 75; }
 
 /usr/bin/node "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check
 /usr/bin/node "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --drain
