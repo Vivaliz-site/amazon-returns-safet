@@ -8,6 +8,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitFilters.php';
+require_once __DIR__.'/../../../includes/amazon-returns/InvoiceSearch.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 require_once __DIR__.'/../../../includes/amazon-returns/PolicyEngine.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SafeTDecisionEngine.php';
@@ -28,19 +29,7 @@ try{
     $queryPage=$requiresPostFilter?1:$filters->page();$queryPerPage=$requiresPostFilter?1000:$filters->perPage();
     $found=$p->cases->search($sqlFilters,$queryPage,$queryPerPage);
     if($searchTerm!==''){
-        $invoiceStmt=$db->prepare(
-            "SELECT DISTINCT case_id FROM amazon_return_events "
-            ."WHERE tenant_id=:invoice_tenant_id AND amazon_connection_id=:invoice_connection_id "
-            ."AND event_type='PHYSICAL_RECEIVED' "
-            ."AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.sales_invoice_number')) LIKE :q_invoice "
-            ."ORDER BY case_id LIMIT 1000"
-        );
-        $invoiceStmt->execute([
-            ':invoice_tenant_id'=>$context->tenantId(),
-            ':invoice_connection_id'=>$context->amazonConnectionId(),
-            ':q_invoice'=>'%'.$searchTerm.'%',
-        ]);
-        $invoiceCaseIds=array_map('intval',$invoiceStmt->fetchAll(PDO::FETCH_COLUMN));
+        $invoiceCaseIds=SvAmazonInvoiceSearch::caseIds($db,$context,$searchTerm);
         $needle=mb_strtolower($searchTerm,'UTF-8');
         $found['items']=array_values(array_filter(
             $found['items'],
