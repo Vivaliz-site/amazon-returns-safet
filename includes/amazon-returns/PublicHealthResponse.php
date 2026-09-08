@@ -7,7 +7,7 @@ final class SvAmazonReturnsPublicHealthResponse
     public static function fromRuntime(array $runtimeHealth): array
     {
         $status = strtoupper(trim((string)($runtimeHealth['status'] ?? '')));
-        if ($status !== 'OK') $status = 'FAILED';
+        if (!in_array($status,['OK','DEGRADED'],true)) $status = 'FAILED';
 
         return [
             'service'=>'amazon-returns-safet',
