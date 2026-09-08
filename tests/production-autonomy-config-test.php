@@ -1,5 +1,13 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/../includes/amazon-returns/Runtime.php';
+$cadence=SvAmazonReturnsRuntime::cadences();
+foreach(['gmail','financial','sp_api','returns_report'] as $task){
+    if(($cadence[$task]??null)!==14400)throw new RuntimeException($task.' API task must run every four hours.');
+}
+foreach(['scheduler','review_operations','seller_central','policy_monitor'] as $task){
+    if(($cadence[$task]??null)!==86400)throw new RuntimeException($task.' non-API task must run daily.');
+}
 $script=(string)file_get_contents(__DIR__.'/../scripts/provision-production.sh');
 if(!str_contains($script,"set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '1'")){
     throw new RuntimeException('Production deploy must enable learned-rule execution after guarded rule infrastructure is active.');

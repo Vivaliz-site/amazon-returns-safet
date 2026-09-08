@@ -17,7 +17,7 @@ A single scheduled task, `ShopVivaliz Amazon Returns Browser Dispatcher`, runs a
 The legacy tasks `ShopVivaliz Amazon Returns SAFE-T Read Bridge` and `ShopVivaliz Amazon Returns Seller Central Bridge` are removed by the installer. The dispatcher uses `MultipleInstances IgnoreNew`, so read/write work is serialized on the shared profile.
 
 ## API-first boundary
-SP-API, Finances, Returns and Gmail remain the primary sources. Seller Central UI is used only for jobs that require browser-only read/write behavior. External writes still obey server-side channel gates, idempotency, eligibility and production acceptance rules. SAFE-T browser status polling is a six-hour safety net per claim, not a primary monitoring loop; when several browser jobs are due, the finite dispatcher drains that due batch before exiting.
+SP-API, Finances, Returns and Gmail remain the primary sources. Seller Central UI is used only for jobs that require browser-only read/write behavior. External writes still obey server-side channel gates, idempotency, eligibility and production acceptance rules. SAFE-T browser status polling is a daily safety net per claim, not a primary monitoring loop; when several browser jobs are due, the finite dispatcher drains that due batch before exiting. API-backed SP-API, Finances, Returns and Gmail routines run every four hours.
 
 ## Verification
 Run:
