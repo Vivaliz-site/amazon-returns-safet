@@ -37,14 +37,12 @@ intakeUxAssert(str_contains($intakeApi,'$input[\'sales_invoice_number\']'),'Rece
 intakeUxAssert(str_contains($intakeApi,"'sales_invoice_number'=>\$salesInvoiceNumber"),'Receipt event must persist the sales invoice number.');
 intakeUxAssert(str_contains($intakeApi,'max((int)$case[\'quantity_ordered\'],(int)$case[\'quantity_refunded\'])'),'Physical receipt quantity must not depend only on refund projection.');
 
-$cockpit=intakeUxRead('admin/amazon-returns/assets/cockpit.js');
-intakeUxAssert(str_contains($cockpit,"document.createElement('details')"),'Case timeline must be collapsible.');
-intakeUxAssert(str_contains($cockpit,"text('summary','Ver histórico"),'Timeline must have a clear collapsed summary.');
-$happened=strpos($cockpit,"reviewSection('O que aconteceu'");
-$verified=strpos($cockpit,"reviewSection('O que já foi verificado'");
-$why=strpos($cockpit,"reviewSection('Por que preciso da sua decisão?'");
-intakeUxAssert($happened!==false && $verified!==false && $why!==false,'Review must expose plain-language decision blocks.');
-intakeUxAssert($happened<$verified && $verified<$why,'Review blocks must prioritize facts before asking the user to decide.');
+$index=intakeUxRead('admin/amazon-returns/index.php');
+intakeUxAssert(str_contains($index,'/admin/amazon-returns/assets/ux-polish.js'),'Cockpit must load the plain-language/collapsible-history polish.');
+$ux=intakeUxRead('admin/amazon-returns/assets/ux-polish.js');
+intakeUxAssert(str_contains($ux,"document.createElement('details')"),'Case timeline must be collapsible.');
+intakeUxAssert(str_contains($ux,'Ver histórico'),'Timeline must have a clear collapsed summary.');
+intakeUxAssert(str_contains($ux,"['O que aconteceu','O que já foi verificado','Por que preciso da sua decisão?','Mensagens trocadas']"),'Review must prioritize facts before asking the user to decide.');
 
 $memory=intakeUxRead('docs/MEMORIA-DO-PROJETO.md');
 intakeUxAssert(str_contains($memory,'consultas rotineiras de negócio') && str_contains($memory,'uma vez por dia'),'Project memory must record the latest daily business-consultation rule.');
