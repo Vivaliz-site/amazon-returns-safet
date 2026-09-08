@@ -19,7 +19,7 @@ foreach (['Situação', 'Próxima ação', 'Tipo de logística', 'Recebimento'] 
 foreach (['O que aconteceu', 'Por que preciso da sua decisão?', 'O que já foi verificado', 'Mensagens trocadas', 'Recomendação'] as $section) {
     uiAssert(str_contains($js, $section), 'Review is missing plain-language section: ' . $section);
 }
-foreach (['function friendlyError(', 'function humanText(', 'function humanReviewSummary(', 'function renderMessageThread('] as $helper) {
+foreach (['function friendlyError(', 'function humanText(', 'function humanReviewSummary(', 'function renderMessageThread(', 'function recommendationExplanation('] as $helper) {
     uiAssert(str_contains($js, $helper), 'Missing global UI humanization helper: ' . $helper);
 }
 uiAssert(str_contains($js, "text('span',friendlyError(message))"), 'All global UI errors must pass through friendlyError before rendering.');
@@ -48,6 +48,7 @@ $forbiddenJs = [
     "SP_API_FINANCES:'SP-API Financeiro'",
     "throw new Error(j.error||'Falha na consulta')",
     "text('p',suggestion.rationale||'—')",
+    'humanText(suggestion.rationale',
 ];
 foreach ($forbiddenJs as $needle) {
     uiAssert(!str_contains($js, $needle), 'Backend/technical content can still leak to user UI: ' . $needle);
