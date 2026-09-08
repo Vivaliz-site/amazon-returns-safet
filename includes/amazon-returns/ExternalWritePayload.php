@@ -42,6 +42,15 @@ final class SvAmazonExternalWritePayload
                 .'O comprador recebeu reembolso e a conciliação financeira mais recente confirma que o vendedor ainda não recebeu '
                 .'o ressarcimento correspondente. Solicito o ressarcimento devido ao vendedor.';
         }
+        if(in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
+            && $reason==='CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION'){
+            $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
+            $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
+            $outstanding=max(0.0,$expected-$credited);
+            return 'Pedido '.$order.'. Rota de ressarcimento FBA. A conciliação financeira mais recente confirma saldo do vendedor ainda não ressarcido. '
+                .'Valor esperado: '.self::brl($expected).'. Crédito efetivamente conciliado: '.self::brl($credited).'. '
+                .'Saldo pendente: '.self::brl($outstanding).'. Solicito revisão manual do ressarcimento FBA e pagamento do saldo devido ao vendedor.';
+        }
         if(in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){
             return 'SAFE-T '.$safeT.', pedido '.$order.'. A devolução permanece não recebida fisicamente pelo vendedor. '
                 .'A nova negativa repetiu a justificativa sem responder aos fatos e às evidências apresentados. '
@@ -88,6 +97,11 @@ final class SvAmazonExternalWritePayload
     private static function snapshot(string $channel,string $field,string $text):array
     {
         return ['format_version'=>2,'channel'=>$channel,$field=>$text,'content_sha256'=>hash('sha256',$text)];
+    }
+
+    private static function brl(float $value):string
+    {
+        return 'R$ '.number_format($value,2,',','.');
     }
 
     private static function limit(string $text,int $max):string
