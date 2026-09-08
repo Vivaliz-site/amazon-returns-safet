@@ -74,7 +74,14 @@ export async function requestRemoteTotp({ host, keyFile, knownHostsFile, sshBina
     host,
   ];
   const response = await runner(sshBinary, args, { shell: false, windowsHide: true });
-  if (Number(response?.exitCode ?? 255) !== 0) throw new Error('Remote TOTP unavailable.');
+  if (Number(response?.exitCode ?? 255) !== 0) {
+    if (String(response?.stderr ?? '').trim() === 'SEED_NOT_CONFIGURED') {
+      const error = new Error('Remote TOTP seed is not configured.');
+      error.code = 'SEED_NOT_CONFIGURED';
+      throw error;
+    }
+    throw new Error('Remote TOTP unavailable.');
+  }
   return parseTotpOutput(response?.stdout);
 }
 
@@ -223,7 +230,8 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
     let code;
     try {
       code = parseTotpOutput(await totpRequester());
-    } catch {
+    } catch (error) {
+      if (error?.code === 'SEED_NOT_CONFIGURED') return { status: 'AUTH_REQUIRED', reason: 'TOTP_SEED_NOT_CONFIGURED' };
       return { status: 'AUTH_REQUIRED', reason: 'TOTP_UNAVAILABLE' };
     }
     let applied = false;

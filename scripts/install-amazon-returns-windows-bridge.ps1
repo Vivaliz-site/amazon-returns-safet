@@ -8,6 +8,11 @@ param(
     [string]$TaskName = 'ShopVivaliz Amazon Returns Browser Dispatcher',
     [string]$BridgeEndpoint = 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php',
     [string]$StatusBridgeEndpoint = 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php',
+    [string]$UsernameFile = '',
+    [string]$PasswordFile = '',
+    [string]$TotpHost = '',
+    [string]$TotpKeyFile = '',
+    [string]$TotpKnownHostsFile = '',
     [int]$PollMinutes = 1440,
     [string]$OperaPath = '',
     [string]$ProfilePath = ''
@@ -16,6 +21,7 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($PollMinutes -ne 1440) { throw 'PollMinutes must be 1440 to preserve the approved daily browser cadence.' }
 $node = (Get-Command node.exe -ErrorAction Stop).Source
+$ssh = (Get-Command ssh.exe -ErrorAction Stop).Source
 if ([string]::IsNullOrWhiteSpace($OperaPath)) {
     $OperaPath = Join-Path $env:LOCALAPPDATA 'Programs\Opera developer\opera.exe'
     if (-not (Test-Path $OperaPath)) {
@@ -35,8 +41,13 @@ $trackingEvidence = Join-Path $InstallDir 'TrackingEvidence.mjs'
 $statusParser = Join-Path $InstallDir 'safe-t-status-parser.mjs'
 $logDir = Join-Path $InstallDir 'logs'
 $evidenceDir = Join-Path $InstallDir 'evidence'
+if ([string]::IsNullOrWhiteSpace($UsernameFile)) { $UsernameFile = Join-Path $InstallDir 'amazon.username' }
+if ([string]::IsNullOrWhiteSpace($PasswordFile)) { $PasswordFile = Join-Path $InstallDir 'amazon.password' }
+if ([string]::IsNullOrWhiteSpace($TotpKeyFile)) { $TotpKeyFile = Join-Path $InstallDir 'totp_ed25519' }
+if ([string]::IsNullOrWhiteSpace($TotpKnownHostsFile)) { $TotpKnownHostsFile = Join-Path $InstallDir 'totp_known_hosts' }
+if ([string]::IsNullOrWhiteSpace($TotpHost)) { throw 'TotpHost is required.' }
 
-foreach ($required in @($WorkerSource, $ReadWorkerSource, $AuthSource, $TrackingEvidenceSource, $StatusParserSource, $opera, $profile, $token)) {
+foreach ($required in @($WorkerSource, $ReadWorkerSource, $AuthSource, $TrackingEvidenceSource, $StatusParserSource, $opera, $profile, $token, $UsernameFile, $PasswordFile, $TotpKeyFile, $TotpKnownHostsFile)) {
     if (-not (Test-Path $required)) { throw "Required bridge dependency missing: $required" }
 }
 New-Item -ItemType Directory -Force $InstallDir, $logDir, $evidenceDir | Out-Null
@@ -63,6 +74,12 @@ $runnerBody = @"
 `$env:SELLER_CENTRAL_CDP_URL = 'http://127.0.0.1:9225'
 `$env:SELLER_CENTRAL_STATUS_LOCK_PORT = '19225'
 `$env:SELLER_CENTRAL_EVIDENCE_DIR = '$evidenceDir'
+`$env:SELLER_CENTRAL_USERNAME_FILE = '$UsernameFile'
+`$env:SELLER_CENTRAL_PASSWORD_FILE = '$PasswordFile'
+`$env:SELLER_CENTRAL_TOTP_HOST = '$TotpHost'
+`$env:SELLER_CENTRAL_TOTP_KEY_FILE = '$TotpKeyFile'
+`$env:SELLER_CENTRAL_TOTP_KNOWN_HOSTS_FILE = '$TotpKnownHostsFile'
+`$env:SELLER_CENTRAL_TOTP_SSH_BINARY = '$ssh'
 
 function Stop-SellerCentralBrowser {
     `$roots = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
