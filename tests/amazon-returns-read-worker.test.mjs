@@ -13,7 +13,15 @@ import { parseSafeTStatus } from '../scripts/amazon-returns/safe-t-status-parser
 
 const worker = fileURLToPath(new URL('../scripts/amazon-returns/seller-central-safe-t-read-worker.mjs', import.meta.url));
 const source = fs.readFileSync(worker, 'utf8');
-const cdpSource = source.slice(source.indexOf('class Cdp {'), source.indexOf('\nfunction authState'));
+const cdpSource = source.slice(source.indexOf('class Cdp {'), source.indexOf('\nasync function authGate'));
+
+test('reader worker is host-neutral and uses shared authentication recovery', () => {
+  assert.match(source, /seller-central-auth\.mjs/);
+  assert.match(source, /SELLER_CENTRAL_STATUS_WORKER_ID/);
+  assert.match(source, /SELLER_CENTRAL_BROWSER/);
+  assert.match(source, /ensureSellerCentralAuthenticated/);
+  assert.doesNotMatch(source, /C:\\Users\\FRED\\/);
+});
 const Cdp = vm.runInNewContext(`${cdpSource}\nCdp`, { Error });
 class FakeSocket extends EventTarget { send() {} close() { this.dispatchEvent(new Event('close')); } }
 for (const event of ['close', 'error']) {

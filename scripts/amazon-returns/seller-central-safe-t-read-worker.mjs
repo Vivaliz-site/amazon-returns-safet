@@ -5,16 +5,18 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
 import { parseSafeTStatus } from './safe-t-status-parser.mjs';
+import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_STATUS_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\bridge.token';
 const CDP_BASE = process.env.SELLER_CENTRAL_CDP_URL || 'http://127.0.0.1:9225';
 const PROFILE = process.env.SELLER_CENTRAL_PROFILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\profile';
 const LOCALAPPDATA = process.env.LOCALAPPDATA || '';
-const OPERA = process.env.SELLER_CENTRAL_OPERA || [
+const BROWSER = process.env.SELLER_CENTRAL_BROWSER || process.env.SELLER_CENTRAL_OPERA || [
   path.join(LOCALAPPDATA, 'Programs', 'Opera developer', 'opera.exe'),
   path.join(LOCALAPPDATA, 'Programs', 'Opera', 'opera.exe'),
 ].find(candidate => candidate && fs.existsSync(candidate)) || '';
+const STATUS_WORKER_ID = process.env.SELLER_CENTRAL_STATUS_WORKER_ID || 'fred-win-safe-t-status';
 const POLL_MS = Math.max(15000, Number(process.env.SELLER_CENTRAL_STATUS_POLL_MS || 30000));
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
 
@@ -57,9 +59,9 @@ async function cdpReady() {
 
 async function ensureBrowser() {
   if (await cdpReady()) return;
-  if (!OPERA || !fs.existsSync(OPERA) || !fs.existsSync(PROFILE)) throw new Error('Seller Central Opera profile unavailable');
+  if (!BROWSER || !fs.existsSync(BROWSER) || !fs.existsSync(PROFILE)) throw new Error('Seller Central browser profile unavailable');
   const port = new URL(CDP_BASE).port || '9225';
-  const child = spawn(OPERA, [
+  const child = spawn(BROWSER, [
     '--headless=new',
     '--disable-gpu',
     `--remote-debugging-port=${port}`,
@@ -81,6 +83,7 @@ class Cdp {
     this.targetId = targetId;
     this.id = 0;
     this.pending = new Map();
+    this.requestedUrl = null;
     ws.addEventListener('message', event => {
       const message = JSON.parse(event.data);
       if (!message.id || !this.pending.has(message.id)) return;
@@ -127,6 +130,7 @@ class Cdp {
   }
 
   async navigate(url, waitMs = 5000) {
+    this.requestedUrl = url;
     await this.send('Page.navigate', { url });
     await sleep(waitMs);
   }
@@ -142,11 +146,23 @@ class Cdp {
   }
 }
 
-function authState(state) {
-  const combined = `${state.href || ''}\n${state.title || ''}\n${state.text || ''}`.toLowerCase();
-  if (combined.includes('/signin') || combined.includes('iniciar sessão') || combined.includes('sign in') || combined.includes('acessar amazon')) return 'AUTH_REQUIRED';
-  if (combined.includes('captcha') || combined.includes('digite os caracteres')) return 'HUMAN_CHALLENGE';
-  return 'OK';
+async function authGate(cdp) {
+  const state = await cdp.pageState();
+  let auth = classifyAmazonAuthState(state);
+  if (auth === 'AUTHENTICATED') return null;
+  if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: 'AMAZON_HUMAN_CHALLENGE', evidence: evidence(state) });
+  if (auth === 'UNKNOWN') return result('AUTH_REQUIRED', { reason: 'UNKNOWN_AUTH_CHALLENGE', evidence: evidence(state) });
+
+  const requestedUrl = cdp.requestedUrl;
+  const recovered = await ensureSellerCentralAuthenticated(cdp);
+  if (recovered.status === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: recovered.reason, evidence: evidence(await cdp.pageState()) });
+  if (recovered.status !== 'AUTHENTICATED') return result('AUTH_REQUIRED', { reason: recovered.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(await cdp.pageState()) });
+  if (requestedUrl) await cdp.navigate(requestedUrl, 3000);
+  const after = await cdp.pageState();
+  auth = classifyAmazonAuthState(after);
+  if (auth === 'AUTHENTICATED') return null;
+  if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: 'AMAZON_HUMAN_CHALLENGE', evidence: evidence(after) });
+  return result('AUTH_REQUIRED', { reason: 'REAUTHENTICATION_NOT_COMPLETED', evidence: evidence(after) });
 }
 
 function result(status, extra = {}) {
@@ -170,10 +186,9 @@ async function safeTDiscovery(job) {
   const cdp = await Cdp.connect();
   try {
     await cdp.navigate(`${SAFE_T_BASE}?pageSize=100&dateFilterValue=${days}`, 4500);
+    let authResult = await authGate(cdp);
+    if (authResult) return authResult;
     let state = await cdp.pageState();
-    let auth = authState(state);
-    if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
-    if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: 'CAPTCHA_PRESENT', evidence: evidence(state) });
     const expected = JSON.stringify(orderId);
     const raw = await cdp.evaluate(`JSON.stringify([...document.querySelectorAll('div[id^="claim-content-wrapper-"]')].map(e=>{const safe=(e.id.match(/\\d{5}-\\d{5}-\\d{7}/)||[])[0]||'';const href=e.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';const order=(href.match(/\\d{3}-\\d{7}-\\d{7}/)||[])[0]||'';return {safe,order}}).filter(x=>x.order===${expected}))`);
     const matches = JSON.parse(raw || '[]');
@@ -182,10 +197,9 @@ async function safeTDiscovery(job) {
     if (ids.length !== 1) return result('FAILED', { reason: 'MULTIPLE_SAFE_T_CLAIMS_FOR_ORDER', retry_safe: false, evidence: evidence(state) });
     const safeTId = ids[0];
     await cdp.navigate(`${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 4500);
+    authResult = await authGate(cdp);
+    if (authResult) return authResult;
     state = await cdp.pageState();
-    auth = authState(state);
-    if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
-    if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: 'CAPTCHA_PRESENT', evidence: evidence(state) });
     if (!String(state.text || '').includes(orderId)) return result('UI_DRIFT', { reason: 'DISCOVERED_CLAIM_ORDER_MISMATCH', evidence: evidence(state) });
     const read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
     return result('ACCEPTED', { external_id: safeTId, retry_safe: true, reason: 'SAFE_T_DISCOVERED_BY_ORDER', evidence: evidence(state), read });
@@ -201,10 +215,9 @@ async function safeTRead(job) {
   const cdp = await Cdp.connect();
   try {
     await cdp.navigate(`${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 5500);
+    const authResult = await authGate(cdp);
+    if (authResult) return authResult;
     const state = await cdp.pageState();
-    const auth = authState(state);
-    if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
-    if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: 'CAPTCHA_PRESENT', evidence: evidence(state) });
     const read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
     return result('ACCEPTED', {
       external_id: safeTId,
@@ -230,7 +243,7 @@ function log(event, data = {}) {
 }
 
 async function runOnce() {
-  const pulled = await bridge('pull', { worker_id: 'fred-win-safe-t-status' });
+  const pulled = await bridge('pull', { worker_id: STATUS_WORKER_ID });
   if (pulled.status === 'NO_JOB') return false;
   if (pulled.status !== 'JOB' || !pulled.job) throw new Error(`unexpected pull status ${clean(pulled.status)}`);
   const job = pulled.job;
@@ -267,7 +280,7 @@ async function acquireReadWorkerLease() {
 
 async function main() {
   if (process.argv.includes('--heartbeat')) {
-    process.stdout.write(`${JSON.stringify(await bridge('heartbeat', { worker_id: 'fred-win-safe-t-status' }))}\n`);
+    process.stdout.write(`${JSON.stringify(await bridge('heartbeat', { worker_id: STATUS_WORKER_ID }))}\n`);
     return;
   }
   const lease = await acquireReadWorkerLease();

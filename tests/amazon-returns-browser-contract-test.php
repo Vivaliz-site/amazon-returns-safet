@@ -167,4 +167,12 @@ $thrown = false;
 try { $worker->execute(['kind'=>'DELETE_ANYTHING','payload'=>[]], static fn(array $payload): array => []); } catch (InvalidArgumentException) { $thrown = true; }
 bcAssert($thrown, 'Worker must reject unapproved operation kinds.');
 
+$writeWorkerSource=file_get_contents(__DIR__.'/../scripts/amazon-returns/seller-central-bridge-worker.mjs');
+$readWorkerSource=file_get_contents(__DIR__.'/../scripts/amazon-returns/seller-central-safe-t-read-worker.mjs');
+bcAssert(is_string($writeWorkerSource) && str_contains($writeWorkerSource,"seller-central-auth.mjs"),'Write worker must use shared Seller Central authentication helper.');
+bcAssert(is_string($readWorkerSource) && str_contains($readWorkerSource,"seller-central-auth.mjs"),'Read worker must use shared Seller Central authentication helper.');
+bcAssert(str_contains($writeWorkerSource,'SELLER_CENTRAL_WORKER_ID'),'Write worker ID must be host-neutral/configurable.');
+bcAssert(str_contains($readWorkerSource,'SELLER_CENTRAL_STATUS_WORKER_ID'),'Read worker ID must be host-neutral/configurable.');
+bcAssert(str_contains($writeWorkerSource,'SELLER_CENTRAL_BROWSER') && str_contains($readWorkerSource,'SELLER_CENTRAL_BROWSER'),'Both workers must support a generic browser executable.');
+bcAssert(!str_contains($writeWorkerSource,'C:\\Users\\FRED\\'),'New authentication/browser path must not hard-code Fred-Win.');
 echo "amazon-returns-browser-contract-test: OK\n";

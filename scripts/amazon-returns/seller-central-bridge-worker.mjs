@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
+import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\bridge.token';
 const CDP_BASE = process.env.SELLER_CENTRAL_CDP_URL || 'http://127.0.0.1:9225';
 const PROFILE = process.env.SELLER_CENTRAL_PROFILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\profile';
-const OPERA = process.env.SELLER_CENTRAL_OPERA || 'C:\\Users\\FRED\\AppData\\Local\\Programs\\Opera developer\\opera.exe';
+const LOCALAPPDATA = process.env.LOCALAPPDATA || '';
+const BROWSER = process.env.SELLER_CENTRAL_BROWSER || process.env.SELLER_CENTRAL_OPERA || [
+  path.join(LOCALAPPDATA, 'Programs', 'Opera developer', 'opera.exe'),
+  path.join(LOCALAPPDATA, 'Programs', 'Opera', 'opera.exe'),
+].find(candidate => candidate && fs.existsSync(candidate)) || '';
+const WORKER_ID = process.env.SELLER_CENTRAL_WORKER_ID || 'fred-win-seller-central';
 const POLL_MS = Math.max(10000, Number(process.env.SELLER_CENTRAL_BRIDGE_POLL_MS || 30000));
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
 const HELP_URL = 'https://sellercentral.amazon.com.br/help/center?redirectSource=Hill';
@@ -53,11 +60,12 @@ async function cdpReady() {
 
 async function ensureBrowser() {
   if (await cdpReady()) return;
-  if (!fs.existsSync(OPERA) || !fs.existsSync(PROFILE)) throw new Error('headless Opera profile unavailable');
-  const child = spawn(OPERA, [
+  if (!BROWSER || !fs.existsSync(BROWSER) || !fs.existsSync(PROFILE)) throw new Error('Seller Central browser profile unavailable');
+  const port = new URL(CDP_BASE).port || '9225';
+  const child = spawn(BROWSER, [
     '--headless=new',
     '--disable-gpu',
-    '--remote-debugging-port=9225',
+    `--remote-debugging-port=${port}`,
     `--user-data-dir=${PROFILE}`,
     '--no-first-run',
     '--no-default-browser-check',
@@ -76,6 +84,7 @@ class Cdp {
     this.targetId = targetId;
     this.id = 0;
     this.pending = new Map();
+    this.requestedUrl = null;
     ws.addEventListener('message', event => {
       const message = JSON.parse(event.data);
       if (!message.id || !this.pending.has(message.id)) return;
@@ -114,6 +123,7 @@ class Cdp {
   }
 
   async navigate(url, waitMs = 5000) {
+    this.requestedUrl = url;
     await this.send('Page.navigate', { url });
     await sleep(waitMs);
   }
@@ -203,10 +213,20 @@ async function evidence(cdp, uiContract) {
 
 async function authGate(cdp, uiContract) {
   const state = await cdp.pageState();
-  const auth = authenticationState(state);
-  if (auth === 'AUTH_REQUIRED') return bridgeResult('AUTH_REQUIRED', { reason: 'SESSION_NOT_AUTHENTICATED', evidence: await evidence(cdp, uiContract) });
-  if (auth === 'HUMAN_CHALLENGE') return bridgeResult('HUMAN_CHALLENGE', { reason: 'CAPTCHA_PRESENT', evidence: await evidence(cdp, uiContract) });
-  return null;
+  let auth = classifyAmazonAuthState(state);
+  if (auth === 'AUTHENTICATED') return null;
+  if (auth === 'HUMAN_CHALLENGE') return bridgeResult('HUMAN_CHALLENGE', { reason: 'AMAZON_HUMAN_CHALLENGE', evidence: await evidence(cdp, uiContract) });
+  if (auth === 'UNKNOWN') return bridgeResult('AUTH_REQUIRED', { reason: 'UNKNOWN_AUTH_CHALLENGE', evidence: await evidence(cdp, uiContract) });
+
+  const requestedUrl = cdp.requestedUrl;
+  const recovered = await ensureSellerCentralAuthenticated(cdp);
+  if (recovered.status === 'HUMAN_CHALLENGE') return bridgeResult('HUMAN_CHALLENGE', { reason: recovered.reason, evidence: await evidence(cdp, uiContract) });
+  if (recovered.status !== 'AUTHENTICATED') return bridgeResult('AUTH_REQUIRED', { reason: recovered.reason || 'SESSION_NOT_AUTHENTICATED', evidence: await evidence(cdp, uiContract) });
+  if (requestedUrl) await cdp.navigate(requestedUrl, 3000);
+  auth = classifyAmazonAuthState(await cdp.pageState());
+  if (auth === 'AUTHENTICATED') return null;
+  if (auth === 'HUMAN_CHALLENGE') return bridgeResult('HUMAN_CHALLENGE', { reason: 'AMAZON_HUMAN_CHALLENGE', evidence: await evidence(cdp, uiContract) });
+  return bridgeResult('AUTH_REQUIRED', { reason: 'REAUTHENTICATION_NOT_COMPLETED', evidence: await evidence(cdp, uiContract) });
 }
 
 function reasonFor(job) {
@@ -557,7 +577,7 @@ function log(event, data = {}) {
 }
 
 async function runOnce() {
-  const pulled = await bridge('pull', { worker_id: 'fred-win-seller-central' });
+  const pulled = await bridge('pull', { worker_id: WORKER_ID });
   if (pulled.status === 'NO_JOB') return false;
   if (pulled.status !== 'JOB' || !pulled.job) throw new Error(`unexpected pull status ${text(pulled.status)}`);
   const job = pulled.job;
@@ -584,7 +604,7 @@ async function main() {
     return;
   }
   if (process.argv.includes('--heartbeat')) {
-    const heartbeat = await bridge('heartbeat', { worker_id: 'fred-win-seller-central' });
+    const heartbeat = await bridge('heartbeat', { worker_id: WORKER_ID });
     process.stdout.write(`${JSON.stringify(heartbeat)}\n`);
     return;
   }
