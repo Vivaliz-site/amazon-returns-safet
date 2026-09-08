@@ -12,6 +12,13 @@ aaAssert(!SvAmazonReturnsAdminAuth::verifyCredentials('fred','wrong',$credential
 aaAssert(!SvAmazonReturnsAdminAuth::verifyCredentials('other','correct horse battery staple',$credentials),'Wrong user must fail.');
 
 SvAmazonReturnsAdminAuth::start();
+$_SESSION['amazon_returns_admin']=['username'=>'fred','authenticated_at'=>time()-43201,'last_seen_at'=>time()-43201];
+aaAssert(!SvAmazonReturnsAdminAuth::loggedIn(),'Admin sessions older than the absolute lifetime must expire.');
+$_SESSION['amazon_returns_admin']=['username'=>'fred','authenticated_at'=>time()-60,'last_seen_at'=>time()-3601];
+aaAssert(!SvAmazonReturnsAdminAuth::loggedIn(),'Idle admin sessions must expire.');
+$_SESSION['amazon_returns_admin']=['username'=>'fred','authenticated_at'=>time()-60,'last_seen_at'=>time()-60];
+aaAssert(SvAmazonReturnsAdminAuth::loggedIn(),'Fresh active admin session must remain valid.');
+
 $token=SvAmazonReturnsCsrf::token('intake');
 aaAssert(preg_match('/^[a-f0-9]{64}$/',$token)===1,'CSRF token must be random 256-bit hex.');
 aaAssert(SvAmazonReturnsCsrf::valid('intake',$token),'Issued CSRF token must validate.');
