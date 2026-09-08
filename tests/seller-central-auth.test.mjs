@@ -132,3 +132,41 @@ test('submits credentials only once when Amazon remains on sign-in', async () =>
   assert.equal(submissions, 1);
   assert.deepEqual(result, { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' });
 });
+
+
+test('does not resubmit credentials when sign-in remains dynamic after the first submit', async () => {
+  const states = [
+    { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: 'E-mail Senha banner 1' },
+    { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: 'E-mail Senha banner 2' },
+  ];
+  let stateIndex = 0;
+  let submissions = 0;
+  const result = await ensureSellerCentralAuthenticated({ pageState: async () => states[Math.min(stateIndex, 1)] }, {
+    usernameFile: '/secure/account', passwordFile: '/secure/password',
+    readSecret: file => file.endsWith('account') ? 'account-test-value' : 'password-test-value',
+    applyCredentials: async () => { submissions++; stateIndex++; return true; },
+    totpRequester: async () => { throw new Error('TOTP must not be requested while sign-in is unresolved'); },
+    sleep: async () => {},
+  });
+  assert.equal(submissions, 1);
+  assert.deepEqual(result, { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' });
+});
+
+
+test('allows one identifier transition followed by one password submit', async () => {
+  const states = [
+    { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: 'E-mail' },
+    { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: 'Senha' },
+    { href: 'https://www.amazon.com/ap/mfa', title: 'Verificação em duas etapas', text: 'Aplicativo autenticador' },
+    { href: 'https://sellercentral.amazon.com.br/home', title: 'Seller Central', text: 'Início' },
+  ];
+  let stateIndex = 0;
+  const submissions = [];
+  const result = await ensureSellerCentralAuthenticated({ pageState: async () => states[stateIndex] }, {
+    usernameFile: '/secure/account', passwordFile: '/secure/password', readSecret: () => 'secret-test-value',
+    applyCredentials: async (_cdp, _u, _p, previousStage) => { submissions.push(previousStage); stateIndex++; return submissions.length === 1 ? 'IDENTIFIER_SUBMITTED' : 'PASSWORD_SUBMITTED'; },
+    totpRequester: async () => '654321', applyTotp: async () => { stateIndex++; return true; }, sleep: async () => {},
+  });
+  assert.deepEqual(submissions, [null, 'IDENTIFIER']);
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
+});
