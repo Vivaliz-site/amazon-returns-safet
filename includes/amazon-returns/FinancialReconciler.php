@@ -16,24 +16,36 @@ final class SvAmazonFinancialReconciler
             $id = trim((string)($tx['transaction_id'] ?? ''));
             $unique[$id !== '' ? $id : hash('sha256', json_encode($tx, JSON_THROW_ON_ERROR))] = $tx;
         }
-        $ids = []; $unclassified = 0; $groups = []; $positive = ['v0'=>0, 'ledger'=>0]; $debits = 0;
+        $ids = []; $unclassified = 0; $ambiguousReimbursements = 0; $groups = []; $positive = ['v0'=>0, 'ledger'=>0]; $debits = 0;
         $explicit = ['v0'=>0, 'ledger'=>0];
         $unsettledLedger = false;
         foreach ($unique as $tx) {
             $source = ($tx['source'] ?? '') === 'SP_API_FINANCES_V0' ? 'v0' : 'ledger';
             $money = is_array($tx['total_amount'] ?? null) ? $tx['total_amount'] : [];
-            if ($currency === '' && !isset($tx['seller_effect_amount'])) { $unclassified++; continue; }
-            $txCurrency = strtoupper(trim((string)($money['currency'] ?? '')));
-            if ($currency !== '' && $txCurrency !== '' && $currency !== $txCurrency) { $unclassified++; continue; }
             $status = strtoupper(trim((string)($tx['transaction_status'] ?? '')));
             $type = strtoupper(trim((string)($tx['transaction_type'] ?? '')));
             $explicitReimbursement = $this->isExplicitReimbursement($tx, $source);
+            if ($currency === '' && !isset($tx['seller_effect_amount'])) {
+                $unclassified++;
+                if ($explicitReimbursement) $ambiguousReimbursements++;
+                continue;
+            }
+            $txCurrency = strtoupper(trim((string)($money['currency'] ?? '')));
+            if ($currency !== '' && $txCurrency !== '' && $currency !== $txCurrency) {
+                $unclassified++;
+                if ($explicitReimbursement) $ambiguousReimbursements++;
+                continue;
+            }
             if ($source === 'ledger' && $status !== '' && !in_array($status, ['RELEASED','DEFERRED_RELEASED'], true)
                 && $explicitReimbursement) {
                 $unsettledLedger = true;
             }
             $effect = $this->sellerEffect($tx);
-            if ($effect === null) { $unclassified++; continue; }
+            if ($effect === null) {
+                $unclassified++;
+                if ($explicitReimbursement) $ambiguousReimbursements++;
+                continue;
+            }
             if ($explicitReimbursement) $explicit[$source] += $effect;
             $id = trim((string)($tx['transaction_id'] ?? ''));
             if ($id !== '') $ids[] = $id;
@@ -86,6 +98,7 @@ final class SvAmazonFinancialReconciler
             'tolerated_residual_amount'=>self::money($residualToleranceApplied ? $legacyGap : 0),
             'reopened'=>$previous === SvAmazonReturnStates::RECOVERED && $outstanding > 0,
             'transaction_ids'=>array_values(array_unique($ids)), 'unclassified_transactions'=>$unclassified,
+            'ambiguous_reimbursement_transactions'=>$ambiguousReimbursements,
             'corroborating_sources'=>$positive['v0'] > 0 && $positive['ledger'] > 0,
             'unsettled_financial_evidence'=>$unsettledLedger,
         ];
