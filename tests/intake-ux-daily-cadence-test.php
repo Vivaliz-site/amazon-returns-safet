@@ -40,10 +40,11 @@ intakeUxAssert(str_contains($intakeApi,"'sales_invoice_number'=>\$salesInvoiceNu
 intakeUxAssert(str_contains($intakeApi,'$knownRefundQuantity=(int)$case[\'quantity_refunded\'];'),'Receipt API must distinguish a known refund quantity from a not-yet-projected refund.');
 intakeUxAssert(str_contains($intakeApi,'$expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case[\'quantity_ordered\']);'),'Receipt API must prefer known refunded quantity and only fall back to ordered quantity.');
 
-$caseRepository=intakeUxRead('includes/amazon-returns/CaseRepository.php');
-intakeUxAssert(str_contains($caseRepository,'sales_invoice_number'),'Case search must include the sales invoice number recorded at intake.');
-intakeUxAssert(str_contains($caseRepository,'JSON_EXTRACT'),'NF search must read the scoped physical-receipt event payload without exposing internal event details.');
-intakeUxAssert(str_contains($caseRepository,':q_invoice'),'NF search must use a bound search parameter.');
+$casesApi=intakeUxRead('admin/amazon-returns/api/cases.php');
+intakeUxAssert(str_contains($casesApi,'sales_invoice_number'),'Cockpit case search must include the sales invoice number recorded at intake.');
+intakeUxAssert(str_contains($casesApi,'JSON_EXTRACT'),'NF search must read the scoped physical-receipt event payload without exposing internal event details.');
+intakeUxAssert(str_contains($casesApi,':q_invoice'),'NF search must use a bound search parameter.');
+intakeUxAssert(str_contains($casesApi,'tenant_id=:invoice_tenant_id') && str_contains($casesApi,'amazon_connection_id=:invoice_connection_id'),'NF event lookup must remain tenant/connection scoped.');
 
 $index=intakeUxRead('admin/amazon-returns/index.php');
 intakeUxAssert(str_contains($index,'Pedido, NF, SAFE-T ou SKU'),'Cockpit search must tell the user that NF is searchable.');
