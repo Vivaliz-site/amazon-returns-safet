@@ -36,6 +36,8 @@ final class SvAmazonFinancialCheckEvidence
             'credit_amount'=>$result['credit_amount'],'outstanding_amount'=>$result['outstanding_amount'],
             'residual_tolerance_applied'=>$tolerance,'tolerated_residual_amount'=>$tolerated,
             'unclassified_transactions'=>(int)($result['unclassified_transactions']??0),
+            'ambiguous_reimbursement_transactions'=>(int)($result['ambiguous_reimbursement_transactions']??0),
+            'unsettled_financial_evidence'=>($result['unsettled_financial_evidence']??false)===true,
         ];
         $key=hash('sha256','finance-check|'.$caseId.'|'.($latest['id']??0).'|'.json_encode($payload,JSON_THROW_ON_ERROR));
         return self::event($caseId,'FINANCIAL_RECONCILIATION_CHECKED',$payload,$now,$key);
