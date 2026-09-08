@@ -22,7 +22,7 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <button type="button" id="review-alert" class="review-alert hidden" aria-live="polite"></button>
 <div id="cockpit-error" class="error" role="alert"></div>
 <form id="filters" class="filters" onsubmit="return false">
-<label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, SAFE-T ou SKU"></label>
+<label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, NF, SAFE-T ou SKU"></label>
 <label>Situação<select data-filter="state"><option value="">Todas</option><option value="SAFE_T_DENIED">SAFE-T negado</option><option value="APPEAL_REQUIRED">Recurso necessário</option><option value="APPEAL_SUBMITTED">Recurso enviado</option><option value="CREDIT_PENDING">Crédito pendente</option><option value="RECOVERED">Ressarcido</option></select></label>
 <label>Próxima ação<select data-filter="action"><option value="">Todas</option><option value="SAFE_T_SUBMIT">Solicitar ressarcimento SAFE-T</option><option value="SAFE_T_APPEAL">Recorrer no SAFE-T</option><option value="SAFE_T_EMAIL_REVIEW">Revisar e-mail do SAFE-T</option><option value="SELLER_SUPPORT_OPEN">Abrir chamado no Suporte ao Vendedor</option><option value="WAIT">Aguardar</option><option value="HUMAN_REVIEW">Precisa da sua decisão</option></select></label>
 <label>Tipo de logística<select data-filter="program"><option value="">Todos</option><option value="STANDARD">Padrão</option><option value="FBA_ONSITE">FBA no local</option><option value="DELIVERY_BY_AMAZON">Entrega pela Amazon</option></select></label>
