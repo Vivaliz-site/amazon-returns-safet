@@ -5,6 +5,7 @@ $root=dirname(__DIR__);
 $bridge=(string)file_get_contents($root.'/includes/amazon-returns/BridgeService.php');
 $status=(string)file_get_contents($root.'/includes/amazon-returns/StatusBridgeService.php');
 $runtime=(string)file_get_contents($root.'/includes/amazon-returns/Runtime.php');
+$daemon=(string)file_get_contents($root.'/workers/amazon-returns/daemon.php');
 $bridgeApi=(string)file_get_contents($root.'/api/amazon-returns/bridge.php');
 $statusApi=(string)file_get_contents($root.'/api/amazon-returns/status-bridge.php');
 $reader=(string)file_get_contents($root.'/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs');
@@ -22,4 +23,5 @@ bhAssert(str_contains($runner,'--auth-check'),'Daily browser cycle must authenti
 bhAssert(str_contains($runtime,'BridgeLiveness.php'),'Runtime health must load authenticated bridge liveness logic.');
 bhAssert(str_contains($runtime,"'seller_central_browser'"),'Health payload must expose Seller Central browser liveness.');
 bhAssert(str_contains($runtime,"'DEGRADED'"),'Health must support a degraded state.');
+bhAssert(str_contains($daemon,"in_array('DEGRADED',\$statuses,true)"),'Daemon aggregate status must preserve DEGRADED health.');
 echo "bridge-heartbeat-contract-test: OK\n";
