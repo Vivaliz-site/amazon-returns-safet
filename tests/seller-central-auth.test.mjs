@@ -38,6 +38,7 @@ test('remote TOTP request uses pinned restrictive SSH options and no shell', asy
   assert.equal(code, '834201');
   assert.equal(call.file, '/usr/bin/ssh');
   assert.deepEqual(call.args, [
+    '-T',
     '-o', 'BatchMode=yes',
     '-o', 'IdentitiesOnly=yes',
     '-o', 'StrictHostKeyChecking=yes',
