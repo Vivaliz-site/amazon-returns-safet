@@ -22,9 +22,39 @@ try{
     $context=SvAmazonTenantRegistry::resolveCurrent($db,$config);$p=SvAmazonTenantPersistence::create($db,$context);
     $filters=SvAmazonCockpitFilters::fromQuery($_GET);$now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
     $coordinator=new SvAmazonDecisionCoordinator(new SvAmazonSafeTDecisionEngine(),$p,$config);
-    $queryPage=$filters->requiresDecisionFilter()?1:$filters->page();$queryPerPage=$filters->requiresDecisionFilter()?1000:$filters->perPage();
-    $found=$p->cases->search($filters->sqlFilters(),$queryPage,$queryPerPage);$items=[];
-    $policies=$p->policies->allActive();
+    $sqlFilters=$filters->sqlFilters();$searchTerm=trim((string)($sqlFilters['q']??''));
+    if($searchTerm!=='')unset($sqlFilters['q']);
+    $requiresPostFilter=$filters->requiresDecisionFilter() || $searchTerm!=='';
+    $queryPage=$requiresPostFilter?1:$filters->page();$queryPerPage=$requiresPostFilter?1000:$filters->perPage();
+    $found=$p->cases->search($sqlFilters,$queryPage,$queryPerPage);
+    if($searchTerm!==''){
+        $invoiceStmt=$db->prepare(
+            "SELECT DISTINCT case_id FROM amazon_return_events "
+            ."WHERE tenant_id=:invoice_tenant_id AND amazon_connection_id=:invoice_connection_id "
+            ."AND event_type='PHYSICAL_RECEIVED' "
+            ."AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.sales_invoice_number')) LIKE :q_invoice "
+            ."ORDER BY case_id LIMIT 1000"
+        );
+        $invoiceStmt->execute([
+            ':invoice_tenant_id'=>$context->tenantId(),
+            ':invoice_connection_id'=>$context->amazonConnectionId(),
+            ':q_invoice'=>'%'.$searchTerm.'%',
+        ]);
+        $invoiceCaseIds=array_map('intval',$invoiceStmt->fetchAll(PDO::FETCH_COLUMN));
+        $needle=mb_strtolower($searchTerm,'UTF-8');
+        $found['items']=array_values(array_filter(
+            $found['items'],
+            static function(array $row)use($needle,$invoiceCaseIds):bool{
+                if(in_array((int)($row['id']??0),$invoiceCaseIds,true))return true;
+                foreach(['amazon_order_id','safe_t_id','sku','asin'] as $field){
+                    $value=mb_strtolower(trim((string)($row[$field]??'')),'UTF-8');
+                    if($value!=='' && str_contains($value,$needle))return true;
+                }
+                return false;
+            }
+        ));
+    }
+    $items=[];$policies=$p->policies->allActive();
     foreach($found['items'] as $row){
         $caseId=(int)($row['id']??0);if($caseId<1)continue;
         $case=SvAmazonReturnProjector::project($p->cases,$p->events,$caseId);$case['policies']=$policies;
@@ -52,7 +82,7 @@ try{
             'updated_at'=>$case['updated_at']??null,
         ];
     }
-    if($filters->requiresDecisionFilter()){
+    if($requiresPostFilter){
         $total=count($items);$offset=($filters->page()-1)*$filters->perPage();$items=array_slice($items,$offset,$filters->perPage());
     }else{$total=(int)$found['total'];}
     sv_amz_cases_reply(['success'=>true,'items'=>$items,'page'=>$filters->page(),'per_page'=>$filters->perPage(),'total'=>$total,'filters'=>$filters->filters()]);
