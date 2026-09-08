@@ -6,7 +6,7 @@ function frlSame(mixed $want,mixed $got,string $why):void{
     if($want!==$got)throw new RuntimeException($why.' expected='.json_encode($want).' actual='.json_encode($got));
 }
 
-$now=new DateTimeImmutable('2026-09-08 01:30:00',new DateTimeZone('UTC'));
+$now=new DateTimeImmutable('2026-09-08 04:00:00',new DateTimeZone('UTC'));
 $case=[
     'id'=>16,'amazon_order_id'=>'702-7825391-8710636','program'=>'FBA',
     'safe_t_id'=>'45920-28095-3340347','state'=>'SAFE_T_DENIED',
@@ -24,7 +24,7 @@ $promise=[
 ];
 $checked=[
     'id'=>2,'case_id'=>16,'event_type'=>'FINANCIAL_RECONCILIATION_CHECKED','source'=>'SP_API_FINANCES',
-    'occurred_at'=>'2026-09-08 01:20:00','payload'=>[
+    'occurred_at'=>'2026-09-08 03:50:00','payload'=>[
         'refresh_complete'=>true,'credit_amount'=>'50.25','outstanding_amount'=>'18.23',
         'unclassified_transactions'=>4,
         'ambiguous_reimbursement_transactions'=>0,
