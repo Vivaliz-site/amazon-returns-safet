@@ -68,6 +68,7 @@ Protect-SecretReadFile $token
 Protect-SecretReadFile $UsernameFile
 Protect-SecretReadFile $PasswordFile
 Protect-SecretReadFile $TotpKeyFile
+Protect-SecretReadFile $TotpKnownHostsFile
 
 function Escape-PowerShellSingleQuoted([string]$Value) { return $Value.Replace("'", "''") }
 $safeBridgeEndpoint=Escape-PowerShellSingleQuoted $BridgeEndpoint

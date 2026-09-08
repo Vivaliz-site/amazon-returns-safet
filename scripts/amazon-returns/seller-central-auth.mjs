@@ -64,6 +64,7 @@ export async function requestRemoteTotp({ host, keyFile, knownHostsFile, sshBina
   for (const [label, value] of Object.entries({ host, keyFile, knownHostsFile })) {
     if (!String(value ?? '').trim()) throw new Error(`Remote TOTP ${label} is required.`);
   }
+  if (String(host).trim().startsWith('-')) throw new Error('Remote TOTP host is invalid.');
   const args = [
     '-o', 'BatchMode=yes',
     '-o', 'IdentitiesOnly=yes',

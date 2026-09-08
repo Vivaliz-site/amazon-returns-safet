@@ -19,3 +19,13 @@ test('maps an unconfigured TOTP seed to a distinct fail-closed auth reason', asy
   });
   assert.deepEqual(result,{status:'AUTH_REQUIRED',reason:'TOTP_SEED_NOT_CONFIGURED'});
 });
+
+
+test('rejects option-like SSH hosts before spawning ssh', async () => {
+  let invoked=false;
+  await assert.rejects(
+    requestRemoteTotp({host:'-oProxyCommand=bad',keyFile:'k',knownHostsFile:'h',sshBinary:'ssh.exe',runner:async()=>{invoked=true;return {exitCode:0,stdout:'123456',stderr:''};}}),
+    /Remote TOTP host is invalid/
+  );
+  assert.equal(invoked,false);
+});
