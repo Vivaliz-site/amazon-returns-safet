@@ -13,6 +13,7 @@ param(
     [string]$TotpHost = '',
     [string]$TotpKeyFile = '',
     [string]$TotpKnownHostsFile = '',
+    [string]$SshPath = '',
     [int]$PollMinutes = 1440,
     [string]$OperaPath = '',
     [string]$ProfilePath = ''
@@ -21,7 +22,12 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($PollMinutes -ne 1440) { throw 'PollMinutes must be 1440 to preserve the approved daily browser cadence.' }
 $node = (Get-Command node.exe -ErrorAction Stop).Source
-$ssh = (Get-Command ssh.exe -ErrorAction Stop).Source
+if ([string]::IsNullOrWhiteSpace($SshPath)) {
+    $gitSsh = Join-Path $env:ProgramFiles 'Git\usr\bin\ssh.exe'
+    if (Test-Path $gitSsh) { $SshPath = $gitSsh } else { $SshPath = (Get-Command ssh.exe -ErrorAction Stop).Source }
+}
+if (-not (Test-Path $SshPath)) { throw "SSH binary not found: $SshPath" }
+$ssh = $SshPath
 if ([string]::IsNullOrWhiteSpace($OperaPath)) {
     $OperaPath = Join-Path $env:LOCALAPPDATA 'Programs\Opera developer\opera.exe'
     if (-not (Test-Path $OperaPath)) {
