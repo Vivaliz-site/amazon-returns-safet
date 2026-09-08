@@ -68,7 +68,7 @@ ppAssert(substr_count($script,'runuser -u ubuntu -- git -C "$repo"') >= 2,'Root 
 ppAssert(!str_contains($script,'--webroot'),'TLS issuance must not depend on public origin port 80.');
 ppAssert(str_contains($script,'SvAmazonReturnsRuntime::bootstrap($db,$context)'),'Provisioning must bootstrap only after resolving tenant context.');
 ppAssert(str_contains($script,'verify-live-tenant-foundation.sh'),'Subsequent releases must verify live tenant invariants without comparing mutable runtime state to the migration snapshot.');
-foreach(['tenant_count','connection_count','target_current_cases','ownership_nulls','cross_tenant_mismatch_count','processing_jobs','write_profile_version','safe_t_submit_write_enabled','safe_t_appeal_write_enabled','live_tenant_verification=ok'] as $needle){
+foreach(['tenant_count','connection_count','target_current_cases','ownership_nulls','cross_tenant_mismatch_count','processing_jobs','write_profile_version','safe_t_submit_write_enabled','safe_t_appeal_write_enabled','review_notification_ready','live_tenant_verification=ok'] as $needle){
     ppAssert(str_contains($liveVerification,$needle),'Live tenant verification missing '.$needle);
 }
 foreach(['amazon_return_connections','amazon_return_tenant_users','amazon_return_feature_flags','updated_by_user_id'] as $needle){
@@ -82,7 +82,8 @@ foreach(['--dry-run','mysqldump','--apply','verify-migration.sh','rollback','37/
 }
 
 ppAssert(str_contains($script,"ensure_env_key 'AMAZON_RETURNS_REVIEW_AI_MODEL' 'gpt-5.6-terra'"),'Provisioning must install review AI model without overwriting.');
-ppAssert(str_contains($script,"ensure_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '0'"),'Learned execution must provision fail closed.');
+ppAssert(str_contains($script,"set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '1'"),'Guarded learned-rule execution must be enabled in production.');
+ppAssert(str_contains($script,"set_env_key 'AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL' 'fredmourao@gmail.com'"),'Production must persist the approved review reminder recipient.');
 ppAssert(!str_contains($script,"ensure_env_key 'OPENAI_API_KEY'"),'Provisioning must not manufacture or overwrite an OpenAI API key.');
-foreach(['pending_outbox','dead_letters','learned_rule_execution_enabled'] as $needle)ppAssert(str_contains($liveVerification,$needle),'Live verifier missing rollout gate '.$needle);
+foreach(['pending_outbox','dead_letters','learned_rule_execution_enabled','review_notification_ready'] as $needle)ppAssert(str_contains($liveVerification,$needle),'Live verifier missing rollout gate '.$needle);
 echo "production-provision-test: OK\n";
