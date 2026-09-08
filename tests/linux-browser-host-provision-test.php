@@ -14,6 +14,9 @@ lbAssert(str_contains($run,'SELLER_CENTRAL_BROWSER'),'Runner must use a configur
 lbAssert(str_contains($run,'SELLER_CENTRAL_PROFILE'),'Runner must use a persistent dedicated profile.');
 lbAssert(str_contains($run,'browser_pid'),'Runner must track the dedicated browser PID it owns.');
 lbAssert(!str_contains($run,'pkill'),'Runner must never kill unrelated browser processes.');
+lbAssert(str_contains($run,'browser.pid'),'Runner must persist the PID of the dedicated browser it owns.');
+lbAssert(str_contains($run,'/proc/'),'Runner must verify a stored PID command line before terminating a browser.');
+lbAssert(str_contains($run,'UNMANAGED_SELLER_CENTRAL_CDP'),'Runner must fail closed when CDP is already up without a verifiable owned PID.');
 $svc=(string)file_get_contents($service);
 lbAssert(str_contains($svc,'Type=oneshot'),'Browser service must be finite.');
 lbAssert(str_contains($svc,'EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/seller-central-browser.env'),'Service must load path-only runtime configuration.');

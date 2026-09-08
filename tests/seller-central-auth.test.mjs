@@ -117,3 +117,18 @@ test('fails closed on a human or unknown Amazon challenge without requesting a T
     assert.ok(['HUMAN_CHALLENGE', 'AUTH_REQUIRED'].includes(result.status));
   }
 });
+
+
+test('submits credentials only once when Amazon remains on sign-in', async () => {
+  const state = { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: 'E-mail Senha' };
+  let submissions = 0;
+  const result = await ensureSellerCentralAuthenticated({ pageState: async () => state }, {
+    usernameFile: '/secure/account', passwordFile: '/secure/password',
+    readSecret: file => file.endsWith('account') ? 'account-test-value' : 'password-test-value',
+    applyCredentials: async () => { submissions++; return true; },
+    totpRequester: async () => { throw new Error('TOTP must not be requested while sign-in is unresolved'); },
+    sleep: async () => {},
+  });
+  assert.equal(submissions, 1);
+  assert.deepEqual(result, { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' });
+});
