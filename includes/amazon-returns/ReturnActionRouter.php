@@ -116,9 +116,14 @@ final class SvAmazonReturnActionRouter
     private static function freshUnpaidFinance(array $events,DateTimeImmutable $after,DateTimeImmutable $now): bool
     {
         $event=self::latest($events,['FINANCIAL_RECONCILIATION_CHECKED']);
-        $at=self::date($event['occurred_at']??null);$p=$event['payload']??[];
+        $at=self::date($event['occurred_at']??null);
+        $p=is_array($event['payload']??null)?$event['payload']:[];
+        $ambiguity=$p['ambiguous_reimbursement_transactions']??null;
+        $unsettled=$p['unsettled_financial_evidence']??null;
         return $at!==null && $at>=$after && $at<=$now && $at>=$now->modify('-2 hours')
-            && ($p['refresh_complete']??false)===true && (int)($p['unclassified_transactions']??-1)===0
+            && ($p['refresh_complete']??false)===true
+            && is_int($ambiguity) && $ambiguity===0
+            && is_bool($unsettled) && $unsettled===false
             && is_numeric($p['outstanding_amount']??null) && (float)$p['outstanding_amount']>0;
     }
 
