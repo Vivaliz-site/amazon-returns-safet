@@ -101,6 +101,42 @@ final class SvAmazonGmailApiClient
         return ['messages'=>$messages,'cursor'=>$nextCursor,'recovered_cursor'=>$recovered];
     }
 
+    /** @return list<array<string,mixed>> */
+    public function searchMessages(string $queryText, int $maxMessages = 500): array
+    {
+        $queryText = trim($queryText);
+        if ($queryText === '') throw new InvalidArgumentException('Gmail search query cannot be empty.');
+        $maxMessages = max(1, min(1000, $maxMessages));
+        $ids = [];
+        $pageToken = null;
+        do {
+            $remaining = $maxMessages - count($ids);
+            if ($remaining <= 0) break;
+            $query = ['q'=>$queryText,'maxResults'=>(string)min(500, $remaining)];
+            if ($pageToken !== null) $query['pageToken'] = $pageToken;
+            $data = $this->request('GET', '/messages', $query);
+            foreach (($data['messages'] ?? []) as $message) {
+                if (!is_array($message)) continue;
+                $id = trim((string)($message['id'] ?? ''));
+                if ($id !== '') $ids[] = $id;
+                if (count($ids) >= $maxMessages) break;
+            }
+            $pageToken = isset($data['nextPageToken']) ? trim((string)$data['nextPageToken']) : null;
+            if ($pageToken === '') $pageToken = null;
+        } while ($pageToken !== null && count($ids) < $maxMessages);
+
+        $messages = [];
+        foreach (array_values(array_unique($ids)) as $id) {
+            try {
+                $message = $this->request('GET', '/messages/' . rawurlencode($id), ['format'=>'full']);
+            } catch (RuntimeException $e) {
+                if (str_contains($e->getMessage(), 'HTTP 404')) continue;
+                throw $e;
+            }
+            $messages[] = $this->normalizeMessage($message);
+        }
+        return $messages;
+    }
     /** @return list<string> */
     private function historyMessageIds(string $cursor): array
     {

@@ -92,6 +92,7 @@ final class SvAmazonReturnProjector
                 break;
 
             case 'REFUND_DETECTED':
+            case 'REFUND_ISSUED_EMAIL':
             case 'REFUND_CONFIRMED':
                 $facts['refund_at'] = array_key_exists('refund_at', $payload)
                     ? self::utcString($payload['refund_at'])

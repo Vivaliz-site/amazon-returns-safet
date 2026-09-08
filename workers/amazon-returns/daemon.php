@@ -157,6 +157,7 @@ final class SvAmazonReturnsDaemon
         }
         return match($task){
             'gmail'=>$this->runGmail(),
+            'gmail_refund_reconciliation'=>$this->runGmailRefundReconciliation(),
             'scheduler'=>$this->runScheduler($now),
             'review_operations'=>(new SvAmazonReviewOperations($this->persistence,$this->config))->run($now),
             'seller_central'=>$this->runSellerCentral(),
@@ -295,6 +296,28 @@ final class SvAmazonReturnsDaemon
         return $result;
     }
 
+    /** @return array<string,mixed> */
+    private function runGmailRefundReconciliation(): array
+    {
+        if(!$this->config->flag('gmail_ingest'))return ['status'=>'SKIPPED_DISABLED'];
+        $gate=$this->dependencyGate('gmail');
+        if(($gate['status'] ?? '')!=='READY_NO_RUNTIME_PROVIDER')return $gate;
+        $gmail=new SvAmazonGmailApiClient($this->config);
+        $messages=$gmail->searchMessages('newer_than:90d reembolso iniciado',500);
+        $ingestor=new SvAmazonGmailIngestor();
+        $ingested=$ingestor->ingest(
+            $messages,
+            fn(array $event):int=>SvAmazonGmailEventSink::persist($this->persistence,$event),
+            'daily-refund-search'
+        );
+        return [
+            'status'=>'OK',
+            'query'=>'newer_than:90d reembolso iniciado',
+            'messages'=>$ingested['messages'],
+            'events'=>$ingested['events'],
+            'financial_truth'=>false,
+        ];
+    }
     /** @return array<string,mixed> */
     private function runScheduler(DateTimeImmutable $now): array
     {

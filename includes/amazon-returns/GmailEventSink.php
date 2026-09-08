@@ -14,6 +14,16 @@ final class SvAmazonGmailEventSink
     public static function casePatch(array $event): array
     {
         $type = strtoupper(trim((string)($event['event_type'] ?? '')));
+        if ($type === 'REFUND_ISSUED_EMAIL') {
+            $patch = ['state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED];
+            $occurredAt = trim((string)($event['occurred_at'] ?? ''));
+            if ($occurredAt !== '') $patch['refund_at'] = $occurredAt;
+            $amount = $event['amount'] ?? null;
+            if (is_numeric($amount) && (float)$amount >= 0) {
+                $patch['refund_amount'] = number_format((float)$amount, 2, '.', '');
+            }
+            return $patch;
+        }
         if ($type === 'SAFE_T_REGISTERED_EMAIL') {
             return ['safe_t_id'=>trim((string)($event['safe_t_id'] ?? '')),'state'=>SvAmazonReturnStates::SAFE_T_SUBMITTED];
         }
@@ -134,6 +144,10 @@ final class SvAmazonGmailEventSink
             'safe_t_id'=>$event['safe_t_id'] ?? null,
             'amount'=>$event['amount'] ?? null,
             'currency'=>$event['currency'] ?? null,
+            'refund_at'=>strtoupper(trim((string)($event['event_type'] ?? ''))) === 'REFUND_ISSUED_EMAIL'
+                ? ($event['occurred_at'] ?? null) : null,
+            'refund_amount'=>strtoupper(trim((string)($event['event_type'] ?? ''))) === 'REFUND_ISSUED_EMAIL'
+                ? ($event['amount'] ?? null) : null,
             'review_outcome'=>$event['review_outcome'] ?? null,
             'review_suggested_action'=>$event['review_suggested_action'] ?? null,
             'review_reason'=>$event['review_reason'] ?? null,
