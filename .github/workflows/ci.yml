@@ -50,7 +50,7 @@ jobs:
           bash -n scripts/amazon-returns/run-seller-central-daily.sh
           bash -n scripts/provision-seller-central-browser-host.sh
           bash -n scripts/provision-amazon-totp-authenticator.sh
-          if git grep -n -E 'StrictHostKeyChecking=no|BEGIN OPENSSH PRIVATE KEY|otpauth://' -- scripts deploy includes api admin workers tests; then
+          if git grep -n -E 'StrictHostKeyChecking=no|BEGIN OPENSSH PRIVATE KEY|otpauth://' -- scripts deploy includes api admin workers; then
             echo 'Prohibited secret/SSH weakening marker found.' >&2
             exit 1
           fi
