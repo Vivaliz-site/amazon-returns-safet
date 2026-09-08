@@ -32,4 +32,15 @@ $finance=[
 $decision=SvAmazonReturnActionRouter::decide($case,[$promise,$finance],['eligible'=>false],$now);
 pclSame('SAFE_T_APPEAL',$decision['action']??null,'Expired proactive promise with verified unpaid seller balance must attempt recovery appeal even when the prior window was missed by the automation');
 pclSame('MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT',$decision['reason']??null,'Recovery attempt must remain auditable');
+
+$accepted=[
+    'id'=>3,'case_id'=>23,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-08 13:30:00','payload'=>[
+        'action'=>'SAFE_T_APPEAL','status'=>'ACCEPTED','submitted'=>true,
+        'external_id'=>'44235-16847-8784913',
+    ],
+];
+$already=SvAmazonReturnActionRouter::decide($case,[$promise,$accepted,$finance],['eligible'=>false],$now);
+pclSame('WAIT',$already['action']??null,'An accepted Seller Central appeal result must suppress duplicate appeal submission even if an older status still says appeal_submitted=false');
+pclSame('APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$already['reason']??null,'Duplicate suppression must remain auditable');
 echo "proactive-credit-expiry-lifecycle-test: OK\n";
