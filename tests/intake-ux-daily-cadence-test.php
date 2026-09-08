@@ -16,10 +16,13 @@ $runtime=intakeUxRead('includes/amazon-returns/Runtime.php');
 foreach(['gmail','gmail_refund_reconciliation','seller_central','financial','sp_api','returns_report'] as $task){
     intakeUxAssert(
         preg_match("/'".preg_quote($task,'/')."'\\s*=>\\s*86400/",$runtime)===1,
-        $task.' business consultation must run at most once per day.'
+        $task.' routine external consultation must run at most once per day.'
     );
 }
+intakeUxAssert(preg_match("/'scheduler'\\s*=>\\s*300/",$runtime)===1,'Internal scheduler must remain frequent so known dates are not delayed by daily polling.');
 intakeUxAssert(preg_match("/'health'\\s*=>\\s*900/",$runtime)===1,'Technical health monitoring may remain frequent.');
+$daemon=intakeUxRead('workers/amazon-returns/daemon.php');
+intakeUxAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'When the scheduler reaches a financial recheck point, it must force a fresh external read instead of waiting for the routine daily cadence.');
 
 $intakePage=intakeUxRead('admin/amazon-returns/intake.php');
 intakeUxAssert(str_contains($intakePage,'sales_invoice_number'),'Intake must offer a sales invoice number field.');
@@ -58,6 +61,7 @@ intakeUxAssert(str_contains($ux,'Ver histórico'),'Timeline must have a clear co
 intakeUxAssert(str_contains($ux,"['O que aconteceu','O que já foi verificado','Por que preciso da sua decisão?','Mensagens trocadas']"),'Review must prioritize facts before asking the user to decide.');
 
 $memory=intakeUxRead('docs/MEMORIA-DO-PROJETO.md');
-intakeUxAssert(str_contains($memory,'consultas rotineiras de negócio') && str_contains($memory,'uma vez por dia'),'Project memory must record the latest daily business-consultation rule.');
+intakeUxAssert(str_contains($memory,'consultas rotineiras de negócio') && str_contains($memory,'uma vez por dia'),'Project memory must record the daily routine business-consultation rule.');
+intakeUxAssert(str_contains($memory,'agendador interno') && str_contains($memory,'cinco minutos'),'Project memory must record that due-date/action scheduling is frequent and separate from routine external polling.');
 
 echo "intake-ux-daily-cadence-test: OK\n";
