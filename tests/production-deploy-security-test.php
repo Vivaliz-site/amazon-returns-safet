@@ -8,16 +8,27 @@ function pdsAssert(bool $condition, string $message): void
 
 $scriptPath = __DIR__ . '/../scripts/provision-production.sh';
 $vhostPath = __DIR__ . '/../deploy/apache/returns.shopvivaliz.com.br.conf';
+$bootstrapVhostPath = __DIR__ . '/../deploy/apache/returns-http.conf';
 
 pdsAssert(is_file($scriptPath), 'Production provision script must exist.');
 pdsAssert(is_file($vhostPath), 'Production TLS vhost must exist.');
+pdsAssert(is_file($bootstrapVhostPath), 'TLS bootstrap HTTP vhost must exist.');
 
 $script = (string) file_get_contents($scriptPath);
 $vhost = (string) file_get_contents($vhostPath);
+$bootstrapVhost = (string) file_get_contents($bootstrapVhostPath);
 
 pdsAssert(
-    !str_contains($script, 'deploy/apache/returns-http.conf'),
-    'Provisioning must never publish the application through the HTTP-only vhost.'
+    str_contains($bootstrapVhost, 'Redirect permanent / https://returns.shopvivaliz.com.br/'),
+    'TLS bootstrap HTTP vhost must redirect every request to HTTPS.'
+);
+pdsAssert(
+    !str_contains($bootstrapVhost, 'DocumentRoot'),
+    'TLS bootstrap HTTP vhost must never expose the application document root.'
+);
+pdsAssert(
+    !str_contains($bootstrapVhost, '<Directory'),
+    'TLS bootstrap HTTP vhost must never grant filesystem access to the application.'
 );
 
 $tlsBootstrap = strpos(
@@ -32,13 +43,7 @@ pdsAssert($tlsBootstrap !== false, 'Provisioning must verify/bootstrap TLS crede
 pdsAssert($secureVhostInstall !== false, 'Provisioning must install the secure vhost.');
 pdsAssert(
     $tlsBootstrap < $secureVhostInstall,
-    'TLS credentials must exist before the production vhost is activated.'
-);
-
-$beforeSecureVhost = substr($script, 0, $secureVhostInstall);
-pdsAssert(
-    !str_contains($beforeSecureVhost, 'systemctl reload apache2'),
-    'Apache must not be reloaded with an application-serving vhost before TLS/mTLS is ready.'
+    'TLS credentials must exist before the production HTTPS vhost is activated.'
 );
 
 pdsAssert(
