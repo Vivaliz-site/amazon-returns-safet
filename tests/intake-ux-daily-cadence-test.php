@@ -33,8 +33,8 @@ intakeUxAssert(str_contains($lookup,'->syncOrder($orderId)'),'Lookup must query 
 intakeUxAssert(str_contains($lookup,'SvAmazonSpApiEventSink::persist'),'Lookup must persist the discovered order before returning results.');
 
 $intakeApi=intakeUxRead('admin/amazon-returns/api/intake.php');
-intakeUxAssert(str_contains($intakeApi,"$input['sales_invoice_number']"),'Receipt API must accept the sales invoice number.');
-intakeUxAssert(str_contains($intakeApi,"'sales_invoice_number'=>$salesInvoiceNumber"),'Receipt event must persist the sales invoice number.');
+intakeUxAssert(str_contains($intakeApi,'$input[\'sales_invoice_number\']'),'Receipt API must accept the sales invoice number.');
+intakeUxAssert(str_contains($intakeApi,"'sales_invoice_number'=>\$salesInvoiceNumber"),'Receipt event must persist the sales invoice number.');
 intakeUxAssert(str_contains($intakeApi,'max((int)$case[\'quantity_ordered\'],(int)$case[\'quantity_refunded\'])'),'Physical receipt quantity must not depend only on refund projection.');
 
 $cockpit=intakeUxRead('admin/amazon-returns/assets/cockpit.js');
