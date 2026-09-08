@@ -22,4 +22,44 @@ cuAssert(str_contains($js,"toLocaleString('pt-BR'"),'pt-BR date formatter requir
 cuAssert(str_contains($css,'@media(max-width:600px)'),'Mobile layout required.');
 cuAssert(str_contains($css,'min-height:44px'),'Mobile action targets must be at least 44px.');
 cuAssert(!str_contains($css,'overflow-x:auto'),'Cockpit must not rely on page-level horizontal scrolling.');
+
+// Every operator-facing enum must be translated while preserving the exact API value.
+foreach([
+    'value="SAFE_T_DENIED">SAFE-T negado<',
+    'value="SAFE_T_APPEAL">Recorrer no SAFE-T<',
+    'value="DELIVERY_BY_AMAZON">Entrega pela Amazon<',
+    'value="NOT_RECEIVED">Não recebido<',
+    'value="PROMISED_DATE">Data prometida pela Amazon<',
+] as $needle) cuAssert(str_contains($page,$needle),'Portuguese select label missing: '.$needle);
+foreach(['const actionLabels=','const stateLabels=','const reasonLabels=','const physicalLabels=','const programLabels=','const statusLabels=','function enumLabel(','function localizedJson('] as $needle)cuAssert(str_contains($js,$needle),'Central Portuguese localizer missing '.$needle);
+foreach([
+    'actionLabel(c.current_action)',
+    'stateLabel(c.state)',
+    'physicalLabel(c.physical_status)',
+    'reasonLabel(r.reason)',
+    'statusLabel(r.status)',
+    'actionLabel(suggestion.action)',
+    'localizedJson(ctx.facts)',
+] as $needle) cuAssert(str_contains($js,$needle),'Operator data is still not localized through '.$needle);
+foreach([
+    "REFUND_DETECTED:'Reembolso detectado'",
+    "SAFE_T_APPROVED:'SAFE-T aprovado'",
+    "IN_TRANSIT:'Em trânsito'",
+    "UNKNOWN:'Programa não identificado'",
+    "return 'Código interno não reconhecido'",
+] as $needle) cuAssert(str_contains($js,$needle),'Portuguese fallback/state coverage missing: '.$needle);
+$rawSnippets=[
+    <<<'RAW'
+`${c.state||'—'} · ${c.physical_status||'—'}`
+RAW,
+    <<<'RAW'
+`${brl(c.outstanding_amount)} · ${c.current_action||'WAIT'}`
+RAW,
+    <<<'RAW'
+`Caso ${r.case_id} · ${r.reason||'—'}`
+RAW,
+    'JSON.stringify(ctx.facts)',
+];
+foreach($rawSnippets as $raw) cuAssert(!str_contains($js,$raw),'Raw internal enum/JSON must not be shown to the operator.');
+
 echo "cockpit-ui-contract-test: OK\n";
