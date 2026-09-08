@@ -33,19 +33,26 @@ foreach([
 ] as $needle) cuAssert(str_contains($page,$needle),'Portuguese select label missing: '.$needle);
 foreach(['const actionLabels=','const stateLabels=','const reasonLabels=','const physicalLabels=','const programLabels=','const statusLabels=','function enumLabel(','function localizedJson('] as $needle)cuAssert(str_contains($js,$needle),'Central Portuguese localizer missing '.$needle);
 foreach([
-    "actionLabel(c.current_action)",
-    "stateLabel(c.state)",
-    "physicalLabel(c.physical_status)",
-    "reasonLabel(r.reason)",
-    "statusLabel(r.status)",
-    "actionLabel(suggestion.action)",
-    "localizedJson(ctx.facts)",
+    'actionLabel(c.current_action)',
+    'stateLabel(c.state)',
+    'physicalLabel(c.physical_status)',
+    'reasonLabel(r.reason)',
+    'statusLabel(r.status)',
+    'actionLabel(suggestion.action)',
+    'localizedJson(ctx.facts)',
 ] as $needle) cuAssert(str_contains($js,$needle),'Operator data is still not localized through '.$needle);
-foreach([
-    "`${c.state||'—'} · ${c.physical_status||'—'}`",
-    "`${brl(c.outstanding_amount)} · ${c.current_action||'WAIT'}`",
-    "`Caso ${r.case_id} · ${r.reason||'—'}`",
-    "JSON.stringify(ctx.facts)",
-] as $raw) cuAssert(!str_contains($js,$raw),'Raw internal enum/JSON must not be shown to the operator.');
+$rawSnippets=[
+    <<<'RAW'
+`${c.state||'—'} · ${c.physical_status||'—'}`
+RAW,
+    <<<'RAW'
+`${brl(c.outstanding_amount)} · ${c.current_action||'WAIT'}`
+RAW,
+    <<<'RAW'
+`Caso ${r.case_id} · ${r.reason||'—'}`
+RAW,
+    'JSON.stringify(ctx.facts)',
+];
+foreach($rawSnippets as $raw) cuAssert(!str_contains($js,$raw),'Raw internal enum/JSON must not be shown to the operator.');
 
 echo "cockpit-ui-contract-test: OK\n";
