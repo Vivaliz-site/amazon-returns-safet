@@ -91,7 +91,16 @@ env_value() {
 }
 learned_rule_execution_raw="$(env_value AMAZON_RETURNS_LEARNED_RULE_EXECUTION)"
 case "${learned_rule_execution_raw,,}" in 1|true|yes|on) learned_rule_execution_enabled=1 ;; *) learned_rule_execution_enabled=0 ;; esac
+review_notification_email="$(env_value AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL)"
+if php -r 'exit(filter_var($argv[1],FILTER_VALIDATE_EMAIL)!==false?0:1);' "$review_notification_email"; then
+    review_notification_ready=1
+else
+    review_notification_ready=0
+fi
 if [[ "$tenant_slug" == shopvivaliz ]]; then
+    [[ "$learned_rule_execution_enabled" -eq 1 ]] || { echo 'learned_rule_execution_enabled=0' >&2; exit 1; }
+    [[ "$review_notification_ready" -eq 1 ]] || { echo 'review_notification_ready=0' >&2; exit 1; }
+    [[ "$review_notification_email" == 'fredmourao@gmail.com' ]] || { echo 'review_notification_recipient_unexpected' >&2; exit 1; }
     operational_policies="$(scalar "SELECT COUNT(*) FROM amazon_return_policies WHERE tenant_id=$tenant_id AND status='ACTIVE' AND policy_key='RETURN_NOT_RECEIVED_D45_REFUND_V2' AND marketplace_id='A2Q3Y263D00KWC' AND eligibility_days=45 AND basis='REFUND_AT' AND effective_to IS NULL AND ((program='STANDARD' AND effective_from='2020-01-01') OR (program IN ('FBA_ONSITE','DELIVERY_BY_AMAZON') AND effective_from='2026-04-21'))")"
     bad_policy="$(scalar "SELECT COUNT(*) FROM amazon_return_policies WHERE tenant_id=$tenant_id AND status='ACTIVE' AND policy_key LIKE 'RETURN_NOT_RECEIVED%' AND NOT (policy_key='RETURN_NOT_RECEIVED_D45_REFUND_V2' AND marketplace_id='A2Q3Y263D00KWC' AND eligibility_days=45 AND basis='REFUND_AT' AND effective_to IS NULL AND ((program='STANDARD' AND effective_from='2020-01-01') OR (program IN ('FBA_ONSITE','DELIVERY_BY_AMAZON') AND effective_from='2026-04-21')))")"
     [[ "$operational_policies" -eq 3 && "$bad_policy" -eq 0 ]] || { echo "operational_policy_invalid count=$operational_policies invalid=$bad_policy" >&2; exit 1; }
@@ -105,8 +114,8 @@ profile_value() {
     printf '%s' "$write_profile_json" | php -r '$j=json_decode(stream_get_contents(STDIN),true);$k=$argv[1];if($k==="version"){echo $j["version"]??"";exit;}echo !empty($j["flags"][$k])?"1":"0";' "$key"
 }
 write_profile_version="$(profile_value version)"
-[[ "$write_profile_version" == 'safet-submit-appeal-email-review-v1' ]] || { echo "write_profile_invalid version=$write_profile_version" >&2; exit 1; }
-for spec in SAFE_T_SUBMIT:1 SAFE_T_APPEAL:1 SAFE_T_EMAIL_REVIEW:1 SAFE_T_EMAIL_REPLY:0 SELLER_SUPPORT_OPEN:0 SELLER_SUPPORT_UPDATE:0; do
+[[ "$write_profile_version" == 'safet-full-recovery-v1' ]] || { echo "write_profile_invalid version=$write_profile_version" >&2; exit 1; }
+for spec in SAFE_T_SUBMIT:1 SAFE_T_APPEAL:1 SAFE_T_EMAIL_REVIEW:1 SAFE_T_EMAIL_REPLY:1 SELLER_SUPPORT_OPEN:1 SELLER_SUPPORT_UPDATE:1; do
     action="${spec%%:*}"; expected="${spec##*:}"; actual="$(profile_value "$action")"
     [[ "$actual" == "$expected" ]] || { echo "write_profile_flag_mismatch action=$action expected=$expected actual=$actual" >&2; exit 1; }
 done
@@ -123,6 +132,7 @@ emit "processing_jobs=$processing_jobs"
 emit "pending_outbox=$pending_outbox"
 emit "dead_letters=$dead_letters"
 emit "learned_rule_execution_enabled=$learned_rule_execution_enabled"
+emit "review_notification_ready=$review_notification_ready"
 emit "write_profile_version=$write_profile_version"
 emit "safe_t_submit_write_enabled=$(profile_value SAFE_T_SUBMIT)"
 emit "safe_t_appeal_write_enabled=$(profile_value SAFE_T_APPEAL)"
