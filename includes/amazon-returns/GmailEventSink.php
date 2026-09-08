@@ -11,15 +11,18 @@ final class SvAmazonGmailEventSink
     public const BR_MARKETPLACE_ID = 'A2Q3Y263D00KWC';
 
     /** @return array<string,mixed> */
-    public static function casePatch(array $event): array
+    public static function casePatch(array $event,array $existing=[]): array
     {
         $type = strtoupper(trim((string)($event['event_type'] ?? '')));
         if ($type === 'REFUND_ISSUED_EMAIL') {
             $patch = ['state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED];
             $occurredAt = trim((string)($event['occurred_at'] ?? ''));
-            if ($occurredAt !== '') $patch['refund_at'] = $occurredAt;
+            if ($occurredAt !== '' && trim((string)($existing['refund_at'] ?? '')) === '') {
+                $patch['refund_at'] = $occurredAt;
+            }
             $amount = $event['amount'] ?? null;
-            if (is_numeric($amount) && (float)$amount >= 0) {
+            if (is_numeric($amount) && (float)$amount >= 0
+                && !is_numeric($existing['refund_amount'] ?? null)) {
                 $patch['refund_amount'] = number_format((float)$amount, 2, '.', '');
             }
             return $patch;
@@ -58,7 +61,11 @@ final class SvAmazonGmailEventSink
         $orderId = trim((string)($event['order_id'] ?? ''));
         if ($orderId === '') throw new InvalidArgumentException('Gmail event order_id is required.');
         [$caseId,$itemId] = self::ensureTargetCaseScoped($p, $orderId, $event);
-        $patch = self::casePatch($event);
+        $existing=[];
+        foreach($p->cases->forOrder($orderId) as $row){
+            if((int)($row['id']??0)===$caseId){$existing=$row;break;}
+        }
+        $patch = self::casePatch($event,$existing);
         if ($itemId !== self::UNRESOLVED_ITEM_ID
             && ($patch['state'] ?? null) === SvAmazonReturnStates::POLICY_REVIEW_REQUIRED) {
             unset($patch['state']);
@@ -159,6 +166,4 @@ final class SvAmazonGmailEventSink
             'content_sha256'=>$event['content_sha256'] ?? null,
         ];
     }
-
-
 }
