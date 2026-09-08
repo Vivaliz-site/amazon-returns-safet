@@ -15,6 +15,7 @@ require_once __DIR__ . '/../../includes/amazon-returns/ReturnsReport.php';
 require_once __DIR__ . '/../../includes/amazon-returns/GmailApi.php';
 require_once __DIR__ . '/../../includes/amazon-returns/GmailEventSink.php';
 require_once __DIR__ . '/../../includes/amazon-returns/SafeTEmailReview.php';
+require_once __DIR__ . '/../../includes/amazon-returns/ReviewOperations.php';
 require_once __DIR__ . '/gmail-ingest.php';
 require_once __DIR__ . '/scheduler.php';
 require_once __DIR__ . '/reconcile.php';
@@ -157,6 +158,7 @@ final class SvAmazonReturnsDaemon
         return match($task){
             'gmail'=>$this->runGmail(),
             'scheduler'=>$this->runScheduler($now),
+            'review_operations'=>(new SvAmazonReviewOperations($this->persistence,$this->config))->run($now),
             'seller_central'=>$this->runSellerCentral(),
             'financial'=>$this->runFinancial(),
             'sp_api'=>$this->runSpApiReconciliation(),
