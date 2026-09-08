@@ -37,8 +37,8 @@ intakeUxAssert(str_contains($lookup,'SvAmazonSpApiEventSink::persist'),'Lookup m
 $intakeApi=intakeUxRead('admin/amazon-returns/api/intake.php');
 intakeUxAssert(str_contains($intakeApi,'$input[\'sales_invoice_number\']'),'Receipt API must accept the sales invoice number.');
 intakeUxAssert(str_contains($intakeApi,"'sales_invoice_number'=>\$salesInvoiceNumber"),'Receipt event must persist the sales invoice number.');
-intakeUxAssert(str_contains($intakeApi,"$knownRefundQuantity=(int)$case['quantity_refunded'];"),'Receipt API must distinguish a known refund quantity from a not-yet-projected refund.');
-intakeUxAssert(str_contains($intakeApi,"$expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case['quantity_ordered']);"),'Receipt API must prefer known refunded quantity and only fall back to ordered quantity.');
+intakeUxAssert(str_contains($intakeApi,'$knownRefundQuantity=(int)$case[\'quantity_refunded\'];'),'Receipt API must distinguish a known refund quantity from a not-yet-projected refund.');
+intakeUxAssert(str_contains($intakeApi,'$expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case[\'quantity_ordered\']);'),'Receipt API must prefer known refunded quantity and only fall back to ordered quantity.');
 
 $caseRepository=intakeUxRead('includes/amazon-returns/CaseRepository.php');
 intakeUxAssert(str_contains($caseRepository,'sales_invoice_number'),'Case search must include the sales invoice number recorded at intake.');
