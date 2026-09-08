@@ -281,7 +281,26 @@ async function acquireReadWorkerLease() {
   });
 }
 
+async function runAuthCheck() {
+  const cdp = await Cdp.connect();
+  try {
+    await cdp.navigate(SAFE_T_BASE, 4500);
+    const auth = await ensureSellerCentralAuthenticated(cdp);
+    if (auth.status === 'AUTH_REQUIRED' && /^[A-Z0-9_:-]{2,64}$/.test(String(auth.reason || ''))) {
+      auth.status = auth.reason;
+    }
+    const heartbeat = await bridge('heartbeat', { worker_id: STATUS_WORKER_ID, auth_status: auth.status });
+    process.stdout.write(`${JSON.stringify({ status: heartbeat.status || 'OK', auth_status: auth.status })}\n`);
+    if (auth.status !== 'AUTHENTICATED') throw new Error('SellerCentralAuthCheckFailed');
+  } finally {
+    cdp.close();
+  }
+}
 async function main() {
+  if (process.argv.includes('--auth-check')) {
+    await runAuthCheck();
+    return;
+  }
   if (process.argv.includes('--heartbeat')) {
     process.stdout.write(`${JSON.stringify(await bridge('heartbeat', { worker_id: STATUS_WORKER_ID }))}\n`);
     return;

@@ -757,6 +757,7 @@ final class SvAmazonReturnsDaemon
         }
         if(in_array('FAILED',$statuses,true))return 'FAILED';
         if(in_array('PARTIAL',$statuses,true))return 'PARTIAL';
+        if(in_array('DEGRADED',$statuses,true))return 'DEGRADED';
         if(in_array('BLOCKED_CREDENTIALS',$statuses,true))return 'DEGRADED';
         return 'OK';
     }

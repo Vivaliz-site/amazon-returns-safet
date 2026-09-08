@@ -13,7 +13,10 @@ import { parseSafeTStatus } from '../scripts/amazon-returns/safe-t-status-parser
 
 const worker = fileURLToPath(new URL('../scripts/amazon-returns/seller-central-safe-t-read-worker.mjs', import.meta.url));
 const source = fs.readFileSync(worker, 'utf8');
-const cdpSource = source.slice(source.indexOf('class Cdp {'), source.indexOf('\nasync function authGate'));
+const cdpStart = source.indexOf('class Cdp {');
+const cdpEnd = source.indexOf('\nfunction authState');
+assert.ok(cdpStart >= 0 && cdpEnd > cdpStart, 'CDP fixture markers must match the real read-worker source');
+const cdpSource = source.slice(cdpStart, cdpEnd);
 
 test('reader worker is host-neutral and uses shared authentication recovery', () => {
   assert.match(source, /seller-central-auth\.mjs/);

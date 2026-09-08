@@ -39,5 +39,6 @@ if ! curl -fsS --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then
   [[ "$ready" -eq 1 ]] || { echo "Seller Central CDP did not become ready" >&2; exit 75; }
 fi
 
+/usr/bin/node "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check
 /usr/bin/node "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --drain
 /usr/bin/node "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" --drain

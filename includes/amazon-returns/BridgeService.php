@@ -15,12 +15,17 @@ final class SvAmazonReturnsBridgeService
     ) {}
 
     /** @return array<string,mixed> */
-    public function heartbeat(): array
+    public function heartbeat(?string $workerId=null): array
     {
+        $worker=$this->workerId($workerId,'write-worker');
+        $this->p->cursors->save('SELLER_CENTRAL','write_process_heartbeat',$worker,[
+            'status'=>'ALIVE','role'=>'WRITE',
+        ]);
         return [
             'status'=>'OK',
             'tenant_id'=>$this->p->context()->tenantId(),
             'amazon_connection_id'=>$this->p->context()->amazonConnectionId(),
+            'worker_id'=>$worker,
             'bridge_mode'=>$this->config->sellerCentralBridgeMode(),
             'enabled'=>$this->config->enabled(),
             'mode'=>$this->config->mode(),
@@ -211,6 +216,12 @@ final class SvAmazonReturnsBridgeService
             ],
             'evidence_sha256'=>$snapshot,
         ]);
+    }
+
+    private function workerId(?string $value,string $fallback): string
+    {
+        $value=trim((string)$value);
+        return preg_match('/^[A-Za-z0-9._:-]{1,128}$/D',$value)===1 ? $value : $fallback;
     }
 
     private function futureDate(mixed $candidate,string $fallback): DateTimeImmutable

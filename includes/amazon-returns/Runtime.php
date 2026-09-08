@@ -6,6 +6,7 @@ require_once __DIR__ . '/Schema.php';
 require_once __DIR__ . '/PolicySeeder.php';
 require_once __DIR__ . '/TenantContext.php';
 require_once __DIR__ . '/TenantPersistence.php';
+require_once __DIR__ . '/BridgeLiveness.php';
 
 final class SvAmazonReturnsRuntime
 {
@@ -78,8 +79,16 @@ final class SvAmazonReturnsRuntime
         )?->fetchColumn();
         $reviewNotifyEmail=trim($config->get('AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL'));
         $reviewNotificationReady=filter_var($reviewNotifyEmail,FILTER_VALIDATE_EMAIL)!==false;
+        $readiness=$config->readiness();
+        $bridgeRequired=$config->enabled() && (($readiness['seller_central_bridge']['ready'] ?? false)===true);
+        $browserLiveness=SvAmazonBridgeLiveness::evaluate(
+            $p->cursors->load('SELLER_CENTRAL','browser_auth'),
+            new DateTimeImmutable('now',new DateTimeZone('UTC')),
+            $bridgeRequired
+        );
+        $healthStatus=($browserLiveness['status'] ?? '')==='DEGRADED' ? 'DEGRADED' : 'OK';
         return [
-            'status'=>'OK',
+            'status'=>$healthStatus,
             'tenant_id'=>$p->context()->tenantId(),
             'amazon_connection_id'=>$p->context()->amazonConnectionId(),
             'tables'=>$tables,
@@ -105,7 +114,8 @@ final class SvAmazonReturnsRuntime
             'source_cursors'=>$p->cursors->count(),
             'mode'=>$config->mode(),
             'enabled'=>$config->enabled(),
-            'readiness'=>$config->readiness(),
+            'readiness'=>$readiness,
+            'seller_central_browser'=>$browserLiveness,
             'write_flags'=>$config->writeFlags(),
         ];
     }
