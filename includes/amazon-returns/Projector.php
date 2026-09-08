@@ -91,8 +91,18 @@ final class SvAmazonReturnProjector
             case 'CASE_CREATED':
                 break;
 
-            case 'REFUND_DETECTED':
             case 'REFUND_ISSUED_EMAIL':
+                if ($facts['refund_at'] === null) {
+                    $facts['refund_at'] = array_key_exists('refund_at', $payload)
+                        ? self::utcString($payload['refund_at'])
+                        : $occurredAt;
+                }
+                if ($facts['refund_amount'] === '0.00' && array_key_exists('refund_amount', $payload)) {
+                    $facts['refund_amount'] = self::decimal($payload['refund_amount']);
+                }
+                break;
+
+            case 'REFUND_DETECTED':
             case 'REFUND_CONFIRMED':
                 $facts['refund_at'] = array_key_exists('refund_at', $payload)
                     ? self::utcString($payload['refund_at'])
