@@ -33,6 +33,7 @@ intakeUxAssert(str_contains($lookup,'$p->cases->forOrder($orderId)'),'Lookup mus
 intakeUxAssert(str_contains($lookup,'new SvAmazonReturnsSpApi'),'Lookup must use the existing SP-API facade on demand.');
 intakeUxAssert(str_contains($lookup,'->syncOrder($orderId)'),'Lookup must query the exact Amazon order when it is absent locally.');
 intakeUxAssert(str_contains($lookup,'SvAmazonSpApiEventSink::persist'),'Lookup must persist the discovered order before returning results.');
+intakeUxAssert(!str_contains($lookup,"'error'=>\$e->getMessage()"),'Lookup must not expose connector/internal exception text to the operator.');
 
 $intakeApi=intakeUxRead('admin/amazon-returns/api/intake.php');
 intakeUxAssert(str_contains($intakeApi,'$input[\'sales_invoice_number\']'),'Receipt API must accept the sales invoice number.');
@@ -41,10 +42,12 @@ intakeUxAssert(str_contains($intakeApi,'$knownRefundQuantity=(int)$case[\'quanti
 intakeUxAssert(str_contains($intakeApi,'$expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case[\'quantity_ordered\']);'),'Receipt API must prefer known refunded quantity and only fall back to ordered quantity.');
 
 $casesApi=intakeUxRead('admin/amazon-returns/api/cases.php');
-intakeUxAssert(str_contains($casesApi,'sales_invoice_number'),'Cockpit case search must include the sales invoice number recorded at intake.');
-intakeUxAssert(str_contains($casesApi,'JSON_EXTRACT'),'NF search must read the scoped physical-receipt event payload without exposing internal event details.');
-intakeUxAssert(str_contains($casesApi,':q_invoice'),'NF search must use a bound search parameter.');
-intakeUxAssert(str_contains($casesApi,'tenant_id=:invoice_tenant_id') && str_contains($casesApi,'amazon_connection_id=:invoice_connection_id'),'NF event lookup must remain tenant/connection scoped.');
+intakeUxAssert(str_contains($casesApi,'SvAmazonInvoiceSearch::caseIds'),'Cockpit case search must delegate NF lookup to the server-scoped helper.');
+$invoiceSearch=intakeUxRead('includes/amazon-returns/InvoiceSearch.php');
+intakeUxAssert(str_contains($invoiceSearch,'sales_invoice_number'),'Invoice helper must search the number recorded at intake.');
+intakeUxAssert(str_contains($invoiceSearch,'JSON_EXTRACT'),'NF search must read the physical-receipt event payload without exposing internal event details.');
+intakeUxAssert(str_contains($invoiceSearch,':q_invoice'),'NF search must use a bound search parameter.');
+intakeUxAssert(str_contains($invoiceSearch,'tenant_id=:invoice_tenant_id') && str_contains($invoiceSearch,'amazon_connection_id=:invoice_connection_id'),'NF lookup must remain tenant/connection scoped from TenantContext.');
 
 $index=intakeUxRead('admin/amazon-returns/index.php');
 intakeUxAssert(str_contains($index,'Pedido, NF, SAFE-T ou SKU'),'Cockpit search must tell the user that NF is searchable.');
