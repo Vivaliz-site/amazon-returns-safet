@@ -136,7 +136,21 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
 
   let reauthenticated = false;
   let previousCredentialStage = null;
-  for (let attempt = 0; attempt < 2 && auth === 'SIGN_IN'; attempt++) {
+  let credentialSubmissions = 0;
+  let unchangedPolls = 0;
+  const configuredStagePolls = Number(options.signInStagePolls ?? 10);
+  const maxStagePolls = Number.isFinite(configuredStagePolls)
+    ? Math.max(1, Math.min(20, Math.floor(configuredStagePolls))) : 10;
+  while (auth === 'SIGN_IN') {
+    if (credentialSubmissions >= 2 || previousCredentialStage === 'UNKNOWN') {
+      if (++unchangedPolls >= maxStagePolls) return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
+      await sleep(500);
+      state = await cdp.pageState();
+      auth = classifyAmazonAuthState(state);
+      if (auth === 'HUMAN_CHALLENGE') return { status: 'HUMAN_CHALLENGE', reason: 'AMAZON_HUMAN_CHALLENGE' };
+      if (auth === 'UNKNOWN') return { status: 'AUTH_REQUIRED', reason: 'UNKNOWN_AUTH_CHALLENGE' };
+      continue;
+    }
     let username;
     let password;
     try {
@@ -153,19 +167,26 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
       password = null;
     }
     if (!applied || applied === 'UNSUPPORTED') return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_UI_UNSUPPORTED' };
-    if (applied === 'STAGE_UNCHANGED') return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
+    if (applied === 'STAGE_UNCHANGED') {
+      if (++unchangedPolls >= maxStagePolls) return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
+      await sleep(500);
+      state = await cdp.pageState();
+      auth = classifyAmazonAuthState(state);
+      if (auth === 'HUMAN_CHALLENGE') return { status: 'HUMAN_CHALLENGE', reason: 'AMAZON_HUMAN_CHALLENGE' };
+      if (auth === 'UNKNOWN') return { status: 'AUTH_REQUIRED', reason: 'UNKNOWN_AUTH_CHALLENGE' };
+      continue;
+    }
     const submittedStage = applied === 'IDENTIFIER_SUBMITTED' ? 'IDENTIFIER'
       : applied === 'PASSWORD_SUBMITTED' ? 'PASSWORD' : 'UNKNOWN';
     previousCredentialStage = submittedStage;
+    credentialSubmissions++;
+    unchangedPolls = 0;
     reauthenticated = true;
     await sleep(1200);
     state = await cdp.pageState();
     auth = classifyAmazonAuthState(state);
     if (auth === 'HUMAN_CHALLENGE') return { status: 'HUMAN_CHALLENGE', reason: 'AMAZON_HUMAN_CHALLENGE' };
     if (auth === 'UNKNOWN') return { status: 'AUTH_REQUIRED', reason: 'UNKNOWN_AUTH_CHALLENGE' };
-    if (auth === 'SIGN_IN' && submittedStage !== 'IDENTIFIER') {
-      return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
-    }
   }
   if (auth === 'SIGN_IN') return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
 

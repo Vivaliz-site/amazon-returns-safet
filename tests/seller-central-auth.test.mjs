@@ -170,3 +170,51 @@ test('allows one identifier transition followed by one password submit', async (
   assert.deepEqual(submissions, [null, 'IDENTIFIER']);
   assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
 });
+
+test('waits for a delayed identifier-to-password transition without resubmitting', async () => {
+  let stage = 'IDENTIFIER';
+  let auth = 'SIGN_IN';
+  let sleeps = 0;
+  const submissions = [];
+  const cdp = { pageState: async () => auth === 'AUTHENTICATED'
+    ? { href: 'https://sellercentral.amazon.com.br/home', title: 'Seller Central', text: 'Início' }
+    : auth === 'TOTP'
+      ? { href: 'https://www.amazon.com/ap/mfa', title: 'Verificação em duas etapas', text: 'Aplicativo autenticador' }
+      : { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: stage } };
+  const result = await ensureSellerCentralAuthenticated(cdp, {
+    usernameFile: '/secure/account', passwordFile: '/secure/password', readSecret: () => 'secret-test-value',
+    applyCredentials: async (_cdp, _u, _p, previousStage) => {
+      if (stage === previousStage) return 'STAGE_UNCHANGED';
+      submissions.push(stage);
+      if (stage === 'IDENTIFIER') return 'IDENTIFIER_SUBMITTED';
+      auth = 'TOTP'; return 'PASSWORD_SUBMITTED';
+    },
+    sleep: async () => { sleeps++; if (sleeps === 3) stage = 'PASSWORD'; },
+    totpRequester: async () => '654321', applyTotp: async () => { auth = 'AUTHENTICATED'; return true; },
+  });
+  assert.deepEqual(submissions, ['IDENTIFIER', 'PASSWORD']);
+  assert.ok(sleeps >= 3);
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
+});
+
+test('waits after one password submit without posting it twice', async () => {
+  let auth = 'SIGN_IN';
+  let sleeps = 0;
+  let submissions = 0;
+  const cdp = { pageState: async () => auth === 'TOTP'
+    ? { href: 'https://www.amazon.com/ap/mfa', title: 'Verificação em duas etapas', text: 'Aplicativo autenticador' }
+    : auth === 'AUTHENTICATED'
+      ? { href: 'https://sellercentral.amazon.com.br/home', title: 'Seller Central', text: 'Início' }
+      : { href: 'https://www.amazon.com/ap/signin', title: 'Amazon Sign-In', text: 'Senha' } };
+  const result = await ensureSellerCentralAuthenticated(cdp, {
+    usernameFile: '/secure/account', passwordFile: '/secure/password', readSecret: () => 'secret-test-value',
+    applyCredentials: async (_cdp, _u, _p, previousStage) => {
+      if (previousStage === 'PASSWORD') return 'STAGE_UNCHANGED';
+      submissions++; return 'PASSWORD_SUBMITTED';
+    },
+    sleep: async () => { sleeps++; if (sleeps === 3) auth = 'TOTP'; },
+    totpRequester: async () => '654321', applyTotp: async () => { auth = 'AUTHENTICATED'; return true; },
+  });
+  assert.equal(submissions, 1);
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
+});
