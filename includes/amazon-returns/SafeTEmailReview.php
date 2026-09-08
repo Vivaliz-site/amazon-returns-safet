@@ -36,6 +36,9 @@ final class SvAmazonSafeTEmailReview
         if (($case['seller_debit_at'] ?? null) !== null && trim((string)$case['seller_debit_at']) !== '') $facts[] = 'Data do débito/exposição do vendedor: ' . trim((string)$case['seller_debit_at']);
         if (isset($case['refund_amount']) && (float)$case['refund_amount'] > 0) $facts[] = 'Valor do reembolso/débito registrado: R$ ' . number_format((float)$case['refund_amount'], 2, ',', '.');
         if (trim((string)($case['physical_status'] ?? '')) === 'NOT_RECEIVED') $facts[] = 'Situação física registrada: produto não recebido pelo vendedor.';
+        if (($case['customer_delivery_confirmed'] ?? false) === true && self::trackingIds($case) !== []) {
+            $facts[] = 'Rastreamento oficial do pedido confirma entrega ao destinatário. Rastreamento: ' . implode(', ', self::trackingIds($case)) . '.';
+        }
         if ($facts !== []) {
             $lines[] = 'Fatos registrados no caso:';
             foreach ($facts as $fact) $lines[] = '- ' . $fact;
@@ -68,10 +71,14 @@ final class SvAmazonSafeTEmailReview
             if(is_array($event) && ($event['event_type'] ?? '')==='SAFE_T_EMAIL_REVIEW_RESPONSE'){$response=$event;break;}
         }
         $payload=is_array($response['payload'] ?? null)?$response['payload']:[];
+        $deliveryContradiction=self::customerDeliveryContradiction($case,$payload);
         $datedDecision=null;
         if($reservedResumeScope!==null || strtoupper(trim((string)($payload['review_suggested_action'] ?? '')))!=='RESPOND_EMAIL'){
             $datedDecision=(new SvAmazonSafeTDecisionEngine())->nextAction($case,$timeline,[],$now);
-            if(($datedDecision['action']??'')!=='SAFE_T_EMAIL_REPLY' || $reservedResumeScope===null || ($datedDecision['resume_scope']??null)!==$reservedResumeScope){
+            $dedicatedContradiction=($datedDecision['action']??'')==='SAFE_T_EMAIL_REPLY'
+                && ($datedDecision['reason']??'')==='CUSTOMER_NONRECEIPT_CONTRADICTED_BY_DELIVERY_EVIDENCE'
+                && $deliveryContradiction;
+            if(!$dedicatedContradiction && (($datedDecision['action']??'')!=='SAFE_T_EMAIL_REPLY' || $reservedResumeScope===null || ($datedDecision['resume_scope']??null)!==$reservedResumeScope)){
                 throw new LogicException('Email review response is not approved for automatic reply.');
             }
         }
@@ -80,8 +87,10 @@ final class SvAmazonSafeTEmailReview
         if($threadId==='')throw new LogicException('Email review reply requires Gmail thread correlation.');
         $subject='Re: Solicitação de revisão detalhada — SAFE-T '.$safeTId.' / Pedido '.$orderId;
         $lines=['Olá, equipe SAFE-T,','','Em resposta à análise da SAFE-T '.$safeTId.' do pedido '.$orderId.', seguem somente os fatos verificados atualmente disponíveis:'];
-        if($datedDecision!==null)$lines[]='- Retomada na data solicitada pela Amazon, apos nova verificacao financeira sem ressarcimento integral: '.(string)$datedDecision['next_action_at'].' UTC.';
+        if($datedDecision!==null && isset($datedDecision['next_action_at']))$lines[]='- Retomada na data solicitada pela Amazon, apos nova verificacao financeira sem ressarcimento integral: '.(string)$datedDecision['next_action_at'].' UTC.';
         if(trim((string)($case['physical_status'] ?? ''))==='NOT_RECEIVED')$lines[]='- O produto permanece registrado como não recebido fisicamente pelo vendedor.';
+        if($deliveryContradiction)$lines[]='- O rastreamento oficial do pedido confirma que ele foi entregue ao destinatário. Rastreamento: '.implode(', ',self::trackingIds($case)).'.';
+        if(trim((string)($case['customer_delivery_at'] ?? ''))!=='')$lines[]='- Data/hora registrada para a entrega ao destinatário: '.trim((string)$case['customer_delivery_at']).'.';
         if(trim((string)($case['seller_debit_at'] ?? ''))!=='')$lines[]='- Débito/exposição do vendedor: '.trim((string)$case['seller_debit_at']).'.';
         if((float)($case['expected_reimbursement_amount'] ?? 0)>0)$lines[]='- Valor econômico esperado para conciliação: R$ '.number_format((float)$case['expected_reimbursement_amount'],2,',','.').'.';
         $excerpt=trim((string)($payload['review_excerpt'] ?? ''));
@@ -91,7 +100,12 @@ final class SvAmazonSafeTEmailReview
             $lines[]=function_exists('mb_substr')?mb_substr($excerpt,0,500,'UTF-8'):substr($excerpt,0,500);
         }
         $lines[]='';
-        $lines[]='Solicitamos que a revisão considere esses fatos e informe objetivamente a conclusão e, se aplicável, o próximo passo ou documento específico necessário.';
+        if($deliveryContradiction){
+            $lines[]='Há uma divergência objetiva entre a alegação de não recebimento e o rastreamento oficial que registra o pedido como entregue ao destinatário.';
+            $lines[]='Solicitamos que a Amazon revise essa divergência considerando o rastreamento informado e confirme a correção do caso.';
+        }else{
+            $lines[]='Solicitamos que a revisão considere esses fatos e informe objetivamente a conclusão e, se aplicável, o próximo passo ou documento específico necessário.';
+        }
         $lines[]='';
         $lines[]='Atenciosamente,';
         $lines[]='ShopVivaLiz';
@@ -102,5 +116,21 @@ final class SvAmazonSafeTEmailReview
             'thread_id'=>$threadId,
             'in_reply_to'=>$inReplyTo,
         ];
+    }
+
+    /** @return list<string> */
+    private static function trackingIds(array $case): array
+    {
+        $ids=$case['customer_tracking_ids']??[];
+        if(!is_array($ids))return [];
+        return array_values(array_unique(array_filter(array_map(static fn(mixed $id):string=>trim((string)$id),$ids),static fn(string $id):bool=>$id!=='')));
+    }
+
+    private static function customerDeliveryContradiction(array $case,array $payload): bool
+    {
+        if(($case['customer_delivery_confirmed']??false)!==true || self::trackingIds($case)===[])return false;
+        $excerpt=mb_strtolower(trim((string)($payload['review_excerpt']??'')),'UTF-8');
+        if($excerpt==='')return false;
+        return preg_match('/(?:não|nao)\s+(?:ter\s+)?recebid|não\s+recebeu|nao\s+recebeu|not\s+received|did\s+not\s+receive/u',$excerpt)===1;
     }
 }
