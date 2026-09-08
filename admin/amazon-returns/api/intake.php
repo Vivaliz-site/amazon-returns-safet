@@ -163,7 +163,8 @@ try{
     $p->cases->assertOwned((int)$caseId);
     $case=$p->cases->find((int)$caseId);
     if(!is_array($case))throw new OutOfBoundsException('Caso não encontrado.');
-    $expectedQuantity=max((int)$case['quantity_ordered'],(int)$case['quantity_refunded']);
+    $knownRefundQuantity=(int)$case['quantity_refunded'];
+    $expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case['quantity_ordered']);
     $outstanding=max(0,$expectedQuantity-(int)$case['quantity_received']);
     if($quantity>$outstanding){
         throw new InvalidArgumentException(
