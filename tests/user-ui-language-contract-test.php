@@ -9,6 +9,8 @@ function uiAssert(bool $condition, string $message): void
 $root = dirname(__DIR__);
 $page = (string) file_get_contents($root . '/admin/amazon-returns/index.php');
 $js = (string) file_get_contents($root . '/admin/amazon-returns/assets/cockpit.js');
+$operatorPath = $root . '/admin/amazon-returns/assets/operator-language.js';
+$operator = is_file($operatorPath) ? (string) file_get_contents($operatorPath) : '';
 $intake = (string) file_get_contents($root . '/admin/amazon-returns/intake.php');
 
 // The operator UI must speak plain Portuguese. Internal enums/codes may remain in payloads,
@@ -17,11 +19,15 @@ foreach (['Situação', 'Próxima ação', 'Tipo de logística', 'Recebimento'] 
     uiAssert(str_contains($page, $label), 'Missing plain-language UI label: ' . $label);
 }
 foreach (['O que aconteceu', 'Por que preciso da sua decisão?', 'O que já foi verificado', 'Mensagens trocadas', 'Recomendação'] as $section) {
-    uiAssert(str_contains($js, $section), 'Review is missing plain-language section: ' . $section);
+    uiAssert(str_contains($js . $operator, $section), 'Review is missing plain-language section: ' . $section);
 }
-foreach (['function friendlyError(', 'function humanText(', 'function humanReviewSummary(', 'function renderMessageThread(', 'function recommendationExplanation('] as $helper) {
+foreach (['function friendlyError(', 'function humanText(', 'function humanReviewSummary(', 'function renderMessageThread('] as $helper) {
     uiAssert(str_contains($js, $helper), 'Missing global UI humanization helper: ' . $helper);
 }
+uiAssert(str_contains($page, 'operator-language.js'), 'Operator language boundary script must be loaded after the cockpit.');
+uiAssert(str_contains($operator, 'function recommendationExplanation('), 'Missing recommendation explanation sanitizer.');
+uiAssert(str_contains($operator, 'function renderSuggestion('), 'Recommendation rendering must be overridden at the user-facing boundary.');
+uiAssert(!str_contains($operator, 'suggestion.rationale'), 'Raw AI rationale must never be rendered to the operator.');
 uiAssert(str_contains($js, "text('span',friendlyError(message))"), 'All global UI errors must pass through friendlyError before rendering.');
 
 $forbiddenPage = [
@@ -48,7 +54,6 @@ $forbiddenJs = [
     "SP_API_FINANCES:'SP-API Financeiro'",
     "throw new Error(j.error||'Falha na consulta')",
     "text('p',suggestion.rationale||'—')",
-    'humanText(suggestion.rationale',
 ];
 foreach ($forbiddenJs as $needle) {
     uiAssert(!str_contains($js, $needle), 'Backend/technical content can still leak to user UI: ' . $needle);
