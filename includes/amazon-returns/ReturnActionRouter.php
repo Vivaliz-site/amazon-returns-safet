@@ -41,7 +41,7 @@ final class SvAmazonReturnActionRouter
             if(!self::freshUnpaidFinance($events,$promise,$now))return self::decision('CHECK_FINANCES','PROMISE_EXPIRED_VERIFY_REAL_CREDIT',$case);
             if($claim!=='' && self::acceptedAppeal($events,$claim))return self::decision('WAIT','APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$case);
             if($claim!=='' && ($message['payload']['appeal_submitted']??null)===false){
-                $deadline=self::date($case['appeal_deadline_at']??null);
+                $deadline=self::date($case['appeal_deadline_at']??$message['payload']['appeal_deadline_at']??null);
                 if($deadline===null)return self::decision('HUMAN_REVIEW','OFFICIAL_APPEAL_DEADLINE_MISSING',$case);
                 if($deadline<$now)return self::decision('SAFE_T_APPEAL','MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT',$case);
                 return self::decision('SAFE_T_APPEAL','PROMISE_EXPIRED_UNPAID_APPEAL_REQUIRED',$case);
