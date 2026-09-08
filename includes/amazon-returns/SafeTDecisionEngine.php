@@ -210,6 +210,15 @@ final class SvAmazonSafeTDecisionEngine
 
         if($outcome==='WAIT')return $this->decision('WAIT','EMAIL_REVIEW_PROMISED_FUTURE_ACTION',$caseId);
         if($outcome==='APPROVED')return $this->decision('WAIT','EMAIL_REVIEW_APPROVED_AWAIT_FINANCES',$caseId);
+        if($outcome==='UNKNOWN_AMBIGUOUS' && $this->customerNonreceiptContradictedByDelivery($case,$payload)){
+            return [
+                'action'=>'SAFE_T_EMAIL_REPLY',
+                'reason'=>'CUSTOMER_NONRECEIPT_CONTRADICTED_BY_DELIVERY_EVIDENCE',
+                'case_id'=>$caseId,
+                'idempotency_key'=>hash('sha256','safe-t-email-delivery-contradiction|'.$safeTId.'|'.$scope.'|'.implode(',',(array)($case['customer_tracking_ids']??[]))),
+                'review_scope'=>$scope,
+            ];
+        }
         if($outcome==='UNKNOWN_AMBIGUOUS')return $this->decision('BLOCKED_REVIEW','EMAIL_REVIEW_AMBIGUOUS',$caseId);
         if($outcome==='DENIED_FINAL' && $suggested==='CLOSED_LOSS'){
             return ['action'=>'CLOSE_LOSS','reason'=>'EMAIL_REVIEW_FINAL_NO_REMAINING_PATH','case_id'=>$caseId,'scope'=>$scope];
@@ -302,6 +311,16 @@ final class SvAmazonSafeTDecisionEngine
         return ($case['customer_delivery_confirmed']??false)===true
             && trim((string)($case['refund_at']??''))!==''
             && (string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN)===SvAmazonRefundInitiators::UNKNOWN;
+    }
+
+    private function customerNonreceiptContradictedByDelivery(array $case,array $payload): bool
+    {
+        if(($case['customer_delivery_confirmed']??false)!==true)return false;
+        $tracking=$case['customer_tracking_ids']??[];
+        if(!is_array($tracking) || array_values(array_filter(array_map(static fn(mixed $id):string=>trim((string)$id),$tracking)))===[])return false;
+        $excerpt=mb_strtolower(trim((string)($payload['review_excerpt']??'')),'UTF-8');
+        if($excerpt==='')return false;
+        return preg_match('/(?:não|nao)\s+(?:ter\s+)?recebid|não\s+recebeu|nao\s+recebeu|not\s+received|did\s+not\s+receive/u',$excerpt)===1;
     }
 
     private function partialReimbursementBackedUnknownRefund(array $case): bool
