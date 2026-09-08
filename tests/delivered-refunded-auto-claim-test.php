@@ -12,10 +12,12 @@ $case['policies']=[['id'=>7441,'marketplace_id'=>'A2Q3Y263D00KWC','program'=>'ST
 $case['marketplace_id']='A2Q3Y263D00KWC';
 $policy=SvAmazonReturnPolicyEngine::evaluate($case,$now);
 draSame(true,$policy['eligible']??null,'Independent customer-delivery proof must let the normal D45 policy be evaluated despite unknown initiator.');
-$finance=['id'=>2,'case_id'=>501,'event_type'=>'FINANCIAL_RECONCILIATION_CHECKED','source'=>'SP_API_FINANCES','occurred_at'=>'2026-09-07 11:00:00','payload'=>['refresh_complete'=>true,'credit_amount'=>'0.00','outstanding_amount'=>'112.50','unclassified_transactions'=>0]];
+$finance=['id'=>2,'case_id'=>501,'event_type'=>'FINANCIAL_RECONCILIATION_CHECKED','source'=>'SP_API_FINANCES','occurred_at'=>'2026-09-07 11:00:00','payload'=>['refresh_complete'=>true,'credit_amount'=>'0.00','outstanding_amount'=>'112.50','unclassified_transactions'=>4,'ambiguous_reimbursement_transactions'=>0,'unsettled_financial_evidence'=>false]];
 $decision=$engine->nextAction($case,[$finance],$policy,$now);
 draSame('SAFE_T_SUBMIT',$decision['action']??null,'Delivered + customer refunded + fresh unpaid finance must not require human review.');
 draSame('DELIVERED_CUSTOMER_REFUNDED_UNPAID',$decision['reason']??null,'Automatic claim must preserve auditable business reason.');
+$legacy=$finance;unset($legacy['payload']['ambiguous_reimbursement_transactions'],$legacy['payload']['unsettled_financial_evidence']);
+draSame('CHECK_FINANCES',$engine->nextAction($case,[$legacy],$policy,$now)['action']??null,'Legacy finance receipts without reimbursement-specific uncertainty must fail closed until refreshed.');
 draSame('CHECK_FINANCES',$engine->nextAction($case,[],$policy,$now)['action']??null,'Clear delivered/refunded case must recheck finance automatically instead of asking for review.');
 $withoutDelivery=$case;$withoutDelivery['customer_delivery_confirmed']=false;
 $blocked=SvAmazonReturnPolicyEngine::evaluate($withoutDelivery,$now);

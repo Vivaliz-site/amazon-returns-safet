@@ -5,6 +5,9 @@ require_once dirname(__DIR__) . '/config/bootstrap-env.php';
 
 final class SvAmazonReturnsAdminAuth
 {
+    private const IDLE_TIMEOUT_SECONDS = 3600;
+    private const ABSOLUTE_TIMEOUT_SECONDS = 43200;
+
     public static function start(): void
     {
         if (session_status() === PHP_SESSION_ACTIVE) return;
@@ -36,15 +39,35 @@ final class SvAmazonReturnsAdminAuth
         self::start();
         if (!self::verifyCredentials($username, $password)) return false;
         session_regenerate_id(true);
-        $_SESSION['amazon_returns_admin'] = ['username'=>trim($username),'authenticated_at'=>time()];
+        $now=time();
+        $_SESSION['amazon_returns_admin'] = [
+            'username'=>trim($username),
+            'authenticated_at'=>$now,
+            'last_seen_at'=>$now,
+        ];
         return true;
     }
 
     public static function loggedIn(): bool
     {
         self::start();
-        return is_array($_SESSION['amazon_returns_admin'] ?? null)
-            && trim((string)($_SESSION['amazon_returns_admin']['username'] ?? '')) !== '';
+        $session=$_SESSION['amazon_returns_admin'] ?? null;
+        if(!is_array($session))return false;
+        $username=trim((string)($session['username'] ?? ''));
+        $authenticatedAt=(int)($session['authenticated_at'] ?? 0);
+        $lastSeenAt=(int)($session['last_seen_at'] ?? $authenticatedAt);
+        $now=time();
+        if(
+            $username==='' || $authenticatedAt<1 || $lastSeenAt<1
+            || $now-$authenticatedAt>self::ABSOLUTE_TIMEOUT_SECONDS
+            || $now-$lastSeenAt>self::IDLE_TIMEOUT_SECONDS
+            || $authenticatedAt>$now+60 || $lastSeenAt>$now+60
+        ){
+            unset($_SESSION['amazon_returns_admin']);
+            return false;
+        }
+        $_SESSION['amazon_returns_admin']['last_seen_at']=$now;
+        return true;
     }
 
     public static function requireLogin(bool $json = false): void
