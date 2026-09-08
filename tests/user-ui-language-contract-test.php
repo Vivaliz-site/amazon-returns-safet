@@ -22,6 +22,7 @@ foreach (['O que aconteceu', 'Por que preciso da sua decisão?', 'O que já foi 
 foreach (['function friendlyError(', 'function humanText(', 'function humanReviewSummary(', 'function renderMessageThread('] as $helper) {
     uiAssert(str_contains($js, $helper), 'Missing global UI humanization helper: ' . $helper);
 }
+uiAssert(str_contains($js, "text('span',friendlyError(message))"), 'All global UI errors must pass through friendlyError before rendering.');
 
 $forbiddenPage = [
     '<label>Estado<select',
@@ -45,7 +46,6 @@ $forbiddenJs = [
     '`Família ${String(r.rule_family_key',
     "SP_API:'SP-API'",
     "SP_API_FINANCES:'SP-API Financeiro'",
-    'showError(e.message',
     "throw new Error(j.error||'Falha na consulta')",
     "text('p',suggestion.rationale||'—')",
 ];
