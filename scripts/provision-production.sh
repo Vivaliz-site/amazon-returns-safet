@@ -73,6 +73,7 @@ if [[ ! -f "$env_file" ]]; then
         'AMAZON_RETURNS_SAFE_T_WRITE=0' \
         'AMAZON_RETURNS_APPEAL_WRITE=0' \
         'AMAZON_RETURNS_EMAIL_REVIEW_WRITE=0' \
+        'AMAZON_RETURNS_EMAIL_REPLY_WRITE=0' \
         'AMAZON_RETURNS_SUPPORT_WRITE=0' \
         'AMAZON_RETURNS_POLICY_MONITOR=0' >> "$env_tmp"
     printf '%s\n' \
@@ -114,7 +115,8 @@ ensure_env_key 'AMAZON_RETURNS_CONNECTION_LABEL' 'Amazon Brasil principal'
 ensure_env_key 'AMAZON_SP_API_REGION' 'NA'
 ensure_env_key 'AMAZON_MARKETPLACE_ID' 'A2Q3Y263D00KWC'
 ensure_env_key 'AMAZON_RETURNS_REVIEW_AI_MODEL' 'gpt-5.6-terra'
-ensure_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '0'
+set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '1'
+set_env_key 'AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL' 'fredmourao@gmail.com'
 
 mysql --protocol=socket -uroot <<SQL
 CREATE DATABASE IF NOT EXISTS \`$target_db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
