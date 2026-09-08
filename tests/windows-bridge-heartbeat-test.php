@@ -6,9 +6,9 @@ function wbhAssert(bool $condition,string $message):void{
 $installer=(string)file_get_contents(
     dirname(__DIR__).'/scripts/install-amazon-returns-windows-bridge.ps1'
 );
-$heartbeat=strpos($installer,"'\$readWorker' --heartbeat");
-$auth=strpos($installer,"'\$readWorker' --auth-check");
-$drain=strpos($installer,"'\$readWorker' --drain");
+$heartbeat=strpos($installer,"'\$safeReadWorker' --heartbeat");
+$auth=strpos($installer,"'\$safeReadWorker' --auth-check");
+$drain=strpos($installer,"'\$safeReadWorker' --drain");
 wbhAssert($heartbeat!==false,'Windows dispatcher must emit read-process heartbeat before draining.');
 wbhAssert($auth!==false,'Windows dispatcher must verify Seller Central browser authentication before draining.');
 wbhAssert($drain!==false,'Windows dispatcher must still drain the SAFE-T read worker.');
