@@ -13,14 +13,17 @@ final class SvAmazonInvoiceSearch
         $stmt=$db->prepare(
             "SELECT DISTINCT case_id FROM amazon_return_events "
             ."WHERE tenant_id=:invoice_tenant_id AND amazon_connection_id=:invoice_connection_id "
-            ."AND event_type='PHYSICAL_RECEIVED' "
-            ."AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.sales_invoice_number')) LIKE :q_invoice "
-            ."ORDER BY case_id LIMIT 1000"
+            ."AND ("
+            ."JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.invoice_number')) LIKE :q_invoice "
+            ."OR JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.sales_invoice_number')) LIKE :q_invoice_legacy"
+            .") ORDER BY case_id LIMIT 1000"
         );
+        $like='%'.$term.'%';
         $stmt->execute([
             ':invoice_tenant_id'=>$context->tenantId(),
             ':invoice_connection_id'=>$context->amazonConnectionId(),
-            ':q_invoice'=>'%'.$term.'%',
+            ':q_invoice'=>$like,
+            ':q_invoice_legacy'=>$like,
         ]);
         return array_values(array_unique(array_filter(
             array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),
