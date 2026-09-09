@@ -21,7 +21,7 @@ require_once $erpPath;
 require_once $resolverPath;
 
 erpInvoiceAssert(method_exists(SvAmazonErpInvoiceLookup::class,'defaultCredentialPath'),'ERP lookup must expose its production credential fallback path.');
-erpInvoiceSame('/home/ubuntu/shopvivaliz-deploy/shared/.env',SvAmazonErpInvoiceLookup::defaultCredentialPath(),'ERP lookup must reuse the existing shared Tiny/Olist credential source without copying tokens.');
+erpInvoiceSame('/home/ubuntu/amazon-returns-deploy/shared/erp.env',SvAmazonErpInvoiceLookup::defaultCredentialPath(),'ERP lookup must use a standalone local credential link without copying tokens.');
 
 $calls=[];
 $http=static function(string $method,string $url,array $headers,?string $body) use (&$calls): array {
