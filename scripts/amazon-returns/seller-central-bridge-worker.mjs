@@ -643,6 +643,7 @@ function log(event, data = {}) {
     action: data.action ?? null,
     status: data.status ?? null,
     external_id: data.external_id ?? null,
+    reason: data.reason ?? null,
   };
   process.stdout.write(`${JSON.stringify(safe)}\n`);
 }
