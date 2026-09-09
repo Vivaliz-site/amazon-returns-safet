@@ -11,6 +11,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SpApi.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SpApiEventSink.php';
 require_once __DIR__.'/../../../includes/amazon-returns/InvoiceSearch.php';
+require_once __DIR__.'/../../../includes/amazon-returns/InvoiceRemoteLookup.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 
 SvAmazonReturnsAdminAuth::requireLogin(true);
@@ -81,12 +82,13 @@ try{
         }
 
         $spApi=new SvAmazonReturnsSpApi();
-        $invoiceLookup=$spApi->findOrderByInvoiceNumber($invoiceNumber);
+        $invoiceLookup=(new SvAmazonInvoiceRemoteLookup($spApi))
+            ->findOrderByInvoiceNumber($invoiceNumber);
         if(!is_array($invoiceLookup)){
             sv_amz_intake_lookup_reply([
                 'success'=>true,
                 'cases'=>[],
-                'source'=>'amazon_invoice',
+                'source'=>'invoice_remote',
                 'synced'=>false,
             ]);
         }
@@ -143,10 +145,13 @@ try{
         throw $e;
     }
 
+    $remoteSource=is_array($invoiceLookup)
+        ? ((string)($invoiceLookup['source'] ?? '')==='ERP_OLIST_INVOICE' ? 'erp_invoice' : 'amazon_invoice')
+        : 'amazon';
     sv_amz_intake_lookup_reply([
         'success'=>true,
         'cases'=>$projected,
-        'source'=>is_array($invoiceLookup) ? 'amazon_invoice' : 'amazon',
+        'source'=>$remoteSource,
         'synced'=>true,
         'financial_refreshed'=>$financialRefreshed,
     ]);
@@ -154,13 +159,13 @@ try{
     error_log('[amazon-returns-intake-lookup-invoice-access] '.get_class($e).': '.$e->getMessage());
     sv_amz_intake_lookup_reply([
         'success'=>false,
-        'error'=>'A Amazon ainda não autorizou a consulta por NF nesta conta.',
+        'error'=>'A consulta por NF ainda não está disponível nesta conta.',
     ],403);
 }catch(InvalidArgumentException $e){
     error_log('[amazon-returns-intake-lookup-invalid] '.get_class($e).': '.$e->getMessage());
     sv_amz_intake_lookup_reply([
         'success'=>false,
-        'error'=>'Não foi possível consultar os dados informados na Amazon.',
+        'error'=>'Não foi possível consultar os dados informados.',
     ],422);
 }catch(Throwable $e){
     error_log('[amazon-returns-intake-lookup] '.get_class($e).': '.$e->getMessage());
