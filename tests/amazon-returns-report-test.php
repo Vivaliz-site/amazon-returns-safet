@@ -17,18 +17,18 @@ function rrAssert(bool $condition, string $message): void {
 $header = [
     'Extra Column', 'Resolution', 'Order Item ID', 'Order ID', 'A-to-Z Claim',
     'Return request date', 'Return request status', 'Return quantity',
-    'Return Reason', 'In policy', 'Return delivery date', 'SafeT claim id',
+    'Return Reason', 'In policy', 'Invoice number', 'Return delivery date', 'SafeT claim id',
     'SafeT claim state', 'SafeT claim creation time',
     'SafeT claim reimbursement amount', 'Refunded Amount',
 ];
 $rowAtoZ = [
     'ignored', 'RefundAtFirstScan', 'item-az', '702-1111111-2222222', 'Y',
-    '20-Aug-2026', 'Approved', '1', 'CR-ORDERED-WRONG-ITEM', 'Y', '',
+    '20-Aug-2026', 'Approved', '1', 'CR-ORDERED-WRONG-ITEM', 'Y', '987654', '',
     '98143-99485-9285859', 'Approved', '21-Aug-2026 10:11:12', '77.98', '77,98',
 ];
 $rowAuto = [
     'ignored-2', 'RefundAtFirstScan', 'item-auto', '702-3333333-4444444', 'N',
-    '22-Aug-2026', 'Approved', '2', 'CR-DEFECTIVE', 'Y', '01-Sep-2026',
+    '22-Aug-2026', 'Approved', '2', 'CR-DEFECTIVE', 'Y', '123456', '01-Sep-2026',
     '', '', '', '', '128.25',
 ];
 $encode = static fn(array $row): string => implode("\t", $row);
@@ -37,6 +37,7 @@ $rows = SvAmazonReturnsReport::parse($document);
 rrSame(2, count($rows), 'Two report rows must parse.');
 rrSame('702-1111111-2222222', $rows[0]['order_id'], 'Order ID must resolve by header name.');
 rrSame('item-az', $rows[0]['order_item_id'], 'Order item ID must resolve after reordered columns.');
+rrSame('987654', $rows[0]['invoice_number'], 'Invoice number must resolve by the official report header.');
 rrSame(SvAmazonRefundInitiators::A_TO_Z, $rows[0]['refund_initiator'], 'A-to-Z=Y must be explicit initiator evidence.');
 rrSame('2026-08-20 00:00:00', $rows[0]['return_request_at'], 'Amazon date must normalize to UTC.');
 rrSame('77.98', $rows[0]['refunded_amount'], 'Comma decimal must normalize.');
@@ -56,6 +57,7 @@ rrAssert(!array_key_exists('reconciled_credit_amount', $patch), 'Returns report 
 $event = SvAmazonReturnsReport::eventForCase(41, $rows[0], 'DOC-1', str_repeat('a', 64));
 rrSame('RETURN_REPORT_OBSERVED', $event['event_type'], 'Report rows must append an immutable domain event.');
 rrSame('SP_API_REPORTS', $event['source'], 'Report event source must be explicit.');
+rrSame('987654', $event['payload']['invoice_number'] ?? null, 'Invoice number must remain searchable in immutable report evidence.');
 rrAssert(preg_match('/^[a-f0-9]{64}$/', $event['idempotency_key']) === 1, 'Report event must be idempotent.');
 rrSame(str_repeat('a', 64), $event['evidence_sha256'], 'Report document hash must bind the event evidence.');
 rrAssert(!array_key_exists('document_content', $event['payload']), 'Raw report content must never be stored in an event.');

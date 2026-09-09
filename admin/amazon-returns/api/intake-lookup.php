@@ -10,6 +10,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SpApi.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SpApiEventSink.php';
+require_once __DIR__.'/../../../includes/amazon-returns/InvoiceSearch.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 
 SvAmazonReturnsAdminAuth::requireLogin(true);
@@ -35,8 +36,18 @@ if(!SvAmazonReturnsCsrf::valid('amazon_returns_intake',$csrf)){
 }
 
 $orderId=trim((string)($input['order_id'] ?? ''));
-if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/',$orderId)!==1){
+$invoiceNumber=trim((string)($input['sales_invoice_number'] ?? ''));
+if($orderId!=='' && preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/',$orderId)!==1){
     sv_amz_intake_lookup_reply(['success'=>false,'error'=>'Informe um número de pedido Amazon válido.'],422);
+}
+if($invoiceNumber!=='' && preg_match('/^[0-9]{1,20}$/',$invoiceNumber)!==1){
+    sv_amz_intake_lookup_reply(['success'=>false,'error'=>'Informe somente os números da NF de venda.'],422);
+}
+if($orderId==='' && $invoiceNumber===''){
+    sv_amz_intake_lookup_reply(['success'=>false,'error'=>'Informe o número do pedido Amazon ou da NF de venda.'],422);
+}
+if($orderId!=='' && $invoiceNumber!==''){
+    sv_amz_intake_lookup_reply(['success'=>false,'error'=>'Informe apenas o pedido ou a NF por vez.'],422);
 }
 
 try{
@@ -48,6 +59,23 @@ try{
     $config=new SvAmazonReturnsConfig();
     $context=SvAmazonTenantRegistry::resolveCurrent($db,$config);
     $p=SvAmazonTenantPersistence::create($db,$context);
+
+    if($invoiceNumber!==''){
+        $caseIds=SvAmazonInvoiceSearch::caseIdsExact($db,$context,$invoiceNumber);
+        $cases=[];
+        foreach($caseIds as $caseId){
+            $case=$p->cases->find($caseId);
+            if(is_array($case)){
+                $cases[]=SvAmazonReturnProjector::project($p->cases,$p->events,$caseId);
+            }
+        }
+        sv_amz_intake_lookup_reply([
+            'success'=>true,
+            'cases'=>$cases,
+            'source'=>'invoice',
+            'synced'=>false,
+        ]);
+    }
 
     $cases=$p->cases->forOrder($orderId);
     if($cases!==[]){
@@ -69,7 +97,7 @@ try{
             ? array_values(array_filter($financial['transactions'],'is_array')) : [];
     }catch(Throwable $e){
         $financialRefreshed=false;
-        error_log('[amazon-returns-intake-lookup-financial] '.get_class($e));
+        error_log('[amazon-returns-intake-lookup-financial] '.get_class($e).': '.$e->getMessage());
     }
 
     $db->beginTransaction();
@@ -97,15 +125,15 @@ try{
         'financial_refreshed'=>$financialRefreshed,
     ]);
 }catch(InvalidArgumentException $e){
-    error_log('[amazon-returns-intake-lookup-invalid] '.get_class($e));
+    error_log('[amazon-returns-intake-lookup-invalid] '.get_class($e).': '.$e->getMessage());
     sv_amz_intake_lookup_reply([
         'success'=>false,
-        'error'=>'Não foi possível consultar este pedido na Amazon.',
+        'error'=>'Não foi possível consultar os dados informados na Amazon.',
     ],422);
 }catch(Throwable $e){
-    error_log('[amazon-returns-intake-lookup] '.get_class($e));
+    error_log('[amazon-returns-intake-lookup] '.get_class($e).': '.$e->getMessage());
     sv_amz_intake_lookup_reply([
         'success'=>false,
-        'error'=>'Não foi possível localizar este pedido na Amazon agora. Tente novamente.',
+        'error'=>'Não foi possível localizar a devolução agora. Tente novamente.',
     ],502);
 }

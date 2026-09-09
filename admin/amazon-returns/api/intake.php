@@ -143,12 +143,6 @@ if($caseId===false){
     ],422);
 }
 $note=mb_substr(trim((string)($input['note'] ?? '')),0,2000,'UTF-8');
-$salesInvoiceNumber=trim((string)($input['sales_invoice_number'] ?? ''));
-if($salesInvoiceNumber!=='' && preg_match('/^[0-9]{1,20}$/',$salesInvoiceNumber)!==1){
-    sv_amz_intake_reply([
-        'success'=>false,'error'=>'Informe somente os números da NF de venda.',
-    ],422);
-}
 $db=amazon_returns_pdo();
 if(!$db instanceof PDO){
     sv_amz_intake_reply(['success'=>false,'error'=>'Banco indisponível.'],503);
@@ -200,11 +194,10 @@ try{
             'quantity'=>(int)$quantity,
             'condition'=>$condition,
             'note'=>$note,
-            'sales_invoice_number'=>$salesInvoiceNumber!=='' ? $salesInvoiceNumber : null,
             'operator_id'=>crc32(SvAmazonReturnsAdminAuth::username()),
         ],
         'evidence_sha256'=>hash(
-            'sha256',implode('|',$photoHashes).'|'.$condition.'|'.$note.'|'.$salesInvoiceNumber
+            'sha256',implode('|',$photoHashes).'|'.$condition.'|'.$note
         ),
     ]);
     foreach($stored as $photo){
@@ -232,7 +225,7 @@ try{
 }catch(Throwable $e){
     if($db->inTransaction())$db->rollBack();
     foreach($stored as $photo)@unlink($photo['path']);
-    error_log('[amazon-returns-intake] '.get_class($e));
+    error_log('[amazon-returns-intake] '.get_class($e).': '.$e->getMessage());
     sv_amz_intake_reply([
         'success'=>false,'error'=>'Não foi possível registrar o recebimento.',
     ],500);
