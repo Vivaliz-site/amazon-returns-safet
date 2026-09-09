@@ -31,6 +31,7 @@ final class SvAmazonGmailParser
         $safeTId = null;
         $amount = null;
         $currency = null;
+        $refundInitiator = null;
         $review = null;
 
         $isReviewChannel = stripos($from, 'safe-t-review@amazon.com') !== false
@@ -43,6 +44,9 @@ final class SvAmazonGmailParser
             $eventType = 'REFUND_ISSUED_EMAIL';
             $amount = $this->normalizeAmount($match[1]);
             $currency = 'BRL';
+            if (preg_match('/Emissor\s+do\s+reembolso\s*:\s*Customer\s+Service\b/iu', $body) === 1) {
+                $refundInitiator = 'AMAZON_CUSTOMER_SERVICE';
+            }
         } elseif (preg_match('/Notifica(?:ç|c)ão\s+de\s+autoriza(?:ç|c)ão\s+de\s+devolu(?:ç|c)ão\s+referente\s+ao\s+pedido/iu', $subject) === 1) {
             $eventType = 'RETURN_AUTHORIZED_EMAIL';
         } elseif (preg_match('/Sua\s+solicita(?:ç|c)ão\s+do\s+SAFE-T\s+([0-9]+-[0-9]+-[0-9]+)\s+foi\s+registrada/iu', $subject, $match) === 1) {
@@ -69,6 +73,7 @@ final class SvAmazonGmailParser
             'occurred_at'=>$this->normalizeDate($message['received_at'] ?? $message['email_ts'] ?? null),
             'amount'=>$amount,
             'currency'=>$currency,
+            'refund_initiator'=>$refundInitiator,
             'review_outcome'=>$review['outcome'] ?? null,
             'review_suggested_action'=>$review['suggested_action'] ?? null,
             'review_reason'=>$review['reason'] ?? null,
