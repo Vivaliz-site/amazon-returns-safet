@@ -33,4 +33,11 @@ $decision=$engine->nextAction(
 );
 cfprSame('WAIT',$decision['action']??null,'Confirmed physical receipt must block FBA Seller Support opening.');
 cfprSame('SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$decision['reason']??null,'Receipt block must remain auditable.');
+$discrepant=$case;
+$discrepant['state']='RECEIVED_DISCREPANT';
+$discrepant['physical_status']='RECEIVED_DISCREPANT';
+$discrepantTimeline=$timeline;
+$discrepantTimeline[1]['payload']['condition']='DAMAGED';
+$discrepantDecision=$engine->nextAction($discrepant,$discrepantTimeline,$policy,new DateTimeImmutable('2026-09-09 14:40:00',new DateTimeZone('UTC')));
+cfprSame('SELLER_SUPPORT_OPEN',$discrepantDecision['action']??null,'Discrepant physical receipt must not be silently superseded as a clean receipt.');
 echo "classic-fba-physical-receipt-block-test: OK\n";

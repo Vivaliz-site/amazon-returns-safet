@@ -317,6 +317,8 @@ final class SvAmazonSafeTDecisionEngine
             if(($event['event_type']??'')!=='PHYSICAL_RECEIVED' || ($event['source']??'')!=='WAREHOUSE')continue;
             $payload=$event['payload']??null;
             if(!is_array($payload))continue;
+            $condition=strtoupper(trim((string)($payload['condition']??'OK')));
+            if(!in_array($condition,['OK','INTACT'],true))continue;
             if((int)($payload['quantity']??0)>0)return true;
         }
         return false;
