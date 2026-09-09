@@ -48,6 +48,8 @@ intakeUxAssert(
     str_contains($filesBody,"if((int)(\$files['error'][\$index] ?? UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE)continue;"),
     'sv_amz_intake_files must actively discard empty browser file placeholders before evidence storage starts.'
 );
+$provision=intakeUxRead('scripts/provision-production.sh');
+intakeUxAssert(str_contains($provision,"set_env_key 'AMAZON_RETURN_EVIDENCE_DIR' \"\$shared/evidence\""),'Production provisioning must expose the protected evidence directory to PHP for real discrepancy photos.');
 
 $report=intakeUxRead('includes/amazon-returns/ReturnsReport.php');
 intakeUxAssert(str_contains($report,"'invoice_number'"),'Returns report parser must preserve Amazon invoice number.');
