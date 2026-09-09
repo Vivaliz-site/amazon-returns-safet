@@ -49,6 +49,9 @@ $reportEvents=[[
 shSame([],SvAmazonReturnsShadowAudit::migrationCaseDiff($unknownInitiator,$verifiedInitiator,$reportEvents),'Verified report evidence may correct a legacy UNKNOWN projection.');
 shSame(true,SvAmazonReturnsShadowAudit::hasVerifiedInitiatorProjectionCorrection($unknownInitiator,$verifiedInitiator,$reportEvents),'Verified initiator correction must remain visible in the report.');
 shSame(['refund_initiator'=>['source'=>'UNKNOWN','target'=>'AMAZON_AUTOMATIC']],SvAmazonReturnsShadowAudit::migrationCaseDiff($unknownInitiator,$verifiedInitiator,[]),'Initiator change without report evidence must still fail shadow audit.');
+$gmailInitiated=['refund_initiator'=>'AMAZON_INITIATED'];
+$gmailEvents=[['event_type'=>'REFUND_INITIATOR_CONFIRMED','source'=>'GMAIL','payload'=>['refund_initiator'=>'AMAZON_INITIATED']]];
+shSame([],SvAmazonReturnsShadowAudit::migrationCaseDiff($unknownInitiator,$gmailInitiated,$gmailEvents),'Verified Amazon-authored Gmail evidence may correct a legacy UNKNOWN initiator.');
 
 shSame([],SvAmazonReturnsShadowAudit::decisionDiff(['action'=>'WAIT','reason'=>'X'],['action'=>'WAIT','reason'=>'X']),'Equal decisions must match.');
 $dd=SvAmazonReturnsShadowAudit::decisionDiff(['action'=>'SAFE_T_APPEAL','reason'=>'DENIED'],['action'=>'WAIT','reason'=>'SAFE_T_ALREADY_EXISTS']);

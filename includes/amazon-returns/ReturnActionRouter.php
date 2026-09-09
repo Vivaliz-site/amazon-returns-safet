@@ -113,6 +113,7 @@ final class SvAmazonReturnActionRouter
         return in_array((string)($case['refund_initiator']??''),[
             SvAmazonRefundInitiators::AMAZON_AUTOMATIC,
             SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
+            SvAmazonRefundInitiators::AMAZON_INITIATED,
             SvAmazonRefundInitiators::A_TO_Z,
         ],true);
     }

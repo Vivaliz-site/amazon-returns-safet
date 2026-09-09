@@ -54,6 +54,8 @@ final class SvAmazonGmailParser
                 && preg_match('/Motivo\s+para\s+reembolso.*?Não\s+é\s+possível\s+realizar\s+a\s+entrega\b/isu', $body) === 1
             ) {
                 $refundInitiator = 'AMAZON_CUSTOMER_SERVICE';
+            } elseif (preg_match('/\bIniciamos\s+um\s+reembolso\b/iu', $body) === 1) {
+                $refundInitiator = 'AMAZON_INITIATED';
             }
             if (preg_match('/(?:Log[ií]stica|Rede\s+log[ií]stica\s+da\s+Amazon)\s*:\s*Enviado\s+pela\s+Amazon\b/iu', $body) === 1) {
                 $program = 'FBA';
