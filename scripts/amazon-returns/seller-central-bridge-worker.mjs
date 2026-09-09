@@ -598,7 +598,7 @@ function log(event, data = {}) {
 
 async function runOnce() {
   const pulled = await bridge('pull', { worker_id: WORKER_ID });
-  if (pulled.status === 'NO_JOB') return false;
+  if (pulled.status === 'NO_JOB') return { processed: false, drainBlocked: false };
   if (pulled.status !== 'JOB' || !pulled.job) throw new Error(`unexpected pull status ${text(pulled.status)}`);
   const job = pulled.job;
   log('job_received', job);
@@ -610,7 +610,8 @@ async function runOnce() {
   }
   await bridge('result', { job_id: job.job_id, idempotency_key: job.idempotency_key, result });
   log('job_result', { ...job, ...result });
-  return true;
+  const drainBlocked = ['AUTH_REQUIRED','HUMAN_CHALLENGE'].includes(result.status);
+  return { processed: true, drainBlocked };
 }
 
 async function main() {
@@ -629,7 +630,10 @@ async function main() {
     return;
   }
   if (process.argv.includes('--drain')) {
-    while (await runOnce()) {}
+    while (true) {
+      const outcome = await runOnce();
+      if (!outcome.processed || outcome.drainBlocked) break;
+    }
     return;
   }
   if (process.argv.includes('--once')) {
@@ -640,8 +644,8 @@ async function main() {
   log('worker_started');
   while (true) {
     try {
-      const processed = await runOnce();
-      if (!processed) await sleep(POLL_MS);
+      const outcome = await runOnce();
+      if (!outcome.processed || outcome.drainBlocked) await sleep(POLL_MS);
     } catch (error) {
       log('worker_error', { status: error?.name || 'Error' });
       await sleep(Math.max(POLL_MS, 30000));
