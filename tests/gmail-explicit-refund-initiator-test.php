@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . "/../includes/amazon-returns/GmailParser.php";
 require_once __DIR__ . "/../includes/amazon-returns/GmailEventSink.php";
+require_once __DIR__ . "/../includes/amazon-returns/Projector.php";
 
 $parser = new SvAmazonGmailParser();
 $events = $parser->parse([
@@ -24,6 +25,50 @@ $payload = $payloadMethod->invoke(null, $event, "701-0630116-9129834");
 if (($payload["refund_initiator"] ?? null) !== "AMAZON_CUSTOMER_SERVICE") {
   throw new RuntimeException("Explicit issuer evidence must survive event persistence/projection: ".json_encode($payload));
 }
+$baseCase = [
+  "id"=>919,
+  "amazon_order_id"=>"701-0630116-9129834",
+  "quantity_ordered"=>2,
+  "physical_status"=>"NOT_RECEIVED",
+  "state"=>"POLICY_REVIEW_REQUIRED",
+];
+$projected = SvAmazonReturnProjector::projectFrom($baseCase, [[
+  "case_id"=>919,
+  "event_type"=>"REFUND_ISSUED_EMAIL",
+  "source"=>"GMAIL",
+  "occurred_at"=>"2026-09-02 01:50:37",
+  "payload"=>$payload,
+]]);
+if (($projected["refund_initiator"] ?? null) !== "AMAZON_CUSTOMER_SERVICE") {
+  throw new RuntimeException("Explicit Gmail issuer must project without invalid optional enum values: ".json_encode($projected));
+}
+
+$genericEvents = $parser->parse([
+  "message_id"=>"refund-generic",
+  "from"=>"Amazon <donotreply@amazon.com>",
+  "subject"=>"Reembolso de 10.50 BRL iniciado para o pedido 701-0000000-0000001",
+  "received_at"=>"2026-09-02T02:00:00Z",
+  "body_text"=>"Pedido : 701-0000000-0000001",
+]);
+$genericPayload = $payloadMethod->invoke(null, $genericEvents[0] ?? [], "701-0000000-0000001");
+$genericProjected = SvAmazonReturnProjector::projectFrom([
+  "id"=>920,
+  "amazon_order_id"=>"701-0000000-0000001",
+  "quantity_ordered"=>1,
+  "physical_status"=>"NOT_RECEIVED",
+  "state"=>"POLICY_REVIEW_REQUIRED",
+], [[
+  "case_id"=>920,
+  "event_type"=>"REFUND_ISSUED_EMAIL",
+  "source"=>"GMAIL",
+  "occurred_at"=>"2026-09-02 02:00:00",
+  "payload"=>$genericPayload,
+]]);
+if (($genericProjected["program"] ?? null) !== "UNKNOWN"
+    || ($genericProjected["refund_initiator"] ?? null) !== "UNKNOWN") {
+  throw new RuntimeException("Missing optional Gmail enum facts must remain UNKNOWN during projection: ".json_encode($genericProjected));
+}
+
 if (!method_exists(SvAmazonGmailEventSink::class, "refundInitiatorEvidence")) {
   throw new RuntimeException("Re-ingesting an old Gmail refund must create durable initiator evidence.");
 }
