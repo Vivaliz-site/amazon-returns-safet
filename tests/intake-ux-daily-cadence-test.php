@@ -31,15 +31,15 @@ intakeUxAssert(str_contains($intakePage,'Number(c.quantity_refunded||0)>0'),'Kno
 intakeUxAssert(str_contains($intakePage,'submitButton.disabled=true'),'Receipt submit must prevent concurrent duplicate clicks.');
 
 $lookup=intakeUxRead('admin/amazon-returns/api/intake-lookup.php');
-intakeUxAssert(str_contains($lookup,"$input['sales_invoice_number']"),'Lookup API must accept NF as an alternative identifier.');
+intakeUxAssert(str_contains($lookup,"\$input['sales_invoice_number']"),'Lookup API must accept NF as an alternative identifier.');
 intakeUxAssert(str_contains($lookup,'SvAmazonInvoiceSearch::caseIds'),'Lookup API must resolve NF through tenant-scoped invoice evidence.');
 intakeUxAssert(str_contains($lookup,'$p->cases->forOrder($orderId)'),'Order lookup must still check the local case store first.');
 intakeUxAssert(str_contains($lookup,'->syncOrder($orderId)'),'Order lookup must still query Amazon immediately when absent locally.');
 
 $intakeApi=intakeUxRead('admin/amazon-returns/api/intake.php');
-intakeUxAssert(!str_contains($intakeApi,"$input['sales_invoice_number']"),'Receipt API must not require or accept NF entry from the confirmation form.');
+intakeUxAssert(!str_contains($intakeApi,"\$input['sales_invoice_number']"),'Receipt API must not require or accept NF entry from the confirmation form.');
 intakeUxAssert(str_contains($intakeApi,'$knownRefundQuantity=(int)$case[\'quantity_refunded\'];'),'Receipt API must preserve safe quantity handling.');
-intakeUxAssert(str_contains($intakeApi,"get_class($e).': '.$e->getMessage()"),'Unexpected intake failures must retain useful server-side diagnostics.');
+intakeUxAssert(str_contains($intakeApi,"get_class(\$e).': '.\$e->getMessage()"),'Unexpected intake failures must retain useful server-side diagnostics.');
 
 $report=intakeUxRead('includes/amazon-returns/ReturnsReport.php');
 intakeUxAssert(str_contains($report,"'invoice_number'"),'Returns report parser must preserve Amazon invoice number.');
