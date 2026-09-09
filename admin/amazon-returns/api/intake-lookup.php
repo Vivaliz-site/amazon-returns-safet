@@ -59,6 +59,8 @@ try{
     $config=new SvAmazonReturnsConfig();
     $context=SvAmazonTenantRegistry::resolveCurrent($db,$config);
     $p=SvAmazonTenantPersistence::create($db,$context);
+    $invoiceLookup=null;
+    $spApi=null;
 
     if($invoiceNumber!==''){
         $caseIds=SvAmazonInvoiceSearch::caseIdsExact($db,$context,$invoiceNumber);
@@ -69,25 +71,41 @@ try{
                 $cases[]=SvAmazonReturnProjector::project($p->cases,$p->events,$caseId);
             }
         }
-        sv_amz_intake_lookup_reply([
-            'success'=>true,
-            'cases'=>$cases,
-            'source'=>'invoice',
-            'synced'=>false,
-        ]);
+        if($cases!==[]){
+            sv_amz_intake_lookup_reply([
+                'success'=>true,
+                'cases'=>$cases,
+                'source'=>'invoice',
+                'synced'=>false,
+            ]);
+        }
+
+        $spApi=new SvAmazonReturnsSpApi();
+        $invoiceLookup=$spApi->findOrderByInvoiceNumber($invoiceNumber);
+        if(!is_array($invoiceLookup)){
+            sv_amz_intake_lookup_reply([
+                'success'=>true,
+                'cases'=>[],
+                'source'=>'amazon_invoice',
+                'synced'=>false,
+            ]);
+        }
+        $orderId=(string)$invoiceLookup['order_id'];
     }
 
-    $cases=$p->cases->forOrder($orderId);
-    if($cases!==[]){
-        sv_amz_intake_lookup_reply([
-            'success'=>true,
-            'cases'=>$cases,
-            'source'=>'local',
-            'synced'=>false,
-        ]);
+    if($invoiceLookup===null){
+        $cases=$p->cases->forOrder($orderId);
+        if($cases!==[]){
+            sv_amz_intake_lookup_reply([
+                'success'=>true,
+                'cases'=>$cases,
+                'source'=>'local',
+                'synced'=>false,
+            ]);
+        }
     }
 
-    $spApi=new SvAmazonReturnsSpApi();
+    if(!$spApi instanceof SvAmazonReturnsSpApi)$spApi=new SvAmazonReturnsSpApi();
     $order=$spApi->syncOrder($orderId);
     $transactions=[];
     $financialRefreshed=true;
@@ -104,6 +122,14 @@ try{
     try{
         SvAmazonSpApiEventSink::persist($p,$order,$transactions);
         $cases=$p->cases->forOrder($orderId);
+        if(is_array($invoiceLookup)){
+            foreach($cases as $case){
+                $caseId=(int)($case['id'] ?? 0);
+                if($caseId>0)$p->events->append(
+                    SvAmazonInvoiceSearch::evidenceEvent($caseId,$invoiceLookup)
+                );
+            }
+        }
         $projected=[];
         foreach($cases as $case){
             $caseId=(int)($case['id'] ?? 0);
@@ -120,10 +146,16 @@ try{
     sv_amz_intake_lookup_reply([
         'success'=>true,
         'cases'=>$projected,
-        'source'=>'amazon',
+        'source'=>is_array($invoiceLookup) ? 'amazon_invoice' : 'amazon',
         'synced'=>true,
         'financial_refreshed'=>$financialRefreshed,
     ]);
+}catch(SvAmazonInvoiceAccessException $e){
+    error_log('[amazon-returns-intake-lookup-invoice-access] '.get_class($e).': '.$e->getMessage());
+    sv_amz_intake_lookup_reply([
+        'success'=>false,
+        'error'=>'A Amazon ainda não autorizou a consulta por NF nesta conta.',
+    ],403);
 }catch(InvalidArgumentException $e){
     error_log('[amazon-returns-intake-lookup-invalid] '.get_class($e).': '.$e->getMessage());
     sv_amz_intake_lookup_reply([
