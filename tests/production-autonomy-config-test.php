@@ -26,6 +26,7 @@ if(!str_contains($script,"set_env_key 'AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL' 'fred
     throw new RuntimeException('Production deploy must persist the approved human-review reminder recipient.');
 }
 $verifier=(string)file_get_contents(__DIR__.'/../scripts/verify-live-tenant-foundation.sh');
+if(!str_contains($verifier,"safet-full-recovery-v2"))throw new RuntimeException('Live verifier must accept current write-profile version v2.');
 foreach(['review_notification_ready','learned_rule_execution_enabled=1'] as $needle){
     if(!str_contains($verifier,$needle))throw new RuntimeException('Live verifier must enforce production autonomy gate '.$needle);
 }
