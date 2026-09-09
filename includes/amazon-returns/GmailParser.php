@@ -19,6 +19,10 @@ final class SvAmazonGmailParser
         if ($messageId === '' || $subject === '' || !$this->isAmazonSender($from)) return [];
 
         $body = (string)($message['body_text'] ?? $message['snippet'] ?? '');
+        if ($this->isFbaShipmentSummary($subject, $body)) {
+            return $this->parseFbaShipmentSummary($message, $messageId, $subject, $body);
+        }
+
         $combined = $subject . "\n" . $body;
         $orderId = $this->extractOrderId($combined);
         if ($orderId === null) return [];
@@ -73,6 +77,72 @@ final class SvAmazonGmailParser
             'content_sha256'=>$contentSha,
             'idempotency_key'=>hash('sha256',implode('|',$identityParts)),
         ]];
+    }
+
+    private function isFbaShipmentSummary(string $subject,string $body): bool
+    {
+        return preg_match('/^A\s+Amazon\s+enviou\s+os\s+itens\s+vendidos$/iu',$subject)===1
+            && preg_match('/programa\s+FBA\b/iu',$body)===1;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function parseFbaShipmentSummary(array $message,string $messageId,string $subject,string $body): array
+    {
+        $matches=[];
+        preg_match_all(
+            '/N(?:u|ú)mero\s+do\s+pedido:\s*([0-9]{3}-[0-9]{7}-[0-9]{7})(.*?)(?=(?:Os\s+seguintes\s+itens\s+do\s+pedido\s+completo)|(?:Observe\s+que)|\z)/isu',
+            $body,
+            $matches,
+            PREG_SET_ORDER
+        );
+        if($matches===[])return [];
+        $contentSha=hash('sha256',$this->canonicalText($subject)."\n".$this->canonicalText($body));
+        $occurredAt=$this->normalizeDate($message['received_at'] ?? $message['email_ts'] ?? null);
+        $events=[];
+        foreach($matches as $match){
+            $orderId=(string)$match[1];
+            $detail=(string)($match[2] ?? '');
+            $tracking=null;
+            if(preg_match('/Rastreamento:\s*([A-Z0-9][A-Z0-9._-]{3,})/iu',$detail,$trackingMatch)===1){
+                $tracking=strtoupper(trim((string)$trackingMatch[1]));
+            }
+            $carrier=$this->carrierBeforeTracking($detail);
+            $identityParts=['gmail',$messageId,'FBA_SHIPMENT_EMAIL',$orderId,$tracking ?? ''];
+            $events[]=[
+                'event_type'=>'FBA_SHIPMENT_EMAIL',
+                'source'=>'GMAIL',
+                'financial_truth'=>false,
+                'source_event_id'=>$messageId,
+                'message_id'=>$messageId,
+                'thread_id'=>trim((string)($message['thread_id'] ?? '')),
+                'rfc_message_id'=>trim((string)($message['rfc_message_id'] ?? '')),
+                'order_id'=>$orderId,
+                'safe_t_id'=>null,
+                'occurred_at'=>$occurredAt,
+                'amount'=>null,
+                'currency'=>null,
+                'program'=>'FBA',
+                'tracking_id'=>$tracking,
+                'carrier'=>$carrier,
+                'customer_delivery_confirmed'=>false,
+                'content_sha256'=>$contentSha,
+                'idempotency_key'=>hash('sha256',implode('|',$identityParts)),
+            ];
+        }
+        return $events;
+    }
+
+    private function carrierBeforeTracking(string $detail): ?string
+    {
+        $lines=preg_split('/\R/u',$detail) ?: [];
+        foreach($lines as $index=>$line){
+            if(preg_match('/^\s*Rastreamento\s*:/iu',(string)$line)!==1)continue;
+            for($previous=$index-1;$previous>=0;$previous--){
+                $candidate=trim((string)$lines[$previous]);
+                if($candidate!=='')return $candidate;
+            }
+        }
+        return null;
     }
 
     private function isAmazonSender(string $from): bool
