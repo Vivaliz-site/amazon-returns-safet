@@ -163,27 +163,34 @@ final class SvAmazonGmailParser
             $line=trim((string)$raw);
             if($line!=='')$lines[]=$line;
         }
-        $asinHeader=$orderedHeader=$refundedHeader=$reasonHeader=null;
+        $productHeader=$asinHeader=$orderedHeader=$refundedHeader=$reasonHeader=null;
         foreach($lines as $index=>$line){
+            if($productHeader===null && preg_match('/^Produto\s+do\s+pedido$/iu',$line)===1)$productHeader=$index;
             if($asinHeader===null && preg_match('/^ASIN$/iu',$line)===1)$asinHeader=$index;
             if($orderedHeader===null && preg_match('/^Quantidade\s+do\s+pedido$/iu',$line)===1)$orderedHeader=$index;
             if($refundedHeader===null && preg_match('/^Quantidade\s+da\s+devolu(?:ç|c)ão$/iu',$line)===1)$refundedHeader=$index;
             if($reasonHeader===null && preg_match('/^Motivo\s+para\s+reembolso$/iu',$line)===1)$reasonHeader=$index;
         }
-        if($asinHeader===null || $orderedHeader===null || $refundedHeader===null || $reasonHeader===null
-            || $orderedHeader<$asinHeader || $refundedHeader<$asinHeader || $reasonHeader<$refundedHeader){
+        $firstHeaders=array_values(array_filter([$productHeader,$asinHeader],static fn(mixed $v):bool=>is_int($v)));
+        if($firstHeaders===[] || $refundedHeader===null || $reasonHeader===null || $reasonHeader<$refundedHeader){
             return [null,null];
         }
+        $firstHeader=min($firstHeaders);
+        if($refundedHeader<$firstHeader)return [null,null];
         $dataStart=$reasonHeader+1;
-        $orderedIndex=$dataStart+($orderedHeader-$asinHeader);
-        $refundedIndex=$dataStart+($refundedHeader-$asinHeader);
-        $ordered=$lines[$orderedIndex]??null;
+        $refundedIndex=$dataStart+($refundedHeader-$firstHeader);
         $refunded=$lines[$refundedIndex]??null;
-        if(!is_string($ordered) || preg_match('/^[0-9]+$/D',$ordered)!==1
-            || !is_string($refunded) || preg_match('/^[0-9]+$/D',$refunded)!==1){
-            return [null,null];
+        if(!is_string($refunded) || preg_match('/^[0-9]+$/D',$refunded)!==1)return [null,null];
+
+        $ordered=null;
+        if($orderedHeader!==null){
+            if($orderedHeader<$firstHeader || $orderedHeader>$reasonHeader)return [null,null];
+            $orderedIndex=$dataStart+($orderedHeader-$firstHeader);
+            $orderedRaw=$lines[$orderedIndex]??null;
+            if(!is_string($orderedRaw) || preg_match('/^[0-9]+$/D',$orderedRaw)!==1)return [null,null];
+            $ordered=(int)$orderedRaw;
         }
-        return [(int)$ordered,(int)$refunded];
+        return [$ordered,(int)$refunded];
     }
 
     private function carrierBeforeTracking(string $detail): ?string
