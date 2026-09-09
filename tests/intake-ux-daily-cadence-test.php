@@ -40,6 +40,7 @@ $intakeApi=intakeUxRead('admin/amazon-returns/api/intake.php');
 intakeUxAssert(!str_contains($intakeApi,"\$input['sales_invoice_number']"),'Receipt API must not require or accept NF entry from the confirmation form.');
 intakeUxAssert(str_contains($intakeApi,'$knownRefundQuantity=(int)$case[\'quantity_refunded\'];'),'Receipt API must preserve safe quantity handling.');
 intakeUxAssert(str_contains($intakeApi,"get_class(\$e).': '.\$e->getMessage()"),'Unexpected intake failures must retain useful server-side diagnostics.');
+intakeUxAssert(str_contains($intakeApi,"if((int)(\$file['error'] ?? UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE)continue;"),'Empty browser file placeholders must be removed before evidence storage is initialized.');
 
 $report=intakeUxRead('includes/amazon-returns/ReturnsReport.php');
 intakeUxAssert(str_contains($report,"'invoice_number'"),'Returns report parser must preserve Amazon invoice number.');
