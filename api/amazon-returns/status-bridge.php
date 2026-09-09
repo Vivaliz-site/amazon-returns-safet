@@ -64,7 +64,7 @@ if(!in_array($operation,['heartbeat','pull','result'],true)){
 }
 
 $config=new SvAmazonReturnsConfig();
-if($operation==='heartbeat'){
+if(in_array($operation,['heartbeat','pull'],true)){
     $worker=trim((string)($input['worker_id'] ?? ''));
     $primary=trim($config->get(
         'SELLER_CENTRAL_PRIMARY_STATUS_WORKER_ID','vm-a1-safe-t-status'
