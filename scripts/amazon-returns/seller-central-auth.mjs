@@ -100,7 +100,7 @@ const defaultSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function defaultCredentialStage(cdp) {
   if (!cdp || typeof cdp.evaluate !== 'function') return 'UNKNOWN';
   try {
-    const stage = String(await cdp.evaluate(`(()=>{const pass=document.querySelector('#ap_password,input[name="password"],input[type="password"]');const email=document.querySelector('#ap_email,input[name="email"],input[type="email"]');return pass?'PASSWORD':(email?'IDENTIFIER':'UNKNOWN')})()`));
+    const stage = String(await cdp.evaluate(`(()=>{const pass=document.querySelector('#ap_password,input[name="password"]:not(#ap-credential-autofill-hint):not(.hide):not([hidden]),input[type="password"]:not(#ap-credential-autofill-hint):not(.hide):not([hidden])');const email=document.querySelector('#ap_email,input[name="email"],input[type="email"]');return pass?'PASSWORD':(email?'IDENTIFIER':'UNKNOWN')})()`));
     return stage === 'PASSWORD' || stage === 'IDENTIFIER' ? stage : 'UNKNOWN';
   } catch {
     return 'UNKNOWN';
@@ -114,7 +114,7 @@ async function defaultApplyCredentials(cdp, username, password, previousStage = 
   const expression = `(()=>{\n`
     + `const set=(el,val)=>{if(!el)return false;const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const d=Object.getOwnPropertyDescriptor(proto,'value');d?.set?.call(el,val);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return true};\n`
     + `const email=document.querySelector('#ap_email,input[name="email"],input[type="email"]');\n`
-    + `const pass=document.querySelector('#ap_password,input[name="password"],input[type="password"]');\n`
+    + `const pass=document.querySelector('#ap_password,input[name="password"]:not(#ap-credential-autofill-hint):not(.hide):not([hidden]),input[type="password"]:not(#ap-credential-autofill-hint):not(.hide):not([hidden])');\n`
     + `const stage=pass?'PASSWORD':(email?'IDENTIFIER':'UNSUPPORTED');if(stage==='UNSUPPORTED')return 'UNSUPPORTED';if(stage===${previous})return 'STAGE_UNCHANGED';\n`
     + `let touched=false;if(email)touched=set(email,${u})||touched;if(pass)touched=set(pass,${p})||touched;if(!touched)return 'UNSUPPORTED';\n`
     + `const button=(pass?document.querySelector('#signInSubmit,input[type="submit"],button[type="submit"]'):document.querySelector('#continue,input[type="submit"],button[type="submit"]'))||document.querySelector('#signInSubmit,#continue');\n`
