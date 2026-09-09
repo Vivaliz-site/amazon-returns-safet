@@ -21,6 +21,34 @@ final class SvAmazonReturnsScheduler
         return in_array(strtoupper(trim($action)), ['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY'], true) ? 'gmail' : 'seller_central_bridge';
     }
 
+    public static function normalizeRecoveryChannel(array $case,array $decision,DateTimeImmutable $now): array
+    {
+        if(SvAmazonRecoveryWindow::expired($case,$now)){
+            return ['action'=>'WAIT','reason'=>'RECOVERY_WINDOW_EXPIRED','case_id'=>(int)($case['id']??0)];
+        }
+        if(strtoupper(trim((string)($decision['action']??'')))!=='SAFE_T_APPEAL')return $decision;
+        $deadlineRaw=$case['appeal_deadline_at']??null;
+        $deadline=null;
+        if(is_string($deadlineRaw) && trim($deadlineRaw)!==''){
+            try{$deadline=(new DateTimeImmutable($deadlineRaw,new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));}catch(Throwable){}
+        }
+        if(!$deadline instanceof DateTimeImmutable || $now->setTimezone(new DateTimeZone('UTC'))<=$deadline)return $decision;
+        $supportId=trim((string)($case['support_case_id']??''));
+        $supportStatus=strtoupper(trim((string)($case['support_case_status']??'OPEN')));
+        if($supportId!=='' && !in_array($supportStatus,['CLOSED','RESOLVED','CANCELLED'],true)){
+            return [
+                'action'=>'WAIT','reason'=>'SUPPORT_ESCALATION_ALREADY_ACTIVE','case_id'=>(int)($case['id']??0),
+                'support_case_id'=>$supportId,
+            ];
+        }
+        $scope=(string)($decision['resume_scope']??$decision['review_scope']??$decision['idempotency_key']??'appeal-expired');
+        return array_replace($decision,[
+            'action'=>'SELLER_SUPPORT_OPEN',
+            'reason'=>'OFFICIAL_APPEAL_WINDOW_EXPIRED_RECOVERY_CONTINUES',
+            'idempotency_key'=>hash('sha256','support-after-expired-appeal|'.(int)($case['id']??0).'|'.(string)($case['safe_t_id']??'').'|'.$scope),
+        ]);
+    }
+
     public function schedule(
         SvAmazonTenantReturnsOutbox $target,
         array $case,
@@ -28,12 +56,15 @@ final class SvAmazonReturnsScheduler
         array $policy,
         ?DateTimeImmutable $now=null
     ): array {
+        $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
         $decision = $this->engine->nextAction($case, $timeline, $policy, $now);
-        return $this->scheduleDecision($target,$case,$decision,$timeline);
+        return $this->scheduleDecision($target,$case,$decision,$timeline,$now);
     }
 
-    public function scheduleDecision(SvAmazonTenantReturnsOutbox $target,array $case,array $decision,array $timeline=[]): array
+    public function scheduleDecision(SvAmazonTenantReturnsOutbox $target,array $case,array $decision,array $timeline=[],?DateTimeImmutable $now=null): array
     {
+        $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        $decision=self::normalizeRecoveryChannel($case,$decision,$now);
         if (!self::isWriteAction($decision)) return ['decision'=>$decision,'outbox_id'=>null];
         $key = (string)($decision['idempotency_key'] ?? '');
         if ($key === '') throw new LogicException('Write decision missing idempotency key.');
