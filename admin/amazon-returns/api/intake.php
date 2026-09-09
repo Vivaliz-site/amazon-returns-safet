@@ -25,9 +25,12 @@ function sv_amz_intake_files(): array
 {
     if(!isset($_FILES['photos']))return [];
     $files=$_FILES['photos'];
-    if(!is_array($files['name'] ?? null))return [$files];
+    if(!is_array($files['name'] ?? null)){
+        return (int)($files['error'] ?? UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE ? [] : [$files];
+    }
     $result=[];
     foreach($files['name'] as $index=>$name){
+        if((int)($files['error'][$index] ?? UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE)continue;
         $result[]=[
             'name'=>$name,
             'type'=>$files['type'][$index] ?? '',
