@@ -4,7 +4,10 @@ set -euo pipefail
 ROOT="${AMAZON_RETURNS_RELEASE_ROOT:-/home/ubuntu/amazon-returns-deploy/current}"
 : "${SELLER_CENTRAL_BROWSER:?SELLER_CENTRAL_BROWSER is required}"
 : "${SELLER_CENTRAL_PROFILE:?SELLER_CENTRAL_PROFILE is required}"
-: "${SELLER_CENTRAL_BRIDGE_TOKEN_FILE:?SELLER_CENTRAL_BRIDGE_TOKEN_FILE is required}"
+if [[ -z "${SELLER_CENTRAL_BRIDGE_TOKEN:-}" && ( -z "${SELLER_CENTRAL_BRIDGE_TOKEN_FILE:-}" || ! -s "${SELLER_CENTRAL_BRIDGE_TOKEN_FILE}" ) ]]; then
+  echo "Seller Central bridge token is required" >&2
+  exit 64
+fi
 
 CDP_PORT="${SELLER_CENTRAL_CDP_PORT:-9225}"
 CDP_URL="${SELLER_CENTRAL_CDP_URL:-http://127.0.0.1:${CDP_PORT}}"
@@ -57,5 +60,8 @@ done
 [[ "$ready" -eq 1 ]] || { echo "Seller Central CDP did not become ready" >&2; exit 75; }
 
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check
+if [[ " ${*:-} " == *" --auth-check-only "* ]]; then
+  exit 0
+fi
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --drain
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" --drain

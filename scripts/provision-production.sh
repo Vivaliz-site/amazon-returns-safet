@@ -224,11 +224,38 @@ systemctl reload apache2
 
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-safet.service" /etc/systemd/system/amazon-returns-safet.service
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-browser.service" /etc/systemd/system/amazon-returns-seller-central-browser.service
+install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-auth-check.service" /etc/systemd/system/amazon-returns-seller-central-auth-check.service
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-browser.timer" /etc/systemd/system/amazon-returns-seller-central-browser.timer
 systemctl daemon-reload
 systemctl enable amazon-returns-safet.service >/dev/null
 systemctl restart amazon-returns-safet.service
 systemctl is-active --quiet amazon-returns-safet.service
+
+browser_root="$shared/seller-central-browser"
+browser_runtime_ready=1
+[[ -s "$shared/seller-central-browser.env" ]] || browser_runtime_ready=0
+[[ -s "$browser_root/amazon.username" ]] || browser_runtime_ready=0
+[[ -s "$browser_root/amazon.password" ]] || browser_runtime_ready=0
+command -v chromium >/dev/null 2>&1 || browser_runtime_ready=0
+awk -F= '$1=="SELLER_CENTRAL_BRIDGE_TOKEN"{sub(/^[^=]*=/,""); if(length($0)>=32) ok=1} END{exit ok?0:1}' "$env_file" || browser_runtime_ready=0
+browser_timer_was_enabled=0
+systemctl is-enabled --quiet amazon-returns-seller-central-browser.timer 2>/dev/null && browser_timer_was_enabled=1 || true
+if [[ "$browser_runtime_ready" -eq 1 ]]; then
+    browser_auth_ready=1
+    if [[ "$browser_timer_was_enabled" -eq 0 ]]; then
+        systemctl start amazon-returns-seller-central-auth-check.service || browser_auth_ready=0
+    fi
+    if [[ "$browser_auth_ready" -eq 1 ]]; then
+        systemctl enable --now amazon-returns-seller-central-browser.timer >/dev/null
+        echo 'seller_central_browser_timer=enabled'
+    else
+        systemctl disable --now amazon-returns-seller-central-browser.timer >/dev/null 2>&1 || true
+        echo 'seller_central_browser_timer=disabled_auth_check_failed'
+    fi
+else
+    systemctl disable --now amazon-returns-seller-central-browser.timer >/dev/null 2>&1 || true
+    echo 'seller_central_browser_timer=disabled_missing_prerequisites'
+fi
 
 "$root/current/scripts/ensure-auto-deploy-source.sh"
 
