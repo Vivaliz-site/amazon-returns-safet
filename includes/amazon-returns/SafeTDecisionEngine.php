@@ -6,6 +6,7 @@ require_once __DIR__ . '/DenialAnalyzer.php';
 require_once __DIR__ . '/SafeTStatus.php';
 require_once __DIR__ . '/AmazonRequestedWait.php';
 require_once __DIR__ . '/ReturnActionRouter.php';
+require_once __DIR__ . '/RecoveryWindow.php';
 
 final class SvAmazonSafeTDecisionEngine
 {
@@ -33,6 +34,7 @@ final class SvAmazonSafeTDecisionEngine
         ],true);
         $customerRefundConfirmed=$amazonCustomerRefund || $deliveryBackedUnknownRefund || $reimbursementBackedUnknownRefund;
         $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($safeTId==='' && ($case['program']??'')==='FBA'){
             return $this->classicFbaRecovery($case,$timeline,$now);
         }
@@ -189,6 +191,7 @@ final class SvAmazonSafeTDecisionEngine
     {
         $caseId=(int)($case['id']??0);$action=(string)($effect['action']??'');$safeTId=trim((string)($case['safe_t_id']??''));
         if($this->hasRecoveredCredit($case))return $this->decision('WAIT','ALREADY_REIMBURSED',$caseId);
+        if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($action==='SAFE_T_SUBMIT'){
             if($safeTId!=='')return $this->decision('WAIT','SAFE_T_ALREADY_EXISTS',$caseId);
             if($this->sellerAppConfirmedPhysicalReceipt($case,$timeline))return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
