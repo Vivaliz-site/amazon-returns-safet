@@ -18,10 +18,17 @@ bhAssert(str_contains($bridgeApi,"\$input['worker_id']"),'Write bridge endpoint 
 bhAssert(str_contains($statusApi,"\$input['worker_id']"),'Read bridge endpoint must pass worker identity to heartbeat service.');
 bhAssert(str_contains($statusApi,"\$input['auth_status']"),'Status endpoint must pass non-secret browser auth outcome.');
 bhAssert(str_contains($statusApi,'SELLER_CENTRAL_PRIMARY_STATUS_WORKER_ID'),'Status heartbeat must be bound to the configured primary VM worker.');
-bhAssert(str_contains($statusApi,"'IGNORED_WORKER'"),'Retired bridge workers must be ignored before they can replace primary liveness.');
+bhAssert(str_contains($bridgeApi,'SELLER_CENTRAL_PRIMARY_WRITE_WORKER_ID'),'Write bridge must be bound to the configured primary VM worker.');
+bhAssert(str_contains($statusApi,"in_array(\$operation,['heartbeat','pull'],true)"),'Retired read workers must be rejected before heartbeat or pull.');
+bhAssert(str_contains($bridgeApi,"in_array(\$operation,['heartbeat','pull'],true)"),'Retired write workers must be rejected before heartbeat or pull.');
+bhAssert(str_contains($statusApi,"'IGNORED_WORKER'"),'Retired read bridge workers must be ignored before they can replace primary liveness.');
+bhAssert(str_contains($bridgeApi,"'IGNORED_WORKER'"),'Retired write bridge workers must be ignored before they can claim jobs.');
 $ignoredWorkerGuard=strpos($statusApi,"'IGNORED_WORKER'");
 $statusHeartbeatCall=strpos($statusApi,'$service->heartbeat');
 bhAssert($ignoredWorkerGuard!==false && $statusHeartbeatCall!==false && $ignoredWorkerGuard<$statusHeartbeatCall,'Primary worker guard must execute before heartbeat persistence.');
+$writeIgnoredWorkerGuard=strpos($bridgeApi,"'IGNORED_WORKER'");
+$writePullCall=strpos($bridgeApi,'$service->pull');
+bhAssert($writeIgnoredWorkerGuard!==false && $writePullCall!==false && $writeIgnoredWorkerGuard<$writePullCall,'Primary write-worker guard must execute before job claiming.');
 bhAssert(str_contains($reader,'--auth-check'),'Read worker must provide an authenticated browser health check.');
 bhAssert(str_contains($reader,'auth_status: auth.status'),'Auth check must report the non-secret auth result to the backend.');
 bhAssert(str_contains($runner,'--auth-check'),'Daily browser cycle must authenticate before draining jobs.');

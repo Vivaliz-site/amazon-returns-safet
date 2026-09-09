@@ -64,6 +64,20 @@ if(!in_array($operation,['heartbeat','pull','result'],true)){
 }
 
 $config=new SvAmazonReturnsConfig();
+if(in_array($operation,['heartbeat','pull'],true)){
+    $worker=trim((string)($input['worker_id'] ?? ''));
+    $primary=trim($config->get(
+        'SELLER_CENTRAL_PRIMARY_WRITE_WORKER_ID','vm-a1-seller-central'
+    ));
+    if($primary!=='' && !hash_equals($primary,$worker)){
+        sv_amz_bridge_reply([
+            'status'=>'IGNORED_WORKER',
+            'worker_id'=>$worker?:null,
+            'expected_worker_id'=>$primary,
+            'liveness_recorded'=>false,
+        ]);
+    }
+}
 $db=amazon_returns_pdo();
 if(!$db instanceof PDO)sv_amz_bridge_reply(['status'=>'DB_UNAVAILABLE'],503);
 try{
