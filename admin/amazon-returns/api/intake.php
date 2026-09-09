@@ -50,7 +50,11 @@ function sv_amz_intake_store_photos(
     if($files===[])return [];
     if(count($files)>6)throw new InvalidArgumentException('Máximo de 6 fotos por recebimento.');
     $base=trim((string)getenv('AMAZON_RETURN_EVIDENCE_DIR'));
-    if($base==='')throw new RuntimeException('AMAZON_RETURN_EVIDENCE_DIR não configurado.');
+    if($base===''){
+        $envFile=trim((string)getenv('AMAZON_RETURNS_ENV_FILE'));
+        if($envFile==='')$envFile='/home/ubuntu/amazon-returns-deploy/shared/.env';
+        $base=dirname($envFile).'/evidence';
+    }
     $dir=rtrim($base,'/').'/tenant-'.$context->tenantId()
         .'/connection-'.$context->amazonConnectionId().'/case-'.$caseId;
     if(!is_dir($dir) && !mkdir($dir,0700,true) && !is_dir($dir)){
