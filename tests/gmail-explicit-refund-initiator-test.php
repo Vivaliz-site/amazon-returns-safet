@@ -43,6 +43,17 @@ if (($projected["refund_initiator"] ?? null) !== "AMAZON_CUSTOMER_SERVICE") {
   throw new RuntimeException("Explicit Gmail issuer must project without invalid optional enum values: ".json_encode($projected));
 }
 
+$issuerlessUndeliverable = $parser->parse([
+  "message_id"=>"refund-issuerless-undeliverable",
+  "from"=>"Comunicações do Amazon Seller Central (não responda) <donotreply@amazon.com>",
+  "subject"=>"Reembolso de 59.1 BRL iniciado para o pedido 702-1830738-4884230",
+  "received_at"=>"2026-08-12T00:32:40Z",
+  "body_text"=>"ID do pedido: 702-1830738-4884230\nRede logística da Amazon: Enviado pelo vendedor\nMotivo para reembolso\nMassa Para Madeira F12 400g Cumaru\nNão é possível realizar a entrega\nSua conta de vendedor será debitada adequadamente.",
+]);
+if (($issuerlessUndeliverable[0]["refund_initiator"] ?? null) !== "AMAZON_CUSTOMER_SERVICE") {
+  throw new RuntimeException("Issuerless Amazon undeliverable refund template must resolve to Customer Service: ".json_encode($issuerlessUndeliverable));
+}
+
 $genericEvents = $parser->parse([
   "message_id"=>"refund-generic",
   "from"=>"Amazon <donotreply@amazon.com>",
