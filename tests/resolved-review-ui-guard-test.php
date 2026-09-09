@@ -12,6 +12,7 @@ function rrSource(string $path):string{
 
 $review=rrSource('admin/amazon-returns/api/review.php');
 $case=rrSource('admin/amazon-returns/api/case.php');
+$index=rrSource('admin/amazon-returns/index.php');
 $js=rrSource('admin/amazon-returns/assets/cockpit.js');
 $focus=rrSource('admin/amazon-returns/assets/review-focus.js');
 
@@ -24,5 +25,6 @@ rrAssert(str_contains($focus,'isResolvedReviewError'),'Review focus helper must 
 rrAssert(str_contains($focus,"panel.classList.add('hidden')"),'Resolved review feedback must close the stale panel.');
 rrAssert(str_contains($focus,'window.loadReviews'),'Resolved review feedback must refresh the open review queue.');
 rrAssert(str_contains($focus,'window.loadSummary'),'Resolved review feedback must refresh the pending count.');
+rrAssert(str_contains($index,'review-focus.js?v=review-open-2'),'Changed review helper must be cache-busted in the cockpit page.');
 
 echo "resolved-review-ui-guard-test: OK\n";
