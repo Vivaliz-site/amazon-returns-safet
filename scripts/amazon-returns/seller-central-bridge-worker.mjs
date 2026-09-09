@@ -494,7 +494,9 @@ async function supportOpen(cdp, job) {
   await cdp.navigate(HELP_URL, 6000);
   const auth = await authGate(cdp, 'help-v1', HELP_URL, 6000);
   if (auth) return auth;
-  if (!(await clickFrameIncludes(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon'))) {
+  const fbaRouteOpened = await clickFrameIncludes(cdp, 'FBA Returns Reimbursement')
+    || await clickFrameIncludes(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon');
+  if (!fbaRouteOpened) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_FBA_CARD_MISSING', evidence: await evidence(cdp, 'help-v1') });
   }
   await sleep(3500);
