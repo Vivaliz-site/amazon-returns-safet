@@ -11,7 +11,7 @@ final class SvAmazonReturnsReport
     private const BR_MARKETPLACE_ID = 'A2Q3Y263D00KWC';
     private const EVENT_FIELDS = [
         'order_id','order_item_id','return_request_at','return_status','return_quantity',
-        'return_reason','in_policy','return_type','resolution','return_delivery_at',
+        'return_reason','in_policy','return_type','resolution','invoice_number','return_delivery_at',
         'label_paid_by','a_to_z_claim','safe_t_action_reason','safe_t_id','safe_t_state',
         'safe_t_created_at','safe_t_reimbursement_amount','refunded_amount','refund_initiator',
     ];
@@ -280,6 +280,7 @@ final class SvAmazonReturnsReport
             'in_policy'=>strtoupper(self::value($headers, $values, 'in policy')) === 'Y',
             'return_type'=>self::value($headers, $values, 'return type'),
             'resolution'=>$resolution,
+            'invoice_number'=>self::value($headers, $values, 'invoice number'),
             'return_delivery_at'=>self::date(self::value($headers, $values, 'return delivery date')),
             'label_paid_by'=>self::value($headers, $values, 'label to be paid by'),
             'a_to_z_claim'=>$aToZ === 'Y',
