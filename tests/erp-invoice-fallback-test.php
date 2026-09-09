@@ -20,6 +20,9 @@ require_once __DIR__.'/../includes/amazon-returns/InvoiceSearch.php';
 require_once $erpPath;
 require_once $resolverPath;
 
+erpInvoiceAssert(method_exists(SvAmazonErpInvoiceLookup::class,'defaultCredentialPath'),'ERP lookup must expose its production credential fallback path.');
+erpInvoiceSame('/home/ubuntu/shopvivaliz-deploy/shared/.env',SvAmazonErpInvoiceLookup::defaultCredentialPath(),'ERP lookup must reuse the existing shared Tiny/Olist credential source without copying tokens.');
+
 $calls=[];
 $http=static function(string $method,string $url,array $headers,?string $body) use (&$calls): array {
     $calls[]=compact('method','url','headers','body');
