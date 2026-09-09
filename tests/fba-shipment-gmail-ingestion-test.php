@@ -53,7 +53,9 @@ fbaSame('CHECK_FINANCES',$decision['action']??null,'Known classic FBA refund mus
 fbaSame('CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$decision['reason']??null,'Automatic FBA route must remain auditable.');
 
 fbaSame('history_id_v2',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY,'Parser change must use a new Gmail history cursor so recent Amazon messages are replayed once after deploy.');
-$ingestorSource=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/gmail-ingest.php');
-fbaTrue(str_contains($ingestorSource,"$cursorKey==='history_id' ? self::HISTORY_CURSOR_KEY : $cursorKey") || str_contains($ingestorSource,"$cursorKey === 'history_id' ? self::HISTORY_CURSOR_KEY : $cursorKey"),'Both Gmail cursor load/save paths must map the legacy logical key to the versioned history key.');
+$cursorMethod=new ReflectionMethod(SvAmazonGmailIngestor::class,'persistedCursorKey');
+$cursorMethod->setAccessible(true);
+fbaSame('history_id_v2',$cursorMethod->invoke(null,'history_id'),'Legacy logical history cursor must map to the versioned key for both load and save.');
+fbaSame('other_cursor',$cursorMethod->invoke(null,'other_cursor'),'Unrelated cursor keys must remain unchanged.');
 
 echo "fba-shipment-gmail-ingestion-test: OK\n";
