@@ -117,6 +117,7 @@ async function defaultApplyCredentials(cdp, username, password, previousStage = 
     + `const pass=document.querySelector('#ap_password,input[name="password"]:not(#ap-credential-autofill-hint):not(.hide):not([hidden]),input[type="password"]:not(#ap-credential-autofill-hint):not(.hide):not([hidden])');\n`
     + `const stage=pass?'PASSWORD':(email?'IDENTIFIER':'UNSUPPORTED');if(stage==='UNSUPPORTED')return 'UNSUPPORTED';if(stage===${previous})return 'STAGE_UNCHANGED';\n`
     + `let touched=false;if(email)touched=set(email,${u})||touched;if(pass)touched=set(pass,${p})||touched;if(!touched)return 'UNSUPPORTED';\n`
+    + `if(stage==='IDENTIFIER'&&email?.form){HTMLFormElement.prototype.submit.call(email.form);return 'IDENTIFIER_SUBMITTED'};\n`
     + `const button=(pass?document.querySelector('#signInSubmit,input[type="submit"],button[type="submit"]'):document.querySelector('#continue,input[type="submit"],button[type="submit"]'))||document.querySelector('#signInSubmit,#continue');\n`
     + `if(!button)return 'UNSUPPORTED';if(button.disabled)return 'STAGE_PENDING';button.click();return stage+'_SUBMITTED'})()`;
   return cdp.evaluate(expression);
