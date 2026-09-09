@@ -24,14 +24,6 @@ $transactions=[[
 
 $refund=SvAmazonSpApiEventSink::refundObservation($transactions);
 multiUnitSpApiSame('81.00',$refund['refund_amount']??null,'Released financial refund must expose the seller debit baseline.');
-
-// A single order item remains unambiguous even when more than one unit was ordered.
-// The financial amount can safely seed reimbursement tracking, while quantity must
-// come from explicit quantity evidence rather than being guessed from ordered units.
-$quantityOrdered=2;
-$singleItem=true;
-$shouldPersistFinancialBaseline=$singleItem && $refund!==null;
-multiUnitSpApiSame(true,$shouldPersistFinancialBaseline,'Single-item multi-unit orders must not suppress the financial refund baseline.');
-multiUnitSpApiSame(2,$quantityOrdered,'Fixture must remain multi-unit.');
+multiUnitSpApiSame('2026-09-02 02:05:29',$refund['seller_debit_at']??null,'Released financial refund must expose the debit timestamp.');
 
 echo "refund-multiunit-spapi-regression-test: OK\n";
