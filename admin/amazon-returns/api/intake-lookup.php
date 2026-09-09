@@ -159,7 +159,7 @@ try{
     error_log('[amazon-returns-intake-lookup-invoice-access] '.get_class($e).': '.$e->getMessage());
     sv_amz_intake_lookup_reply([
         'success'=>false,
-        'error'=>'A consulta por NF ainda não está disponível nesta conta.',
+        'error'=>'A Amazon ainda não autorizou a consulta por NF nesta conta.',
     ],403);
 }catch(InvalidArgumentException $e){
     error_log('[amazon-returns-intake-lookup-invalid] '.get_class($e).': '.$e->getMessage());
