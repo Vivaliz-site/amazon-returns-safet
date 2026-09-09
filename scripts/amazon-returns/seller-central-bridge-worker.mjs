@@ -503,15 +503,21 @@ async function supportOpen(cdp, job) {
   if (!(await cdp.setFrameKat('kat-input[placeholder*="112-"]', orderId))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ORDER_INPUT_MISSING', evidence: await evidence(cdp, 'help-v1') });
   }
-  if (!(await cdp.clickFrameText('Continuar'))) {
+  if (!(await cdp.clickFrameText('Continue')) && !(await cdp.clickFrameText('Continuar'))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ORDER_CONTINUE_MISSING', evidence: await evidence(cdp, 'help-v1') });
   }
   await sleep(6500);
-  if (await frameHas(cdp, 'Solicitar reembolso para um pedido')) {
+  if (await frameHas(cdp, 'Request Reimbursement for an Order')) {
+    await cdp.clickFrameText('Request Reimbursement for an Order');
+    await sleep(6500);
+  } else if (await frameHas(cdp, 'Solicitar reembolso para um pedido')) {
     await cdp.clickFrameText('Solicitar reembolso para um pedido');
     await sleep(6500);
   }
-  if (await frameHas(cdp, 'Entre em contato com um associado')) {
+  if (await frameHas(cdp, 'Contact an associate')) {
+    await cdp.clickFrameText('Contact an associate');
+    await sleep(4500);
+  } else if (await frameHas(cdp, 'Entre em contato com um associado')) {
     await cdp.clickFrameText('Entre em contato com um associado');
     await sleep(4500);
   }
@@ -528,7 +534,7 @@ async function supportOpen(cdp, job) {
   if (!(await cdp.setFrameKat('kat-textarea.meld-text-area', narrative))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_TEXTAREA_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
   }
-  if (!(await cdp.clickFrameText('Continuar'))) {
+  if (!(await cdp.clickFrameText('Continue')) && !(await cdp.clickFrameText('Continuar'))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_CONTINUE_MISSING', evidence: await evidence(cdp, 'help-v1') });
   }
   await sleep(6500);
