@@ -13,13 +13,16 @@ function rrSource(string $path):string{
 $review=rrSource('admin/amazon-returns/api/review.php');
 $case=rrSource('admin/amazon-returns/api/case.php');
 $js=rrSource('admin/amazon-returns/assets/cockpit.js');
+$focus=rrSource('admin/amazon-returns/assets/review-focus.js');
 
 rrAssert(str_contains($review,"'REVIEW_NOT_OPEN'"),'Resolved review reads must return REVIEW_NOT_OPEN.');
 rrAssert(str_contains($review,"['status']") && str_contains($review,"'OPEN'"),'Review detail endpoint must guard review status.');
 rrAssert(str_contains($review,',409'),'Resolved review reads must use HTTP 409.');
 rrAssert(!str_contains($case,'$currentReview=$reviews[array_key_last($reviews)]'),'Case detail must not expose a historical review as current.');
 rrAssert(str_contains($js,'REVIEW_NOT_OPEN'),'Cockpit must recognize a review resolved by automation.');
-rrAssert(str_contains($js,'await loadReviews()'),'Cockpit must refresh the open review queue after a stale review is detected.');
-rrAssert(str_contains($js,'await loadSummary()'),'Cockpit must refresh pending review counts after a stale review is detected.');
+rrAssert(str_contains($focus,'isResolvedReviewError'),'Review focus helper must detect resolved-review feedback.');
+rrAssert(str_contains($focus,"panel.classList.add('hidden')"),'Resolved review feedback must close the stale panel.');
+rrAssert(str_contains($focus,'window.loadReviews'),'Resolved review feedback must refresh the open review queue.');
+rrAssert(str_contains($focus,'window.loadSummary'),'Resolved review feedback must refresh the pending count.');
 
 echo "resolved-review-ui-guard-test: OK\n";
