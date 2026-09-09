@@ -14,8 +14,11 @@ $case=[
     'amazon_order_id'=>'701-2279823-5272226','amazon_order_item_id'=>'161437610223761',
     'asin'=>'B0GCWWKQ67','sku'=>'I7-LTFG-UH4X','safe_t_id'=>'35001-00778-9264871',
     'support_case_id'=>null,'quantity_refunded'=>1,'quantity_received'=>0,
+    'program'=>'FBA','physical_status'=>'RECEIVED_OK',
 ];
 $job=SvAmazonReturnsRemoteBridge::jobEnvelope($row,$case,['SELLER_SUPPORT_OPEN'=>true]);
 rbpiEq('B0GCWWKQ67',$job['case']['asin']??null,'Bridge must carry ASIN to Seller Support.');
 rbpiEq('I7-LTFG-UH4X',$job['case']['sku']??null,'Bridge must carry SKU to Seller Support.');
+rbpiEq('FBA',$job['case']['program']??null,'Bridge must carry program to select the validated support route.');
+rbpiEq('RECEIVED_OK',$job['case']['physical_status']??null,'Bridge must carry physical status for stale-write supersession.');
 echo "remote-bridge-product-identity-test: OK\n";

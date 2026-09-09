@@ -49,6 +49,13 @@ final class SvAmazonReturnsSpApi
         $normalizedOrderId = trim((string)($order['orderId'] ?? $order['amazonOrderId'] ?? $orderId));
         $salesChannel = is_array($order['salesChannel'] ?? null) ? $order['salesChannel'] : [];
         $items = is_array($order['orderItems'] ?? null) ? array_values(array_filter($order['orderItems'], 'is_array')) : [];
+        $items = array_map(static function(array $item): array {
+            $product = is_array($item['product'] ?? null) ? $item['product'] : [];
+            foreach (['asin','sellerSku','title'] as $key) {
+                if ((!array_key_exists($key, $item) || trim((string)$item[$key]) === '') && isset($product[$key])) $item[$key] = $product[$key];
+            }
+            return $item;
+        }, $items);
         $programs = is_array($order['programs'] ?? null) ? array_values(array_map('strval', $order['programs'])) : [];
 
         return [

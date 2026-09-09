@@ -179,9 +179,11 @@ final class SvAmazonReturnActionRouter
 
     private static function decision(string $action,string $reason,array $case,?DateTimeImmutable $next=null): array
     {
-        return ['action'=>$action,'reason'=>$reason,'case_id'=>(int)($case['id']??0),'operational_mode'=>$action,
+        $decision=['action'=>$action,'reason'=>$reason,'case_id'=>(int)($case['id']??0),'operational_mode'=>$action,
             'next_action_at'=>$next?->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
             'idempotency_key'=>hash('sha256',implode('|',['route-v1',$case['id']??0,$case['refund_at']??'',$action,$reason]))];
+        if($action==='SELLER_SUPPORT_OPEN')$decision['support_route']='GENERAL_ORDER_SUPPORT';
+        return $decision;
     }
 
     private static function trustedEvents(array $timeline,int $caseId): array

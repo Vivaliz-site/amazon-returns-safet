@@ -11,10 +11,13 @@ foreach([
     'A-to-z Claims',
     'Enter ASIN',
     'Enter SKU',
+    'spl-hill-form',
+    'Chat now',
 ] as $needle){
     sgrAssert(str_contains($worker,$needle),'General Seller Support worker must recognize observed live UI/route contract: '.$needle);
 }
 sgrAssert(str_contains($worker,"waitFrameHas(cdp, 'FBA Returns Reimbursement'"),'FBA card must be awaited because the live Help frame loads asynchronously.');
 sgrAssert(str_contains($worker,"waitFrameHas(cdp, 'My issue is not listed'"),'General support route must wait for the live Help frame before clicking.');
 sgrAssert(str_contains($worker,'SUPPORT_GENERAL_PRODUCT_IDENTITY_REQUIRED'),'General Seller Support must fail closed when ASIN/SKU identity is unavailable.');
+sgrAssert(!str_contains($worker,"if (await cdp.clickFrameText(label))"),'Support step helper must skip stale disabled duplicate buttons and click an enabled exact match.');
 echo "seller-support-general-route-contract-test: OK\n";
