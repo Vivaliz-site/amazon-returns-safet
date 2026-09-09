@@ -7,16 +7,17 @@ require_once __DIR__.'/ErpInvoiceLookup.php';
 final class SvAmazonInvoiceRemoteLookup
 {
     private object $amazon;
-    private object $erp;
+    private ?object $erp;
 
     public function __construct(?object $amazon=null,?object $erp=null)
     {
         $this->amazon=$amazon ?? new SvAmazonReturnsSpApi();
-        $this->erp=$erp ?? new SvAmazonErpInvoiceLookup();
-        foreach([['client'=>$this->amazon,'name'=>'Amazon'],['client'=>$this->erp,'name'=>'ERP']] as $entry){
-            if(!method_exists($entry['client'],'findOrderByInvoiceNumber')){
-                throw new InvalidArgumentException($entry['name'].' invoice lookup transport is invalid.');
-            }
+        $this->erp=$erp;
+        if(!method_exists($this->amazon,'findOrderByInvoiceNumber')){
+            throw new InvalidArgumentException('Amazon invoice lookup transport is invalid.');
+        }
+        if($this->erp!==null && !method_exists($this->erp,'findOrderByInvoiceNumber')){
+            throw new InvalidArgumentException('ERP invoice lookup transport is invalid.');
         }
     }
 
@@ -27,7 +28,8 @@ final class SvAmazonInvoiceRemoteLookup
             return $this->amazon->findOrderByInvoiceNumber($invoiceNumber);
         }catch(SvAmazonInvoiceAccessException $e){
             error_log('[amazon-returns-invoice-fallback] Amazon Invoices API unavailable; using ERP read-only lookup.');
-            return $this->erp->findOrderByInvoiceNumber($invoiceNumber);
+            $erp=$this->erp ?? new SvAmazonErpInvoiceLookup();
+            return $erp->findOrderByInvoiceNumber($invoiceNumber);
         }
     }
 }
