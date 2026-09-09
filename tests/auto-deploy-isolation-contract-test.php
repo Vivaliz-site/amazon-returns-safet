@@ -16,6 +16,7 @@ isoAssert(str_contains($script,'${AMAZON_RETURNS_REPO:-/home/ubuntu/amazon-retur
 isoAssert(str_contains($script,'status --porcelain'),'Auto-deploy must reject untracked or modified files in the dedicated checkout.');
 isoAssert(str_contains($bootstrap,'deploy_source="${AMAZON_RETURNS_DEPLOY_SOURCE_REPO:-/home/ubuntu/amazon-returns-deploy-source}"'),'Bootstrap must own the dedicated deploy source path.');
 isoAssert(str_contains($bootstrap,'git clone') && str_contains($bootstrap,'Vivaliz-site/amazon-returns-safet'),'Bootstrap must clone the canonical repository when missing.');
+isoAssert(str_contains($bootstrap,"repo_remote='https://github.com/Vivaliz-site/amazon-returns-safet.git'"),'Bootstrap must use the production-verified HTTPS Git authentication path.');
 isoAssert(str_contains($bootstrap,'status --porcelain'),'Bootstrap must reject unexpected dirt in the dedicated checkout.');
 isoAssert(str_contains($bootstrap,'merge --ff-only'),'Bootstrap must advance main without destructive reset.');
 isoAssert(str_contains($provision,'ensure-auto-deploy-source.sh'),'Production provisioner must bootstrap the isolated deploy source before enabling its timer.');
