@@ -11,10 +11,12 @@ $policy=SvAmazonReturnPolicyEngine::evaluate($case,$now);
 $decision=$engine->nextAction($case,[$reimbursement,$fresh],$policy,$now);
 if(($decision['action']??null)!=='SELLER_SUPPORT_OPEN'){fwrite(STDERR,'D+89 expected SELLER_SUPPORT_OPEN, got '.json_encode($decision).PHP_EOL);exit(1);}
 if(($decision['reason']??null)!=='SAFE_T_WINDOW_EXPIRED_RESIDUAL_UNPAID'){fwrite(STDERR,'D+89 unexpected reason '.json_encode($decision).PHP_EOL);exit(1);}
+if(($decision['support_route']??null)!=='GENERAL_ORDER_SUPPORT'){fwrite(STDERR,'D+89 expected GENERAL_ORDER_SUPPORT route, got '.json_encode($decision).PHP_EOL);exit(1);}
 $d90=new DateTimeImmutable('2026-08-08 07:27:57',new DateTimeZone('UTC'));
 $freshD90=$fresh;$freshD90['occurred_at']='2026-08-08 07:27:00';
 $decisionD90=$engine->nextAction($case,[$reimbursement,$freshD90],SvAmazonReturnPolicyEngine::evaluate($case,$d90),$d90);
 if(($decisionD90['action']??null)!=='SELLER_SUPPORT_OPEN'){fwrite(STDERR,'D+90 expected SELLER_SUPPORT_OPEN, got '.json_encode($decisionD90).PHP_EOL);exit(1);}
+if(($decisionD90['support_route']??null)!=='GENERAL_ORDER_SUPPORT'){fwrite(STDERR,'D+90 expected GENERAL_ORDER_SUPPORT route, got '.json_encode($decisionD90).PHP_EOL);exit(1);}
 $expired=new DateTimeImmutable('2026-08-08 07:27:58',new DateTimeZone('UTC'));
 $decisionExpired=$engine->nextAction($case,[$reimbursement,$freshD90],SvAmazonReturnPolicyEngine::evaluate($case,$expired),$expired);
 if(($decisionExpired['action']??null)!=='WAIT'){fwrite(STDERR,'after D+90 expected WAIT, got '.json_encode($decisionExpired).PHP_EOL);exit(1);}
