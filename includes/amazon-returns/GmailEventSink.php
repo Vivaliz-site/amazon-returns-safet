@@ -27,6 +27,9 @@ final class SvAmazonGmailEventSink
             }
             return $patch;
         }
+        if ($type === 'FBA_SHIPMENT_EMAIL') {
+            return ['program'=>SvAmazonReturnPrograms::FBA];
+        }
         if ($type === 'SAFE_T_REGISTERED_EMAIL') {
             return ['safe_t_id'=>trim((string)($event['safe_t_id'] ?? '')),'state'=>SvAmazonReturnStates::SAFE_T_SUBMITTED];
         }
@@ -146,11 +149,17 @@ final class SvAmazonGmailEventSink
     /** @return array<string,mixed> */
     private static function payload(array $event, string $orderId): array
     {
+        $tracking=trim((string)($event['tracking_id'] ?? ''));
+        $carrier=trim((string)($event['carrier'] ?? ''));
         return [
             'order_id'=>$orderId,
             'safe_t_id'=>$event['safe_t_id'] ?? null,
             'amount'=>$event['amount'] ?? null,
             'currency'=>$event['currency'] ?? null,
+            'program'=>$event['program'] ?? null,
+            'customer_tracking_ids'=>$tracking!==''?[$tracking]:[],
+            'customer_delivery_carriers'=>$carrier!==''?[$carrier]:[],
+            'customer_delivery_confirmed'=>false,
             'refund_at'=>strtoupper(trim((string)($event['event_type'] ?? ''))) === 'REFUND_ISSUED_EMAIL'
                 ? ($event['occurred_at'] ?? null) : null,
             'refund_amount'=>strtoupper(trim((string)($event['event_type'] ?? ''))) === 'REFUND_ISSUED_EMAIL'
