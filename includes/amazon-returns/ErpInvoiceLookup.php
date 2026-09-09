@@ -20,7 +20,7 @@ final class SvAmazonErpInvoiceLookup
 
     public static function defaultCredentialPath(): string
     {
-        return '/home/ubuntu/shopvivaliz-deploy/shared/.env';
+        return '/home/ubuntu/amazon-returns-deploy/shared/erp.env';
     }
 
     /** @return array<string,mixed>|null */
