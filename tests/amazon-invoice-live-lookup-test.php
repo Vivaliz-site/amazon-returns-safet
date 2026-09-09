@@ -60,6 +60,7 @@ $found=$api->findOrderByInvoiceNumber('987654');
 invoiceLookupSame('/tax/invoices/2024-06-19/invoices',$client->calls[0]['path'] ?? null,'Invoices API path must be official v2024-06-19.');
 invoiceLookupSame('987654',$client->calls[0]['query']['externalInvoiceId'] ?? null,'NF lookup must filter by exact externalInvoiceId.');
 invoiceLookupSame('A2Q3Y263D00KWC',$client->calls[0]['query']['marketplaceId'] ?? null,'NF lookup must be scoped to the active marketplace.');
+invoiceLookupSame(200,$client->calls[0]['query']['pageSize'] ?? null,'NF lookup must use the bounded maximum page size.');
 invoiceLookupSame('702-5144267-2415462',$found['order_id'] ?? null,'NF lookup must resolve the associated Amazon order ID.');
 invoiceLookupSame('987654',$found['invoice_number'] ?? null,'NF evidence must retain the exact invoice number.');
 invoiceLookupSame('invoice-api-id-1',$found['invoice_id'] ?? null,'NF evidence must retain the Amazon invoice ID.');
