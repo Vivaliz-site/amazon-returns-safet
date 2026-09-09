@@ -27,9 +27,32 @@ final class SvAmazonReturnsRuntime
         ];
     }
 
-    /** @return list<string> */
-    public static function dueTasks(array $state, DateTimeImmutable $now): array
+    public static function decisionStackRevision(): string
     {
+        $files=[
+            __FILE__,
+            __DIR__.'/PolicyEngine.php',
+            __DIR__.'/Projector.php',
+            __DIR__.'/SafeTDecisionEngine.php',
+            __DIR__.'/DecisionCoordinator.php',
+        ];
+        $parts=[];
+        foreach($files as $file){
+            $hash=@hash_file('sha256',$file);
+            if(!is_string($hash) || $hash===''){
+                throw new RuntimeException('Unable to fingerprint Amazon returns decision stack.');
+            }
+            $parts[]=basename($file).':'.$hash;
+        }
+        return hash('sha256',implode('|',$parts));
+    }
+
+    /** @return list<string> */
+    public static function dueTasks(
+        array $state,
+        DateTimeImmutable $now,
+        ?string $decisionStackRevision=null
+    ): array {
         $now=$now->setTimezone(new DateTimeZone('UTC'));
         $due=['bootstrap'];
         foreach(self::cadences() as $task=>$seconds){
@@ -46,7 +69,56 @@ final class SvAmazonReturnsRuntime
             }
             if($now->getTimestamp()-$when->getTimestamp()>=$seconds)$due[]=$task;
         }
-        return $due;
+        if(
+            is_string($decisionStackRevision)
+            && $decisionStackRevision!==''
+            && ($state['decision_stack_revision'] ?? null)!==$decisionStackRevision
+        ){
+            $due[]='scheduler';
+        }
+        return array_values(array_unique($due));
+    }
+
+    /**
+     * Refresh read-side evidence before deciding, then execute newly queued writes and
+     * human-review reminders only after deterministic decisions have been re-evaluated.
+     *
+     * @param list<string> $due
+     * @return list<string>
+     */
+    public static function decisionSafeOrder(array $due): array
+    {
+        $due=array_values(array_unique(array_filter(
+            $due,
+            static fn(mixed $task):bool=>is_string($task) && $task!==''
+        )));
+        $evidenceOrder=[
+            'gmail',
+            'gmail_refund_reconciliation',
+            'sp_api',
+            'returns_report',
+            'financial',
+        ];
+        $hasEvidence=false;
+        foreach($evidenceOrder as $task){
+            if(in_array($task,$due,true)){
+                $hasEvidence=true;
+                break;
+            }
+        }
+        if($hasEvidence && !in_array('scheduler',$due,true))$due[]='scheduler';
+
+        $ordered=[];
+        $append=static function(string $task) use (&$ordered,$due):void {
+            if(in_array($task,$due,true) && !in_array($task,$ordered,true))$ordered[]=$task;
+        };
+        $append('bootstrap');
+        foreach($evidenceOrder as $task)$append($task);
+        $append('scheduler');
+        $append('seller_central');
+        $append('review_operations');
+        foreach($due as $task)$append($task);
+        return $ordered;
     }
 
     /** @return array<string,mixed> */
