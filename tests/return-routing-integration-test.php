@@ -24,7 +24,7 @@ riEq('SAFE_T_SUBMIT',$engine->nextAction($returnedLoss,[],$policy,$now)['action'
 $paid=$refunded;$paid['reconciled_credit_amount']='100.00';
 riEq('WAIT',$engine->nextAction($paid,[],$policy,$now)['action'],'real full credit suppresses new SAFE-T');
 
-foreach(['AMAZON_AUTOMATIC','AMAZON_CUSTOMER_SERVICE','A_TO_Z'] as $initiator){
+foreach(['AMAZON_AUTOMATIC','AMAZON_CUSTOMER_SERVICE','AMAZON_INITIATED','A_TO_Z'] as $initiator){
  $c=$case;$c['refund_initiator']=$initiator;$c['physical_status']='NOT_RECEIVED';
  riEq('SAFE_T_SUBMIT',$engine->nextAction($c,[], $policy,$now)['action'],'Amazon-side customer refund is eligible for D45 SAFE-T: '.$initiator);
 }
