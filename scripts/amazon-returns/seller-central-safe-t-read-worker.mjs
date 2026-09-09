@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
-import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
@@ -8,15 +7,11 @@ import { parseSafeTStatus } from './safe-t-status-parser.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_STATUS_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php';
-const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\bridge.token';
+const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
 const CDP_BASE = process.env.SELLER_CENTRAL_CDP_URL || 'http://127.0.0.1:9225';
-const PROFILE = process.env.SELLER_CENTRAL_PROFILE || 'C:\\ShopVivaliz\\amazon-returns-bridge\\profile';
-const LOCALAPPDATA = process.env.LOCALAPPDATA || '';
-const BROWSER = process.env.SELLER_CENTRAL_BROWSER || process.env.SELLER_CENTRAL_OPERA || [
-  path.join(LOCALAPPDATA, 'Programs', 'Opera developer', 'opera.exe'),
-  path.join(LOCALAPPDATA, 'Programs', 'Opera', 'opera.exe'),
-].find(candidate => candidate && fs.existsSync(candidate)) || '';
-const STATUS_WORKER_ID = process.env.SELLER_CENTRAL_STATUS_WORKER_ID || 'fred-win-safe-t-status';
+const PROFILE = process.env.SELLER_CENTRAL_PROFILE || '';
+const BROWSER = process.env.SELLER_CENTRAL_BROWSER || process.env.SELLER_CENTRAL_OPERA || '';
+const STATUS_WORKER_ID = process.env.SELLER_CENTRAL_STATUS_WORKER_ID || 'seller-central-status';
 const POLL_MS = Math.max(15000, Number(process.env.SELLER_CENTRAL_STATUS_POLL_MS || 30000));
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
 
