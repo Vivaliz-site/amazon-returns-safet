@@ -32,7 +32,7 @@ intakeUxAssert(str_contains($intakePage,'submitButton.disabled=true'),'Receipt s
 
 $lookup=intakeUxRead('admin/amazon-returns/api/intake-lookup.php');
 intakeUxAssert(str_contains($lookup,"\$input['sales_invoice_number']"),'Lookup API must accept NF as an alternative identifier.');
-intakeUxAssert(str_contains($lookup,'SvAmazonInvoiceSearch::caseIds'),'Lookup API must resolve NF through tenant-scoped invoice evidence.');
+intakeUxAssert(str_contains($lookup,'SvAmazonInvoiceSearch::caseIdsExact'),'Receipt lookup must resolve the exact NF through tenant-scoped invoice evidence.');
 intakeUxAssert(str_contains($lookup,'$p->cases->forOrder($orderId)'),'Order lookup must still check the local case store first.');
 intakeUxAssert(str_contains($lookup,'->syncOrder($orderId)'),'Order lookup must still query Amazon immediately when absent locally.');
 
