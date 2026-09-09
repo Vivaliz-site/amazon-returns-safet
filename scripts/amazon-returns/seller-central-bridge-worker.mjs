@@ -606,7 +606,10 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
 
-  const category = await clickFirstFrameTextWhenReady(cdp, ['A-to-z Claims','Check FBA order reimbursement status','FBA related'], 45000);
+  const associateCategories = text(job.case?.program).toUpperCase() === 'FBA'
+    ? ['A-to-z Claims','FBA related']
+    : ['A-to-z Claims'];
+  const category = await clickFirstFrameTextWhenReady(cdp, associateCategories, 45000);
   if (!category) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_CATEGORY_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
