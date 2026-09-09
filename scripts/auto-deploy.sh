@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-repo="${AMAZON_RETURNS_REPO:-/home/ubuntu/amazon-returns-safet}"
+repo="${AMAZON_RETURNS_REPO:-/home/ubuntu/amazon-returns-deploy-source}"
 deploy_root="${AMAZON_RETURNS_DEPLOY_ROOT:-/home/ubuntu/amazon-returns-deploy}"
 repo_name='Vivaliz-site/amazon-returns-safet'
 
