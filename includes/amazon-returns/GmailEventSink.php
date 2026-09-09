@@ -25,6 +25,13 @@ final class SvAmazonGmailEventSink
                 && !is_numeric($existing['refund_amount'] ?? null)) {
                 $patch['refund_amount'] = number_format((float)$amount, 2, '.', '');
             }
+            $program = strtoupper(trim((string)($event['program'] ?? '')));
+            $existingProgram = strtoupper(trim((string)($existing['program'] ?? SvAmazonReturnPrograms::UNKNOWN)));
+            if ($program !== '' && $program !== SvAmazonReturnPrograms::UNKNOWN
+                && in_array($program, SvAmazonReturnPrograms::all(), true)
+                && ($existingProgram === '' || $existingProgram === SvAmazonReturnPrograms::UNKNOWN)) {
+                $patch['program'] = $program;
+            }
             $initiator = strtoupper(trim((string)($event['refund_initiator'] ?? '')));
             $existingInitiator = strtoupper(trim((string)($existing['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN)));
             if ($initiator !== '' && $initiator !== SvAmazonRefundInitiators::UNKNOWN
@@ -97,6 +104,8 @@ final class SvAmazonGmailEventSink
         ]);
         $initiatorEvidence = self::refundInitiatorEvidence($caseId, $event, $orderId, $occurredAt, $sourceEventId);
         if ($initiatorEvidence !== null) $p->events->append($initiatorEvidence);
+        $programEvidence = self::programEvidence($caseId, $event, $orderId, $occurredAt, $sourceEventId);
+        if ($programEvidence !== null) $p->events->append($programEvidence);
         return $primaryId;
     }
 
@@ -181,6 +190,35 @@ final class SvAmazonGmailEventSink
             'idempotency_key'=>hash('sha256', implode('|', ['gmail-refund-initiator',$orderId,$sourceIdentity,$initiator])),
             'occurred_at'=>$occurredAt,
             'payload'=>['order_id'=>$orderId,'refund_initiator'=>$initiator,'financial_truth'=>false],
+            'evidence_sha256'=>$evidence,
+        ];
+    }
+
+    /** @return array<string,mixed>|null */
+    private static function programEvidence(
+        int $caseId,
+        array $event,
+        string $orderId,
+        string $occurredAt,
+        string $sourceEventId
+    ): ?array {
+        if (strtoupper(trim((string)($event['event_type'] ?? ''))) !== 'REFUND_ISSUED_EMAIL') return null;
+        $program = strtoupper(trim((string)($event['program'] ?? '')));
+        if ($program === '' || $program === SvAmazonReturnPrograms::UNKNOWN
+            || !in_array($program, SvAmazonReturnPrograms::all(), true)) return null;
+        $sourceIdentity = $sourceEventId !== '' ? $sourceEventId : trim((string)($event['idempotency_key'] ?? ''));
+        if ($sourceIdentity === '') return null;
+        $evidence = isset($event['content_sha256']) && is_string($event['content_sha256'])
+            && preg_match('/^[a-f0-9]{64}$/i', $event['content_sha256']) === 1
+            ? strtolower($event['content_sha256']) : null;
+        return [
+            'case_id'=>$caseId,
+            'event_type'=>'PROGRAM_CONFIRMED',
+            'source'=>'GMAIL',
+            'source_event_id'=>$sourceEventId !== '' ? $sourceEventId : null,
+            'idempotency_key'=>hash('sha256', implode('|', ['gmail-program',$orderId,$sourceIdentity,$program])),
+            'occurred_at'=>$occurredAt,
+            'payload'=>['order_id'=>$orderId,'program'=>$program,'financial_truth'=>false],
             'evidence_sha256'=>$evidence,
         ];
     }
