@@ -8,6 +8,20 @@ ROOT="${AMAZON_RETURNS_RELEASE_ROOT:-/home/ubuntu/amazon-returns-deploy/current}
 
 CDP_PORT="${SELLER_CENTRAL_CDP_PORT:-9225}"
 CDP_URL="${SELLER_CENTRAL_CDP_URL:-http://127.0.0.1:${CDP_PORT}}"
+NODE_BIN="${SELLER_CENTRAL_NODE_BINARY:-}"
+if [[ -z "$NODE_BIN" ]]; then
+  for candidate in /usr/local/bin/node /usr/bin/node; do
+    [[ -x "$candidate" ]] || continue
+    if "$candidate" -e 'process.exit(typeof WebSocket === "function" ? 0 : 1)' >/dev/null 2>&1; then
+      NODE_BIN="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$NODE_BIN" || ! -x "$NODE_BIN" ]] || ! "$NODE_BIN" -e 'process.exit(typeof WebSocket === "function" ? 0 : 1)' >/dev/null 2>&1; then
+  echo "Seller Central requires Node.js with global WebSocket support" >&2
+  exit 69
+fi
 browser_pid=""
 
 cleanup() {
@@ -42,6 +56,6 @@ for _ in $(seq 1 40); do
 done
 [[ "$ready" -eq 1 ]] || { echo "Seller Central CDP did not become ready" >&2; exit 75; }
 
-/usr/bin/node "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check
-/usr/bin/node "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --drain
-/usr/bin/node "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" --drain
+"$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check
+"$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --drain
+"$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" --drain
