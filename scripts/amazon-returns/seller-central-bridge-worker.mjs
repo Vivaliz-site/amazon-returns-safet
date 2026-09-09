@@ -474,9 +474,37 @@ async function resolveOrderAsin(cdp, orderId) {
   return match?.[1] || '';
 }
 
+function supportRouteFor(job) {
+  const explicit = text(job.payload?.decision?.support_route).toUpperCase();
+  const program = text(job.case?.program).toUpperCase();
+  const reason = text(job.payload?.decision?.reason).toUpperCase();
+  if (explicit === 'FBA_RETURNS_REIMBURSEMENT') {
+    return program === 'FBA' ? explicit : '';
+  }
+  if (explicit === 'GENERAL_ORDER_SUPPORT') return explicit;
+  if (reason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION' && program === 'FBA') {
+    return 'FBA_RETURNS_REIMBURSEMENT';
+  }
+  if ([
+    'SAFE_T_WINDOW_EXPIRED_RESIDUAL_UNPAID',
+    'OFFICIAL_APPEAL_WINDOW_EXPIRED_RECOVERY_CONTINUES',
+    'EMAIL_REVIEW_DENIED_REQUIRES_SUPPORT',
+    'EMAIL_REVIEW_ANALYZER_SELECTED_SUPPORT',
+    'LEARNED_RULE_APPROVED',
+  ].includes(reason)) return 'GENERAL_ORDER_SUPPORT';
+  return '';
+}
+
 async function supportOpen(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
+  const supportRoute = supportRouteFor(job);
+  if (!supportRoute) {
+    return bridgeResult('FAILED', { reason: 'SUPPORT_ROUTE_UNSUPPORTED', retry_safe: false });
+  }
+  if (supportRoute === 'GENERAL_ORDER_SUPPORT') {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_ROUTE_NOT_IMPLEMENTED', retry_safe: true });
+  }
   const decisionReason = text(job.payload?.decision?.reason).toUpperCase();
   const physicalStatus = text(job.case?.physical_status).toUpperCase();
   if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION'

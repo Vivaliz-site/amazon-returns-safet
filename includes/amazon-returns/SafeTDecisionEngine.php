@@ -139,6 +139,7 @@ final class SvAmazonSafeTDecisionEngine
                 return [
                     'action'=>'SELLER_SUPPORT_OPEN',
                     'reason'=>'EMAIL_REVIEW_DENIED_REQUIRES_SUPPORT',
+                    'support_route'=>'GENERAL_ORDER_SUPPORT',
                     'denial_fingerprint'=>$fingerprint,
                     'idempotency_key'=>hash('sha256','support-open|'.$safeTId.'|'.$fingerprint.'|'.$round),
                 ];
@@ -210,6 +211,7 @@ final class SvAmazonSafeTDecisionEngine
         }
         if(in_array($action,['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true) && $safeTId==='')return $this->decision('HUMAN_REVIEW','LEARNED_RULE_SAFE_T_REQUIRED',$caseId);
         $decision=['action'=>$action,'reason'=>'LEARNED_RULE_APPROVED','case_id'=>$caseId];
+        if($action==='SELLER_SUPPORT_OPEN')$decision['support_route']='GENERAL_ORDER_SUPPORT';
         if(isset($effect['parameters']['resolved_date']))$decision['next_action_at']=$effect['parameters']['resolved_date'];
         if(in_array($action,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))$decision['idempotency_key']=hash('sha256','learned|'.$action.'|'.$caseId.'|'.$safeTId.'|'.json_encode($effect));
         return $decision;
@@ -256,6 +258,7 @@ final class SvAmazonSafeTDecisionEngine
                 return [
                     'action'=>'SELLER_SUPPORT_OPEN',
                     'reason'=>'EMAIL_REVIEW_ANALYZER_SELECTED_SUPPORT',
+                    'support_route'=>'GENERAL_ORDER_SUPPORT',
                     'idempotency_key'=>hash('sha256','support-open|'.$safeTId.'|'.$scope),
                     'denial_fingerprint'=>$scope,
                 ];

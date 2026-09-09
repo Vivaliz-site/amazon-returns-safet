@@ -112,6 +112,7 @@ $emailDenied = $appealDenied;
 $emailDenied['state'] = 'SUPPORT_ESCALATION';
 $supportAfterEmail = $engine->nextAction($emailDenied, $timeline, ['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED']);
 sdSame('SELLER_SUPPORT_OPEN', $supportAfterEmail['action'], 'Denied detailed email review must escalate to one Seller Support case.');
+sdSame('GENERAL_ORDER_SUPPORT', $supportAfterEmail['support_route'] ?? null, 'Post-email Seller Support escalation must use the general support route.');
 
 $newDenial = $denied;
 $newDenial['latest_denial_text'] = 'Negada porque o rastreio mostra entrega ao vendedor em 30/08/2026. Envie comprovante de divergência.';

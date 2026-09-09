@@ -45,6 +45,7 @@ final class SvAmazonReturnsScheduler
         return array_replace($decision,[
             'action'=>'SELLER_SUPPORT_OPEN',
             'reason'=>'OFFICIAL_APPEAL_WINDOW_EXPIRED_RECOVERY_CONTINUES',
+            'support_route'=>'GENERAL_ORDER_SUPPORT',
             'idempotency_key'=>hash('sha256','support-after-expired-appeal|'.(int)($case['id']??0).'|'.(string)($case['safe_t_id']??'').'|'.$scope),
         ]);
     }

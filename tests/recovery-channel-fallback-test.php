@@ -8,6 +8,7 @@ $appeal=['action'=>'SAFE_T_APPEAL','reason'=>'AMAZON_REQUESTED_DATE_REACHED_UNRE
 $fallback=SvAmazonReturnsScheduler::normalizeRecoveryChannel($case,$appeal,$now);
 rcfSame('SELLER_SUPPORT_OPEN',$fallback['action']??null,'Expired appeal channel must fall back to Seller Support while D+90 is open.');
 rcfSame('OFFICIAL_APPEAL_WINDOW_EXPIRED_RECOVERY_CONTINUES',$fallback['reason']??null,'Fallback reason must be explicit.');
+rcfSame('GENERAL_ORDER_SUPPORT',$fallback['support_route']??null,'Expired appeal recovery must use the general support route.');
 $open=$case;$open['support_case_id']='12345678901';$open['support_case_status']='OPEN';
 $waiting=SvAmazonReturnsScheduler::normalizeRecoveryChannel($open,$appeal,$now);
 rcfSame('WAIT',$waiting['action']??null,'An already active support case must suppress duplicate support creation.');
