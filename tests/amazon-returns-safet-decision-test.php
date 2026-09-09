@@ -20,8 +20,8 @@ function eligibleCase(array $changes = []): array {
         'return_status'=>'Retornando ao Vendedor',
         'return_status_source'=>'SP_API_REPORTS',
         'refund_initiator' => 'AMAZON_AUTOMATIC',
-        'refund_at' => '2026-06-01 12:00:00',
-        'seller_debit_at' => '2026-06-01 12:00:00',
+        'refund_at' => '2026-06-10 12:00:00',
+        'seller_debit_at' => '2026-06-10 12:00:00',
         'refund_amount' => '199.90',
         'expected_reimbursement_amount' => '199.90',
         'reconciled_credit_amount' => '0.00',
@@ -33,13 +33,16 @@ function eligibleCase(array $changes = []): array {
         'support_escalation_round' => 1,
     ], $changes);
 }
-$eligiblePolicy = ['eligible' => true, 'state' => 'SAFE_T_ELIGIBLE', 'policy_version_id' => 12, 'eligibility_at' => '2026-07-16 12:00:00'];
+$eligiblePolicy = ['eligible' => true, 'state' => 'SAFE_T_ELIGIBLE', 'policy_version_id' => 12, 'eligibility_at' => '2026-07-25 12:00:00'];
 $engine = new SvAmazonSafeTDecisionEngine(null,new DateTimeImmutable('2026-09-05T15:00:00Z'));
 
 $submit = $engine->nextAction(eligibleCase(), [], $eligiblePolicy);
 sdSame('SAFE_T_SUBMIT', $submit['action'], 'Eligible case without claim must submit SAFE-T.');
 sdAssert(preg_match('/^[a-f0-9]{64}$/', $submit['idempotency_key']) === 1, 'SAFE-T submit must have deterministic idempotency key.');
 sdSame($submit, $engine->nextAction(eligibleCase(), [], $eligiblePolicy), 'Same inputs must give same submit action/key.');
+$expired=$engine->nextAction(eligibleCase(['refund_at'=>'2026-06-01 12:00:00','seller_debit_at'=>'2026-06-01 12:00:00']), [], $eligiblePolicy);
+sdSame('WAIT',$expired['action'],'A recovery older than D+90 must not create a new write.');
+sdSame('RECOVERY_WINDOW_EXPIRED',$expired['reason']??null,'Expired recovery window must be explicit.');
 
 sdSame('SAFE_T_SUBMIT', $engine->nextAction(eligibleCase(['seller_debit_at'=>null]), [], $eligiblePolicy)['action'], 'Once D45 eligibility is established, missing separate debit field is not a third blocker.');
 sdSame('BLOCKED_REVIEW', $engine->nextAction(eligibleCase(['refund_initiator'=>'UNKNOWN']), [], $eligiblePolicy)['action'], 'Unknown refund initiator must block a new auto-write.');
