@@ -15,6 +15,13 @@ if(!str_contains($daemon,'gmail_refund_reconciliation') || !str_contains($daemon
 if(!str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])")){
     throw new RuntimeException('A due action may force fresh financial data instead of using stale data.');
 }
+$deployTimer=(string)file_get_contents(__DIR__.'/../deploy/systemd/amazon-returns-deploy.timer');
+if(str_contains($deployTimer,'OnUnitActiveSec=300') || str_contains($deployTimer,'every five minutes')){
+    throw new RuntimeException('No deploy poll may run every five minutes.');
+}
+if(!str_contains($deployTimer,'OnUnitActiveSec=3600')){
+    throw new RuntimeException('Automatic deploy polling must run hourly.');
+}
 $script=(string)file_get_contents(__DIR__.'/../scripts/provision-production.sh');
 if(!str_contains($script,"set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '1'")){
     throw new RuntimeException('Production deploy must enable learned-rule execution after guarded rule infrastructure is active.');
