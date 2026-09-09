@@ -31,6 +31,10 @@ final class SvAmazonInvoiceSearch
         if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$orderId)!==1){
             throw new InvalidArgumentException('Invoice evidence order ID is invalid.');
         }
+        $source=trim((string)($lookup['source'] ?? 'SP_API_INVOICES'));
+        if(!in_array($source,['SP_API_INVOICES','ERP_OLIST_INVOICE'],true)){
+            throw new InvalidArgumentException('Invoice evidence source is invalid.');
+        }
         $invoiceId=trim((string)($lookup['invoice_id'] ?? ''));
         $requestId=trim((string)($lookup['request_id'] ?? ''));
         $at=($occurredAt ?? new DateTimeImmutable('now',new DateTimeZone('UTC')))
@@ -38,7 +42,7 @@ final class SvAmazonInvoiceSearch
         return [
             'case_id'=>$caseId,
             'event_type'=>'SALES_INVOICE_LINKED',
-            'source'=>'SP_API_INVOICES',
+            'source'=>$source,
             'source_event_id'=>$invoiceId!=='' ? $invoiceId : ($requestId!=='' ? $requestId : null),
             'idempotency_key'=>hash('sha256',implode('|',[
                 'sales-invoice-linked',(string)$caseId,$invoiceNumber,$orderId,
@@ -53,6 +57,7 @@ final class SvAmazonInvoiceSearch
                 'invoice_type'=>self::nullable($lookup['invoice_type'] ?? null),
                 'transaction_type'=>self::nullable($lookup['transaction_type'] ?? null),
                 'request_id'=>$requestId!=='' ? $requestId : null,
+                'sales_channel'=>self::nullable($lookup['sales_channel'] ?? null),
             ],
             'evidence_sha256'=>null,
         ];
