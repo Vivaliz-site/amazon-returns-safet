@@ -25,6 +25,13 @@ final class SvAmazonGmailEventSink
                 && !is_numeric($existing['refund_amount'] ?? null)) {
                 $patch['refund_amount'] = number_format((float)$amount, 2, '.', '');
             }
+            $initiator = strtoupper(trim((string)($event['refund_initiator'] ?? '')));
+            $existingInitiator = strtoupper(trim((string)($existing['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN)));
+            if ($initiator !== '' && $initiator !== SvAmazonRefundInitiators::UNKNOWN
+                && SvAmazonRefundInitiators::isValid($initiator)
+                && ($existingInitiator === '' || $existingInitiator === SvAmazonRefundInitiators::UNKNOWN)) {
+                $patch['refund_initiator'] = $initiator;
+            }
             return $patch;
         }
         if ($type === 'FBA_SHIPMENT_EMAIL') {
@@ -78,7 +85,7 @@ final class SvAmazonGmailEventSink
         $occurredAt = trim((string)($event['occurred_at'] ?? ''));
         if ($occurredAt === '') $occurredAt = gmdate('Y-m-d H:i:s');
         $sourceEventId = trim((string)($event['source_event_id'] ?? $event['message_id'] ?? ''));
-        return $p->events->append([
+        $primaryId = $p->events->append([
             'case_id'=>$caseId,
             'event_type'=>(string)$event['event_type'],
             'source'=>'GMAIL',
@@ -88,6 +95,9 @@ final class SvAmazonGmailEventSink
             'payload'=>self::payload($event, $orderId),
             'evidence_sha256'=>isset($event['content_sha256']) ? (string)$event['content_sha256'] : null,
         ]);
+        $initiatorEvidence = self::refundInitiatorEvidence($caseId, $event, $orderId, $occurredAt, $sourceEventId);
+        if ($initiatorEvidence !== null) $p->events->append($initiatorEvidence);
+        return $primaryId;
     }
 
     /** @return array{0:int,1:string} */
@@ -146,6 +156,35 @@ final class SvAmazonGmailEventSink
         if ($patch !== []) $cases->update($caseId, $patch);
     }
 
+    /** @return array<string,mixed>|null */
+    private static function refundInitiatorEvidence(
+        int $caseId,
+        array $event,
+        string $orderId,
+        string $occurredAt,
+        string $sourceEventId
+    ): ?array {
+        if (strtoupper(trim((string)($event['event_type'] ?? ''))) !== 'REFUND_ISSUED_EMAIL') return null;
+        $initiator = strtoupper(trim((string)($event['refund_initiator'] ?? '')));
+        if ($initiator === '' || $initiator === SvAmazonRefundInitiators::UNKNOWN
+            || !SvAmazonRefundInitiators::isValid($initiator)) return null;
+        $sourceIdentity = $sourceEventId !== '' ? $sourceEventId : trim((string)($event['idempotency_key'] ?? ''));
+        if ($sourceIdentity === '') return null;
+        $evidence = isset($event['content_sha256']) && is_string($event['content_sha256'])
+            && preg_match('/^[a-f0-9]{64}$/i', $event['content_sha256']) === 1
+            ? strtolower($event['content_sha256']) : null;
+        return [
+            'case_id'=>$caseId,
+            'event_type'=>'REFUND_INITIATOR_CONFIRMED',
+            'source'=>'GMAIL',
+            'source_event_id'=>$sourceEventId !== '' ? $sourceEventId : null,
+            'idempotency_key'=>hash('sha256', implode('|', ['gmail-refund-initiator',$orderId,$sourceIdentity,$initiator])),
+            'occurred_at'=>$occurredAt,
+            'payload'=>['order_id'=>$orderId,'refund_initiator'=>$initiator,'financial_truth'=>false],
+            'evidence_sha256'=>$evidence,
+        ];
+    }
+
     /** @return array<string,mixed> */
     private static function payload(array $event, string $orderId): array
     {
@@ -164,6 +203,7 @@ final class SvAmazonGmailEventSink
                 ? ($event['occurred_at'] ?? null) : null,
             'refund_amount'=>strtoupper(trim((string)($event['event_type'] ?? ''))) === 'REFUND_ISSUED_EMAIL'
                 ? ($event['amount'] ?? null) : null,
+            'refund_initiator'=>$event['refund_initiator'] ?? null,
             'review_outcome'=>$event['review_outcome'] ?? null,
             'review_suggested_action'=>$event['review_suggested_action'] ?? null,
             'review_reason'=>$event['review_reason'] ?? null,
