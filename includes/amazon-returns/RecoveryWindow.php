@@ -32,7 +32,7 @@ final class SvAmazonRecoveryWindow
     {
         $now = $now->setTimezone(new DateTimeZone('UTC'));
         $deadline = $deadline->setTimezone(new DateTimeZone('UTC'));
-        if ($now > $deadline) return null;
+        if ($now >= $deadline) return null;
         $next = $now->add(new DateInterval('P1D'));
         return $next <= $deadline ? $next : $deadline;
     }
