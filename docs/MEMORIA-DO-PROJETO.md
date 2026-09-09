@@ -24,6 +24,7 @@ Nenhum PR, rascunho, Action necessária, conflito ou falha de deploy do trabalho
 
 O agente faz a validação e o merge do SHA revisado; o **auto gate existente** faz o deploy. O agente acompanha o resultado e corrige falhas na mesma execução até comprovar o sucesso, salvo bloqueio externo real que exija atuação do usuário/provedor. Não contornar checks, permissões ou autenticação para aparentar entrega.
 
+Toda alteração deve ter validação funcional real do fluxo afetado, além dos testes automatizados e CI. Não considerar uma rotina concluída apenas porque o código foi implantado ou o health está OK; quando houver um fluxo de usuário alterado, executar o fluxo ponta a ponta e conferir o efeito persistido no backend. Se isso não puder ser executado por um bloqueio externo real, a tarefa permanece aberta com o bloqueio explicitado.
 
 ## Decisao de 05/09/2026: devolucao danificada
 Produtos que retornarem danificados terao a abertura inicial tratada manualmente pelo usuario. O aplicativo nao deve abrir automaticamente uma nova reivindicacao SAFE-T para `RECEIVED_DISCREPANT`/dano fisico. Depois que o usuario abrir manualmente e existir um SAFE-T ID, se a Amazon negar a reivindicacao, o aplicativo pode assumir o acompanhamento e os recursos subsequentes, respeitando prazo oficial, evidencia, deduplicacao e demais gates do canal.
@@ -42,15 +43,15 @@ O sistema deve responder automaticamente no canal já existente do caso, citando
 
 Revisão humana continua obrigatória se houver outra ambiguidade material independente, como ausência de evidência confiável de entrega, rastreamento sem identificação, problema de correlação com o pedido/item, prazo oficial indispensável não resolvido ou outro bloqueio de segurança do canal.
 
-## Decisão de 08/09/2026: consultas rotineiras de negócio uma vez por dia
-Esta decisão supersede a regra anterior de consultas por API a cada quatro horas. Consultas rotineiras de negócio em fontes externas — Gmail API, SP-API Orders/Finances, Returns/Reports e Seller Central — devem executar **uma vez por dia**. O monitoramento técnico de saúde pode continuar mais frequente porque não consulta o estado comercial dos casos.
+## Decisão de 09/09/2026: consultas de negócio duas vezes por dia e NF como busca
+Esta decisão supersede as cadências anteriores de quatro horas, uma vez por dia e o agendador interno de cinco minutos. Gmail API, SP-API Orders/Finances, Returns/Reports, Seller Central, monitor de políticas e o agendador de decisões de negócio devem executar **duas vezes por dia**, em intervalos de 12 horas. Não manter rotina de negócio a cada cinco minutos. O monitoramento técnico de saúde pode continuar mais frequente porque não consulta o estado comercial dos casos.
 
-A redução de cadência não se aplica a uma consulta manual solicitada pelo usuário na interface. Ao informar um número de pedido em **Registrar devolução recebida**, o aplicativo deve verificar o banco local e, se o pedido ainda não existir, consultar a Amazon imediatamente e sincronizá-lo antes de informar que não encontrou. Um pedido existente na Amazon não pode ser apresentado como inexistente apenas porque a ingestão automática diária ainda não o trouxe para o banco local.
+A cadência de 12 horas não se aplica a uma consulta manual solicitada pelo usuário na interface. Ao informar um número de pedido em **Registrar devolução recebida**, o aplicativo deve verificar o banco local e, se o pedido ainda não existir, consultar a Amazon imediatamente e sincronizá-lo antes de informar que não encontrou. Um pedido existente na Amazon não pode ser apresentado como inexistente apenas porque a ingestão automática ainda não o trouxe para o banco local.
 
-O registro de recebimento deve aceitar opcionalmente o **número da NF de venda** e preservar essa informação no evento de recebimento. A quantidade física recebida deve ser validada contra a quantidade vendida/pedida, e não ficar impossibilitada apenas porque a projeção do reembolso ainda não foi atualizada.
+O **número da NF de venda** é uma opção de busca/localização da devolução, não um campo que o usuário precisa preencher ao confirmar o recebimento. O aplicativo deve preservar o campo `Invoice number` fornecido pelo relatório oficial de devoluções da Amazon como evidência pesquisável, mantendo compatibilidade de leitura com números de NF que já tenham sido gravados anteriormente.
+
+A quantidade física recebida deve ser validada contra a quantidade reembolsada conhecida e, enquanto essa projeção ainda não existir, contra a quantidade pedida. O envio de **Confirmar recebimento** deve ser idempotente e impedir cliques concorrentes durante a requisição.
 
 Na interface do usuário, revisão e consulta de caso devem priorizar linguagem simples e objetiva. Termos/códigos internos permanecem no backend. A revisão deve mostrar primeiro o que aconteceu e o que já foi verificado, depois explicar por que uma decisão é necessária e apresentar a recomendação. A linha do tempo deve ficar recolhida por padrão e abrir somente quando o usuário escolher **Ver histórico**.
 
-A cadência diária não pode atrasar uma ação que já tenha data oficial conhecida (por exemplo, retomada solicitada pela Amazon ou prazo de recurso). Essas ações continuam obedecendo à data registrada, com as verificações de segurança e idempotência do fluxo.
-
-O **agendador interno** que apenas avalia datas, estados já gravados e próximas ações não é uma consulta externa. Ele deve executar a cada **cinco minutos** para não postergar uma data conhecida. Se essa avaliação identificar que é necessário conferir novamente o financeiro antes de agir, deve invalidar a cadência de SP-API/Finances e forçar a reconsulta específica; essa reconsulta motivada por uma data/ação não é polling rotineiro e não deve aguardar o próximo ciclo diário.
+A redução de cadência não elimina datas oficiais já conhecidas. A próxima avaliação de negócio usa as datas persistidas e, ao processar uma ação vencida, pode invalidar dados financeiros antigos e fazer a reconsulta específica necessária antes de agir; não é necessário manter polling de cinco minutos para isso.
