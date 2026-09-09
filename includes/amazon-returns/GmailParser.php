@@ -47,6 +47,11 @@ final class SvAmazonGmailParser
             $currency = 'BRL';
             if (preg_match('/Emissor\s+do\s+reembolso\s*:\s*Customer\s+Service\b/iu', $body) === 1) {
                 $refundInitiator = 'AMAZON_CUSTOMER_SERVICE';
+            } elseif (
+                preg_match('/Emissor\s+do\s+reembolso\s*:/iu', $body) !== 1
+                && preg_match('/Motivo\s+para\s+reembolso.*?Não\s+é\s+possível\s+realizar\s+a\s+entrega\b/isu', $body) === 1
+            ) {
+                $refundInitiator = 'AMAZON_CUSTOMER_SERVICE';
             }
             if (preg_match('/(?:Log[ií]stica|Rede\s+log[ií]stica\s+da\s+Amazon)\s*:\s*Enviado\s+pela\s+Amazon\b/iu', $body) === 1) {
                 $program = 'FBA';
