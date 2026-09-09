@@ -41,6 +41,7 @@ fi
 
 "$SELLER_CENTRAL_BROWSER" \
   --headless=new \
+  --no-sandbox \
   --disable-gpu \
   --remote-debugging-address=127.0.0.1 \
   "--remote-debugging-port=$CDP_PORT" \
