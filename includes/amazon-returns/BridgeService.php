@@ -96,7 +96,16 @@ final class SvAmazonReturnsBridgeService
         $caseId=(int)$row['case_id'];
         $status=(string)$result['status'];
         $externalId=$result['external_id'];
-        $success=in_array($status,['ACCEPTED','ALREADY_EXISTS','SUPERSEDED'],true);
+        if($status==='SUPERSEDED'){
+            $this->appendResultEvent($row,$result);
+            $this->p->outbox->markSuperseded(
+                $jobId,(string)($result['reason'] ?? 'SUPERSEDED_BY_CURRENT_CASE_STATE')
+            );
+            return [
+                'status'=>'ACK','job_id'=>$jobId,'result_status'=>$status,'completed'=>true,
+            ];
+        }
+        $success=in_array($status,['ACCEPTED','ALREADY_EXISTS'],true);
         if($success){
             $this->completeSuccess($row,$result);
             return [

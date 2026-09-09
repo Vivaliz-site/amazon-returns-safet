@@ -26,3 +26,15 @@
 - [ ] Keep one valid pending `SELLER_SUPPORT_OPEN` per logical case/episode and suppress duplicate pending rows without contacting Amazon.
 - [ ] Trigger the VM Seller Central drain once after deployment.
 - [ ] Verify no duplicate external support case is created and the remaining outbox advances.
+
+### Task 3: Invalidate stale support-open jobs safely
+- [ ] Add a failing test proving confirmed physical receipt blocks classic-FBA support escalation.
+- [ ] Move the receipt guard before classic-FBA recovery and verify GREEN.
+- [ ] Add an outbox `SUPERSEDED` terminal transition that preserves audit history without mutating case state.
+- [ ] Make the browser worker supersede a classic-FBA support-open job if current case state now shows physical receipt.
+- [ ] Verify `SUPERSEDED` never flows through external-success case mutations.
+
+### Task 4: Live Seller Support compatibility
+- [ ] Inspect the current Seller Central Help UI read-only after authenticated login.
+- [ ] Update the FBA support route selector only from observed current UI evidence.
+- [ ] Run a canary on one valid support-open job and verify read-back before draining the remainder.
