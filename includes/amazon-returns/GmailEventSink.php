@@ -190,12 +190,11 @@ final class SvAmazonGmailEventSink
     {
         $tracking=trim((string)($event['tracking_id'] ?? ''));
         $carrier=trim((string)($event['carrier'] ?? ''));
-        return [
+        $payload = [
             'order_id'=>$orderId,
             'safe_t_id'=>$event['safe_t_id'] ?? null,
             'amount'=>$event['amount'] ?? null,
             'currency'=>$event['currency'] ?? null,
-            'program'=>$event['program'] ?? null,
             'customer_tracking_ids'=>$tracking!==''?[$tracking]:[],
             'customer_delivery_carriers'=>$carrier!==''?[$carrier]:[],
             'customer_delivery_confirmed'=>false,
@@ -203,7 +202,6 @@ final class SvAmazonGmailEventSink
                 ? ($event['occurred_at'] ?? null) : null,
             'refund_amount'=>strtoupper(trim((string)($event['event_type'] ?? ''))) === 'REFUND_ISSUED_EMAIL'
                 ? ($event['amount'] ?? null) : null,
-            'refund_initiator'=>$event['refund_initiator'] ?? null,
             'review_outcome'=>$event['review_outcome'] ?? null,
             'review_suggested_action'=>$event['review_suggested_action'] ?? null,
             'review_reason'=>$event['review_reason'] ?? null,
@@ -214,5 +212,20 @@ final class SvAmazonGmailEventSink
             'financial_truth'=>false,
             'content_sha256'=>$event['content_sha256'] ?? null,
         ];
+        $program = strtoupper(trim((string)($event['program'] ?? '')));
+        if ($program !== '') {
+            if (!in_array($program, SvAmazonReturnPrograms::all(), true)) {
+                throw new UnexpectedValueException('Invalid program in Gmail event.');
+            }
+            $payload['program']=$program;
+        }
+        $initiator = strtoupper(trim((string)($event['refund_initiator'] ?? '')));
+        if ($initiator !== '') {
+            if (!SvAmazonRefundInitiators::isValid($initiator)) {
+                throw new UnexpectedValueException('Invalid refund_initiator in Gmail event.');
+            }
+            $payload['refund_initiator']=$initiator;
+        }
+        return $payload;
     }
 }
