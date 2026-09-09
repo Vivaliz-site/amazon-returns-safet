@@ -35,6 +35,21 @@ final class InvoiceLookupFakeClient {
     }
 }
 
+final class InvoiceLookupDeniedFakeClient {
+    public function marketplaceId(): string { return 'A2Q3Y263D00KWC'; }
+    public function request(string $method,string $path,array $query=[],?array $body=null): array {
+        return [
+            'status'=>403,
+            'request_id'=>'req-denied',
+            'data'=>['errors'=>[[
+                'code'=>'Unauthorized',
+                'message'=>'Access to requested resource is denied.',
+                'details'=>'',
+            ]]],
+        ];
+    }
+}
+
 $client=new InvoiceLookupFakeClient();
 $api=new SvAmazonReturnsSpApi($client);
 invoiceLookupAssert(
@@ -49,5 +64,14 @@ invoiceLookupSame('702-5144267-2415462',$found['order_id'] ?? null,'NF lookup mu
 invoiceLookupSame('987654',$found['invoice_number'] ?? null,'NF evidence must retain the exact invoice number.');
 invoiceLookupSame('invoice-api-id-1',$found['invoice_id'] ?? null,'NF evidence must retain the Amazon invoice ID.');
 invoiceLookupSame('req-invoice-1',$found['request_id'] ?? null,'NF evidence must retain the Amazon request ID.');
+
+$denied=false;
+try{
+    (new SvAmazonReturnsSpApi(new InvoiceLookupDeniedFakeClient()))
+        ->findOrderByInvoiceNumber('987654');
+}catch(SvAmazonInvoiceAccessException){
+    $denied=true;
+}
+invoiceLookupAssert($denied,'Invoices API permission failures must be classified without leaking raw connector errors.');
 
 echo "amazon-invoice-live-lookup-test: OK\n";
