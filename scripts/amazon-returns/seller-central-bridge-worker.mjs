@@ -487,6 +487,7 @@ function supportRouteFor(job) {
   }
   if ([
     'SAFE_T_WINDOW_EXPIRED_RESIDUAL_UNPAID',
+    'APPROVED_PARTIAL_REIMBURSEMENT_SUPPORT_RECOVERY',
     'OFFICIAL_APPEAL_WINDOW_EXPIRED_RECOVERY_CONTINUES',
     'EMAIL_REVIEW_DENIED_REQUIRES_SUPPORT',
     'EMAIL_REVIEW_ANALYZER_SELECTED_SUPPORT',
@@ -494,100 +495,164 @@ function supportRouteFor(job) {
   ].includes(reason)) return 'GENERAL_ORDER_SUPPORT';
   return '';
 }
+async function clickFrameTextWhenReady(cdp, label, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const clicked = await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const h of d.querySelectorAll('kat-button,button')){const t=(h.getAttribute('label')||h.innerText||'').trim();if(t!==${JSON.stringify(label)})continue;const b=h.tagName==='KAT-BUTTON'?h.shadowRoot?.querySelector('button'):h;if(!b||b.disabled)continue;b.click();return true}}return false})()`);
+    if (clicked === true) return true;
+    await sleep(500);
+  }
+  return false;
+}
 
+async function hillChatReady(cdp) {
+  return (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;for(const b of d.querySelectorAll('kat-button,button')){const label=(b.getAttribute('label')||b.innerText||'').trim();if(!['Chat now','Conversar agora','Iniciar chat'].includes(label))continue;const button=b.tagName==='KAT-BUTTON'?b.shadowRoot?.querySelector('button'):b;if(button&&!button.disabled)return true}}return false})()`)) === true;
+}
+
+async function clickHillChat(cdp) {
+  return (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;for(const b of d.querySelectorAll('kat-button,button')){const label=(b.getAttribute('label')||b.innerText||'').trim();if(!['Chat now','Conversar agora','Iniciar chat'].includes(label))continue;const button=b.tagName==='KAT-BUTTON'?b.shadowRoot?.querySelector('button'):b;if(button&&!button.disabled){button.click();return label}}}return ''})()`)).toString().trim();
+}
+async function currentSupportCaseId(cdp) {
+  return text(await cdp.evaluate(`(()=>{const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){for(const a of d.querySelectorAll('a[href*="caseID="]')){const m=(a.href||'').match(/[?&]caseID=(\\d{8,14})/);if(m)return m[1]}const body=d.body?.innerText||'';const m=body.match(/(?:ID do caso|Case ID)[:\\s#-]*(\\d{8,14})/i);if(m)return m[1]}return ''})()`));
+}
+
+async function contactSupportAndReadBack(cdp, job) {
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline && !(await hillChatReady(cdp))) await sleep(750);
+  if (!(await hillChatReady(cdp))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  const channel = await clickHillChat(cdp);
+  if (!channel) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_START_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  await sleep(6000);
+  let caseId = await currentSupportCaseId(cdp);
+  for (let attempt = 0; !caseId && attempt < 5; attempt++) {
+    caseId = text(await findSupportCase(cdp, job));
+    if (!caseId) await sleep(4000);
+  }
+  if (!/^\d{8,14}$/.test(caseId)) {
+    return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
+  }
+  return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason: `SUPPORT_CASE_OPENED_VIA_${channel.toUpperCase().replace(/\s+/g,'_')}`, evidence: await evidence(cdp, 'help-v1') });
+}
+async function fillGeneralSupportIssue(cdp, job, narrative) {
+  const orderId = text(job.case?.order_id);
+  const safeTId = text(job.case?.safe_t_id);
+  const steps = `Reviewed Seller Central order and financial reconciliation. ${orderId ? `Order ${orderId}.` : ''} ${safeTId ? `SAFE-T ${safeTId}.` : ''}`.trim();
+  const reference = [orderId && `Order ${orderId}`, safeTId && `SAFE-T ${safeTId}`].filter(Boolean).join('; ');
+  const values = [narrative, steps, reference];
+  return (await cdp.evaluate(`(()=>{const values=${JSON.stringify(values)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;const host=d.querySelector('kat-textarea.meld-text-area');const textarea=host?.shadowRoot?.querySelector('textarea');const inputs=[...d.querySelectorAll('kat-input')].filter(h=>!h.hasAttribute('disabled')).map(h=>h.shadowRoot?.querySelector('input')).filter(Boolean);if(!textarea||inputs.length<2)continue;const set=(el,v)=>{const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(el,v);el.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:v}));el.dispatchEvent(new Event('change',{bubbles:true,composed:true}))};set(textarea,values[0]);set(inputs[0],values[1]);set(inputs[1],values[2]);return textarea.value===values[0]&&inputs[0].value===values[1]&&inputs[1].value===values[2]}return false})()`)) === true;
+}
+
+async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
+  if (!(await waitFrameHas(cdp, 'My issue is not listed', 60000)) || !(await clickFrameTextWhenReady(cdp, 'My issue is not listed', 10000))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_ROUTE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  const formReady = await cdp.waitFor(`(()=>{for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;if(d.querySelector('kat-textarea.meld-text-area')&&d.querySelectorAll('kat-input').length>=2)return true}return false})()`, 30000);
+  if (!formReady || !(await fillGeneralSupportIssue(cdp, job, narrative))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_DESCRIPTION_FIELDS_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  if (await waitFrameHas(cdp, 'Use original text', 30000)) {
+    await clickFrameTextWhenReady(cdp, 'Use original text', 10000);
+    if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_SUGGESTION_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  if (!(await clickFrameTextWhenReady(cdp, 'Contact an associate', 90000))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_CONTACT_ROUTE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  if (!(await clickFrameTextWhenReady(cdp, 'A-to-z Claims', 30000))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_CATEGORY_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  if (!asin || !sku) return bridgeResult('FAILED', { reason: 'SUPPORT_GENERAL_PRODUCT_IDENTITY_REQUIRED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  const idsReady = await cdp.waitFor(`(()=>{for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;if(d.querySelector('kat-input[placeholder="Enter ASIN"]')&&d.querySelector('kat-input[placeholder="Enter SKU"]'))return true}return false})()`, 30000);
+  if (!idsReady || !(await cdp.setFrameKat('kat-input[placeholder="Enter ASIN"]', asin)) || !(await cdp.setFrameKat('kat-input[placeholder="Enter SKU"]', sku))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_PRODUCT_FIELDS_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_PRODUCT_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  return null;
+}
 async function supportOpen(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
   const supportRoute = supportRouteFor(job);
-  if (!supportRoute) {
-    return bridgeResult('FAILED', { reason: 'SUPPORT_ROUTE_UNSUPPORTED', retry_safe: false });
-  }
-  if (supportRoute === 'GENERAL_ORDER_SUPPORT') {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_ROUTE_NOT_IMPLEMENTED', retry_safe: true });
-  }
+  if (!supportRoute) return bridgeResult('FAILED', { reason: 'SUPPORT_ROUTE_UNSUPPORTED', retry_safe: false });
   const decisionReason = text(job.payload?.decision?.reason).toUpperCase();
   const physicalStatus = text(job.case?.physical_status).toUpperCase();
-  if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION'
-      && physicalStatus === 'RECEIVED_OK') {
-    return bridgeResult('SUPERSEDED', {
-      reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN',
-      retry_safe: false,
-    });
+  if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION' && physicalStatus === 'RECEIVED_OK') {
+    return bridgeResult('SUPERSEDED', { reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN', retry_safe: false });
   }
   const existing = await findSupportCase(cdp, job);
   if (existing) return bridgeResult('ALREADY_EXISTS', { external_id: existing, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'SUPPORT_ORDER_ID_REQUIRED' });
   const resolvedAsin = text(job.case?.asin || await resolveOrderAsin(cdp, orderId));
+  const sku = text(job.case?.sku);
+  const narrative = narrativeFor(job, 9000);
   await cdp.navigate(HELP_URL, 6000);
   const auth = await authGate(cdp, 'help-v1', HELP_URL, 6000);
   if (auth) return auth;
-  const fbaRouteOpened = await clickFrameIncludes(cdp, 'FBA Returns Reimbursement')
-    || await clickFrameIncludes(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon');
-  if (!fbaRouteOpened) {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_FBA_CARD_MISSING', evidence: await evidence(cdp, 'help-v1') });
+  if (supportRoute === 'GENERAL_ORDER_SUPPORT') {
+    const routeFailure = await openGeneralSupportRoute(cdp, job, narrative, resolvedAsin, sku);
+    if (routeFailure) return routeFailure;
+    return await contactSupportAndReadBack(cdp, job);
   }
-  await sleep(3500);
-  if (!(await cdp.setFrameKat('kat-input[placeholder*="112-"]', orderId))) {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ORDER_INPUT_MISSING', evidence: await evidence(cdp, 'help-v1') });
-  }
-  if (!(await cdp.clickFrameText('Continue')) && !(await cdp.clickFrameText('Continuar'))) {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ORDER_CONTINUE_MISSING', evidence: await evidence(cdp, 'help-v1') });
-  }
-  await sleep(6500);
-  if (await frameHas(cdp, 'Request Reimbursement for an Order')) {
-    await cdp.clickFrameText('Request Reimbursement for an Order');
-    await sleep(6500);
-  } else if (await frameHas(cdp, 'Solicitar reembolso para um pedido')) {
-    await cdp.clickFrameText('Solicitar reembolso para um pedido');
-    await sleep(6500);
-  }
-  if (await frameHas(cdp, 'Contact an associate')) {
-    await cdp.clickFrameText('Contact an associate');
-    await sleep(4500);
-  } else if (await frameHas(cdp, 'Entre em contato com um associado')) {
-    await cdp.clickFrameText('Entre em contato com um associado');
-    await sleep(4500);
-  }
-  const narrative = narrativeFor(job, 9000);
-  const asin = resolvedAsin;
-  const asinRequired = await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-input[placeholder="Inserir ASIN"]');if(h&&!h.hasAttribute('disabled'))return true}return false})()`);
-  if (asinRequired && (!asin || !(await cdp.setFrameKat('kat-input[placeholder="Inserir ASIN"]', asin)))) {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ASIN_INPUT_MISSING', evidence: await evidence(cdp, 'help-v1') });
-  }
-  const textareaReady = await cdp.waitFor(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-textarea.meld-text-area');if(h&&!h.hasAttribute('disabled'))return true}return false})()`, 20000);
-  if (!textareaReady) {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_TEXTAREA_UNAVAILABLE', evidence: await evidence(cdp, 'help-v1') });
-  }
-  if (!(await cdp.setFrameKat('kat-textarea.meld-text-area', narrative))) {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_TEXTAREA_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
-  }
-  if (!(await cdp.clickFrameText('Continue')) && !(await cdp.clickFrameText('Continuar'))) {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_CONTINUE_MISSING', evidence: await evidence(cdp, 'help-v1') });
-  }
-  await sleep(6500);
-  if (await frameHas(cdp, 'E-mail')) {
-    await clickFrameIncludes(cdp, 'E-mail');
-    await sleep(2000);
-  }
-  const finalAction = await cdp.evaluate(`(()=>{const labels=['Enviar','Enviar mensagem','Enviar caso','Criar caso','Enviar solicitação','Abrir caso'];for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const h of d.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.innerText||'').trim();if(!labels.includes(label))continue;const b=h.tagName==='KAT-BUTTON'?h.shadowRoot?.querySelector('button'):h;if(b&&!b.disabled){b.click();return label}}}return ''})()`);
-  if (!text(finalAction)) {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_FINAL_SUBMIT_MISSING', retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
-  }
-  await sleep(8000);
-  const caseId = await cdp.evaluate(`(()=>{const docs=[document,...[...document.querySelectorAll('iframe')].map(f=>f.contentDocument).filter(Boolean)];for(const d of docs){for(const a of d.querySelectorAll('a[href*="caseID="]')){const m=(a.href||'').match(/[?&]caseID=(\d{8,14})/);if(m)return m[1]}const body=d.body?.innerText||'';const m=body.match(/(?:ID do caso|Case ID)[:\s#-]*(\d{8,14})/i);if(m)return m[1]}return ''})()`);
-  if (!text(caseId)) {
-    return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
-  }
-  return bridgeResult('ACCEPTED', {
-    submitted: true,
-    external_id: text(caseId),
-    retry_safe: true,
-    reason: `SUPPORT_CASE_SUBMITTED_VIA_${text(finalAction)}`,
-    evidence: await evidence(cdp, 'help-v1'),
-  });
-}
 
+  const fbaEnglish = await waitFrameHas(cdp, 'FBA Returns Reimbursement', 60000);
+  const fbaPortuguese = fbaEnglish ? false : await waitFrameHas(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon', 10000);
+  const fbaRouteOpened = fbaEnglish
+    ? await clickFrameIncludes(cdp, 'FBA Returns Reimbursement')
+    : (fbaPortuguese ? await clickFrameIncludes(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon') : false);
+  if (!fbaRouteOpened) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_FBA_CARD_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  const orderInputReady = await cdp.waitFor(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-input[placeholder*="112-"]');if(h&&!h.hasAttribute('disabled'))return true}return false})()`, 30000);
+  if (!orderInputReady || !(await cdp.setFrameKat('kat-input[placeholder*="112-"]', orderId))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ORDER_INPUT_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000)) && !(await clickFrameTextWhenReady(cdp, 'Continuar', 10000))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ORDER_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  const flowDeadline = Date.now() + 120000;
+  let fbaAsinFilled = false;
+  let narrativeFilled = false;
+  while (Date.now() < flowDeadline) {
+    if (await hillChatReady(cdp)) return await contactSupportAndReadBack(cdp, job);
+    if (await frameHas(cdp, 'Request Reimbursement for an Order')) {
+      await clickFrameTextWhenReady(cdp, 'Request Reimbursement for an Order', 5000);
+      await sleep(750);
+      continue;
+    }
+    if (await frameHas(cdp, 'Solicitar reembolso para um pedido')) {
+      await clickFrameTextWhenReady(cdp, 'Solicitar reembolso para um pedido', 5000);
+      await sleep(750);
+      continue;
+    }
+    if (await frameHas(cdp, 'Contact an associate')) {
+      await clickFrameTextWhenReady(cdp, 'Contact an associate', 5000);
+      await sleep(750);
+      continue;
+    }
+    if (await frameHas(cdp, 'Entre em contato com um associado')) {
+      await clickFrameTextWhenReady(cdp, 'Entre em contato com um associado', 5000);
+      await sleep(750);
+      continue;
+    }
+    const asinRequired = await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll("iframe")){const h=f.contentDocument?.querySelector("kat-input[placeholder=\"Inserir ASIN\"]");if(h&&!h.hasAttribute("disabled"))return true}return false})()`);
+    if (asinRequired && !fbaAsinFilled) {
+      if (!resolvedAsin || !(await cdp.setFrameKat('kat-input[placeholder="Inserir ASIN"]', resolvedAsin))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ASIN_INPUT_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      fbaAsinFilled = true;
+      await sleep(500);
+      continue;
+    }
+    const textareaReady = await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-textarea.meld-text-area');if(h&&!h.hasAttribute('disabled'))return true}return false})()`);
+    if (textareaReady && !narrativeFilled) {
+      if (!(await cdp.setFrameKat('kat-textarea.meld-text-area', narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_TEXTAREA_NOT_WRITABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      narrativeFilled = true;
+      await sleep(500);
+      if (!(await clickFrameTextWhenReady(cdp, 'Continue', 10000)) && !(await clickFrameTextWhenReady(cdp, 'Continuar', 5000))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      await sleep(750);
+      continue;
+    }
+    await sleep(750);
+  }
+  return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+}
 async function supportUpdate(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
