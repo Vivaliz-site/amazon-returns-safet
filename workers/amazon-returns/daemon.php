@@ -343,12 +343,25 @@ final class SvAmazonReturnsDaemon
     private function runScheduler(DateTimeImmutable $now): array
     {
         $cases=$this->persistence->cases->openCases(500);
+        $knownCaseIds=[];
+        foreach($cases as $caseRow){
+            $knownId=(int)($caseRow['id']??0);
+            if($knownId>0)$knownCaseIds[$knownId]=true;
+        }
+        foreach($this->persistence->outbox->pendingWriteCaseIds() as $pendingCaseId){
+            if(isset($knownCaseIds[$pendingCaseId]))continue;
+            $pendingCase=$this->persistence->cases->find($pendingCaseId);
+            if(!is_array($pendingCase))continue;
+            $cases[]=$pendingCase;
+            $knownCaseIds[$pendingCaseId]=true;
+        }
         $policies=$this->persistence->policies->allActive();
         $engine=new SvAmazonSafeTDecisionEngine();
         $coordinator=new SvAmazonDecisionCoordinator($engine,$this->persistence,$this->config);
         $decisions=0;
         $enqueued=0;
         $blockedWrites=0;
+        $supersededWrites=0;
         $financialChecks=0;
         $decisionAudit=[];
         $requestedFinancialRecheck=false;
@@ -364,6 +377,20 @@ final class SvAmazonReturnsDaemon
             $policy=SvAmazonReturnPolicyEngine::evaluate($projected,$now);
             $timeline=$this->persistence->events->eventsForCase($caseId);
             $decision=$coordinator->nextAction($projected,$timeline,$policy,$now);
+            $decision=SvAmazonReturnsScheduler::normalizeRecoveryChannel($projected,$decision,$now);
+            $keepKind=null;
+            $keepKey=null;
+            if(SvAmazonReturnsScheduler::isWriteAction($decision)){
+                $keepKind=(string)($decision['action']??'');
+                $keepKey=trim((string)($decision['idempotency_key']??''));
+                if($keepKey==='')throw new LogicException('Current write decision missing idempotency key during stale-write sweep.');
+            }
+            $supersedeReason='SUPERSEDED_BY_CURRENT_DECISION:'
+                .(string)($decision['action']??'WAIT').':'
+                .(string)($decision['reason']??'UNSPECIFIED');
+            $supersededWrites+=$this->persistence->outbox->supersedePendingWritesExcept(
+                $caseId,$keepKind,$keepKey,$supersedeReason
+            );
             $timing=['eligibility_at'=>$policy['eligibility_at']??null,'policy_version_id'=>$policy['policy_version_id']??null];
             if(array_key_exists('next_action_at',$decision))$timing['next_action_at']=$decision['next_action_at'];
             elseif(trim((string)($projected['safe_t_id']??''))==='')$timing['next_action_at']=$policy['eligibility_at']??null;
@@ -403,7 +430,8 @@ final class SvAmazonReturnsDaemon
         }
         return [
             'status'=>'OK','cases'=>count($cases),'decisions'=>$decisions,
-            'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,'financial_checks_requested'=>$financialChecks,
+            'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,'superseded_writes'=>$supersededWrites,
+            'financial_checks_requested'=>$financialChecks,
             'decision_audit'=>$decisionAudit,
             'financial_recheck_requested'=>$requestedFinancialRecheck,
         ];
