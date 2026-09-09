@@ -14,6 +14,7 @@ try{
  $config=new SvAmazonReturnsConfig();$context=SvAmazonTenantRegistry::resolveCurrent($db,$config);$p=SvAmazonTenantPersistence::create($db,$context);
  $reviewId=filter_var($_GET['review_id']??null,FILTER_VALIDATE_INT);if($reviewId===false||$reviewId<1)sv_amz_review_reply(['success'=>false,'error'=>'review_id inválido.'],422);
  $review=$p->reviews->find((int)$reviewId);if(!is_array($review))sv_amz_review_reply(['success'=>false,'error'=>'Revisão não encontrada.'],404);
+ if(strtoupper(trim((string)($review['status']??'')))!=='OPEN')sv_amz_review_reply(['success'=>false,'error'=>'REVIEW_NOT_OPEN','case_id'=>(int)($review['case_id']??0)],409);
  $caseId=(int)($review['case_id']??0);$case=$p->cases->find($caseId);if(!is_array($case))sv_amz_review_reply(['success'=>false,'error'=>'Caso não encontrado.'],404);
  $events=$p->events->eventsForCase($caseId);$timeline=SvAmazonCockpitTimeline::project($case,$events,$p->evidence->projectionForCase($caseId),$p->outbox->historyForCase($caseId),$p->reviews->forCase($caseId),$p->ruleApplications->forCase($caseId));
  sv_amz_review_reply(['success'=>true,'review'=>$review,'case'=>$case,'timeline'=>$timeline]);

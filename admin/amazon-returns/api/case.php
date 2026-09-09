@@ -24,7 +24,6 @@ try{
         $events=$p->events->eventsForCase($caseId);$reviews=$p->reviews->forCase($caseId);$apps=$p->ruleApplications->forCase($caseId);
         $timeline=SvAmazonCockpitTimeline::project($case,$events,$p->evidence->projectionForCase($caseId),$p->outbox->historyForCase($caseId),$reviews,$apps);
         $currentReview=null;for($i=count($reviews)-1;$i>=0;$i--){if(($reviews[$i]['status']??'')==='OPEN'){$currentReview=$reviews[$i];break;}}
-        if($currentReview===null && $reviews!==[])$currentReview=$reviews[array_key_last($reviews)];
         sv_amz_case_reply(['success'=>true,'case'=>$case,'timeline'=>$timeline,'current_review'=>$currentReview,'rule_applications'=>$apps]);
     }
     if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/',$orderId)!==1)sv_amz_case_reply(['success'=>false,'error'=>'Informe um pedido Amazon válido.'],422);
