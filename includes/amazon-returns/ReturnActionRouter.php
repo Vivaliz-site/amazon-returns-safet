@@ -30,7 +30,13 @@ final class SvAmazonReturnActionRouter
         if(($case['program']??'')==='FBA' && $claim==='')return self::decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$case);
         $sent=self::latest($events,['SAFE_T_EMAIL_REVIEW_SENT','SAFE_T_EMAIL_REPLY_SENT']);
         $reply=self::latest($events,['SAFE_T_EMAIL_REVIEW_RESPONSE']);
-        if($sent!==null && ($reply===null || self::rank($sent)>self::rank($reply)))return self::decision('WAIT','EXISTING_EMAIL_REVIEW_AWAITING_RESPONSE',$case);
+        if($sent!==null && ($reply===null || self::rank($sent)>self::rank($reply))){
+            $deadline=self::date($case['appeal_deadline_at']??null);
+            if($deadline!==null && $now>$deadline && $claim!=='' && !self::acceptedAppeal($events,$claim)){
+                return self::decision('SAFE_T_APPEAL','EMAIL_REVIEW_DEADLINE_EXPIRED_RECOVERY_ATTEMPT',$case);
+            }
+            return self::decision('WAIT','EXISTING_EMAIL_REVIEW_AWAITING_RESPONSE',$case);
+        }
         $message=self::latest($events,['SAFE_T_STATUS_OBSERVED','SAFE_T_EMAIL_REVIEW_RESPONSE']);
         $text=self::normalized((string)($message['payload']['decision_text']??$message['payload']['review_excerpt']??''));
         $promise=self::promiseDeadline($text);
