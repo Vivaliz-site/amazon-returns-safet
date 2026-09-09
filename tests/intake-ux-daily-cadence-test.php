@@ -40,6 +40,16 @@ $intakeApi=intakeUxRead('admin/amazon-returns/api/intake.php');
 intakeUxAssert(!str_contains($intakeApi,"\$input['sales_invoice_number']"),'Receipt API must not require or accept NF entry from the confirmation form.');
 intakeUxAssert(str_contains($intakeApi,'$knownRefundQuantity=(int)$case[\'quantity_refunded\'];'),'Receipt API must preserve safe quantity handling.');
 intakeUxAssert(str_contains($intakeApi,"get_class(\$e).': '.\$e->getMessage()"),'Unexpected intake failures must retain useful server-side diagnostics.');
+$filesStart=strpos($intakeApi,'function sv_amz_intake_files(): array');
+$storeStart=strpos($intakeApi,'function sv_amz_intake_store_photos(');
+intakeUxAssert(is_int($filesStart) && is_int($storeStart) && $storeStart>$filesStart,'Intake upload helpers must remain discoverable.');
+$filesBody=substr($intakeApi,$filesStart,$storeStart-$filesStart);
+intakeUxAssert(
+    str_contains($filesBody,"if((int)(\$files['error'][\$index] ?? UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE)continue;"),
+    'sv_amz_intake_files must actively discard empty browser file placeholders before evidence storage starts.'
+);
+intakeUxAssert(str_contains($intakeApi,"getenv('AMAZON_RETURNS_ENV_FILE')"),'Evidence storage must derive a safe shared fallback from the configured env file when AMAZON_RETURN_EVIDENCE_DIR is absent.');
+intakeUxAssert(str_contains($intakeApi,"dirname(\$envFile).'/evidence'"),'Evidence storage fallback must use the shared evidence directory already created by production provisioning.');
 
 $report=intakeUxRead('includes/amazon-returns/ReturnsReport.php');
 intakeUxAssert(str_contains($report,"'invoice_number'"),'Returns report parser must preserve Amazon invoice number.');

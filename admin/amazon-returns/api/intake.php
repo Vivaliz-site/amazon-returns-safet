@@ -25,9 +25,12 @@ function sv_amz_intake_files(): array
 {
     if(!isset($_FILES['photos']))return [];
     $files=$_FILES['photos'];
-    if(!is_array($files['name'] ?? null))return [$files];
+    if(!is_array($files['name'] ?? null)){
+        return (int)($files['error'] ?? UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE ? [] : [$files];
+    }
     $result=[];
     foreach($files['name'] as $index=>$name){
+        if((int)($files['error'][$index] ?? UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE)continue;
         $result[]=[
             'name'=>$name,
             'type'=>$files['type'][$index] ?? '',
@@ -47,7 +50,11 @@ function sv_amz_intake_store_photos(
     if($files===[])return [];
     if(count($files)>6)throw new InvalidArgumentException('Máximo de 6 fotos por recebimento.');
     $base=trim((string)getenv('AMAZON_RETURN_EVIDENCE_DIR'));
-    if($base==='')throw new RuntimeException('AMAZON_RETURN_EVIDENCE_DIR não configurado.');
+    if($base===''){
+        $envFile=trim((string)getenv('AMAZON_RETURNS_ENV_FILE'));
+        if($envFile==='')$envFile='/home/ubuntu/amazon-returns-deploy/shared/.env';
+        $base=dirname($envFile).'/evidence';
+    }
     $dir=rtrim($base,'/').'/tenant-'.$context->tenantId()
         .'/connection-'.$context->amazonConnectionId().'/case-'.$caseId;
     if(!is_dir($dir) && !mkdir($dir,0700,true) && !is_dir($dir)){
