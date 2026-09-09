@@ -30,7 +30,7 @@ $withoutCurrentDeadline['appeal_deadline_at']=null;
 $patch=SvAmazonSafeTStatusService::projection(
     $stale,$withoutCurrentDeadline,true,new DateTimeImmutable('2026-09-09 18:40:00',new DateTimeZone('UTC'))
 );
-if(($patch['appeal_deadline_at']??'sentinel')!==null){
+if(!array_key_exists('appeal_deadline_at',$patch) || $patch['appeal_deadline_at']!==null){
     throw new RuntimeException('Approved SAFE-T without a current deadline must clear a stale deadline from an older decision: '.json_encode($patch));
 }
 

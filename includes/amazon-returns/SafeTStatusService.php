@@ -87,7 +87,9 @@ final class SvAmazonSafeTStatusService
         }
         $patch=[
             'state'=>$next,
-            'appeal_deadline_at'=>$status==='APPROVED'?null:($read['appeal_deadline_at']??$case['appeal_deadline_at']??null),
+            'appeal_deadline_at'=>$status==='APPROVED'
+                ? ($read['appeal_deadline_at'] ?? null)
+                : ($read['appeal_deadline_at'] ?? $case['appeal_deadline_at'] ?? null),
             'last_denial_fingerprint'=>$last!==''?$last:null,
             'repeated_denial_count'=>$repeat,
         ];

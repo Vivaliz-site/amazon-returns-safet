@@ -16,6 +16,11 @@ final class SvAmazonReturnsScheduler
         return in_array((string)($decision['action'] ?? ''), ['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'], true);
     }
 
+    public static function isReadAction(array $decision): bool
+    {
+        return strtoupper(trim((string)($decision['action'] ?? ''))) === 'SAFE_T_READ';
+    }
+
     public static function dependencyForAction(string $action): string
     {
         return in_array(strtoupper(trim($action)), ['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY'], true) ? 'gmail' : 'seller_central_bridge';
@@ -66,19 +71,31 @@ final class SvAmazonReturnsScheduler
     {
         $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
         $decision=self::normalizeRecoveryChannel($case,$decision,$now);
-        if (!self::isWriteAction($decision)) return ['decision'=>$decision,'outbox_id'=>null];
+        $read=self::isReadAction($decision);
+        if (!$read && !self::isWriteAction($decision)) return ['decision'=>$decision,'outbox_id'=>null];
         $key = (string)($decision['idempotency_key'] ?? '');
-        if ($key === '') throw new LogicException('Write decision missing idempotency key.');
+        if ($key === '') throw new LogicException(($read ? 'Read' : 'Write').' decision missing idempotency key.');
         $caseId = (int)($case['id'] ?? 0);
         $action=(string)$decision['action'];
-        $payload = [
-            'case_id'=>$caseId,
-            'order_id'=>(string)($case['amazon_order_id'] ?? ''),
-            'safe_t_id'=>$case['safe_t_id'] ?? null,
-            'decision'=>$decision,
-        ] + SvAmazonExternalWritePayload::build($decision,$case,$timeline);
-        $deadline=SvAmazonRecoveryWindow::effectiveDeadlineAt($case,$action);
-        if($deadline instanceof DateTimeImmutable)$payload['deadline_at']=$deadline->format('Y-m-d H:i:s');
+        if($read){
+            $payload=[
+                'case_id'=>$caseId,
+                'order_id'=>(string)($case['amazon_order_id'] ?? ''),
+                'order_item_id'=>(string)($case['amazon_order_item_id'] ?? ''),
+                'safe_t_id'=>$case['safe_t_id'] ?? null,
+                'read_only'=>true,
+                'decision'=>$decision,
+            ];
+        }else{
+            $payload = [
+                'case_id'=>$caseId,
+                'order_id'=>(string)($case['amazon_order_id'] ?? ''),
+                'safe_t_id'=>$case['safe_t_id'] ?? null,
+                'decision'=>$decision,
+            ] + SvAmazonExternalWritePayload::build($decision,$case,$timeline);
+            $deadline=SvAmazonRecoveryWindow::effectiveDeadlineAt($case,$action);
+            if($deadline instanceof DateTimeImmutable)$payload['deadline_at']=$deadline->format('Y-m-d H:i:s');
+        }
         $outboxId=$target->enqueue($action,$caseId,$payload,$key);
         return ['decision'=>$decision,'outbox_id'=>$outboxId];
     }
