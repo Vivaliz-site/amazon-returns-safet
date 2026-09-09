@@ -12,7 +12,7 @@ export function classifyAmazonAuthState(state = {}) {
   const humanMarkers = [
     'captcha', 'digite os caracteres', '/ap/cvf', 'verifique sua identidade',
     'confirme sua identidade', 'aprove esta solicitação', 'outro dispositivo',
-    'chave de segurança', 'security key', 'passkey', 'recuperar sua conta',
+    'chave de segurança', 'security key', 'recuperar sua conta',
     'account recovery',
   ];
   if (humanMarkers.some(marker => combined.includes(marker))) return 'HUMAN_CHALLENGE';
