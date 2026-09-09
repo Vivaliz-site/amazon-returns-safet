@@ -13,12 +13,12 @@ $timeline=[
 ];
 $errors=[];
 $decision=$engine->nextAction($case,$timeline,$policy,$now);
-if(($decision['action']??null)!=='SELLER_SUPPORT_OPEN')$errors[]='Expired appeal channel must fall back to Seller Support while D+90 recovery remains open. got='.json_encode($decision);
-if(($decision['reason']??null)!=='OFFICIAL_APPEAL_WINDOW_EXPIRED_RECOVERY_CONTINUES')$errors[]='Post-promise fallback must state that recovery continues outside the expired appeal channel. got='.json_encode($decision);
+if(($decision['action']??null)!=='SAFE_T_APPEAL')$errors[]='Expired promised-credit appeal must trigger a recovery appeal attempt before execution routing. got='.json_encode($decision);
+if(($decision['reason']??null)!=='AMAZON_REQUESTED_DATE_REACHED_UNRECOVERED')$errors[]='Post-promise recovery attempt must be auditable as an Amazon requested-date resumption. got='.json_encode($decision);
 $late=$case;$late['id']=507;$late['amazon_order_id']='702-2458327-9625858';$late['safe_t_id']='31163-36572-5421246';$late['appeal_deadline_at']='2026-08-30 18:00:00';$late['expected_reimbursement_amount']='286.22';
 $lateTimeline=[['id'=>4,'case_id'=>507,'event_type'=>'SAFE_T_STATUS_OBSERVED','source'=>'SELLER_CENTRAL','occurred_at'=>'2026-09-07 04:48:17','payload'=>['safe_t_id'=>'31163-36572-5421246','claim_status'=>'DENIED','appeal_submitted'=>false,'decision_text'=>'Sua reivindicação SAFE-T para este pedido não foi registrada dentro do período elegível. Todas as reivindicações SAFE-T devem ser registradas até 52 dias depois que o Seller Central debita débito na conta de vendedor.','appeal_deadline_at'=>'2026-08-30 18:00:00']]];
 $lateDecision=$engine->nextAction($late,$lateTimeline,$policy,$now);
-if(($lateDecision['action']??null)!=='SELLER_SUPPORT_OPEN')$errors[]='Expired late-filing denial must continue through Seller Support while D+90 remains open. got='.json_encode($lateDecision);
+if(($lateDecision['action']??null)!=='SAFE_T_APPEAL')$errors[]='Expired late-filing denial must remain an attempted recovery before execution routing. got='.json_encode($lateDecision);
 $paid=$late;$paid['id']=511;$paid['amazon_order_id']='702-8912261-4577805';$paid['safe_t_id']='54298-92555-1188848';$paid['reconciled_credit_amount']='49.00';$paid['expected_reimbursement_amount']='50.62';
 $paidTimeline=[['id'=>5,'case_id'=>511,'event_type'=>'SAFE_T_STATUS_OBSERVED','source'=>'SELLER_CENTRAL','occurred_at'=>'2026-09-07 04:48:20','payload'=>['safe_t_id'=>'54298-92555-1188848','claim_status'=>'DENIED','appeal_submitted'=>false,'decision_text'=>'A Amazon determinou que o item não foi devolvido e emitiu o reembolso ao vendedor.','appeal_deadline_at'=>'2026-08-30 08:17:00']],['id'=>6,'case_id'=>511,'event_type'=>'SAFE_T_REIMBURSEMENT_OBSERVED','source'=>'SP_API_FINANCES_V0','occurred_at'=>'2026-08-10 00:00:00','payload'=>['safe_t_claim_id'=>'54298-92555-1188848','reimbursed_amount'=>['amount'=>'49.00','currency'=>'BRL']]]];
 $paidDecision=$engine->nextAction($paid,$paidTimeline,$policy,$now);
