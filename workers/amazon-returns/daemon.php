@@ -57,7 +57,9 @@ final class SvAmazonReturnsDaemon
         $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
         $bootstrap=SvAmazonReturnsRuntime::bootstrap($this->db,$this->context);
         $state=$this->loadState();
-        $due=SvAmazonReturnsRuntime::dueTasks($state,$now);
+        $decisionStackRevision=SvAmazonReturnsRuntime::decisionStackRevision();
+        $decisionStackChanged=($state['decision_stack_revision'] ?? null)!==$decisionStackRevision;
+        $due=SvAmazonReturnsRuntime::dueTasks($state,$now,$decisionStackRevision);
         $openingRevision=$bootstrap['policy_audit']['policy_key']??null;
         if($openingRevision!==null && ($state['opening_policy_revision']??null)!==$openingRevision){
             $due=array_values(array_unique([...$due,'scheduler','sp_api','financial']));
@@ -74,7 +76,7 @@ final class SvAmazonReturnsDaemon
             $state['write_profile_revision']=$writeRevision;
         }
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
-        $due=$plan['due'];
+        $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
         $results=['bootstrap'=>$bootstrap];
         if(($plan['gate']['status'] ?? '')==='FAILED')$results['financial_refresh_gate']=$plan['gate'];
         foreach($due as $task){
@@ -95,6 +97,13 @@ final class SvAmazonReturnsDaemon
                 ];
             }
             $state[$task]=$now->format(DATE_ATOM);
+        }
+        if(
+            $decisionStackChanged
+            && isset($results['scheduler'])
+            && ($results['scheduler']['status'] ?? null)==='OK'
+        ){
+            $state['decision_stack_revision']=$decisionStackRevision;
         }
         try{$results['rule_outcomes']=$this->refreshRuleOutcomes();}
         catch(Throwable $e){$results['rule_outcomes']=['status'=>'FAILED','error_class'=>$e::class];}
