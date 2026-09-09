@@ -38,15 +38,16 @@ final class SvAmazonReturnsScheduler
         $key = (string)($decision['idempotency_key'] ?? '');
         if ($key === '') throw new LogicException('Write decision missing idempotency key.');
         $caseId = (int)($case['id'] ?? 0);
+        $action=(string)$decision['action'];
         $payload = [
             'case_id'=>$caseId,
             'order_id'=>(string)($case['amazon_order_id'] ?? ''),
             'safe_t_id'=>$case['safe_t_id'] ?? null,
             'decision'=>$decision,
         ] + SvAmazonExternalWritePayload::build($decision,$case,$timeline);
-        $deadline=SvAmazonRecoveryWindow::effectiveDeadlineAt($case);
+        $deadline=SvAmazonRecoveryWindow::effectiveDeadlineAt($case,$action);
         if($deadline instanceof DateTimeImmutable)$payload['deadline_at']=$deadline->format('Y-m-d H:i:s');
-        $outboxId=$target->enqueue((string)$decision['action'],$caseId,$payload,$key);
+        $outboxId=$target->enqueue($action,$caseId,$payload,$key);
         return ['decision'=>$decision,'outbox_id'=>$outboxId];
     }
 }
