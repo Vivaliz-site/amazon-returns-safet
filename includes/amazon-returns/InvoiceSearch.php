@@ -19,6 +19,45 @@ final class SvAmazonInvoiceSearch
         return $invoiceNumber==='' ? [] : self::query($db,$context,$invoiceNumber);
     }
 
+    /** @param array<string,mixed> $lookup @return array<string,mixed> */
+    public static function evidenceEvent(int $caseId,array $lookup,?DateTimeImmutable $occurredAt=null): array
+    {
+        if($caseId<1)throw new InvalidArgumentException('Invoice evidence case ID must be positive.');
+        $invoiceNumber=trim((string)($lookup['invoice_number'] ?? ''));
+        $orderId=trim((string)($lookup['order_id'] ?? ''));
+        if(preg_match('/^[0-9]{1,20}$/D',$invoiceNumber)!==1){
+            throw new InvalidArgumentException('Invoice evidence number is invalid.');
+        }
+        if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$orderId)!==1){
+            throw new InvalidArgumentException('Invoice evidence order ID is invalid.');
+        }
+        $invoiceId=trim((string)($lookup['invoice_id'] ?? ''));
+        $requestId=trim((string)($lookup['request_id'] ?? ''));
+        $at=($occurredAt ?? new DateTimeImmutable('now',new DateTimeZone('UTC')))
+            ->setTimezone(new DateTimeZone('UTC'));
+        return [
+            'case_id'=>$caseId,
+            'event_type'=>'SALES_INVOICE_LINKED',
+            'source'=>'SP_API_INVOICES',
+            'source_event_id'=>$invoiceId!=='' ? $invoiceId : ($requestId!=='' ? $requestId : null),
+            'idempotency_key'=>hash('sha256',implode('|',[
+                'sales-invoice-linked',(string)$caseId,$invoiceNumber,$orderId,
+            ])),
+            'occurred_at'=>$at->format('Y-m-d H:i:s'),
+            'payload'=>[
+                'invoice_number'=>$invoiceNumber,
+                'order_id'=>$orderId,
+                'invoice_id'=>$invoiceId!=='' ? $invoiceId : null,
+                'series'=>self::nullable($lookup['series'] ?? null),
+                'status'=>self::nullable($lookup['status'] ?? null),
+                'invoice_type'=>self::nullable($lookup['invoice_type'] ?? null),
+                'transaction_type'=>self::nullable($lookup['transaction_type'] ?? null),
+                'request_id'=>$requestId!=='' ? $requestId : null,
+            ],
+            'evidence_sha256'=>null,
+        ];
+    }
+
     /** @return list<int> */
     private static function query(PDO $db,SvAmazonTenantContext $context,string $pattern): array
     {
@@ -40,5 +79,12 @@ final class SvAmazonInvoiceSearch
             array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),
             static fn(int $id): bool => $id>0
         )));
+    }
+
+    private static function nullable(mixed $value): ?string
+    {
+        if(!is_scalar($value))return null;
+        $value=trim((string)$value);
+        return $value==='' ? null : $value;
     }
 }
