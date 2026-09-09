@@ -46,6 +46,9 @@ if($invoiceNumber!=='' && preg_match('/^[0-9]{1,20}$/',$invoiceNumber)!==1){
 if($orderId==='' && $invoiceNumber===''){
     sv_amz_intake_lookup_reply(['success'=>false,'error'=>'Informe o número do pedido Amazon ou da NF de venda.'],422);
 }
+if($orderId!=='' && $invoiceNumber!==''){
+    sv_amz_intake_lookup_reply(['success'=>false,'error'=>'Informe apenas o pedido ou a NF por vez.'],422);
+}
 
 try{
     $db=amazon_returns_pdo();
@@ -58,7 +61,7 @@ try{
     $p=SvAmazonTenantPersistence::create($db,$context);
 
     if($invoiceNumber!==''){
-        $caseIds=SvAmazonInvoiceSearch::caseIds($db,$context,$invoiceNumber);
+        $caseIds=SvAmazonInvoiceSearch::caseIdsExact($db,$context,$invoiceNumber);
         $cases=[];
         foreach($caseIds as $caseId){
             $case=$p->cases->find($caseId);
