@@ -230,6 +230,8 @@ systemctl enable amazon-returns-safet.service >/dev/null
 systemctl restart amazon-returns-safet.service
 systemctl is-active --quiet amazon-returns-safet.service
 
+"$root/current/scripts/ensure-auto-deploy-source.sh"
+
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-deploy.service" /etc/systemd/system/amazon-returns-deploy.service
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-deploy.timer" /etc/systemd/system/amazon-returns-deploy.timer
 systemctl daemon-reload
