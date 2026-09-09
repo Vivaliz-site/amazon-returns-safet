@@ -26,14 +26,23 @@ if [[ -z "$NODE_BIN" || ! -x "$NODE_BIN" ]] || ! "$NODE_BIN" -e 'process.exit(ty
   exit 69
 fi
 browser_pid=""
-
 cleanup() {
-  if [[ -n "$browser_pid" ]] && kill -0 "$browser_pid" 2>/dev/null; then
-    kill "$browser_pid" 2>/dev/null || true
-    wait "$browser_pid" 2>/dev/null || true
+  [[ -n "$browser_pid" ]] || return 0
+  if kill -0 -- "-$browser_pid" 2>/dev/null; then
+    kill -TERM -- "-$browser_pid" 2>/dev/null || true
+    for _ in $(seq 1 30); do
+      kill -0 -- "-$browser_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 -- "-$browser_pid" 2>/dev/null; then
+      kill -KILL -- "-$browser_pid" 2>/dev/null || true
+    fi
   fi
+  wait "$browser_pid" 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 mkdir -p "$SELLER_CENTRAL_PROFILE"
 
@@ -42,7 +51,7 @@ if curl -fsS --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then
   exit 76
 fi
 
-"$SELLER_CENTRAL_BROWSER" \
+setsid "$SELLER_CENTRAL_BROWSER" \
   --headless=new \
   --no-sandbox \
   --disable-gpu \

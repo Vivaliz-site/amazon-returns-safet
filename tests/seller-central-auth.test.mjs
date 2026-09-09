@@ -305,3 +305,21 @@ test('waits through a transient unknown stage after a legacy boolean submit', as
   assert.ok(unknownPolls >= 3);
   assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
 });
+
+test('resolves the Seller Central account switcher before treating the session as authenticated', async () => {
+  let selected = false;
+  const cdp = { pageState: async () => selected
+    ? { href: 'https://sellercentral.amazon.com.br/help/center', title: 'Amazon', text: 'Ajuda' }
+    : { href: 'https://sellercentral.amazon.com.br/account-switcher/default/merchantMarketplace', title: 'Amazon', text: 'Select account Brazil' } };
+  assert.equal(classifyAmazonAuthState(await cdp.pageState()), 'ACCOUNT_SWITCHER');
+  let requestedTotp = false;
+  const result = await ensureSellerCentralAuthenticated(cdp, {
+    marketplaceLabel: 'Brazil',
+    applyMarketplace: async (_cdp, label) => { assert.equal(label, 'Brazil'); selected = true; return true; },
+    readSecret: () => { throw new Error('account switcher must not read credentials'); },
+    totpRequester: async () => { requestedTotp = true; return '123456'; },
+    sleep: async () => {},
+  });
+  assert.equal(requestedTotp, false);
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'MARKETPLACE_SELECTED' });
+});

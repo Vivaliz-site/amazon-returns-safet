@@ -13,6 +13,8 @@ EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/seller-central-browse
 Environment=AMAZON_RETURNS_RELEASE_ROOT=/home/ubuntu/amazon-returns-deploy/current
 ExecStart=/home/ubuntu/amazon-returns-deploy/current/scripts/amazon-returns/run-seller-central-daily.sh
 TimeoutStartSec=30min
+TimeoutStopSec=15s
+KillMode=control-group
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
