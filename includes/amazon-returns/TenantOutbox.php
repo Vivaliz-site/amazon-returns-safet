@@ -316,14 +316,10 @@ final class SvAmazonTenantReturnsOutbox
     {
         $now = $now->setTimezone(new DateTimeZone('UTC'));
         $attempt = max(0, (int)($row['attempt_count'] ?? 0));
-        if ($attempt >= self::MAX_ATTEMPTS) {
-            return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'MAX_ATTEMPTS_EXHAUSTED'];
-        }
-        $delay = min(3600, 60 * (2 ** max(0, $attempt - 1)));
-        $next = $now->modify('+' . $delay . ' seconds');
         $payload = is_array($row['payload'] ?? null)
             ? $row['payload']
             : self::decodePayloadStatic($row['payload_json'] ?? null);
+        $deadline = null;
         $deadlineRaw = $payload['deadline_at'] ?? null;
         if (is_scalar($deadlineRaw) && trim((string)$deadlineRaw) !== '') {
             try {
@@ -331,10 +327,21 @@ final class SvAmazonTenantReturnsOutbox
             } catch (Throwable) {
                 return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'INVALID_DEADLINE'];
             }
-            if ($deadline <= $now || $next >= $deadline) {
+            if ($deadline <= $now) {
                 return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'DEADLINE_WOULD_EXPIRE'];
             }
         }
+        if ($attempt >= self::MAX_ATTEMPTS) {
+            if (!$deadline instanceof DateTimeImmutable) {
+                return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'MAX_ATTEMPTS_EXHAUSTED'];
+            }
+            $next = $now->modify('+1 day');
+            if ($next > $deadline) $next = $deadline;
+            return ['status'=>'RETRY','next_at'=>$next,'reason'=>'RECOVERY_WINDOW_RETRY'];
+        }
+        $delay = min(3600, 60 * (2 ** max(0, $attempt - 1)));
+        $next = $now->modify('+' . $delay . ' seconds');
+        if ($deadline instanceof DateTimeImmutable && $next > $deadline) $next = $deadline;
         return ['status'=>'RETRY','next_at'=>$next,'reason'=>'TRANSIENT_FAILURE'];
     }
 
