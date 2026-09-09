@@ -111,7 +111,7 @@ final class SvAmazonReturnsDaemon
             $state['sp_api']=$now->modify('-1800 seconds')->format(DATE_ATOM);
             $state['financial']=$state['sp_api'];
         }
-        if((int)($results['scheduler']['financial_checks_requested']??0)>0){unset($state['sp_api'],$state['financial']);}
+        if((int)($results['scheduler']['financial_checks_requested']??0)>0 && !isset($results['sp_api'])){unset($state['sp_api'],$state['financial']);}
         $this->saveState($state);
         return [
             'status'=>$this->overallStatus($results),
