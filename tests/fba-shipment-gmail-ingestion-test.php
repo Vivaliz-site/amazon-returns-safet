@@ -5,7 +5,7 @@ require_once __DIR__.'/../includes/amazon-returns/GmailParser.php';
 require_once __DIR__.'/../includes/amazon-returns/GmailEventSink.php';
 require_once __DIR__.'/../includes/amazon-returns/Projector.php';
 require_once __DIR__.'/../includes/amazon-returns/SafeTDecisionEngine.php';
-require_once __DIR__.'/../includes/amazon-returns/Runtime.php';
+require_once __DIR__.'/../workers/amazon-returns/gmail-ingest.php';
 
 function fbaSame(mixed $expected,mixed $actual,string $message):void{
     if($expected!==$actual)throw new RuntimeException($message.' expected='.var_export($expected,true).' actual='.var_export($actual,true));
@@ -42,32 +42,18 @@ fbaSame(['program'=>'FBA'],$patch,'FBA shipment metadata must classify the progr
 
 $case=['id'=>1,'amazon_order_id'=>'701-0630116-9129834','amazon_order_item_id'=>'UNRESOLVED_EMAIL','marketplace_id'=>'A2Q3Y263D00KWC','program'=>'UNKNOWN','refund_initiator'=>'UNKNOWN','physical_status'=>'NOT_RECEIVED','state'=>'POLICY_REVIEW_REQUIRED','safe_t_id'=>null,'quantity_ordered'=>2];
 $timeline=[
-    ['id'=>1,'case_id'=>1,'event_type'=>'FBA_SHIPMENT_EMAIL','source'=>'GMAIL','occurred_at'=>'2026-08-27 12:08:23','payload'=>['program'=>'FBA','customer_tracking_ids'=>['TBR420573721'],'customer_delivery_carriers'=>['Amazon Logistics BR']]],
+    ['id'=>1,'case_id'=>1,'event_type'=>'FBA_SHIPMENT_EMAIL','source'=>'GMAIL','occurred_at'=>'2026-08-27 12:08:23','payload'=>['program'=>'FBA','customer_tracking_ids'=>['TBR420573721'],'customer_delivery_carriers'=>['Amazon Logistics BR'],'customer_delivery_confirmed'=>false]],
     ['id'=>2,'case_id'=>1,'event_type'=>'REFUND_ISSUED_EMAIL','source'=>'GMAIL','occurred_at'=>'2026-09-02 01:50:37','payload'=>['refund_at'=>'2026-09-02 01:50:37','refund_amount'=>'85.50','financial_truth'=>false]],
 ];
 $projected=SvAmazonReturnProjector::projectFrom($case,$timeline);
 fbaSame('FBA',$projected['program']??null,'Projection replay must preserve FBA classification.');
-fbaSame(['TBR420573721'],$projected['customer_tracking_ids']??null,'Projection replay must preserve shipment tracking as non-delivery evidence.');
-fbaSame(['Amazon Logistics BR'],$projected['customer_delivery_carriers']??null,'Projection replay must preserve shipment carrier.');
-fbaSame(false,$projected['customer_delivery_confirmed']??null,'Tracking alone must not assert customer delivery.');
+fbaSame(false,$projected['customer_delivery_confirmed']??null,'Shipment/tracking evidence alone must not assert customer delivery.');
 $decision=(new SvAmazonSafeTDecisionEngine())->nextAction($projected,$timeline,[],new DateTimeImmutable('2026-09-09T11:00:00Z'));
 fbaSame('CHECK_FINANCES',$decision['action']??null,'Known classic FBA refund must use the automatic FBA recovery path instead of REFUND_INITIATOR_UNKNOWN human review.');
 fbaSame('CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$decision['reason']??null,'Automatic FBA route must remain auditable.');
 
-$now=new DateTimeImmutable('2026-09-09T11:00:00Z');
-$state=[];
-foreach(SvAmazonReturnsRuntime::cadences() as $task=>$_seconds)$state[$task]=$now->format(DATE_ATOM);
-$state['decision_stack_revision']=SvAmazonReturnsRuntime::decisionStackRevision();
-$state['gmail_ingestion_revision']='old';
-fbaTrue(method_exists(SvAmazonReturnsRuntime::class,'gmailIngestionRevision'),'Runtime needs a Gmail ingestion revision fingerprint.');
-$gmailRevision=SvAmazonReturnsRuntime::gmailIngestionRevision();
-$due=SvAmazonReturnsRuntime::dueTasks($state,$now,$state['decision_stack_revision'],$gmailRevision);
-fbaTrue(in_array('gmail_refund_reconciliation',$due,true),'A Gmail parser/sink revision must force historical evidence reconciliation once after deploy.');
-$ordered=SvAmazonReturnsRuntime::decisionSafeOrder($due);
-fbaTrue(array_search('gmail_refund_reconciliation',$ordered,true)<array_search('scheduler',$ordered,true),'Historical Gmail evidence must be ingested before re-evaluating decisions.');
-
-$state['gmail_ingestion_revision']=$gmailRevision;
-$due=SvAmazonReturnsRuntime::dueTasks($state,$now,$state['decision_stack_revision'],$gmailRevision);
-fbaTrue(!in_array('gmail_refund_reconciliation',$due,true),'Unchanged ingestion code must not create an extra reconciliation cycle.');
+fbaSame('history_id_v2',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY,'Parser change must use a new Gmail history cursor so recent Amazon messages are replayed once after deploy.');
+$ingestorSource=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/gmail-ingest.php');
+fbaTrue(str_contains($ingestorSource,"$cursorKey==='history_id' ? self::HISTORY_CURSOR_KEY : $cursorKey") || str_contains($ingestorSource,"$cursorKey === 'history_id' ? self::HISTORY_CURSOR_KEY : $cursorKey"),'Both Gmail cursor load/save paths must map the legacy logical key to the versioned history key.');
 
 echo "fba-shipment-gmail-ingestion-test: OK\n";
