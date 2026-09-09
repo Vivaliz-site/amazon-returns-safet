@@ -44,7 +44,10 @@ $filesStart=strpos($intakeApi,'function sv_amz_intake_files(): array');
 $storeStart=strpos($intakeApi,'function sv_amz_intake_store_photos(');
 intakeUxAssert(is_int($filesStart) && is_int($storeStart) && $storeStart>$filesStart,'Intake upload helpers must remain discoverable.');
 $filesBody=substr($intakeApi,$filesStart,$storeStart-$filesStart);
-intakeUxAssert(str_contains($filesBody,'UPLOAD_ERR_NO_FILE'),'Empty browser file placeholders must be filtered by sv_amz_intake_files before evidence storage starts.');
+intakeUxAssert(
+    str_contains($filesBody,"if((int)(\$files['error'][\$index] ?? UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE)continue;"),
+    'sv_amz_intake_files must actively discard empty browser file placeholders before evidence storage starts.'
+);
 
 $report=intakeUxRead('includes/amazon-returns/ReturnsReport.php');
 intakeUxAssert(str_contains($report,"'invoice_number'"),'Returns report parser must preserve Amazon invoice number.');
