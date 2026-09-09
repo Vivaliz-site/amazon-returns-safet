@@ -22,10 +22,16 @@ done
 [[ -n "$TOTP_HOST" ]] || { echo "--totp-host is required" >&2; exit 64; }
 
 browser=""
-for candidate in /usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome-stable /usr/bin/google-chrome; do
-  if [[ -x "$candidate" ]]; then browser="$candidate"; break; fi
+for candidate in /home/ubuntu/.cache/ms-playwright-arm64/chromium-*/chrome-linux-arm64/chrome /usr/bin/google-chrome-stable /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+  [[ -x "$candidate" ]] || continue
+  resolved="$(readlink -f "$candidate" 2>/dev/null || true)"
+  if [[ "$resolved" == "/usr/bin/snap" || "$resolved" == "/snap/bin/chromium" ]]; then
+    continue
+  fi
+  browser="$candidate"
+  break
 done
-[[ -n "$browser" ]] || { echo "supported Chromium browser not installed" >&2; exit 69; }
+[[ -n "$browser" ]] || { echo "supported non-Snap Chromium browser not installed" >&2; exit 69; }
 
 install -d -o ubuntu -g www-data -m 0750 "$BROWSER_ROOT"
 install -d -o ubuntu -g www-data -m 0700 "$BROWSER_ROOT/profile"
