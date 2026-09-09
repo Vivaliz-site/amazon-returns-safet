@@ -298,6 +298,11 @@ async function safeTSubmit(cdp, job) {
   if (text(existing)) {
     return bridgeResult('ALREADY_EXISTS', { external_id: text(existing), retry_safe: true, evidence: await evidence(cdp, 'safet-v1') });
   }
+  const eligibilityState = await cdp.pageState();
+  const eligibilityText = text(eligibilityState.text).toLowerCase();
+  if (eligibilityText.includes('excedeu 75 dias') || eligibilityText.includes('exceeded 75 days')) {
+    return bridgeResult('SUPERSEDED', { reason: 'SAFE_T_WINDOW_EXPIRED', retry_safe: false, evidence: await evidence(cdp, 'safet-v1') });
+  }
   const hasItem = await cdp.evaluate(`Boolean(document.querySelector('kat-checkbox.QuantityCheckbox'))`);
   if (!hasItem) {
     const state = await cdp.pageState();
@@ -452,6 +457,17 @@ async function waitFrameHas(cdp, phrase, timeoutMs = 20000) {
   return false;
 }
 
+async function resolveOrderAsin(cdp, orderId) {
+  if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return '';
+  const url = `https://sellercentral.amazon.com.br/orders-v3/order/${encodeURIComponent(orderId)}`;
+  await cdp.navigate(url, 5000);
+  const auth = await authGate(cdp, 'help-v1', url, 5000);
+  if (auth) return '';
+  const state = await cdp.pageState(20000);
+  const match = text(state.text).match(/ASIN:\s*([A-Z0-9]{10})/);
+  return match?.[1] || '';
+}
+
 async function supportOpen(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -459,6 +475,7 @@ async function supportOpen(cdp, job) {
   if (existing) return bridgeResult('ALREADY_EXISTS', { external_id: existing, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'SUPPORT_ORDER_ID_REQUIRED' });
+  const resolvedAsin = text(job.case?.asin || await resolveOrderAsin(cdp, orderId));
   await cdp.navigate(HELP_URL, 6000);
   const auth = await authGate(cdp, 'help-v1', HELP_URL, 6000);
   if (auth) return auth;
@@ -482,7 +499,7 @@ async function supportOpen(cdp, job) {
     await sleep(4500);
   }
   const narrative = narrativeFor(job, 9000);
-  const asin = text(job.case?.asin);
+  const asin = resolvedAsin;
   const asinRequired = await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-input[placeholder="Inserir ASIN"]');if(h&&!h.hasAttribute('disabled'))return true}return false})()`);
   if (asinRequired && (!asin || !(await cdp.setFrameKat('kat-input[placeholder="Inserir ASIN"]', asin)))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ASIN_INPUT_MISSING', evidence: await evidence(cdp, 'help-v1') });

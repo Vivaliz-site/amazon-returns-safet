@@ -96,7 +96,7 @@ final class SvAmazonReturnsBridgeService
         $caseId=(int)$row['case_id'];
         $status=(string)$result['status'];
         $externalId=$result['external_id'];
-        $success=in_array($status,['ACCEPTED','ALREADY_EXISTS'],true);
+        $success=in_array($status,['ACCEPTED','ALREADY_EXISTS','SUPERSEDED'],true);
         if($success){
             $this->completeSuccess($row,$result);
             return [

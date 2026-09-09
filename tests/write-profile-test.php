@@ -11,7 +11,7 @@ $cfg=new SvAmazonReturnsConfig([
  'AMAZON_RETURNS_EMAIL_REVIEW_WRITE'=>'0','AMAZON_RETURNS_EMAIL_REPLY_WRITE'=>'0',
  'AMAZON_RETURNS_SUPPORT_WRITE'=>'0','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,
 ]);
-wpSame('safet-full-recovery-v1',$cfg->writeProfileVersion(),'profile version');
+wpSame('safet-full-recovery-v2',$cfg->writeProfileVersion(),'profile version');
 foreach([
  'SAFE_T_SUBMIT'=>'profile enables future eligible openings',
  'SAFE_T_APPEAL'=>'profile enables eligible appeals',
@@ -38,7 +38,7 @@ $checker=__DIR__.'/../scripts/write-profile-check.php';
 wpSame(true,is_file($checker),'runtime verifier must use a profile checker');
 if(is_file($checker)){
  $json=shell_exec('php '.escapeshellarg($checker));$checked=is_string($json)?json_decode($json,true):null;
- wpSame('safet-full-recovery-v1',$checked['version']??null,'checker profile version');
+ wpSame('safet-full-recovery-v2',$checked['version']??null,'checker profile version');
  foreach(['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'] as $action){
   wpSame(true,$checked['flags'][$action]??null,'checker sees '.$action.' enabled');
  }

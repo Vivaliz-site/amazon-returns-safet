@@ -19,6 +19,7 @@ final class SvAmazonReturnsRemoteBridge
         'ACCEPTED',
         'BLOCKED_UNTIL',
         'ALREADY_EXISTS',
+        'SUPERSEDED',
         'AUTH_REQUIRED',
         'HUMAN_CHALLENGE',
         'UI_DRIFT',
