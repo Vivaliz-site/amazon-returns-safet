@@ -641,7 +641,7 @@ final class SvAmazonReturnsDaemon
     private function runSellerCentral(): array
     {
         if($this->config->sellerCentralBridgeMode()==='polling'){
-            return ['status'=>'REMOTE_POLLING','reason'=>'WINDOWS_BRIDGE_OWNS_OUTBOX'];
+            return ['status'=>'REMOTE_POLLING','reason'=>'SELLER_CENTRAL_BRIDGE_OWNS_OUTBOX'];
         }
         $bridge=$this->config->readiness()['seller_central_bridge']
             ?? ['ready'=>false,'missing'=>[]];

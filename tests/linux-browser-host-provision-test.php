@@ -27,7 +27,9 @@ $authSvc=(string)file_get_contents($authService);
 lbAssert(str_contains($authSvc,'run-seller-central-daily.sh --auth-check-only'),'Auth smoke service must never drain jobs.');
 lbAssert(str_contains($authSvc,'EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/.env'),'Auth smoke must load the protected shared runtime environment.');
 $tmr=(string)file_get_contents($timer);
-lbAssert(str_contains($tmr,'OnCalendar=*-*-* 08:00:00 America/Sao_Paulo'),'Browser timer must run once daily at the documented Brazil time.');
+lbAssert(str_contains($tmr,'OnCalendar=*-*-* 08:00:00 America/Sao_Paulo'),'Browser timer must run at 08:00 Brazil time.');
+lbAssert(str_contains($tmr,'OnCalendar=*-*-* 20:00:00 America/Sao_Paulo'),'Browser timer must run again at 20:00 Brazil time.');
+lbAssert(substr_count($tmr,'OnCalendar=')===2,'Browser timer must match the approved twice-daily business cadence.');
 lbAssert(str_contains($tmr,'Persistent=true'),'Missed daily run must recover after downtime.');
 $prov=(string)file_get_contents($provision);
 foreach(['SELLER_CENTRAL_TOTP_HOST','SELLER_CENTRAL_TOTP_KEY_FILE','SELLER_CENTRAL_TOTP_KNOWN_HOSTS_FILE','SELLER_CENTRAL_USERNAME_FILE','SELLER_CENTRAL_PASSWORD_FILE'] as $needle){
