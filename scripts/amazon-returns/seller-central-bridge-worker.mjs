@@ -505,6 +505,17 @@ async function clickFrameTextWhenReady(cdp, label, timeoutMs = 30000) {
   return false;
 }
 
+async function clickFirstFrameTextWhenReady(cdp, labels, timeoutMs = 30000) {
+  const wanted = [...new Set(labels.map(text).filter(Boolean))];
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const clicked = text(await cdp.evaluate(`(()=>{const labels=${JSON.stringify(wanted)};for(const wanted of labels){for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const h of d.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.innerText||'').trim();if(label!==wanted)continue;const b=h.tagName==='KAT-BUTTON'?h.shadowRoot?.querySelector('button'):h;if(!b||b.disabled)continue;b.click();return label}}}return ''})()`));
+    if (clicked) return clicked;
+    await sleep(500);
+  }
+  return '';
+}
+
 async function hillChatReady(cdp) {
   return (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;for(const b of d.querySelectorAll('kat-button,button')){const label=(b.getAttribute('label')||b.innerText||'').trim();if(!['Chat now','Conversar agora','Iniciar chat'].includes(label))continue;const button=b.tagName==='KAT-BUTTON'?b.shadowRoot?.querySelector('button'):b;if(button&&!button.disabled)return true}}return false})()`)) === true;
 }
@@ -559,15 +570,60 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
     await clickFrameTextWhenReady(cdp, 'Use original text', 10000);
     if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_SUGGESTION_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
-  if (!(await clickFrameTextWhenReady(cdp, 'Contact an associate', 90000))) {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_CONTACT_ROUTE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+
+  const orderId = text(job.case?.order_id);
+  const troubleshooterDeadline = Date.now() + 120000;
+  let contacted = false;
+  let suggestedOrderEntered = false;
+  while (Date.now() < troubleshooterDeadline) {
+    if (await clickFrameTextWhenReady(cdp, 'Contact an associate', 1500)) {
+      contacted = true;
+      break;
+    }
+    const suggestedOrderReady = (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-input[placeholder*="112-"]');if(h&&!h.hasAttribute('disabled'))return true}return false})()`)) === true;
+    if (suggestedOrderReady && !suggestedOrderEntered) {
+      if (!(await cdp.setFrameKat('kat-input[placeholder*="112-"]', orderId))) {
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_SUGGESTED_ORDER_INPUT_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      }
+      suggestedOrderEntered = true;
+      if (!(await clickFrameTextWhenReady(cdp, 'Continue', 10000))) {
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_SUGGESTED_ORDER_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      }
+      await sleep(750);
+      continue;
+    }
+    const troubleshootingAction = await clickFirstFrameTextWhenReady(cdp, [
+      'Request Reimbursement for an Order',
+      'Solicitar reembolso para um pedido',
+    ], 1500);
+    if (troubleshootingAction) {
+      await sleep(750);
+      continue;
+    }
+    await sleep(750);
   }
-  if (!(await clickFrameTextWhenReady(cdp, 'A-to-z Claims', 30000))) {
+  if (!contacted) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+
+  const category = await clickFirstFrameTextWhenReady(cdp, ['A-to-z Claims','Check FBA order reimbursement status','FBA related'], 45000);
+  if (!category) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_CATEGORY_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
+
+  const identityDeadline = Date.now() + 30000;
+  let idsReady = false;
+  while (Date.now() < identityDeadline) {
+    if (await hillChatReady(cdp)) return null;
+    idsReady = (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;if(d.querySelector('kat-input[placeholder="Enter ASIN"]')&&d.querySelector('kat-input[placeholder="Enter SKU"]'))return true}return false})()`)) === true;
+    if (idsReady) break;
+    await sleep(500);
+  }
+  if (!idsReady) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_PRODUCT_FIELDS_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
   if (!asin || !sku) return bridgeResult('FAILED', { reason: 'SUPPORT_GENERAL_PRODUCT_IDENTITY_REQUIRED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-  const idsReady = await cdp.waitFor(`(()=>{for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;if(d.querySelector('kat-input[placeholder="Enter ASIN"]')&&d.querySelector('kat-input[placeholder="Enter SKU"]'))return true}return false})()`, 30000);
-  if (!idsReady || !(await cdp.setFrameKat('kat-input[placeholder="Enter ASIN"]', asin)) || !(await cdp.setFrameKat('kat-input[placeholder="Enter SKU"]', sku))) {
+  if (!(await cdp.setFrameKat('kat-input[placeholder="Enter ASIN"]', asin)) || !(await cdp.setFrameKat('kat-input[placeholder="Enter SKU"]', sku))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_PRODUCT_FIELDS_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
   if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_PRODUCT_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
