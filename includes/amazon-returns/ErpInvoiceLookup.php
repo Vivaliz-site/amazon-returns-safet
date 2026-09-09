@@ -18,6 +18,11 @@ final class SvAmazonErpInvoiceLookup
         $this->http=$http ?? [$this,'httpRequest'];
     }
 
+    public static function defaultCredentialPath(): string
+    {
+        return '/home/ubuntu/shopvivaliz-deploy/shared/.env';
+    }
+
     /** @return array<string,mixed>|null */
     public function findOrderByInvoiceNumber(string $invoiceNumber): ?array
     {
@@ -84,7 +89,7 @@ final class SvAmazonErpInvoiceLookup
     /** @return array<string,string> */
     private static function loadCredentials(SvAmazonReturnsConfig $config): array
     {
-        $path=$config->get('AMAZON_RETURNS_ERP_ENV_FILE');
+        $path=$config->get('AMAZON_RETURNS_ERP_ENV_FILE',self::defaultCredentialPath());
         if($path==='' || !is_readable($path))throw new RuntimeException('ERP credential source is not configured.');
         $wanted=array_fill_keys([
             'TINY_ACCESS_TOKEN','OLIST_ACCESS_TOKEN',
