@@ -88,7 +88,7 @@ function decisionText(body, status) {
     const stop = tail.search(/\n(?:Account Specialist|Amazon\.com\.br|Mapa do site)\b/i);
     return compact(stop > 0 ? tail.slice(0, stop) : tail).slice(0, 8000);
   }
-  const m = body.match(/(?:Coment[aá]rio da Amazon|Motivo da nega[cç][aã]o|Detalhes da decis[aã]o)\s*:?\s*([^\n]+(?:\n(?!\s*(?:ID do pedido|Data da reivindica[cç][aã]o|Status da reivindica[cç][aã]o|Data de nega[cç][aã]o|Recorrer por|ID da reivindica[cç][aã]o SAFE-T)\b)[^\n]+)*)/i);
+  const m = body.match(/(?:Coment[aá]rio da Amazon|Motivo da nega[cç][aã]o|Detalhes da decis[aã]o)\s*:?\s*([^\n]+(?:\n(?!\s*(?:ID do pedido|Data da reivindica[cç][aã]o|Status da reivindica[cç][aã]o|Data de nega[cç][aã]o|Recorrer por|Appeal by|Reply by|ID da reivindica[cç][aã]o SAFE-T)\b)[^\n]+)*)/i);
   const extracted = compact(m?.[1] ?? '');
   if (extracted) return extracted.slice(0, 8000);
   if (status === 'DENIED' || status === 'INFO_REQUESTED') return compact(body).slice(0, 8000);
@@ -115,7 +115,9 @@ export function parseSafeTStatus(rawBody, expected = {}) {
     safe_t_id: safeTId || null,
     order_id: orderId || null,
     denied_at: extractLabeledDate(body, 'Data de negação'),
-    appeal_deadline_at: extractLabeledDate(body, 'Recorrer por'),
+    appeal_deadline_at: extractLabeledDate(body, 'Recorrer por')
+      ?? extractLabeledDate(body, 'Appeal by')
+      ?? extractLabeledDate(body, 'Reply by'),
     decision_text: decision || null,
     decision_fingerprint: decision ? sha(decision.toLowerCase().replace(/\s+/g, ' ').trim()) : null,
     appeal_submitted: appeal.appeal_submitted,

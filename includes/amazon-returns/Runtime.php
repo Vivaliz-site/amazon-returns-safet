@@ -35,6 +35,10 @@ final class SvAmazonReturnsRuntime
             __DIR__.'/Projector.php',
             __DIR__.'/SafeTDecisionEngine.php',
             __DIR__.'/DecisionCoordinator.php',
+            __DIR__.'/ReturnActionRouter.php',
+            __DIR__.'/SafeTStatusService.php',
+            dirname(__DIR__,2).'/scripts/amazon-returns/safe-t-status-parser.mjs',
+            dirname(__DIR__,2).'/workers/amazon-returns/scheduler.php',
         ];
         $parts=[];
         foreach($files as $file){

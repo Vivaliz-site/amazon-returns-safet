@@ -409,6 +409,13 @@ final class SvAmazonReturnsDaemon
                 ]);
                 continue;
             }
+            if(SvAmazonReturnsScheduler::isReadAction($decision)){
+                $scheduled=(new SvAmazonReturnsScheduler($engine))->scheduleDecision(
+                    $this->persistence->outbox,$projected,$decision,$timeline
+                );
+                if(($scheduled['outbox_id'] ?? null)!==null)$enqueued++;
+                continue;
+            }
             if(!SvAmazonReturnsScheduler::isWriteAction($decision))continue;
             if(!$this->config->externalWriteAllowed($action)){
                 $blockedWrites++;

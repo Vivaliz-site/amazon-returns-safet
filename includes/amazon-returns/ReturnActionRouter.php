@@ -60,8 +60,11 @@ final class SvAmazonReturnActionRouter
             if(self::acceptedAppeal($events,$claim))return self::decision('WAIT','APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$case);
             $deadline=self::date($case['appeal_deadline_at']??$message['payload']['appeal_deadline_at']??null);
             if($deadline===null){
-                if(self::activeSupport($case))return self::decision('WAIT','SUPPORT_ESCALATION_ALREADY_ACTIVE',$case);
-                return self::decision('SELLER_SUPPORT_OPEN','APPROVED_PARTIAL_REIMBURSEMENT_SUPPORT_RECOVERY',$case);
+                $read=self::decision('SAFE_T_READ','OFFICIAL_APPEAL_DEADLINE_REFRESH_REQUIRED',$case);
+                $read['idempotency_key']=hash('sha256',implode('|',[
+                    'safe-t-deadline-refresh-v1',$case['id']??0,$claim,(int)($message['id']??0),
+                ]));
+                return $read;
             }
             if($deadline<$now)return self::decision('SAFE_T_APPEAL','MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT',$case);
             return self::decision('SAFE_T_APPEAL','PARTIAL_REIMBURSEMENT_BALANCE_APPEAL_REQUIRED',$case);
