@@ -69,6 +69,32 @@ if (($genericProjected["program"] ?? null) !== "UNKNOWN"
   throw new RuntimeException("Missing optional Gmail enum facts must remain UNKNOWN during projection: ".json_encode($genericProjected));
 }
 
+$legacyProjected = SvAmazonReturnProjector::projectFrom([
+  "id"=>921,
+  "amazon_order_id"=>"701-0000000-0000002",
+  "quantity_ordered"=>1,
+  "physical_status"=>"NOT_RECEIVED",
+  "state"=>"POLICY_REVIEW_REQUIRED",
+], [[
+  "case_id"=>921,
+  "event_type"=>"REFUND_ISSUED_EMAIL",
+  "source"=>"GMAIL",
+  "occurred_at"=>"2026-09-02 02:05:00",
+  "payload"=>[
+    "order_id"=>"701-0000000-0000002",
+    "refund_at"=>"2026-09-02 02:05:00",
+    "refund_amount"=>"10.50",
+    "program"=>null,
+    "refund_initiator"=>null,
+    "financial_truth"=>false,
+  ],
+]]);
+if (($legacyProjected["program"] ?? null) !== "UNKNOWN"
+    || ($legacyProjected["refund_initiator"] ?? null) !== "UNKNOWN"
+    || ($legacyProjected["refund_amount"] ?? null) !== "10.50") {
+  throw new RuntimeException("Legacy Gmail null enum facts must be treated as absent evidence: ".json_encode($legacyProjected));
+}
+
 if (!method_exists(SvAmazonGmailEventSink::class, "refundInitiatorEvidence")) {
   throw new RuntimeException("Re-ingesting an old Gmail refund must create durable initiator evidence.");
 }
