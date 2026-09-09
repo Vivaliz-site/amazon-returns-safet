@@ -11,4 +11,8 @@ rwSame('2026-08-08 07:27:57',SvAmazonRecoveryWindow::deadlineAt($fallback)?->for
 $deadline=new DateTimeImmutable('2026-08-09 07:27:57',new DateTimeZone('UTC'));
 rwSame('2026-08-09 07:27:57',SvAmazonRecoveryWindow::nextDailyRetryAt(new DateTimeImmutable('2026-08-08 12:00:00',new DateTimeZone('UTC')),$deadline)?->format('Y-m-d H:i:s'),'Final retry may land exactly on D+90.');
 rwSame(null,SvAmazonRecoveryWindow::nextDailyRetryAt(new DateTimeImmutable('2026-08-09 07:27:58',new DateTimeZone('UTC')),$deadline),'No retry may be scheduled after D+90.');
+$short=array_replace($case,['appeal_deadline_at'=>'2026-06-01 00:00:00']);
+rwSame('2026-06-01 00:00:00',SvAmazonRecoveryWindow::effectiveDeadlineAt($short)?->format('Y-m-d H:i:s'),'Shorter explicit Amazon deadline must win.');
+$late=array_replace($case,['appeal_deadline_at'=>'2026-12-01 00:00:00']);
+rwSame('2026-08-09 07:27:57',SvAmazonRecoveryWindow::effectiveDeadlineAt($late)?->format('Y-m-d H:i:s'),'Explicit deadline must not extend recovery beyond D+90.');
 echo "recovery-window-test: OK\n";
