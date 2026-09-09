@@ -87,6 +87,7 @@ final class SvAmazonReturnsRemoteBridge
             'case' => [
                 'order_id' => (string)($case['amazon_order_id'] ?? ''),
                 'order_item_id' => (string)($case['amazon_order_item_id'] ?? ''),
+                'asin' => (string)($case['asin'] ?? ''),
                 'safe_t_id' => self::nullableString($case['safe_t_id'] ?? null),
                 'support_case_id' => self::nullableString($case['support_case_id'] ?? null),
                 'quantity_refunded' => (int)($case['quantity_refunded'] ?? 0),

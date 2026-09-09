@@ -62,6 +62,14 @@ final class SvAmazonSafeTDecisionEngine
         if($requestedWait!==null)return $requestedWait;
         if($safeTId==='' && $reimbursementBackedUnknownRefund && ($policy['eligible']??false)===true
             && $this->hasFreshConfirmedResidual($case,$timeline,$now)){
+            if($this->safeTSubmissionWindowExpired($case,$now)){
+                return [
+                    'action'=>'SELLER_SUPPORT_OPEN',
+                    'reason'=>'SAFE_T_WINDOW_EXPIRED_RESIDUAL_UNPAID',
+                    'case_id'=>$caseId,
+                    'idempotency_key'=>hash('sha256','seller-support-open|safe-t-window-expired|'.$caseId.'|'.$orderId),
+                ];
+            }
             $policyId=(string)($policy['policy_version_id']??'unknown');
             $eligibilityAt=(string)($policy['eligibility_at']??'unknown');
             return [
@@ -168,6 +176,12 @@ final class SvAmazonSafeTDecisionEngine
             'reason'=>$reason,
             'idempotency_key'=>hash('sha256','safe-t-submit|'.$caseId.'|'.$orderId.'|'.$policyId.'|'.$eligibilityAt),
         ];
+    }
+
+    private function safeTSubmissionWindowExpired(array $case,DateTimeImmutable $now): bool
+    {
+        $refundAt=SvAmazonRequestedWait::timestamp($case['refund_at']??null);
+        return $refundAt!==null && $now>$refundAt->modify('+75 days');
     }
 
     /** Guard a learned effect with the same non-negotiable business invariants. */

@@ -256,11 +256,19 @@ function narrativeFor(job, max = 1000) {
   const order = text(job.case?.order_id);
   const safeT = text(job.case?.safe_t_id);
   const decision = text(job.payload?.decision?.reason);
-  if (job.action === 'SELLER_SUPPORT_OPEN' || job.action === 'SELLER_SUPPORT_UPDATE') {
+  if (job.action === 'SELLER_SUPPORT_OPEN' && safeT) {
     return (`SAFE-T ${safeT}, pedido ${order}. A devolução permanece não recebida fisicamente pelo vendedor. `
       + `A nova negativa repetiu a justificativa sem responder aos fatos e às evidências apresentados. `
       + `Solicito revisão manual por equipe especializada. Se a Amazon considera que houve devolução, `
       + `favor informar data, transportadora, rastreio, endereço de entrega e comprovante de entrega. ${decision}`).slice(0, max);
+  }
+  if (job.action === 'SELLER_SUPPORT_UPDATE' && safeT) {
+    return (`SAFE-T ${safeT}, pedido ${order}. A devolução permanece não recebida fisicamente pelo vendedor. `
+      + `Solicito revisão manual por equipe especializada. ${decision}`).slice(0, max);
+  }
+  if (job.action === 'SELLER_SUPPORT_OPEN' || job.action === 'SELLER_SUPPORT_UPDATE') {
+    return (`Pedido ${order}. A Amazon efetuou o reembolso ao comprador e ainda existe saldo pendente ao vendedor. `
+      + `Solicito análise manual e ressarcimento do valor devido, considerando o fluxo de devolução e as evidências do pedido. ${decision}`).slice(0, max);
   }
   if (job.action === 'SAFE_T_APPEAL') {
     return (`Pedido ${order}, SAFE-T ${safeT}. O produto não foi recebido fisicamente pelo vendedor. `
@@ -474,6 +482,11 @@ async function supportOpen(cdp, job) {
     await sleep(4500);
   }
   const narrative = narrativeFor(job, 9000);
+  const asin = text(job.case?.asin);
+  const asinRequired = await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-input[placeholder="Inserir ASIN"]');if(h&&!h.hasAttribute('disabled'))return true}return false})()`);
+  if (asinRequired && (!asin || !(await cdp.setFrameKat('kat-input[placeholder="Inserir ASIN"]', asin)))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ASIN_INPUT_MISSING', evidence: await evidence(cdp, 'help-v1') });
+  }
   const textareaReady = await cdp.waitFor(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-textarea.meld-text-area');if(h&&!h.hasAttribute('disabled'))return true}return false})()`, 20000);
   if (!textareaReady) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_TEXTAREA_UNAVAILABLE', evidence: await evidence(cdp, 'help-v1') });
