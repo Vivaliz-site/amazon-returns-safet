@@ -67,6 +67,7 @@ final class SvAmazonSafeTDecisionEngine
                 return [
                     'action'=>'SELLER_SUPPORT_OPEN',
                     'reason'=>'SAFE_T_WINDOW_EXPIRED_RESIDUAL_UNPAID',
+                    'support_route'=>'GENERAL_ORDER_SUPPORT',
                     'case_id'=>$caseId,
                     'idempotency_key'=>hash('sha256','seller-support-open|safe-t-window-expired|'.$caseId.'|'.$orderId),
                 ];
@@ -304,6 +305,7 @@ final class SvAmazonSafeTDecisionEngine
         return [
             'action'=>'SELLER_SUPPORT_OPEN',
             'reason'=>'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION',
+            'support_route'=>'FBA_RETURNS_REIMBURSEMENT',
             'case_id'=>$caseId,
             'idempotency_key'=>hash('sha256','classic-fba-support-open|'.$caseId.'|'.(trim((string)($case['support_case_id']??'')) ?: 'initial')),
         ];
