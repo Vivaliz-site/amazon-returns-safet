@@ -7,7 +7,9 @@ $bridge=(string)file_get_contents($root.'/includes/amazon-returns/BridgeService.
 $outbox=(string)file_get_contents($root.'/includes/amazon-returns/TenantOutbox.php');
 
 ssjAssert(str_contains($worker,'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN'),
-    'Seller Support worker must supersede a stale classic-FBA open after physical receipt.');
+    'Seller Support worker must supersede a stale classic-FBA open after clean physical receipt.');
+ssjAssert(!str_contains($worker,"['RECEIVED_OK', 'RECEIVED_DISCREPANT'].includes(physicalStatus)"),
+    'Discrepant physical receipts must not be superseded as clean receipts.');
 ssjAssert(str_contains($bridge,'markSuperseded'),
     'BridgeService must persist SUPERSEDED without applying external-success case mutations.');
 ssjAssert(str_contains($outbox,'function markSuperseded'),
