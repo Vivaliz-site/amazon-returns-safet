@@ -165,7 +165,7 @@ final class SvAmazonSpApiEventSink
         $refund = self::refundObservation($transactions);
         $quantity = $single
             ? max(1, (int)($items[0]['quantityOrdered'] ?? $items[0]['quantity'] ?? 1)) : 0;
-        if ($single && $quantity === 1 && $refund !== null && $caseIds !== []) {
+        if ($single && $refund !== null && $caseIds !== []) {
             $refundEventId = $p->events->append([
                 'case_id'=>$caseIds[0],
                 'event_type'=>'REFUND_CONFIRMED',
@@ -177,15 +177,7 @@ final class SvAmazonSpApiEventSink
                     . implode(',', $refund['transaction_ids'])
                 ),
                 'occurred_at'=>$refund['seller_debit_at'],
-                'payload'=>[
-                    'quantity_refunded'=>$quantity,
-                    'refund_initiator'=>$refund['refund_initiator'],
-                    'program'=>self::programFromOrder($order),
-                    'seller_debit_at'=>$refund['seller_debit_at'],
-                    'refund_at'=>$refund['refund_at'],
-                    'refund_amount'=>$refund['refund_amount'],
-                    'financial_truth'=>true,
-                ],
+                'payload'=>self::financialRefundPayload($refund, self::programFromOrder($order), $quantity),
                 'evidence_sha256'=>null,
             ]);
             $p->cases->update($caseIds[0], [
@@ -193,6 +185,21 @@ final class SvAmazonSpApiEventSink
             ]);
         }
         return ['cases'=>$caseIds,'single_item'=>$single,'refund_event_id'=>$refundEventId];
+    }
+
+    /** @return array<string,mixed> */
+    private static function financialRefundPayload(array $refund,string $program,int $quantity): array
+    {
+        $payload=[
+            'refund_initiator'=>$refund['refund_initiator'],
+            'program'=>$program,
+            'seller_debit_at'=>$refund['seller_debit_at'],
+            'refund_at'=>$refund['refund_at'],
+            'refund_amount'=>$refund['refund_amount'],
+            'financial_truth'=>true,
+        ];
+        if($quantity===1)$payload['quantity_refunded']=1;
+        return $payload;
     }
 
     /**
