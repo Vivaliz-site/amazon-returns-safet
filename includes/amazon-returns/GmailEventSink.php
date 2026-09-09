@@ -42,12 +42,16 @@ final class SvAmazonGmailEventSink
             }
             $quantityOrdered = filter_var($event['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
             $quantityRefunded = filter_var($event['quantity_refunded'] ?? null, FILTER_VALIDATE_INT);
+            $existingOrdered = filter_var($existing['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
             if ($quantityOrdered !== false && $quantityOrdered > 0
                 && (int)($existing['quantity_ordered'] ?? 0) <= 0) {
                 $patch['quantity_ordered'] = $quantityOrdered;
             }
-            if ($quantityOrdered !== false && $quantityOrdered > 0
-                && $quantityRefunded !== false && $quantityRefunded >= 0 && $quantityRefunded <= $quantityOrdered
+            $knownOrdered = $quantityOrdered !== false && $quantityOrdered > 0
+                ? $quantityOrdered
+                : ($existingOrdered !== false && $existingOrdered > 0 ? $existingOrdered : null);
+            if ($knownOrdered !== null
+                && $quantityRefunded !== false && $quantityRefunded >= 0 && $quantityRefunded <= $knownOrdered
                 && (int)($existing['quantity_refunded'] ?? 0) <= 0) {
                 $patch['quantity_refunded'] = $quantityRefunded;
             }
@@ -248,7 +252,8 @@ final class SvAmazonGmailEventSink
         if (strtoupper(trim((string)($event['event_type'] ?? ''))) !== 'REFUND_ISSUED_EMAIL') return null;
         $ordered = filter_var($event['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
         $refunded = filter_var($event['quantity_refunded'] ?? null, FILTER_VALIDATE_INT);
-        if ($ordered === false || $ordered < 1 || $refunded === false || $refunded < 1 || $refunded > $ordered) return null;
+        if ($refunded === false || $refunded < 1) return null;
+        if ($ordered !== false && ($ordered < 1 || $refunded > $ordered)) return null;
         $sourceIdentity = $sourceEventId !== '' ? $sourceEventId : trim((string)($event['idempotency_key'] ?? ''));
         if ($sourceIdentity === '') return null;
         $evidence = isset($event['content_sha256']) && is_string($event['content_sha256'])
@@ -259,14 +264,14 @@ final class SvAmazonGmailEventSink
             'event_type'=>'REFUND_QUANTITY_CONFIRMED',
             'source'=>'GMAIL',
             'source_event_id'=>$sourceEventId !== '' ? $sourceEventId : null,
-            'idempotency_key'=>hash('sha256', implode('|', ['gmail-refund-quantity',$orderId,$sourceIdentity,$ordered,$refunded])),
+            'idempotency_key'=>hash('sha256', implode('|', ['gmail-refund-quantity',$orderId,$sourceIdentity,$ordered === false ? 'unknown' : $ordered,$refunded])),
             'occurred_at'=>$occurredAt,
-            'payload'=>[
+            'payload'=>array_filter([
                 'order_id'=>$orderId,
-                'quantity_ordered'=>$ordered,
+                'quantity_ordered'=>$ordered === false ? null : $ordered,
                 'quantity_refunded'=>$refunded,
                 'financial_truth'=>false,
-            ],
+            ],static fn(mixed $value,string $key):bool=>$key !== 'quantity_ordered' || $value !== null,ARRAY_FILTER_USE_BOTH),
             'evidence_sha256'=>$evidence,
         ];
     }
@@ -315,7 +320,8 @@ final class SvAmazonGmailEventSink
         $ordered = filter_var($event['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
         $refunded = filter_var($event['quantity_refunded'] ?? null, FILTER_VALIDATE_INT);
         if ($ordered !== false && $ordered > 0) $payload['quantity_ordered']=$ordered;
-        if ($ordered !== false && $ordered > 0 && $refunded !== false && $refunded >= 0 && $refunded <= $ordered) {
+        if ($refunded !== false && $refunded >= 0
+            && ($ordered === false || $ordered < 1 || $refunded <= $ordered)) {
             $payload['quantity_refunded']=$refunded;
         }
         return $payload;
