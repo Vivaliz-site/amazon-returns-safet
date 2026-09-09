@@ -21,7 +21,13 @@ const text = value => String(value ?? '').replace(/\s+/g, ' ').trim();
 const sha = value => createHash('sha256').update(String(value ?? '')).digest('hex');
 
 function token() {
-  const value = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+  const direct = String(process.env.SELLER_CENTRAL_BRIDGE_TOKEN ?? '').trim();
+  if (direct) {
+    if (direct.length < 32) throw new Error('bridge token missing or too short');
+    return direct;
+  }
+  let value = '';
+  try { value = fs.readFileSync(TOKEN_FILE, 'utf8').trim(); } catch {}
   if (value.length < 32) throw new Error('bridge token missing or too short');
   return value;
 }

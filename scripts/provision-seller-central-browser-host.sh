@@ -55,6 +55,7 @@ chown root:www-data "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
 
 install -o root -g root -m 0644 "$SOURCE_ROOT/deploy/systemd/amazon-returns-seller-central-browser.service" /etc/systemd/system/amazon-returns-seller-central-browser.service
+install -o root -g root -m 0644 "$SOURCE_ROOT/deploy/systemd/amazon-returns-seller-central-auth-check.service" /etc/systemd/system/amazon-returns-seller-central-auth-check.service
 install -o root -g root -m 0644 "$SOURCE_ROOT/deploy/systemd/amazon-returns-seller-central-browser.timer" /etc/systemd/system/amazon-returns-seller-central-browser.timer
 systemctl daemon-reload
 if [[ "$ENABLE_TIMER" -eq 1 ]]; then
