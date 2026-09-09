@@ -7,8 +7,8 @@ repo_name='Vivaliz-site/amazon-returns-safet'
 
 [[ "$(id -u)" -eq 0 ]] || { echo 'auto-deploy requires root' >&2; exit 2; }
 [[ -d "$repo/.git" ]] || { echo 'target checkout missing' >&2; exit 2; }
-if ! runuser -u ubuntu -- git -C "$repo" diff --quiet || ! runuser -u ubuntu -- git -C "$repo" diff --cached --quiet; then
-    echo 'auto_deploy_skipped=dirty_checkout'
+if [[ -n "$(runuser -u ubuntu -- git -C "$repo" status --porcelain)" ]]; then
+    echo auto_deploy_skipped=dirty_checkout
     exit 0
 fi
 
