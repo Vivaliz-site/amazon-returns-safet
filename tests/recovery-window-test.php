@@ -10,6 +10,7 @@ $fallback=['refund_at'=>'2026-05-10 07:27:57','seller_debit_at'=>null];
 rwSame('2026-08-08 07:27:57',SvAmazonRecoveryWindow::deadlineAt($fallback)?->format('Y-m-d H:i:s'),'Refund timestamp must be fallback basis.');
 $deadline=new DateTimeImmutable('2026-08-09 07:27:57',new DateTimeZone('UTC'));
 rwSame('2026-08-09 07:27:57',SvAmazonRecoveryWindow::nextDailyRetryAt(new DateTimeImmutable('2026-08-08 12:00:00',new DateTimeZone('UTC')),$deadline)?->format('Y-m-d H:i:s'),'Final retry may land exactly on D+90.');
+rwSame(null,SvAmazonRecoveryWindow::nextDailyRetryAt(new DateTimeImmutable('2026-08-09 07:27:57',new DateTimeZone('UTC')),$deadline),'No retry may be scheduled after an attempt at exactly D+90.');
 rwSame(null,SvAmazonRecoveryWindow::nextDailyRetryAt(new DateTimeImmutable('2026-08-09 07:27:58',new DateTimeZone('UTC')),$deadline),'No retry may be scheduled after D+90.');
 $short=array_replace($case,['appeal_deadline_at'=>'2026-06-01 00:00:00']);
 rwSame('2026-06-01 00:00:00',SvAmazonRecoveryWindow::effectiveDeadlineAt($short)?->format('Y-m-d H:i:s'),'Shorter explicit Amazon deadline must win.');
