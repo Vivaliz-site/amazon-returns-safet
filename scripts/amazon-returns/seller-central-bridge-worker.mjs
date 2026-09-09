@@ -480,7 +480,7 @@ async function supportOpen(cdp, job) {
   const decisionReason = text(job.payload?.decision?.reason).toUpperCase();
   const physicalStatus = text(job.case?.physical_status).toUpperCase();
   if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION'
-      && ['RECEIVED_OK', 'RECEIVED_DISCREPANT'].includes(physicalStatus)) {
+      && physicalStatus === 'RECEIVED_OK') {
     return bridgeResult('SUPERSEDED', {
       reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN',
       retry_safe: false,
