@@ -81,11 +81,15 @@ final class SvAmazonReturnsRuntime
         $reviewNotificationReady=filter_var($reviewNotifyEmail,FILTER_VALIDATE_EMAIL)!==false;
         $readiness=$config->readiness();
         $bridgeRequired=$config->enabled() && (($readiness['seller_central_bridge']['ready'] ?? false)===true);
+        $primaryStatusWorker=trim($config->get(
+            'SELLER_CENTRAL_PRIMARY_STATUS_WORKER_ID','vm-a1-safe-t-status'
+        ));
         $browserLiveness=SvAmazonBridgeLiveness::evaluate(
             $p->cursors->load('SELLER_CENTRAL','browser_auth'),
             new DateTimeImmutable('now',new DateTimeZone('UTC')),
             $bridgeRequired,
-            $p->cursors->load('SELLER_CENTRAL','read_process_heartbeat')
+            $p->cursors->load('SELLER_CENTRAL','read_process_heartbeat'),
+            $primaryStatusWorker
         );
         $healthStatus=($browserLiveness['status'] ?? '')==='DEGRADED' ? 'DEGRADED' : 'OK';
         return [

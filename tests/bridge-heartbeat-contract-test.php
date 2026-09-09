@@ -17,11 +17,17 @@ bhAssert(str_contains($status,"'browser_auth'"),'Authenticated browser checks mu
 bhAssert(str_contains($bridgeApi,"\$input['worker_id']"),'Write bridge endpoint must pass worker identity to heartbeat service.');
 bhAssert(str_contains($statusApi,"\$input['worker_id']"),'Read bridge endpoint must pass worker identity to heartbeat service.');
 bhAssert(str_contains($statusApi,"\$input['auth_status']"),'Status endpoint must pass non-secret browser auth outcome.');
+bhAssert(str_contains($statusApi,'SELLER_CENTRAL_PRIMARY_STATUS_WORKER_ID'),'Status heartbeat must be bound to the configured primary VM worker.');
+bhAssert(str_contains($statusApi,"'IGNORED_WORKER'"),'Retired bridge workers must be ignored before they can replace primary liveness.');
+$ignoredWorkerGuard=strpos($statusApi,"'IGNORED_WORKER'");
+$statusHeartbeatCall=strpos($statusApi,'$service->heartbeat');
+bhAssert($ignoredWorkerGuard!==false && $statusHeartbeatCall!==false && $ignoredWorkerGuard<$statusHeartbeatCall,'Primary worker guard must execute before heartbeat persistence.');
 bhAssert(str_contains($reader,'--auth-check'),'Read worker must provide an authenticated browser health check.');
 bhAssert(str_contains($reader,'auth_status: auth.status'),'Auth check must report the non-secret auth result to the backend.');
 bhAssert(str_contains($runner,'--auth-check'),'Daily browser cycle must authenticate before draining jobs.');
 bhAssert(str_contains($runtime,'BridgeLiveness.php'),'Runtime health must load authenticated bridge liveness logic.');
 bhAssert(str_contains($runtime,"'seller_central_browser'"),'Health payload must expose Seller Central browser liveness.');
+bhAssert(str_contains($runtime,'SELLER_CENTRAL_PRIMARY_STATUS_WORKER_ID'),'Runtime health must validate the configured primary VM worker.');
 bhAssert(str_contains($runtime,"'DEGRADED'"),'Health must support a degraded state.');
 bhAssert(str_contains($daemon,"in_array('DEGRADED',\$statuses,true)"),'Daemon aggregate status must preserve DEGRADED health.');
 echo "bridge-heartbeat-contract-test: OK\n";
