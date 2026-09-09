@@ -10,6 +10,8 @@ $timer=$root.'/deploy/systemd/amazon-returns-seller-central-browser.timer';
 foreach([$runner,$provision,$service,$authService,$timer] as $path)lbAssert(is_file($path),'Missing Linux browser host artifact: '.basename($path));
 $run=(string)file_get_contents($runner);
 lbAssert(substr_count($run,'--drain')>=2,'Daily runner must drain read and write workers serially.');
+lbAssert(str_contains($run,'--bridge-once'),'Runner must expose a one-write canary mode without changing the normal scheduled drain.');
+lbAssert(str_contains($run,'bridge_mode="--once"'),'Canary mode must limit the write worker to one job.');
 lbAssert(strpos($run,'seller-central-safe-t-read-worker.mjs')<strpos($run,'seller-central-bridge-worker.mjs'),'Daily runner must refresh Seller Central status before draining writes.');
 lbAssert(str_contains($run,'SELLER_CENTRAL_BROWSER'),'Runner must use a configurable browser executable.');
 lbAssert(str_contains($run,'SELLER_CENTRAL_PROFILE'),'Runner must use a persistent dedicated profile.');
