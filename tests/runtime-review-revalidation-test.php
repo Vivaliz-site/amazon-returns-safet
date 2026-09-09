@@ -30,11 +30,11 @@ foreach (['seller_central', 'sp_api', 'financial', 'scheduler', 'review_operatio
         throw new RuntimeException('Decision-safe task planning dropped required task: ' . $required);
     }
 }
-if (!($positions['seller_central'] < $positions['scheduler']
-    && $positions['sp_api'] < $positions['scheduler']
+if (!($positions['sp_api'] < $positions['financial']
     && $positions['financial'] < $positions['scheduler']
+    && $positions['scheduler'] < $positions['seller_central']
     && $positions['scheduler'] < $positions['review_operations'])) {
-    throw new RuntimeException('Evidence refresh must run before scheduler, and scheduler before review reminders: ' . json_encode($due));
+    throw new RuntimeException('Fresh read evidence must precede decisions; write execution and reminders must follow decisions: ' . json_encode($due));
 }
 
 $due = SvAmazonReturnsRuntime::decisionSafeOrder(['bootstrap', 'gmail']);
@@ -43,6 +43,11 @@ if (!in_array('scheduler', $due, true)) {
 }
 if (array_search('gmail', $due, true) > array_search('scheduler', $due, true)) {
     throw new RuntimeException('Gmail evidence must be ingested before scheduler revalidation.');
+}
+
+$due = SvAmazonReturnsRuntime::decisionSafeOrder(['bootstrap', 'seller_central']);
+if (in_array('scheduler', $due, true)) {
+    throw new RuntimeException('A write-worker-only cycle must not manufacture a decision cycle without new read evidence.');
 }
 
 if (!method_exists(SvAmazonReturnsRuntime::class, 'decisionStackRevision')) {
