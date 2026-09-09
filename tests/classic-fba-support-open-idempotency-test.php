@@ -28,6 +28,8 @@ $first=$engine->nextAction($case,[$finance1],$policy,new DateTimeImmutable('2026
 $second=$engine->nextAction($case,[$finance1,$finance2],$policy,new DateTimeImmutable('2026-09-09 10:40:00',new DateTimeZone('UTC')));
 cfsSame('SELLER_SUPPORT_OPEN',$first['action']??null,'First verified unpaid FBA balance must open Seller Support.');
 cfsSame('SELLER_SUPPORT_OPEN',$second['action']??null,'A repeated fresh finance check still represents the same support-open intent.');
+cfsSame('FBA_RETURNS_REIMBURSEMENT',$first['support_route']??null,'Classic FBA recovery must explicitly select the FBA reimbursement route.');
+cfsSame('FBA_RETURNS_REIMBURSEMENT',$second['support_route']??null,'Repeated FBA recovery must keep the same explicit support route.');
 cfsAssert(($first['idempotency_key']??'')!=='','Support-open decision must carry an idempotency key.');
 cfsSame($first['idempotency_key'],$second['idempotency_key'],'Repeated finance receipts with unchanged unpaid balance must not create a new Seller Support opening.');
 
@@ -36,6 +38,7 @@ $closed['support_case_id']='CASE-OLD-123';
 $closed['support_case_status']='CLOSED';
 $nextEpisode=$engine->nextAction($closed,[$finance2],$policy,new DateTimeImmutable('2026-09-09 10:40:00',new DateTimeZone('UTC')));
 cfsSame('SELLER_SUPPORT_OPEN',$nextEpisode['action']??null,'A closed prior support case may start a new recovery episode.');
+cfsSame('FBA_RETURNS_REIMBURSEMENT',$nextEpisode['support_route']??null,'A later FBA recovery episode must keep the FBA reimbursement route.');
 cfsAssert(($nextEpisode['idempotency_key']??'')!==($first['idempotency_key']??''),'A new support episode after a closed case must receive a new idempotency key.');
 
 echo "classic-fba-support-open-idempotency-test: OK\n";
