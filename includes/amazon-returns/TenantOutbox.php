@@ -336,12 +336,16 @@ final class SvAmazonTenantReturnsOutbox
                 return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'MAX_ATTEMPTS_EXHAUSTED'];
             }
             $next = $now->modify('+1 day');
-            if ($next > $deadline) $next = $deadline;
+            if ($next >= $deadline) {
+                return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'DEADLINE_WOULD_EXPIRE'];
+            }
             return ['status'=>'RETRY','next_at'=>$next,'reason'=>'RECOVERY_WINDOW_RETRY'];
         }
         $delay = min(3600, 60 * (2 ** max(0, $attempt - 1)));
         $next = $now->modify('+' . $delay . ' seconds');
-        if ($deadline instanceof DateTimeImmutable && $next > $deadline) $next = $deadline;
+        if ($deadline instanceof DateTimeImmutable && $next >= $deadline) {
+            return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'DEADLINE_WOULD_EXPIRE'];
+        }
         return ['status'=>'RETRY','next_at'=>$next,'reason'=>'TRANSIENT_FAILURE'];
     }
 
