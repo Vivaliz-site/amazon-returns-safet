@@ -47,11 +47,29 @@ final class SvAmazonReturnsRuntime
         return hash('sha256',implode('|',$parts));
     }
 
+    public static function gmailEvidenceRevision(): string
+    {
+        $files=[
+            __DIR__.'/GmailParser.php',
+            __DIR__.'/GmailEventSink.php',
+        ];
+        $parts=[];
+        foreach($files as $file){
+            $hash=@hash_file('sha256',$file);
+            if(!is_string($hash) || $hash===''){
+                throw new RuntimeException('Unable to fingerprint Gmail evidence stack.');
+            }
+            $parts[]=basename($file).':'.$hash;
+        }
+        return hash('sha256',implode('|',$parts));
+    }
+
     /** @return list<string> */
     public static function dueTasks(
         array $state,
         DateTimeImmutable $now,
-        ?string $decisionStackRevision=null
+        ?string $decisionStackRevision=null,
+        ?string $gmailEvidenceRevision=null
     ): array {
         $now=$now->setTimezone(new DateTimeZone('UTC'));
         $due=['bootstrap'];
@@ -75,6 +93,13 @@ final class SvAmazonReturnsRuntime
             && ($state['decision_stack_revision'] ?? null)!==$decisionStackRevision
         ){
             $due[]='scheduler';
+        }
+        if(
+            is_string($gmailEvidenceRevision)
+            && $gmailEvidenceRevision!==''
+            && ($state['gmail_evidence_revision'] ?? null)!==$gmailEvidenceRevision
+        ){
+            $due[]='gmail_refund_reconciliation';
         }
         return array_values(array_unique($due));
     }
