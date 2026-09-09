@@ -477,6 +477,15 @@ async function resolveOrderAsin(cdp, orderId) {
 async function supportOpen(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
+  const decisionReason = text(job.payload?.decision?.reason).toUpperCase();
+  const physicalStatus = text(job.case?.physical_status).toUpperCase();
+  if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION'
+      && ['RECEIVED_OK', 'RECEIVED_DISCREPANT'].includes(physicalStatus)) {
+    return bridgeResult('SUPERSEDED', {
+      reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN',
+      retry_safe: false,
+    });
+  }
   const existing = await findSupportCase(cdp, job);
   if (existing) return bridgeResult('ALREADY_EXISTS', { external_id: existing, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   const orderId = text(job.case?.order_id);
@@ -485,7 +494,9 @@ async function supportOpen(cdp, job) {
   await cdp.navigate(HELP_URL, 6000);
   const auth = await authGate(cdp, 'help-v1', HELP_URL, 6000);
   if (auth) return auth;
-  if (!(await clickFrameIncludes(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon'))) {
+  const fbaRouteOpened = await clickFrameIncludes(cdp, 'FBA Returns Reimbursement')
+    || await clickFrameIncludes(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon');
+  if (!fbaRouteOpened) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_FBA_CARD_MISSING', evidence: await evidence(cdp, 'help-v1') });
   }
   await sleep(3500);

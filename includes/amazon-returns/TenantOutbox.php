@@ -216,6 +216,20 @@ final class SvAmazonTenantReturnsOutbox
         );
     }
 
+    public function markSuperseded(int $id,string $reason): void
+    {
+        $id=$this->positiveId($id,'outbox ID');
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_outbox SET status='SUPERSEDED',locked_at=NULL,last_error=:last_error,updated_at=UTC_TIMESTAMP() "
+            . "WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status='PROCESSING'"
+        );
+        $stmt->execute($this->scopeParams([
+            ':id'=>$id,
+            ':last_error'=>$this->errorMessage($reason),
+        ]));
+        if($stmt->rowCount()!==1)throw new RuntimeException('Scoped outbox supersede failed.');
+    }
+
     public function releaseUnprocessed(int $id): void
     {
         $this->updateOne(
