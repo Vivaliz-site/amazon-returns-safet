@@ -12,9 +12,10 @@ final class SvAmazonRecoveryWindow
         return $basis?->add(new DateInterval('P'.self::DAYS.'D'));
     }
 
-    public static function effectiveDeadlineAt(array $case): ?DateTimeImmutable
+    public static function effectiveDeadlineAt(array $case, string $action = ''): ?DateTimeImmutable
     {
         $recovery = self::deadlineAt($case);
+        if (strtoupper(trim($action)) !== 'SAFE_T_APPEAL') return $recovery;
         $explicit = self::timestamp($case['appeal_deadline_at'] ?? null);
         if (!$explicit instanceof DateTimeImmutable) return $recovery;
         if (!$recovery instanceof DateTimeImmutable) return $explicit;
@@ -45,6 +46,8 @@ final class SvAmazonRecoveryWindow
         if (!is_string($value) || trim($value) === '') return null;
         $text = trim($value);
         $date = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $text, new DateTimeZone('UTC'));
-        return $date instanceof DateTimeImmutable && $date->format('Y-m-d H:i:s') === $text ? $date : null;
+        if ($date instanceof DateTimeImmutable && $date->format('Y-m-d H:i:s') === $text) return $date;
+        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/', $text) !== 1) return null;
+        try { return (new DateTimeImmutable($text))->setTimezone(new DateTimeZone('UTC')); } catch (Throwable) { return null; }
     }
 }
