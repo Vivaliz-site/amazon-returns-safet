@@ -40,6 +40,17 @@ final class SvAmazonGmailEventSink
                 && ($existingProgram === '' || $existingProgram === SvAmazonReturnPrograms::UNKNOWN)) {
                 $patch['program'] = $program;
             }
+            $quantityOrdered = filter_var($event['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
+            $quantityRefunded = filter_var($event['quantity_refunded'] ?? null, FILTER_VALIDATE_INT);
+            if ($quantityOrdered !== false && $quantityOrdered > 0
+                && (int)($existing['quantity_ordered'] ?? 0) <= 0) {
+                $patch['quantity_ordered'] = $quantityOrdered;
+            }
+            if ($quantityOrdered !== false && $quantityOrdered > 0
+                && $quantityRefunded !== false && $quantityRefunded >= 0 && $quantityRefunded <= $quantityOrdered
+                && (int)($existing['quantity_refunded'] ?? 0) <= 0) {
+                $patch['quantity_refunded'] = $quantityRefunded;
+            }
             return $patch;
         }
         if ($type === 'FBA_SHIPMENT_EMAIL') {
@@ -107,6 +118,8 @@ final class SvAmazonGmailEventSink
         if ($initiatorEvidence !== null) $p->events->append($initiatorEvidence);
         $programEvidence = self::programEvidence($caseId, $event, $orderId, $occurredAt, $sourceEventId);
         if ($programEvidence !== null) $p->events->append($programEvidence);
+        $quantityEvidence = self::refundQuantityEvidence($caseId, $event, $orderId, $occurredAt, $sourceEventId);
+        if ($quantityEvidence !== null) $p->events->append($quantityEvidence);
         return $primaryId;
     }
 
@@ -224,6 +237,40 @@ final class SvAmazonGmailEventSink
         ];
     }
 
+    /** @return array<string,mixed>|null */
+    private static function refundQuantityEvidence(
+        int $caseId,
+        array $event,
+        string $orderId,
+        string $occurredAt,
+        string $sourceEventId
+    ): ?array {
+        if (strtoupper(trim((string)($event['event_type'] ?? ''))) !== 'REFUND_ISSUED_EMAIL') return null;
+        $ordered = filter_var($event['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
+        $refunded = filter_var($event['quantity_refunded'] ?? null, FILTER_VALIDATE_INT);
+        if ($ordered === false || $ordered < 1 || $refunded === false || $refunded < 1 || $refunded > $ordered) return null;
+        $sourceIdentity = $sourceEventId !== '' ? $sourceEventId : trim((string)($event['idempotency_key'] ?? ''));
+        if ($sourceIdentity === '') return null;
+        $evidence = isset($event['content_sha256']) && is_string($event['content_sha256'])
+            && preg_match('/^[a-f0-9]{64}$/i', $event['content_sha256']) === 1
+            ? strtolower($event['content_sha256']) : null;
+        return [
+            'case_id'=>$caseId,
+            'event_type'=>'REFUND_QUANTITY_CONFIRMED',
+            'source'=>'GMAIL',
+            'source_event_id'=>$sourceEventId !== '' ? $sourceEventId : null,
+            'idempotency_key'=>hash('sha256', implode('|', ['gmail-refund-quantity',$orderId,$sourceIdentity,$ordered,$refunded])),
+            'occurred_at'=>$occurredAt,
+            'payload'=>[
+                'order_id'=>$orderId,
+                'quantity_ordered'=>$ordered,
+                'quantity_refunded'=>$refunded,
+                'financial_truth'=>false,
+            ],
+            'evidence_sha256'=>$evidence,
+        ];
+    }
+
     /** @return array<string,mixed> */
     private static function payload(array $event, string $orderId): array
     {
@@ -264,6 +311,12 @@ final class SvAmazonGmailEventSink
                 throw new UnexpectedValueException('Invalid refund_initiator in Gmail event.');
             }
             $payload['refund_initiator']=$initiator;
+        }
+        $ordered = filter_var($event['quantity_ordered'] ?? null, FILTER_VALIDATE_INT);
+        $refunded = filter_var($event['quantity_refunded'] ?? null, FILTER_VALIDATE_INT);
+        if ($ordered !== false && $ordered > 0) $payload['quantity_ordered']=$ordered;
+        if ($ordered !== false && $ordered > 0 && $refunded !== false && $refunded >= 0 && $refunded <= $ordered) {
+            $payload['quantity_refunded']=$refunded;
         }
         return $payload;
     }

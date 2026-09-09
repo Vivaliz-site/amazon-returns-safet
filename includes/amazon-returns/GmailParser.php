@@ -33,6 +33,8 @@ final class SvAmazonGmailParser
         $currency = null;
         $refundInitiator = null;
         $program = null;
+        $quantityOrdered = null;
+        $quantityRefunded = null;
         $review = null;
 
         $isReviewChannel = stripos($from, 'safe-t-review@amazon.com') !== false
@@ -51,6 +53,7 @@ final class SvAmazonGmailParser
             if (preg_match('/(?:Log[ií]stica|Rede\s+log[ií]stica\s+da\s+Amazon)\s*:\s*Enviado\s+pela\s+Amazon\b/iu', $body) === 1) {
                 $program = 'FBA';
             }
+            [$quantityOrdered,$quantityRefunded] = $this->extractRefundQuantities($body);
         } elseif (preg_match('/Notifica(?:ç|c)ão\s+de\s+autoriza(?:ç|c)ão\s+de\s+devolu(?:ç|c)ão\s+referente\s+ao\s+pedido/iu', $subject) === 1) {
             $eventType = 'RETURN_AUTHORIZED_EMAIL';
         } elseif (preg_match('/Sua\s+solicita(?:ç|c)ão\s+do\s+SAFE-T\s+([0-9]+-[0-9]+-[0-9]+)\s+foi\s+registrada/iu', $subject, $match) === 1) {
@@ -79,6 +82,8 @@ final class SvAmazonGmailParser
             'currency'=>$currency,
             'program'=>$program,
             'refund_initiator'=>$refundInitiator,
+            'quantity_ordered'=>$quantityOrdered,
+            'quantity_refunded'=>$quantityRefunded,
             'review_outcome'=>$review['outcome'] ?? null,
             'review_suggested_action'=>$review['suggested_action'] ?? null,
             'review_reason'=>$review['reason'] ?? null,
@@ -140,6 +145,38 @@ final class SvAmazonGmailParser
             ];
         }
         return $events;
+    }
+
+    /** @return array{0:?int,1:?int} */
+    private function extractRefundQuantities(string $body): array
+    {
+        $rawLines=preg_split('/\R/u',$body) ?: [];
+        $lines=[];
+        foreach($rawLines as $raw){
+            $line=trim((string)$raw);
+            if($line!=='')$lines[]=$line;
+        }
+        $asinHeader=$orderedHeader=$refundedHeader=$reasonHeader=null;
+        foreach($lines as $index=>$line){
+            if($asinHeader===null && preg_match('/^ASIN$/iu',$line)===1)$asinHeader=$index;
+            if($orderedHeader===null && preg_match('/^Quantidade\s+do\s+pedido$/iu',$line)===1)$orderedHeader=$index;
+            if($refundedHeader===null && preg_match('/^Quantidade\s+da\s+devolu(?:ç|c)ão$/iu',$line)===1)$refundedHeader=$index;
+            if($reasonHeader===null && preg_match('/^Motivo\s+para\s+reembolso$/iu',$line)===1)$reasonHeader=$index;
+        }
+        if($asinHeader===null || $orderedHeader===null || $refundedHeader===null || $reasonHeader===null
+            || $orderedHeader<$asinHeader || $refundedHeader<$asinHeader || $reasonHeader<$refundedHeader){
+            return [null,null];
+        }
+        $dataStart=$reasonHeader+1;
+        $orderedIndex=$dataStart+($orderedHeader-$asinHeader);
+        $refundedIndex=$dataStart+($refundedHeader-$asinHeader);
+        $ordered=$lines[$orderedIndex]??null;
+        $refunded=$lines[$refundedIndex]??null;
+        if(!is_string($ordered) || preg_match('/^[0-9]+$/D',$ordered)!==1
+            || !is_string($refunded) || preg_match('/^[0-9]+$/D',$refunded)!==1){
+            return [null,null];
+        }
+        return [(int)$ordered,(int)$refunded];
     }
 
     private function carrierBeforeTracking(string $detail): ?string

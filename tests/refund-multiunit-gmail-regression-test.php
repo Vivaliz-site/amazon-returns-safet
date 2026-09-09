@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/amazon-returns/GmailParser.php';
+require_once __DIR__ . '/../includes/amazon-returns/GmailEventSink.php';
+require_once __DIR__ . '/../includes/amazon-returns/Projector.php';
 
 function refundQtySame(mixed $expected,mixed $actual,string $message):void
 {
@@ -26,5 +28,29 @@ refundQtySame('FBA',$event['program']??null,'Explicit Amazon fulfillment must re
 refundQtySame('AMAZON_CUSTOMER_SERVICE',$event['refund_initiator']??null,'Customer Service issuer must remain explicit.');
 refundQtySame(2,$event['quantity_ordered']??null,'Refund email must capture ordered quantity.');
 refundQtySame(2,$event['quantity_refunded']??null,'Refund email must capture refunded quantity.');
+
+if(!method_exists(SvAmazonGmailEventSink::class,'refundQuantityEvidence')){
+    throw new RuntimeException('Re-ingesting a historical Gmail refund must create durable quantity evidence.');
+}
+$quantityMethod=new ReflectionMethod(SvAmazonGmailEventSink::class,'refundQuantityEvidence');
+$quantityEvidence=$quantityMethod->invoke(null,1,$event,'701-0630116-9129834','2026-09-02 01:50:37','1a05fcfa99eb924f');
+refundQtySame('REFUND_QUANTITY_CONFIRMED',$quantityEvidence['event_type']??null,'Quantity evidence must use an explicit durable event.');
+refundQtySame(2,$quantityEvidence['payload']['quantity_ordered']??null,'Durable quantity evidence must carry ordered quantity.');
+refundQtySame(2,$quantityEvidence['payload']['quantity_refunded']??null,'Durable quantity evidence must carry refunded quantity.');
+
+$projected=SvAmazonReturnProjector::projectFrom([
+    'id'=>1,'amazon_order_id'=>'701-0630116-9129834','quantity_ordered'=>2,
+    'physical_status'=>SvAmazonReturnPhysicalStatuses::NOT_RECEIVED,
+    'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED,
+], [
+    [
+        'case_id'=>1,'event_type'=>'REFUND_ISSUED_EMAIL','source'=>'GMAIL',
+        'occurred_at'=>'2026-09-02 01:50:37',
+        'payload'=>['amount'=>'85.50','financial_truth'=>false],
+    ],
+    $quantityEvidence,
+]);
+refundQtySame(2,$projected['quantity_ordered']??null,'Projection replay must preserve ordered quantity evidence.');
+refundQtySame(2,$projected['quantity_refunded']??null,'Projection replay must preserve refunded quantity evidence.');
 
 echo "refund-multiunit-gmail-regression-test: OK\n";

@@ -97,8 +97,17 @@ final class SvAmazonReturnProjector
                         ? self::utcString($payload['refund_at'])
                         : $occurredAt;
                 }
-                if ($facts['refund_amount'] === '0.00' && array_key_exists('refund_amount', $payload)) {
-                    $facts['refund_amount'] = self::decimal($payload['refund_amount']);
+                if ($facts['refund_amount'] === '0.00') {
+                    $refundAmount = $payload['refund_amount'] ?? $payload['amount'] ?? null;
+                    if ($refundAmount !== null) {
+                        $facts['refund_amount'] = self::decimal($refundAmount);
+                    }
+                }
+                break;
+
+            case 'REFUND_QUANTITY_CONFIRMED':
+                if (array_key_exists('quantity_refunded', $payload)) {
+                    $facts['quantity_refunded'] = self::nonNegativeInt($payload['quantity_refunded'], 'quantity_refunded');
                 }
                 break;
 

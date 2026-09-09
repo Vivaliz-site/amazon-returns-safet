@@ -26,4 +26,25 @@ $refund=SvAmazonSpApiEventSink::refundObservation($transactions);
 multiUnitSpApiSame('81.00',$refund['refund_amount']??null,'Released financial refund must expose the seller debit baseline.');
 multiUnitSpApiSame('2026-09-02 02:05:29',$refund['seller_debit_at']??null,'Released financial refund must expose the debit timestamp.');
 
+if(!method_exists(SvAmazonSpApiEventSink::class,'financialRefundPayload')){
+    throw new RuntimeException('Single-item multi-unit refunds need an attributable financial payload without guessed quantity.');
+}
+$payloadMethod=new ReflectionMethod(SvAmazonSpApiEventSink::class,'financialRefundPayload');
+$multi=$payloadMethod->invoke(null,$refund,SvAmazonReturnPrograms::FBA,2);
+multiUnitSpApiSame('81.00',$multi['refund_amount']??null,'Multi-unit financial payload must retain the authoritative seller debit amount.');
+multiUnitSpApiSame('2026-09-02 02:05:29',$multi['seller_debit_at']??null,'Multi-unit financial payload must retain the debit timestamp.');
+if(array_key_exists('quantity_refunded',$multi)){
+    throw new RuntimeException('Financial transaction alone must not guess that every ordered unit was refunded.');
+}
+$single=$payloadMethod->invoke(null,$refund,SvAmazonReturnPrograms::FBA,1);
+multiUnitSpApiSame(1,$single['quantity_refunded']??null,'Single-unit financial evidence may confirm its only possible refunded quantity.');
+
+$source=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/SpApiEventSink.php');
+if(substr_count($source,'self::financialRefundPayload(')<1){
+    throw new RuntimeException('SP-API persistence must use the quantity-safe financial payload.');
+}
+if(str_contains($source,'$single && $quantity === 1 && $refund !== null')){
+    throw new RuntimeException('Single-item multi-unit refunds must not be suppressed from financial baseline persistence.');
+}
+
 echo "refund-multiunit-spapi-regression-test: OK\n";
