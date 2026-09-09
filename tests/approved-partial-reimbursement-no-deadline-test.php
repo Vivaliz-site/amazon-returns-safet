@@ -42,7 +42,7 @@ foreach($fixtures as $fixture){
     $case=$fixture['case'];
     $timeline=[
         [
-            'id'=>1,'case_id'=>$case['id'],'event_type'=>'SAFE_T_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+            'id'=>101,'case_id'=>$case['id'],'event_type'=>'SAFE_T_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
             'occurred_at'=>'2026-09-09 17:24:28',
             'payload'=>[
                 'safe_t_id'=>$case['safe_t_id'],'claim_status'=>'APPROVED','appeal_submitted'=>false,
@@ -50,7 +50,7 @@ foreach($fixtures as $fixture){
             ],
         ],
         [
-            'id'=>2,'case_id'=>$case['id'],'event_type'=>'FINANCIAL_RECONCILIATION_CHECKED','source'=>'SP_API_FINANCES',
+            'id'=>102,'case_id'=>$case['id'],'event_type'=>'FINANCIAL_RECONCILIATION_CHECKED','source'=>'SP_API_FINANCES',
             'occurred_at'=>'2026-09-09 18:39:37',
             'payload'=>[
                 'refresh_complete'=>true,'outstanding_amount'=>$fixture['outstanding'],
@@ -59,8 +59,11 @@ foreach($fixtures as $fixture){
         ],
     ];
     $decision=$engine->nextAction($case,$timeline,['eligible'=>false,'state'=>'CREDIT_PENDING'],$now);
-    aprEq('SELLER_SUPPORT_OPEN',$decision['action']??null,'Approved SAFE-T with a verified unpaid balance must not require a human merely because the appeal deadline is absent. Order '.$case['amazon_order_id']);
-    aprEq('APPROVED_PARTIAL_REIMBURSEMENT_SUPPORT_RECOVERY',$decision['reason']??null,'Approved partial reimbursement without an appeal deadline needs an explicit automatic recovery reason. Order '.$case['amazon_order_id']);
+    aprEq('SAFE_T_READ',$decision['action']??null,'Missing official appeal metadata must trigger a read-only SAFE-T refresh before selecting a recovery channel. Order '.$case['amazon_order_id']);
+    aprEq('OFFICIAL_APPEAL_DEADLINE_REFRESH_REQUIRED',$decision['reason']??null,'Deadline refresh must have an explicit technical reason. Order '.$case['amazon_order_id']);
+    if(preg_match('/^[a-f0-9]{64}$/',(string)($decision['idempotency_key']??''))!==1){
+        throw new RuntimeException('SAFE-T deadline refresh must be idempotent. Order '.$case['amazon_order_id']);
+    }
 }
 
 echo "approved-partial-reimbursement-no-deadline-test: OK\n";
