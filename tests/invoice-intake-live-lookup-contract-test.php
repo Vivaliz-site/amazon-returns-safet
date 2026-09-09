@@ -14,8 +14,8 @@ invoiceIntakeAssert(is_int($localPos),'NF lookup must check immutable local evid
 invoiceIntakeAssert(is_int($livePos),'NF lookup must query Amazon Invoices API when local evidence is absent.');
 invoiceIntakeAssert($localPos<$livePos,'Local NF evidence must be consulted before the live Amazon lookup.');
 invoiceIntakeAssert(
-    str_contains($source,"$orderId=(string)$invoiceLookup['order_id'];")
-    || str_contains($source,"$orderId=(string)($invoiceLookup['order_id']"),
+    str_contains($source,'$orderId=(string)$invoiceLookup[\'order_id\'];')
+    || str_contains($source,'$orderId=(string)($invoiceLookup[\'order_id\']'),
     'Live invoice lookup must hand the resolved Amazon order to the order sync flow.'
 );
 invoiceIntakeAssert(str_contains($source,'->syncOrder($orderId)'),'Resolved NF order must be synchronized immediately.');
