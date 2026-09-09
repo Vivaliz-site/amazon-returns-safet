@@ -12,6 +12,15 @@ final class SvAmazonRecoveryWindow
         return $basis?->add(new DateInterval('P'.self::DAYS.'D'));
     }
 
+    public static function effectiveDeadlineAt(array $case): ?DateTimeImmutable
+    {
+        $recovery = self::deadlineAt($case);
+        $explicit = self::timestamp($case['appeal_deadline_at'] ?? null);
+        if (!$explicit instanceof DateTimeImmutable) return $recovery;
+        if (!$recovery instanceof DateTimeImmutable) return $explicit;
+        return $explicit < $recovery ? $explicit : $recovery;
+    }
+
     public static function expired(array $case, DateTimeImmutable $now): bool
     {
         $deadline = self::deadlineAt($case);
