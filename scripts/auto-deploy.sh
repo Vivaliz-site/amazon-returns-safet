@@ -31,4 +31,19 @@ AMAZON_RETURNS_DEPLOY_ROOT="$deploy_root" \
 AMAZON_RETURNS_IMPORT_SOURCE=0 \
     "$repo/scripts/provision-production.sh"
 
+codex_bin="$(command -v codex || true)"
+[[ -n "$codex_bin" && -x "$codex_bin" ]] || { echo 'codex_review_broker=blocked_cli_missing' >&2; exit 5; }
+[[ -r /home/ubuntu/.codex/auth.json ]] || { echo 'codex_review_broker=blocked_chatgpt_auth_missing' >&2; exit 5; }
+chmod 0750 "$deploy_root/current/scripts/amazon-returns/codex-review-wrapper.sh"
+install -m 0644 "$deploy_root/current/deploy/systemd/amazon-returns-codex-review.service" /etc/systemd/system/amazon-returns-codex-review.service
+systemctl daemon-reload
+systemctl enable amazon-returns-codex-review.service >/dev/null
+systemctl restart amazon-returns-codex-review.service
+systemctl is-active --quiet amazon-returns-codex-review.service
+for _ in $(seq 1 20); do
+    [[ -S /run/amazon-returns-safet/codex-review.sock ]] && break
+    sleep 0.25
+done
+[[ -S /run/amazon-returns-safet/codex-review.sock ]] || { echo 'codex_review_broker=socket_missing' >&2; exit 5; }
+echo 'codex_review_broker=ready'
 echo "auto_deploy_sha=$target_sha"
