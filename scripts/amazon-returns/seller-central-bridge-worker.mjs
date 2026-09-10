@@ -522,6 +522,10 @@ async function clickFirstFrameTextWhenReady(cdp, labels, timeoutMs = 30000) {
   return '';
 }
 
+async function supportOrderInputReady(cdp) {
+  return (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;const h=d.querySelector('kat-input[placeholder*="112-"]');if(h&&!h.hasAttribute('disabled'))return true}return false})()`)) === true;
+}
+
 async function hillChatReady(cdp) {
   return (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;for(const b of d.querySelectorAll('kat-button,button')){const label=(b.getAttribute('label')||b.innerText||'').trim();if(!['Chat now','Conversar agora','Iniciar chat'].includes(label))continue;const button=b.tagName==='KAT-BUTTON'?b.shadowRoot?.querySelector('button'):b;if(button&&!button.disabled)return true}}return false})()`)) === true;
 }
@@ -620,6 +624,21 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
   const category = await clickFirstFrameTextWhenReady(cdp, associateCategories, 45000);
   if (!category) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_CATEGORY_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+
+  if (await supportOrderInputReady(cdp)) {
+    if (!orderId || !(await cdp.setFrameKat('kat-input[placeholder*="112-"]', orderId))) {
+      return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_CATEGORY_ORDER_INPUT_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    }
+    if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000))) {
+      return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_CATEGORY_ORDER_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    }
+    const postOrderDeadline = Date.now() + 30000;
+    while (Date.now() < postOrderDeadline) {
+      if (await hillChatReady(cdp)) return null;
+      if (!(await supportOrderInputReady(cdp))) break;
+      await sleep(500);
+    }
   }
 
   const identityDeadline = Date.now() + 30000;
