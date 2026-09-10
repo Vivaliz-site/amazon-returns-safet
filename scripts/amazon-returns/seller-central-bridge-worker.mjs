@@ -198,12 +198,18 @@ function bridgeResult(status, extra = {}) {
   };
 }
 
+async function supportFrameSnapshot(cdp) {
+  return await cdp.evaluate(`(()=>{const out={buttons:[],inputs:[]};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const h of d.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.innerText||'').trim();if(label&&out.buttons.length<24)out.buttons.push(label.slice(0,80))}for(const h of d.querySelectorAll('kat-input,input')){const placeholder=(h.getAttribute('placeholder')||'').trim();if(placeholder&&out.inputs.length<16)out.inputs.push(placeholder.slice(0,80))}}return out})()`);
+}
+
 async function evidence(cdp, uiContract) {
   const state = await cdp.pageState(18000);
+  const supportUi = uiContract === 'help-v1' ? await supportFrameSnapshot(cdp) : null;
   const safe = {
     ui_contract: uiContract,
     current_url: state.href || '',
     title: state.title || '',
+    ...(supportUi ? { support_ui: supportUi } : {}),
     body_sha256: sha(state.text || ''),
   };
   return { ...safe, snapshot_sha256: sha(JSON.stringify(safe)) };
@@ -595,6 +601,8 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
     const troubleshootingAction = await clickFirstFrameTextWhenReady(cdp, [
       'Request Reimbursement for an Order',
       'Solicitar reembolso para um pedido',
+      'Get help',
+      'Obter ajuda',
     ], 1500);
     if (troubleshootingAction) {
       await sleep(750);
@@ -618,7 +626,7 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
   let idsReady = false;
   while (Date.now() < identityDeadline) {
     if (await hillChatReady(cdp)) return null;
-    idsReady = (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;if(d.querySelector('kat-input[placeholder="Enter ASIN"]')&&d.querySelector('kat-input[placeholder="Enter SKU"]'))return true}return false})()`)) === true;
+    idsReady = (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;if(d.querySelector('kat-input[placeholder*="ASIN"]')&&d.querySelector('kat-input[placeholder*="SKU"]'))return true}return false})()`)) === true;
     if (idsReady) break;
     await sleep(500);
   }
@@ -626,7 +634,7 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_PRODUCT_FIELDS_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
   if (!asin || !sku) return bridgeResult('FAILED', { reason: 'SUPPORT_GENERAL_PRODUCT_IDENTITY_REQUIRED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-  if (!(await cdp.setFrameKat('kat-input[placeholder="Enter ASIN"]', asin)) || !(await cdp.setFrameKat('kat-input[placeholder="Enter SKU"]', sku))) {
+  if (!(await cdp.setFrameKat('kat-input[placeholder*="ASIN"],kat-input[placeholder="Enter ASIN"]', asin)) || !(await cdp.setFrameKat('kat-input[placeholder*="SKU"],kat-input[placeholder="Enter SKU"]', sku))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_PRODUCT_FIELDS_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
   if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_PRODUCT_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
