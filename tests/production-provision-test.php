@@ -36,7 +36,11 @@ foreach([
 }
 $dryRunPos=strpos($script,'migrate-single-tenant-to-multitenant.php --dry-run');
 $applyPos=strpos($script,'apply_cmd=');
-$swapPos=strpos($script,'ln -sfn');
+$swapPos=strpos($script,'ln -sfn "releases/$(basename "$release")" "$root/current.next"');
+$sealPos=strpos($script,'chown -R root:www-data "$release"');
+ppAssert($sealPos!==false,'Prepared releases must become root-owned before activation.');
+ppAssert(str_contains($script,'chmod -R go-w "$release"'),'Prepared releases must reject group/other writes before activation.');
+ppAssert($sealPos<$swapPos,'Release immutability must be applied before current symlink activation.');
 ppAssert($dryRunPos!==false,'Provisioning must execute migration dry-run preflight.');
 ppAssert($applyPos!==false && $dryRunPos<$applyPos,'Dry-run must precede the printed apply command.');
 ppAssert($swapPos!==false && $applyPos<$swapPos,'Release symlink must not switch before migration preflight gate.');
