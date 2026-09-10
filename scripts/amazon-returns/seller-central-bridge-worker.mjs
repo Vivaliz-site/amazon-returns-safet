@@ -659,7 +659,7 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
     }
     const postOrderDeadline = Date.now() + 30000;
     while (Date.now() < postOrderDeadline) {
-      if (await hillChatReady(cdp)) return null;
+      if (await hillContactReady(cdp)) return null;
       if (!(await supportOrderInputReady(cdp))) break;
       await sleep(500);
     }
