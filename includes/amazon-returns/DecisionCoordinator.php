@@ -27,7 +27,10 @@ final class SvAmazonDecisionCoordinator
     {
         $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));$base=$this->base->nextAction($case,$timeline,$policy,$now);
         if(!in_array($base['action']??'',['HUMAN_REVIEW','BLOCKED_REVIEW'],true)){
-            if($persist && method_exists($this->persistence->reviews,'resolveOpenForCase'))$this->persistence->reviews->resolveOpenForCase((int)$case['id']);
+            if($persist){
+                if(method_exists($this->persistence->reviews,'resolveOpenForCase'))$this->persistence->reviews->resolveOpenForCase((int)$case['id']);
+                $this->clearResolvedReviewGate($case,$policy,$base);
+            }
             return $base;
         }
         $context=SvAmazonReviewContext::build($case,$timeline,$policy,$base);$match=$this->ruleEngine->match($context,$this->persistence->learnedRules->active());
@@ -36,12 +39,45 @@ final class SvAmazonDecisionCoordinator
             if(!$executionEnabled)return $base+['learned_rule_shadow_match'=>$match['rule']['id']??null,'signature_hash'=>$context['signature_hash']];
             $decision=$this->base->guardLearnedEffect($match['effect'],$case,$timeline,$policy,$now);
             $decision['learned_rule_id']=$match['rule']['id']??null;$decision['learned_rule_version']=$match['rule']['version']??null;$decision['signature_hash']=$context['signature_hash'];
-            if($persist)$this->auditMatch($case,$context,$match['rule'],$match['effect'],$decision);
+            if($persist){
+                $this->auditMatch($case,$context,$match['rule'],$match['effect'],$decision);
+                if(!in_array($decision['action']??'',['HUMAN_REVIEW','BLOCKED_REVIEW'],true)){
+                    if(method_exists($this->persistence->reviews,'resolveOpenForCase'))$this->persistence->reviews->resolveOpenForCase((int)$case['id']);
+                    $this->clearResolvedReviewGate($case,$policy,$decision);
+                }
+            }
             return $decision;
         }
         $reason=$match['status']==='CONFLICT'?'LEARNED_RULE_CONFLICT':(string)($base['reason']??'UNRESOLVED_REVIEW');
         if($persist)$this->persistence->reviews->open((int)$case['id'],$reason,$context['signature_hash'],$context);
         return $base+['review_reason'=>$reason,'review_context'=>$context,'learned_rule_conflicts'=>$match['conflicts']??[]];
+    }
+    private function clearResolvedReviewGate(array $case,array $policy,array $decision):void
+    {
+        if(($case['state']??null)!==SvAmazonReturnStates::POLICY_REVIEW_REQUIRED)return;
+        if(!isset($this->persistence->cases) || !method_exists($this->persistence->cases,'update'))return;
+        $state=null;
+        $policyState=(string)($policy['state']??'');
+        if(SvAmazonReturnStates::isValid($policyState) && $policyState!==SvAmazonReturnStates::POLICY_REVIEW_REQUIRED){
+            $state=$policyState;
+        }elseif(($decision['action']??'')==='CHECK_FINANCES'){
+            $financialExposure=trim((string)($case['refund_at']??''))!==''
+                || trim((string)($case['seller_debit_at']??''))!==''
+                || (float)($case['expected_reimbursement_amount']??0)>0.00001;
+            $state=$financialExposure
+                ? SvAmazonReturnStates::CREDIT_PENDING
+                : match((string)($case['physical_status']??'')){
+                    SvAmazonReturnPhysicalStatuses::IN_TRANSIT=>SvAmazonReturnStates::IN_TRANSIT,
+                    SvAmazonReturnPhysicalStatuses::CARRIER_DELIVERED_PENDING_PHYSICAL=>SvAmazonReturnStates::CARRIER_DELIVERED_PENDING_PHYSICAL,
+                    default=>SvAmazonReturnStates::AWAITING_RETURN,
+                };
+        }elseif(($decision['action']??'')==='WAIT'
+            && (trim((string)($case['refund_at']??''))!==''
+                || trim((string)($case['seller_debit_at']??''))!==''
+                || (float)($case['expected_reimbursement_amount']??0)>0.00001)){
+            $state=SvAmazonReturnStates::CREDIT_PENDING;
+        }
+        if($state!==null)$this->persistence->cases->update((int)$case['id'],['state'=>$state]);
     }
     private function resolveTerminalReviews():void
     {
