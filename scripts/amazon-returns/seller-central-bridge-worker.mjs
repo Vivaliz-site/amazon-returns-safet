@@ -168,6 +168,15 @@ class Cdp {
     return true;
   }
 
+  async clickFrameButtonTrustedByText(label) {
+    const point = await this.evaluate(`(()=>{const label=${JSON.stringify(label)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const host of d.querySelectorAll('kat-button,button')){const text=(host.getAttribute('label')||host.innerText||'').trim();if(text!==label)continue;const button=host.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(!button||button.disabled)continue;f.scrollIntoView({block:'center'});button.scrollIntoView({block:'center'});const a=f.getBoundingClientRect(),b=button.getBoundingClientRect();const x=a.left+b.left+(b.width/2),y=a.top+b.top+(b.height/2);if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>innerWidth||y>innerHeight)return null;return {x,y}}}return null})()`);
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y, button: 'none' });
+    await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+    return true;
+  }
+
   async selectKatOption(dropdownSelector, value) {
     return (await this.evaluate(`(()=>{const h=document.querySelector(${JSON.stringify(dropdownSelector)});const o=[...h?.shadowRoot?.querySelectorAll('kat-option')||[]].find(x=>x.getAttribute('value')===${JSON.stringify(value)});if(!o)return false;o.click();return true})()`)) === true;
   }
@@ -705,6 +714,38 @@ async function fillGeneralSupportIssue(cdp, job, narrative) {
   return (await cdp.evaluate(`(()=>{const values=${JSON.stringify(values)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;const host=d.querySelector('kat-textarea.meld-text-area');const textarea=host?.shadowRoot?.querySelector('textarea');const inputs=[...d.querySelectorAll('kat-input')].filter(h=>!h.hasAttribute('disabled')).map(h=>h.shadowRoot?.querySelector('input')).filter(Boolean);if(!textarea||inputs.length<2)continue;const set=(el,v)=>{const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(el,v);el.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:v}));el.dispatchEvent(new Event('change',{bubbles:true,composed:true}))};set(textarea,values[0]);set(inputs[0],values[1]);set(inputs[1],values[2]);return textarea.value===values[0]&&inputs[0].value===values[1]&&inputs[1].value===values[2]}return false})()`)) === true;
 }
 
+async function fillDirectSupportCaseDetails(cdp, narrative) {
+  const value = text(narrative);
+  if (!value) return false;
+  return (await cdp.evaluate(`(()=>{const value=${JSON.stringify(value)};const labels=['Provide details about the order reimbursement error','Forneça detalhes sobre o erro de reembolso do pedido'];for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const row of d.querySelectorAll('.meld-text-input')){const label=(row.querySelector('.meld-label-description')?.innerText||'').trim();if(!labels.some(x=>label.includes(x)))continue;const host=row.querySelector('kat-input');const input=host?.shadowRoot?.querySelector('input');if(!host||!input||host.hasAttribute('disabled')||input.disabled)continue;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:value}));input.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return input.value===value}return false}return false})()`)) === true;
+}
+
+async function submitDirectSupportCaseAndReadBack(cdp, job, narrative) {
+  if (!(await fillDirectSupportCaseDetails(cdp, narrative))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_DIRECT_CASE_DETAILS_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  if (!(await cdp.clickFrameButtonTrustedByText('Create a case'))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_DIRECT_CREATE_BUTTON_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  await sleep(2500);
+  let caseId = await currentSupportCaseId(cdp);
+  for (let attempt = 0; !caseId && attempt < 6; attempt++) {
+    try {
+      caseId = text(await findSupportCase(cdp, job));
+    } catch (error) {
+      if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
+        return bridgeResult('FAILED', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+      }
+      throw error;
+    }
+    if (!caseId) await sleep(3000);
+  }
+  if (!/^\d{8,14}$/.test(caseId)) {
+    return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+  }
+  return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason: 'SUPPORT_CASE_OPENED_DIRECTLY', evidence: await evidence(cdp, 'help-v1') });
+}
+
 async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
   if (!(await waitFrameHas(cdp, 'My issue is not listed', 60000)) || !(await clickFrameTextWhenReady(cdp, 'My issue is not listed', 10000))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_ROUTE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
@@ -726,6 +767,9 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
   let contacted = false;
   let suggestedOrderEntered = false;
   while (Date.now() < troubleshooterDeadline) {
+    if (await frameHas(cdp, 'Create a case')) {
+      return await submitDirectSupportCaseAndReadBack(cdp, job, narrative);
+    }
     if (await clickFrameTextWhenReady(cdp, 'Contact an associate', 1500)) {
       contacted = true;
       break;
