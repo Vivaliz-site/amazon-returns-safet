@@ -14,6 +14,22 @@ operatorAlert=function operationalAlert(c){
   if(c?.last_external_write?.kind===action&&['PENDING','PROCESSING','SUCCEEDED','SUCCESS'].includes(String(c.last_external_write.status||'')))return null;
   return 'Providência automática atrasada';
 };
+const baseOperationalRenderCase=renderOperationalCase;
+renderOperationalCase=function auditedOperationalRenderCase(data,relatedCount=null){
+  baseOperationalRenderCase(data,relatedCount);
+  const c=data?.case||{};const stateName=String(c.state||'');
+  const appealAlreadyHandled=['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','RECOVERED','CLOSED_LOSS'].includes(stateName);
+  if(appealAlreadyHandled){
+    for(const field of document.querySelectorAll('#case-detail .operational-field')){
+      if(field.querySelector('.muted')?.textContent==='Prazo para recurso')field.remove();
+    }
+    if(['APPEAL_SUBMITTED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING'].includes(stateName)){
+      const flow=document.querySelector('#case-detail .case-flow');if(flow){const note=text('div','', 'flow-item');note.append(text('strong','Prazo do recurso'),text('p','O recurso já foi enviado; agora o sistema aguarda a resposta da Amazon.'));flow.append(note);}
+    }
+  }
+  const checked=c.last_read_back?.occurred_at;
+  if(checked){const checkedAt=new Date(String(checked).replace(' ','T')+'Z');if(!Number.isNaN(checkedAt.getTime())&&Date.now()-checkedAt.getTime()>36*60*60*1000){document.querySelector('#case-detail .case-summary')?.append(text('div','Dados podem estar desatualizados: a última verificação ocorreu há mais de 36 horas.','stale-data-note'));}}
+};
 async function loadOperationalOverview(){
   const root=document.querySelector('#operational-overview');if(!root)return;
   try{
