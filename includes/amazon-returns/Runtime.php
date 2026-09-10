@@ -50,6 +50,22 @@ final class SvAmazonReturnsRuntime
         return $next?->format(DATE_ATOM);
     }
 
+    /** @param list<array<string,mixed>> $cases */
+    public static function nextKnownWakeAt(array $cases,DateTimeImmutable $now): ?string
+    {
+        $now=$now->setTimezone(new DateTimeZone('UTC'));
+        $next=null;
+        foreach($cases as $case){
+            if(!is_array($case) || ($case['closed_at'] ?? null)!==null)continue;
+            $when=self::timestamp($case['next_action_at'] ?? null);
+            if($when===null)continue;
+            $updated=self::timestamp($case['updated_at'] ?? null);
+            if($when<=$now && $updated!==null && $updated>=$when)continue;
+            if($next===null || $when<$next)$next=$when;
+        }
+        return $next?->format(DATE_ATOM);
+    }
+
     private static function timestamp(mixed $raw): ?DateTimeImmutable
     {
         if(!is_string($raw) || trim($raw)==='')return null;
@@ -61,22 +77,12 @@ final class SvAmazonReturnsRuntime
         }
     }
 
-    private static function refreshNextKnownActionAt(PDO $db,SvAmazonTenantContext $context): void
+    private static function refreshNextKnownActionAt(SvAmazonTenantPersistence $p): void
     {
-        self::$nextKnownActionAt=null;
-        $stmt=$db->prepare(
-            'SELECT MIN(next_action_at) FROM amazon_return_cases '
-            . 'WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
-            . 'AND closed_at IS NULL AND next_action_at IS NOT NULL '
-            . 'AND (next_action_at>UTC_TIMESTAMP() OR updated_at<next_action_at)'
+        self::$nextKnownActionAt=self::nextKnownWakeAt(
+            $p->cases->openCases(1000),
+            new DateTimeImmutable('now',new DateTimeZone('UTC'))
         );
-        $stmt->execute([
-            ':tenant_id'=>$context->tenantId(),
-            ':amazon_connection_id'=>$context->amazonConnectionId(),
-        ]);
-        $value=$stmt->fetchColumn();
-        $when=self::timestamp(is_string($value)?$value:null);
-        if($when!==null)self::$nextKnownActionAt=$when->format(DATE_ATOM);
     }
 
     public static function decisionStackRevision(): string
@@ -226,7 +232,7 @@ final class SvAmazonReturnsRuntime
         $policySeeds=SvAmazonReturnPolicySeeder::ensure($p->policies);
         $policyAudit=$policySeeds>0 ? SvAmazonReturnPolicySeeder::auditDefinitions($p->policies->allActive()) : ['valid'=>true,'policy_key'=>null];
         if(!$policyAudit['valid'])throw new RuntimeException('Active operational policy does not match approved opening rule.');
-        self::refreshNextKnownActionAt($db,$context);
+        self::refreshNextKnownActionAt($p);
         return [
             'status'=>'OK',
             'tenant_id'=>$context->tenantId(),
