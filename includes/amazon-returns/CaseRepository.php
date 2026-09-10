@@ -282,6 +282,19 @@ final class SvAmazonReturnCaseRepository
     }
 
     /** @return list<array<string,mixed>> */
+    public function casesWithSupportCaseId(int $limit=250): array
+    {
+        $limit=max(1,min(1000,$limit));
+        $stmt=$this->prepare(
+            "SELECT * FROM amazon_return_cases WHERE closed_at IS NULL AND support_case_id IS NOT NULL AND support_case_id<>'' "
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'ORDER BY id LIMIT '.$limit
+        );
+        $stmt->execute($this->scopeParams());
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+    }
+
+    /** @return list<array<string,mixed>> */
     public function casesWithoutSafeTId(int $limit=250): array
     {
         $limit=max(1,min(1000,$limit));

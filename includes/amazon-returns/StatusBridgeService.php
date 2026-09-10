@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/RemoteBridge.php';
 require_once __DIR__ . '/SafeTStatusService.php';
+require_once __DIR__ . '/SellerSupportStatus.php';
 require_once __DIR__ . '/TenantPersistence.php';
 
 final class SvAmazonReturnsStatusBridgeService
@@ -65,6 +66,21 @@ final class SvAmazonReturnsStatusBridgeService
             ],$key);
             $ensured++;
         }
+        foreach($this->p->cases->casesWithSupportCaseId(250) as $case){
+            $caseId=(int)($case['id'] ?? 0);
+            $supportCaseId=trim((string)($case['support_case_id'] ?? ''));
+            if($caseId<1 || preg_match('/^\d{8,14}$/',$supportCaseId)!==1)continue;
+            if($this->p->outbox->hasActive($caseId,'SELLER_SUPPORT_READ'))continue;
+            $key=SvAmazonSellerSupportStatus::readKey($caseId,$supportCaseId,$now);
+            $this->p->outbox->enqueue('SELLER_SUPPORT_READ',$caseId,[
+                'case_id'=>$caseId,
+                'order_id'=>(string)($case['amazon_order_id'] ?? ''),
+                'safe_t_id'=>$case['safe_t_id'] ?? null,
+                'support_case_id'=>$supportCaseId,
+                'read_only'=>true,
+            ],$key);
+            $ensured++;
+        }
         $scope='seller-central-order-discovery-v1|'.$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');
         foreach($this->p->cases->casesWithoutSafeTId(250) as $case){
             $caseId=(int)($case['id'] ?? 0);
@@ -88,7 +104,7 @@ final class SvAmazonReturnsStatusBridgeService
     public function pull(DateTimeImmutable $now): array
     {
         $ensured=$this->ensureJobs($now);
-        $rows=$this->p->outbox->claimBatch(1,['SAFE_T_READ','SAFE_T_DISCOVERY']);
+        $rows=$this->p->outbox->claimBatch(1,['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ']);
         if($rows===[])return ['status'=>'NO_JOB','ensured'=>$ensured];
         $row=$rows[0];
         $case=$this->p->cases->find((int)$row['case_id']);
@@ -121,7 +137,7 @@ final class SvAmazonReturnsStatusBridgeService
         $row=$this->p->outbox->findOwned($jobId);
         $kind=is_array($row)?strtoupper((string)($row['kind'] ?? '')):'';
         if(!is_array($row)
-            || !in_array($kind,['SAFE_T_READ','SAFE_T_DISCOVERY'],true)
+            || !in_array($kind,['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'],true)
             || !hash_equals((string)$row['idempotency_key'],$idempotencyKey)){
             return ['status'=>'JOB_NOT_FOUND','http_status'=>404];
         }
@@ -133,6 +149,9 @@ final class SvAmazonReturnsStatusBridgeService
         }
 
         $status=(string)$result['status'];
+        if($kind==='SELLER_SUPPORT_READ' && $status==='ACCEPTED' && is_array($result['support'] ?? null)){
+            return $this->completeSupportObservation($row,$result);
+        }
         if($status==='ACCEPTED' && is_array($result['read'] ?? null)){
             return $kind==='SAFE_T_DISCOVERY'
                 ? $this->completeDiscovery($row,$result)
@@ -160,6 +179,46 @@ final class SvAmazonReturnsStatusBridgeService
         return [
             'status'=>'ACK','job_id'=>$jobId,'result_status'=>$status,'completed'=>false,
         ];
+    }
+
+    /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */
+    private function completeSupportObservation(array $row,array $result): array
+    {
+        $support=SvAmazonSellerSupportStatus::normalize($result['support']);
+        $caseId=(int)$row['case_id'];
+        $case=$this->p->cases->find($caseId);
+        if(!is_array($case))return ['status'=>'JOB_NOT_FOUND','http_status'=>404];
+        $known=trim((string)($case['support_case_id'] ?? ''));
+        if($known==='' || !hash_equals($known,$support['case_id']))throw new RuntimeException('Seller Support observation identity did not match the scoped case.');
+        $snapshot=$result['evidence']['snapshot_sha256'] ?? null;
+        if(!is_string($snapshot) || preg_match('/^[a-f0-9]{64}$/i',$snapshot)!==1)$snapshot=null;
+        $timeline=$this->p->events->eventsForCase($caseId);
+        $plan=SvAmazonSellerSupportStatus::observationPlan($caseId,$support,$timeline);
+        $db=$this->p->db();$db->beginTransaction();
+        try{
+            if($plan['append']){
+                $this->p->events->append([
+                    'case_id'=>$caseId,
+                    'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED',
+                    'source'=>'SELLER_CENTRAL',
+                    'source_event_id'=>$support['case_id'].'|'.$support['case_status'],
+                    'idempotency_key'=>$plan['idempotency_key'],
+                    'occurred_at'=>gmdate('Y-m-d H:i:s'),
+                    'payload'=>$support,
+                    'evidence_sha256'=>$snapshot,
+                ]);
+            }
+            $this->p->outbox->markSucceeded((int)$row['id']);
+            $db->commit();
+            return [
+                'status'=>'ACK','job_id'=>(int)$row['id'],
+                'support_case_id'=>$support['case_id'],'support_case_status'=>$support['case_status'],
+                'new_observation'=>$plan['append'],
+            ];
+        }catch(Throwable $e){
+            if($db->inTransaction())$db->rollBack();
+            throw $e;
+        }
     }
 
     /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */

@@ -7,6 +7,7 @@ require_once __DIR__ . '/SafeTStatus.php';
 require_once __DIR__ . '/AmazonRequestedWait.php';
 require_once __DIR__ . '/ReturnActionRouter.php';
 require_once __DIR__ . '/RecoveryWindow.php';
+require_once __DIR__ . '/SellerSupportStatus.php';
 
 final class SvAmazonSafeTDecisionEngine
 {
@@ -35,7 +36,13 @@ final class SvAmazonSafeTDecisionEngine
         ],true);
         $customerRefundConfirmed=$amazonCustomerRefund || $deliveryBackedUnknownRefund || $reimbursementBackedUnknownRefund;
         $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        $supportResolution=$this->supportResolutionAction($case,$timeline,$now);
+        $supportReason=(string)($supportResolution['reason']??'');
+        if($supportResolution!==null && in_array($supportReason,[
+            'SUPPORT_REIMBURSEMENT_PROCESSING','SUPPORT_REIMBURSEMENT_PROMISE_DUE','SUPPORT_REIMBURSEMENT_PROMISE_MISSED',
+        ],true))return $supportResolution;
         if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
+        if($supportResolution!==null)return $supportResolution;
         if($safeTId==='' && $this->sellerAppConfirmedPhysicalReceipt($case,$timeline)){
             return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
         }
@@ -124,7 +131,7 @@ final class SvAmazonSafeTDecisionEngine
                 $latestText=trim((string)($case['latest_denial_text'] ?? $denialContext['latest_denial_text']));
                 if($latestText==='')return $this->decision('BLOCKED_REVIEW','DENIAL_TEXT_MISSING',$caseId);
                 $fingerprint=$this->denialAnalyzer->fingerprint($latestText);
-                if($this->hasActiveSupportCase($case)){
+                if($this->hasActiveSupportCase($case,$timeline)){
                     if(($case['new_support_fact'] ?? false)===true){
                         return [
                             'action'=>'SELLER_SUPPORT_UPDATE',
@@ -255,7 +262,7 @@ final class SvAmazonSafeTDecisionEngine
                 ];
             }
             if($suggested==='OPEN_SUPPORT'){
-                if($this->hasActiveSupportCase($case))return $this->decision('WAIT','SUPPORT_ESCALATION_ALREADY_ACTIVE',$caseId);
+                if($this->hasActiveSupportCase($case,$timeline))return $this->decision('WAIT','SUPPORT_ESCALATION_ALREADY_ACTIVE',$caseId);
                 return [
                     'action'=>'SELLER_SUPPORT_OPEN',
                     'reason'=>'EMAIL_REVIEW_ANALYZER_SELECTED_SUPPORT',
@@ -305,7 +312,7 @@ final class SvAmazonSafeTDecisionEngine
             && is_numeric($payload['outstanding_amount']??null)
             && (float)$payload['outstanding_amount']>0;
         if(!$fresh || trim((string)($case['refund_at']??''))==='')return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
-        if($this->hasActiveSupportCase($case))return $this->decision('WAIT','SUPPORT_ESCALATION_ALREADY_ACTIVE',$caseId);
+        if($this->hasActiveSupportCase($case,$timeline))return $this->decision('WAIT','SUPPORT_ESCALATION_ALREADY_ACTIVE',$caseId);
         return [
             'action'=>'SELLER_SUPPORT_OPEN',
             'reason'=>'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION',
@@ -394,11 +401,82 @@ final class SvAmazonSafeTDecisionEngine
         return $expected>0.0 && $credited+0.00001 >= $expected;
     }
 
-    private function hasActiveSupportCase(array $case): bool
+    private function latestSupportObservation(array $case,array $timeline): ?array
+    {
+        $caseId=(int)($case['id']??0);
+        $supportId=trim((string)($case['support_case_id']??''));
+        if($caseId<1 || $supportId==='')return null;
+        $latest=null;$rank=[0,0];
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='SELLER_SUPPORT_STATUS_OBSERVED' || ($event['source']??'')!=='SELLER_CENTRAL')continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if(trim((string)($payload['case_id']??''))!==$supportId)continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            $candidate=[$at->getTimestamp(),(int)($event['id']??0)];
+            if($candidate>$rank){$rank=$candidate;$latest=$event;}
+        }
+        return $latest;
+    }
+
+    private function supportResolutionAction(array $case,array $timeline,DateTimeImmutable $now): ?array
+    {
+        $event=$this->latestSupportObservation($case,$timeline);
+        if($event===null)return null;
+        $payload=is_array($event['payload']??null)?$event['payload']:[];
+        try{$support=SvAmazonSellerSupportStatus::normalize($payload);}catch(Throwable){return $this->decision('BLOCKED_REVIEW','SELLER_SUPPORT_OBSERVATION_INVALID',(int)($case['id']??0));}
+        $resolution=SvAmazonSellerSupportStatus::resolution($support);
+        if($resolution==='ACTIVE')return null;
+        $caseId=(int)($case['id']??0);
+        $safeTId=trim((string)($case['safe_t_id']??''));
+        if($resolution==='REIMBURSEMENT_PROCESSING'){
+            try{$observed=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){return $this->decision('BLOCKED_REVIEW','SUPPORT_REIMBURSEMENT_OBSERVED_AT_INVALID',$caseId);}
+            $due=SvAmazonSellerSupportStatus::reimbursementDueAt($observed,5);
+            if($now<$due)return [
+                'action'=>'WAIT','reason'=>'SUPPORT_REIMBURSEMENT_PROCESSING','case_id'=>$caseId,
+                'support_case_id'=>$support['case_id'],'next_action_at'=>$due->format('Y-m-d H:i:s'),
+            ];
+            if($this->hasFreshConfirmedResidual($case,$timeline,$now))return [
+                'action'=>'SELLER_SUPPORT_OPEN','reason'=>'SUPPORT_REIMBURSEMENT_PROMISE_MISSED','support_route'=>'FBA_RETURNS_REIMBURSEMENT',
+                'case_id'=>$caseId,'idempotency_key'=>hash('sha256','support-promise-missed|'.$caseId.'|'.$support['case_id']),
+            ];
+            return $this->decision('CHECK_FINANCES','SUPPORT_REIMBURSEMENT_PROMISE_DUE',$caseId);
+        }
+        if($resolution==='EMAIL_REVIEW'){
+            if(in_array((string)($case['state']??''),[SvAmazonReturnStates::EMAIL_REVIEW_SENT,SvAmazonReturnStates::EMAIL_REVIEW_RESPONSE_PENDING],true))return null;
+            if($safeTId==='')return $this->decision('BLOCKED_REVIEW','SUPPORT_RESOLUTION_SAFE_T_ID_MISSING',$caseId);
+            return [
+                'action'=>'SAFE_T_EMAIL_REVIEW','reason'=>'SUPPORT_RESOLUTION_DIRECTS_EMAIL_REVIEW','case_id'=>$caseId,
+                'idempotency_key'=>hash('sha256','support-email-review|'.$safeTId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
+            ];
+        }
+        if($resolution==='SAFE_T_APPEAL'){
+            if(in_array((string)($case['state']??''),[
+                SvAmazonReturnStates::APPEAL_SUBMITTED,SvAmazonReturnStates::APPEAL_APPROVED,SvAmazonReturnStates::APPEAL_DENIED_FINAL,
+                SvAmazonReturnStates::EMAIL_REVIEW_SENT,SvAmazonReturnStates::EMAIL_REVIEW_RESPONSE_PENDING,
+            ],true))return null;
+            $deadline=SvAmazonRequestedWait::timestamp($case['appeal_deadline_at']??null);
+            if($safeTId!=='' && $deadline instanceof DateTimeImmutable && $now<=$deadline && (string)($case['state']??'')!==SvAmazonReturnStates::APPEAL_SUBMITTED){
+                return [
+                    'action'=>'SAFE_T_APPEAL','reason'=>'SUPPORT_RESOLUTION_DIRECTS_SAFE_T_APPEAL','case_id'=>$caseId,
+                    'idempotency_key'=>hash('sha256','support-safe-t-appeal|'.$safeTId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
+                ];
+            }
+            return $this->decision('BLOCKED_REVIEW','SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE',$caseId);
+        }
+        return $this->decision('BLOCKED_REVIEW','SELLER_SUPPORT_RESOLUTION_AMBIGUOUS',$caseId);
+    }
+
+    private function hasActiveSupportCase(array $case,array $timeline=[]): bool
     {
         $id=trim((string)($case['support_case_id'] ?? ''));
         if($id==='')return false;
+        $event=$this->latestSupportObservation($case,$timeline);
+        if(is_array($event)){
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            try{return !SvAmazonSellerSupportStatus::isTerminalStatus(SvAmazonSellerSupportStatus::normalize($payload)['case_status']);}catch(Throwable){}
+        }
         $status=strtoupper(trim((string)($case['support_case_status'] ?? 'OPEN')));
-        return !in_array($status,['CLOSED','RESOLVED','CANCELLED'],true);
+        return !SvAmazonSellerSupportStatus::isTerminalStatus($status);
     }
 }
