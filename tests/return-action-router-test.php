@@ -25,10 +25,12 @@ raEq('2026-09-11 03:00:00',$future['next_action_at'],'date-only promise includes
 $overdue=$promise;$overdue['payload']['decision_text']='Voce sera reembolsado proativamente ate 4 de setembro de 2026.';
 raEq('CHECK_FINANCES',SvAmazonReturnActionRouter::decide($claim,[$overdue],$policy,$now)['action'],'overdue promise first checks actual finance');
 $checked=raEvent('FINANCIAL_RECONCILIATION_CHECKED',['refresh_complete'=>true,'credit_amount'=>'0.00','outstanding_amount'=>'100.00','unclassified_transactions'=>0,'ambiguous_reimbursement_transactions'=>0,'unsettled_financial_evidence'=>false],2,'2026-09-05 14:00:00','SP_API_FINANCES');
-raEq(null,SvAmazonReturnActionRouter::decide($claim,[$overdue,$checked],$policy,$now),'fresh unpaid finance permits normal existing-claim lifecycle');
+$overdueDecision=SvAmazonReturnActionRouter::decide($claim,[$overdue,$checked],$policy,$now);
+raEq('SAFE_T_APPEAL',$overdueDecision['action'],'fresh unpaid finance must charge the existing SAFE-T after the promised date');
+raEq('PROMISED_REIMBURSEMENT_OVERDUE_FOLLOW_UP',$overdueDecision['reason'],'overdue promise uses a dedicated idempotent follow-up reason');
 $fbaClaim=$claim;$fbaClaim['program']='FBA';
 raEq('WAIT_PROACTIVE_CREDIT',SvAmazonReturnActionRouter::decide($fbaClaim,[$promise],$policy,$now)['action'],'classic FBA with an existing SAFE-T must honor Amazon promise instead of looping on finance');
-raEq(null,SvAmazonReturnActionRouter::decide($fbaClaim,[$overdue,$checked],$policy,$now),'classic FBA with existing SAFE-T and verified unpaid balance must return to claim lifecycle');
+raEq('SAFE_T_APPEAL',SvAmazonReturnActionRouter::decide($fbaClaim,[$overdue,$checked],$policy,$now)['action'],'classic FBA existing SAFE-T also charges the missed promise after finance confirms no credit');
 $expired=$claim;$expired['appeal_deadline_at']='2026-09-02 18:00:00';
 raEq('HUMAN_REVIEW',SvAmazonReturnActionRouter::decide($expired,[],$policy,$now)['action'],'expired appeal cannot be scheduled normally');
 $unknown=$claim;unset($unknown['appeal_deadline_at']);
