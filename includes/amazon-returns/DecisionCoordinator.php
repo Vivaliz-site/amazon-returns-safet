@@ -75,6 +75,8 @@ final class SvAmazonDecisionCoordinator
         $action=strtoupper(trim((string)($decision['action']??'')));
         if(!in_array($action,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))return null;
         if($this->config===null)return null;
+        if(method_exists($this->config,'enabled')&&!$this->config->enabled())return null;
+        if(method_exists($this->config,'mode')&&$this->config->mode()!=='production')return null;
         if(method_exists($this->config,'externalWriteAllowed')&&!$this->config->externalWriteAllowed($action))return 'WRITE_DISABLED';
         $caseId=(int)($case['id']??0);
         if(method_exists($this->config,'writeCaseAllowed')&&!$this->config->writeCaseAllowed($caseId))return 'WRITE_CANARY_BLOCKED';
