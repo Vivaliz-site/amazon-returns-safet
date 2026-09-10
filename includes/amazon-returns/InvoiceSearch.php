@@ -19,6 +19,27 @@ final class SvAmazonInvoiceSearch
         return $invoiceNumber==='' ? [] : self::query($db,$context,$invoiceNumber);
     }
 
+    /** @return list<int> */
+    public static function caseIdsForCockpit(PDO $db,SvAmazonTenantContext $context,string $term): array
+    {
+        $term=trim($term);if($term==='')return [];
+        $pattern='%'.mb_substr($term,0,160,'UTF-8').'%';
+        $fields=['invoice_number','sales_invoice_number','amazon_rma_id','merchant_rma_id','tracking_id','safe_t_claim_id'];
+        $clauses=[];$params=[':cockpit_tenant_id'=>$context->tenantId(),':cockpit_connection_id'=>$context->amazonConnectionId()];
+        foreach($fields as $index=>$field){
+            $placeholder=':cockpit_q_'.$index;
+            $clauses[]="JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.".$field."')) LIKE ".$placeholder;
+            $params[$placeholder]=$pattern;
+        }
+        $stmt=$db->prepare(
+            'SELECT DISTINCT case_id FROM amazon_return_events '
+            .'WHERE tenant_id=:cockpit_tenant_id AND amazon_connection_id=:cockpit_connection_id '
+            .'AND ('.implode(' OR ',$clauses).') ORDER BY case_id LIMIT 1000'
+        );
+        $stmt->execute($params);
+        return array_values(array_unique(array_filter(array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),static fn(int $id):bool=>$id>0)));
+    }
+
     /** @param array<string,mixed> $lookup @return array<string,mixed> */
     public static function evidenceEvent(int $caseId,array $lookup,?DateTimeImmutable $occurredAt=null): array
     {

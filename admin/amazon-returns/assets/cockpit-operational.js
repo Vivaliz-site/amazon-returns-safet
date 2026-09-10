@@ -148,13 +148,23 @@ function renderOperationalCase(data,relatedCount=null){
   const attempts=(timeline||[]).filter(x=>x.category==='EXTERNAL_WRITE').length;if(attempts){const attemptsBlock=sectionBlock('Tentativas e resposta da Amazon');attemptsBlock.append(text('p',`${attempts} ação${attempts===1?' foi executada':' foram executadas'} neste caso.`));const latest=[...(timeline||[])].reverse().find(x=>x.category==='AMAZON_RESPONSE');if(latest)attemptsBlock.append(text('p',`Resposta mais recente: ${humanText(latest.content?.narrative||latest.content?.review_excerpt||latest.title||'Resposta registrada')}.`));root.append(attemptsBlock);}
   root.append(renderCondensedTimeline(timeline,history));
 }
-let operationalBucket='all';
+const operationalBuckets=new Set(['all','attention','overdue','amazon','credit','system','closed']);
+const initialBucket=new URLSearchParams(location.search).get('bucket');
+let operationalBucket=operationalBuckets.has(initialBucket)?initialBucket:'all';
+syncUrl=function operationalSyncUrl(){const q=new URLSearchParams({...state.filters,page:String(state.page),view:state.view});if(operationalBucket!=='all')q.set('bucket',operationalBucket);history.replaceState(null,'',`${location.pathname}?${q}`)};
 async function loadBucketCases(filters,bucket){
   if(bucket==='attention'){filters.set('action','HUMAN_REVIEW');return json(`/admin/amazon-returns/api/cases.php?${filters}`);}
   const collected=[];let page=1,total=0;
   do{const q=new URLSearchParams(filters);q.set('page',String(page));q.set('per_page','100');const part=await json(`/admin/amazon-returns/api/cases.php?${q}`);total=Number(part.total||0);collected.push(...(part.items||[]));page++;}while(collected.length<total&&page<=20);
   const terminal=new Set(['RECOVERED','CLOSED_LOSS','RECEIVED_OK']);
-  const items=bucket==='closed'?collected.filter(c=>terminal.has(String(c.state||''))):collected.filter(c=>!terminal.has(String(c.state||''))&&operatorResponsibility(c)!=='Sua decisão é necessária');
+  const awaitingAmazon=new Set(['SAFE_T_SUBMITTED','APPEAL_SUBMITTED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION']);
+  const creditPending=new Set(['CREDIT_PENDING','SAFE_T_APPROVED','APPEAL_APPROVED']);
+  let items;
+  if(bucket==='closed')items=collected.filter(c=>terminal.has(String(c.state||'')));
+  else if(bucket==='overdue')items=collected.filter(c=>Boolean(operatorAlert(c)));
+  else if(bucket==='amazon')items=collected.filter(c=>awaitingAmazon.has(String(c.state||'')));
+  else if(bucket==='credit')items=collected.filter(c=>creditPending.has(String(c.state||''))||c.current_action==='CHECK_FINANCES');
+  else items=collected.filter(c=>!terminal.has(String(c.state||''))&&operatorResponsibility(c)!=='Sua decisão é necessária');
   return {items,total:items.length,page:1,per_page:Math.max(items.length,1)};
 }
 loadCases=async function operationalLoadCases(){
@@ -165,4 +175,4 @@ openCase=async function operationalOpenCase(caseId){
   try{clearError();const j=await json(`/admin/amazon-returns/api/case.php?case_id=${encodeURIComponent(caseId)}`);state.selectedCase=caseId;let relatedCount=null;try{if(j.case?.amazon_order_id){const related=await json(`/admin/amazon-returns/api/case.php?order_id=${encodeURIComponent(j.case.amazon_order_id)}`);relatedCount=Array.isArray(related.cases)?related.cases.length:null;}}catch(_e){}renderOperationalCase(j,relatedCount);}
   catch(e){showError(e.message,()=>openCase(caseId));}
 };
-for(const control of document.querySelectorAll('[data-quick-filter]'))control.addEventListener('click',()=>{operationalBucket=control.dataset.quickFilter||'all';for(const other of document.querySelectorAll('[data-quick-filter]'))other.setAttribute('aria-pressed',String(other===control));state.page=1;loadCases();});
+for(const control of document.querySelectorAll('[data-quick-filter]')){control.setAttribute('aria-pressed',String(control.dataset.quickFilter===operationalBucket));control.addEventListener('click',()=>{operationalBucket=control.dataset.quickFilter||'all';for(const other of document.querySelectorAll('[data-quick-filter]'))other.setAttribute('aria-pressed',String(other===control));state.page=1;loadCases();});}

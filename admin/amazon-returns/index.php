@@ -27,11 +27,14 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <div class="quick-filters" aria-label="Filtros rápidos">
 <button type="button" data-quick-filter="all" aria-pressed="true">Todos</button>
 <button type="button" data-quick-filter="attention" aria-pressed="false">Precisa da minha atenção</button>
+<button type="button" data-quick-filter="overdue" aria-pressed="false">Atrasados</button>
+<button type="button" data-quick-filter="amazon" aria-pressed="false">Aguardando Amazon</button>
+<button type="button" data-quick-filter="credit" aria-pressed="false">Crédito pendente</button>
 <button type="button" data-quick-filter="system" aria-pressed="false">Sistema tratando</button>
 <button type="button" data-quick-filter="closed" aria-pressed="false">Concluídos</button>
 </div>
 <form id="filters" class="filters" onsubmit="return false">
-<label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, NF, SAFE-T, rastreio, SKU ou ASIN"></label>
+<label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, NF, SAFE-T, chamado, RMA, rastreio, SKU ou ASIN"></label>
 <label>Situação<select data-filter="state"><option value="">Todas</option><option value="SAFE_T_DENIED">SAFE-T negado</option><option value="APPEAL_REQUIRED">Recurso necessário</option><option value="APPEAL_SUBMITTED">Recurso enviado</option><option value="CREDIT_PENDING">Crédito pendente</option><option value="RECOVERED">Ressarcido</option></select></label>
 <label>Próxima ação<select data-filter="action"><option value="">Todas</option><option value="SAFE_T_SUBMIT">Solicitar ressarcimento SAFE-T</option><option value="SAFE_T_APPEAL">Recorrer no SAFE-T</option><option value="SAFE_T_EMAIL_REVIEW">Pedir nova análise por e-mail</option><option value="SELLER_SUPPORT_OPEN">Abrir atendimento com a Amazon</option><option value="WAIT">Acompanhamento automático</option><option value="HUMAN_REVIEW">Precisa da sua decisão</option></select></label>
 <label>Tipo de logística<select data-filter="program"><option value="">Todos</option><option value="STANDARD">Padrão</option><option value="FBA_ONSITE">FBA no local</option><option value="DELIVERY_BY_AMAZON">Entrega pela Amazon</option></select></label>

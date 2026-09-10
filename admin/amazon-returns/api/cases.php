@@ -28,15 +28,15 @@ try{
     $requiresPostFilter=$filters->requiresDecisionFilter() || $searchTerm!=='';
     $queryPage=$requiresPostFilter?1:$filters->page();$queryPerPage=$requiresPostFilter?1000:$filters->perPage();
     $found=$p->cases->search($sqlFilters,$queryPage,$queryPerPage);
-    $invoiceCaseIds=$searchTerm!==''?SvAmazonInvoiceSearch::caseIds($db,$context,$searchTerm):[];
+    $searchCaseIds=$searchTerm!==''?SvAmazonInvoiceSearch::caseIdsForCockpit($db,$context,$searchTerm):[];
     $needle=$searchTerm!==''?mb_strtolower($searchTerm,'UTF-8'):'';
     $items=[];$policies=$p->policies->allActive();
     foreach($found['items'] as $row){
         $caseId=(int)($row['id']??0);if($caseId<1)continue;
         $case=SvAmazonReturnProjector::project($p->cases,$p->events,$caseId);$case['policies']=$policies;
         if($needle!==''){
-            $matches=in_array($caseId,$invoiceCaseIds,true);
-            foreach(['amazon_order_id','safe_t_id','sku','asin'] as $field){
+            $matches=in_array($caseId,$searchCaseIds,true);
+            foreach(['amazon_order_id','safe_t_id','support_case_id','sku','asin'] as $field){
                 $value=mb_strtolower(trim((string)($case[$field]??'')),'UTF-8');
                 if($value!==''&&str_contains($value,$needle)){$matches=true;break;}
             }

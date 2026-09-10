@@ -217,6 +217,8 @@ $reportPersistence=SvAmazonTenantPersistence::create(
 $autoScanRow=[
     'Order ID'=>'701-9999999-1111111','Order Item ID'=>'item-a',
     'A-to-Z Claim'=>'N','Resolution'=>'RefundAtFirstScan',
+    'Invoice number'=>'123456','Amazon RMA ID'=>'AMZ-RMA-501','Merchant RMA ID'=>'MER-RMA-501',
+    'Tracking ID'=>'TBR420500501','Return carrier'=>'Amazon Logistics BR','Return delivery date'=>'09-Sep-2026',
 ];
 $outcome=SvAmazonSpApiEventSink::persistReturnsReportRow(
     $reportPersistence,$autoScanRow,'RPT-1'
@@ -224,6 +226,11 @@ $outcome=SvAmazonSpApiEventSink::persistReturnsReportRow(
 spSame(true,$outcome['matched'],'Owned order+item must match.');
 spSame(true,$outcome['applied'],'Confidently classified row must apply.');
 spSame(1,count($reportDb->eventIds),'Matched row appends one scoped event.');
+$reportPayload=json_decode((string)($reportDb->eventRows[0][':payload_json']??''),true,512,JSON_THROW_ON_ERROR);
+spSame('123456',$reportPayload['invoice_number']??null,'Official return invoice must be preserved for search.');
+spSame('AMZ-RMA-501',$reportPayload['amazon_rma_id']??null,'Amazon RMA must be preserved for search.');
+spSame('TBR420500501',$reportPayload['tracking_id']??null,'Official return tracking must be preserved.');
+spSame('09-Sep-2026',$reportPayload['return_delivery_date']??null,'Official return delivery date must be preserved.');
 $again=SvAmazonSpApiEventSink::persistReturnsReportRow(
     $reportPersistence,$autoScanRow,'RPT-1'
 );

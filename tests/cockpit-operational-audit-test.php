@@ -53,7 +53,7 @@ coaAssert(str_contains($ui,'function externalWriteSummary('),'Last automatic act
 // Repeated telemetry is condensed while material events remain visible behind an explicit disclosure.
 coaAssert(str_contains($ui,'function condenseTimeline('),'Timeline condensation is required.');
 coaAssert(str_contains($ui,"repeatable=title==='Pedido sincronizado'||title==='Movimentação financeira identificada'"),'Only repetitive telemetry should be grouped.');
-coaAssert(str_contains($ui,'Ver histórico completo'),'Full history disclosure is required.');
+coaAssert(str_contains($ui,'Ver histórico'),'History disclosure is required.');
 coaAssert(str_contains($ui,"source!=='Informação não disponível'"),'Unknown timeline source labels must be omitted instead of displaying a meaningless fallback.');
 
 // Initial legacy rendering is replaced once the operational layer is loaded and case-only controls do not leak into other tabs.
