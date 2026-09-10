@@ -122,7 +122,13 @@ class Cdp {
 
   async evaluate(expression) {
     const result = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (result.exceptionDetails) throw new Error('browser expression failed');
+    if (result.exceptionDetails) {
+      const details = result.exceptionDetails;
+      const description = text(details.exception?.description || details.text || 'browser expression failed').replace(/\s+/g, ' ').slice(0, 240);
+      const lineNumber = Number.isInteger(details.lineNumber) ? details.lineNumber : -1;
+      const columnNumber = Number.isInteger(details.columnNumber) ? details.columnNumber : -1;
+      throw new Error(`browser expression failed: ${description} @${lineNumber}:${columnNumber}`);
+    }
     return result.result?.value;
   }
 
