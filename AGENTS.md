@@ -51,3 +51,7 @@ Read `docs/REGRAS-DE-ENTREGA.md` and `docs/MEMORIA-DO-PROJETO.md` at the start o
 ## Owner clarification: damaged returns (2026-09-05)
 - Initial SAFE-T opening for physically damaged/discrepant returns is manual-only by the user; the app must not auto-submit a new damaged-return claim.
 - After the user has manually opened the claim and a SAFE-T ID exists, the app may continue the denial/appeal lifecycle if Amazon denies it, subject to official deadlines and normal evidence/deduplication gates.
+
+## Isolamento obrigatorio de sessao CLI por chat
+
+Antes de qualquer operacao em terminal/CLI, leia e cumpra a secao `Isolamento obrigatorio de sessao CLI por chat` de `AI-TO-CLI-PROTOCOL.md`. Cada chat deve usar sessao/namespace CLI exclusivo; reutilizacao de sessao entre chats e proibida. Estado necessario para retomada deve ser persistido fora da memoria do shell.
