@@ -10,10 +10,15 @@ $bootstrap=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit
 $css=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational.css');
 
 // Same projected/current decision facts drive both list and detail.
-foreach(["'current_action'","'current_reason'","'outstanding_amount'","'order_at'","'refund_at'","'seller_debit_at'"] as $fact){
+foreach(["'current_action'","'current_reason'","'outstanding_amount'"] as $fact){
     coaAssert(str_contains($listApi,$fact),'List API missing operational fact '.$fact);
     coaAssert(str_contains($api,$fact),'Detail API missing operational fact '.$fact);
 }
+foreach(["'order_at'","'refund_at'","'seller_debit_at'"] as $fact){
+    coaAssert(str_contains($listApi,$fact),'List API missing projected fact '.$fact);
+}
+coaAssert(str_contains($api,'SvAmazonReturnProjector::project('),'Detail API must return the same projected case facts used by the list.');
+coaAssert(str_contains($api,"'case'=>$case"),'Detail API must expose the projected case object.');
 coaAssert(str_contains($listApi,'previewAction(')&&str_contains($api,'previewAction('),'Both views must use side-effect-free current decision preview.');
 
 // Search promises only fields the backend actually supports, including projected tracking and invoice evidence.
@@ -32,6 +37,7 @@ foreach(['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_
 }
 coaAssert(str_contains($bootstrap,"if(action==='SAFE_T_APPEAL')due=c?.appeal_deadline_at"),'Appeal alerts must use appeal deadline rather than stale eligibility.');
 coaAssert(str_contains($bootstrap,"last_external_write?.kind===action"),'Completed/pending write must suppress false delayed-action alert.');
+coaAssert(str_contains($bootstrap,"field.querySelector('.muted')?.textContent==='Prazo para recurso'"),'Handled appeal states must suppress stale appeal deadline display.');
 
 // Missing facts are omitted rather than rendered as meaningless dashes.
 coaAssert(str_contains($ui,"value===null||value===undefined||value===''||value==='—'"),'Unavailable detail fields must be omitted.');
@@ -44,6 +50,7 @@ coaAssert(str_contains($ui,'Ver histórico completo'),'Full history disclosure i
 
 // Initial legacy rendering is replaced once the operational layer is loaded.
 coaAssert(str_contains($bootstrap,"if(state.view==='cases')loadCases()"),'Operational list must rerender after deferred scripts load.');
+coaAssert(str_contains($bootstrap,'Dados podem estar desatualizados'),'Stale source data must be visibly identified.');
 
 // Responsive layout and usable touch targets.
 coaAssert(str_contains($css,'@media(max-width:980px)'),'Tablet responsive layout missing.');
