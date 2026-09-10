@@ -83,4 +83,19 @@ $decision5=$coordinator5->nextAction($case5,[],$policy5);
 gateSame('CHECK_FINANCES',$decision5['action'],'approved learned rule must resolve to its automatic action');
 gateSame([5],$p5->reviews->resolved,'learned automatic decision must resolve any stale open review episode');
 gateSame([['case_id'=>5,'patch'=>['state'=>SvAmazonReturnStates::SAFE_T_ELIGIBLE]]],$p5->cases->updates,'learned automatic decision must clear the persisted review gate');
+$p6=new GatePersistence();
+$coordinator6=new SvAmazonDecisionCoordinator(new SvAmazonSafeTDecisionEngine(null,new DateTimeImmutable('2026-09-09T22:00:00Z')),$p6,new SvAmazonReturnsConfig());
+$case6=[
+    'id'=>6,'amazon_order_id'=>'701-5544982-3737862','safe_t_id'=>null,
+    'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED,'physical_status'=>SvAmazonReturnPhysicalStatuses::NOT_RECEIVED,
+    'refund_at'=>'2026-08-25 20:00:05','seller_debit_at'=>'2026-08-25 20:00:05','refund_initiator'=>SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
+    'expected_reimbursement_amount'=>'32.74','reconciled_credit_amount'=>'0.00','marketplace_id'=>'A2Q3Y263D00KWC','program'=>SvAmazonReturnPrograms::FBA,
+];
+$timeline6=[[
+    'id'=>601,'case_id'=>6,'event_type'=>'FINANCIAL_RECONCILIATION_CHECKED','source'=>'SP_API_FINANCES','occurred_at'=>'2026-09-09 21:59:00',
+    'payload'=>['refresh_complete'=>true,'ambiguous_reimbursement_transactions'=>0,'unsettled_financial_evidence'=>false,'outstanding_amount'=>'32.74'],
+]];
+$decision6=$coordinator6->nextAction($case6,$timeline6,['eligible'=>false,'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED],new DateTimeImmutable('2026-09-09T22:00:00Z'));
+gateSame('SELLER_SUPPORT_OPEN',$decision6['action'],'fresh classic FBA residual must escalate automatically to Seller Support');
+gateSame([['case_id'=>6,'patch'=>['state'=>SvAmazonReturnStates::CREDIT_PENDING]]],$p6->cases->updates,'automatic Seller Support escalation must clear the persisted human-review gate');
 echo "decision-coordinator-clears-review-gate-test: OK\n";
