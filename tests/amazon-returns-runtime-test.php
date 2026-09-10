@@ -44,7 +44,9 @@ rtAssert(str_contains($daemon,"['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_
 rtAssert(str_contains($daemon,'amazon_returns_pdo()'),'Daemon must use standalone DB bootstrap.');
 rtAssert(str_contains($daemon,'listSafeTReimbursements'),'Daemon must read documented Finances v0 SAFE-T reimbursements.');
 rtAssert(str_contains($daemon,'persistSafeTReimbursements'),'Daemon must persist SAFE-T reimbursements through tenant-scoped stores.');
-rtAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'Internal scheduler must be able to force a fresh financial read when a decision reaches its recheck point.');
+rtAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'A deadline decision must be able to force a fresh financial read.');
+rtAssert(str_contains($daemon,'SvAmazonReturnsRuntime::knownActionDue'),'Known next-action dates must trigger the scheduler without a five-minute polling cadence.');
+rtAssert(str_contains($daemon,"'next_action_at'=>null"),'Consumed next-action dates must be cleared so a due trigger does not spin forever.');
 rtAssert(!str_contains($daemon,'EventStore.php'),'Daemon cannot load global EventStore.');
 rtAssert(!str_contains($daemon,'Outbox.php'),'Daemon cannot load global Outbox.');
 rtAssert(!str_contains($daemon,'config/constants.php'),'Daemon cannot load website constants.');
@@ -52,10 +54,17 @@ rtAssert(!str_contains($daemon,'includes/pdo-database.php'),'Daemon cannot load 
 
 $cadence=SvAmazonReturnsRuntime::cadences();
 foreach(['gmail','gmail_refund_reconciliation','financial','sp_api','returns_report','seller_central','policy_monitor'] as $task){
-    rtSame(86400,$cadence[$task],$task.' external business consultation must be daily.');
+    rtSame(43200,$cadence[$task],$task.' routine external business consultation must run twice per day.');
 }
-rtSame(300,$cadence['scheduler'],'Internal deadline/action scheduler must run every five minutes.');
-rtSame(14400,$cadence['review_operations'],'Internal review follow-up is not an external business consultation.');
+rtSame(43200,$cadence['scheduler'],'Routine internal scheduler sweep must run twice per day.');
+rtSame(14400,$cadence['review_operations'],'Internal review follow-up remains independent from business polling.');
 rtSame(900,$cadence['health'],'Health monitoring remains frequent and is not an external business routine.');
+
+$now=new DateTimeImmutable('2026-09-10T12:00:00Z');
+rtSame(false,SvAmazonReturnsRuntime::knownActionDue([], $now),'No case means no date-triggered scheduler run.');
+rtSame(false,SvAmazonReturnsRuntime::knownActionDue([['next_action_at'=>'2026-09-10T13:00:00Z']],$now),'Future action must not trigger early.');
+rtSame(true,SvAmazonReturnsRuntime::knownActionDue([['next_action_at'=>'2026-09-10T12:00:00Z']],$now),'Known action must trigger at its exact due time.');
+rtSame(true,SvAmazonReturnsRuntime::knownActionDue([['next_action_at'=>'2026-09-10T11:59:59Z']],$now),'Overdue known action must trigger immediately.');
+rtSame(false,SvAmazonReturnsRuntime::knownActionDue([['next_action_at'=>null],['next_action_at'=>'invalid']],$now),'Missing or invalid dates must not create a tight loop.');
 
 echo "amazon-returns-runtime-test: OK\n";
