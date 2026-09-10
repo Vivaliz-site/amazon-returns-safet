@@ -43,5 +43,6 @@ frhSame(true,str_contains($daemon,'SvAmazonFinancialRefresh::safeSchedule('),'da
 frhSame(true,str_contains($daemon,'SvAmazonFinancialRefresh::nextReconciliationBatch('),'daemon reconciliation must use bounded persisted case rotation');
 frhSame(false,str_contains($daemon,'SvAmazonFinancialRefresh::financialCases('),'unbounded full-scan helper must not remain in daemon');
 frhSame(false,str_contains($daemon,'casesWithExpectedReimbursement(250)'),'fixed LIMIT 250 path must not remain in daemon');
+frhSame(true,str_contains($daemon,"'next_action_at'=>\$terminal?null:(\$case['next_action_at']??null)"),'financial recovery must clear any obsolete next-action date');
 frhSame(true,str_contains($daemon,'$task===\'financial\' && $this->config->enabled()'),'disabled runtime must bypass financial acceptance gate');
 echo "financial-runtime-hardening-test: OK\n";

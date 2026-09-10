@@ -581,6 +581,7 @@ final class SvAmazonReturnsDaemon
                 'closed_at'=>$terminal
                     ? ($case['closed_at'] ?? gmdate('Y-m-d H:i:s'))
                     : null,
+                'next_action_at'=>$terminal?null:($case['next_action_at']??null),
             ]);
             if($confirmation!==null)$this->persistence->events->append($confirmation);
             $updated++;

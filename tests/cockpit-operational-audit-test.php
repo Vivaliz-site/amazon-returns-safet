@@ -49,6 +49,7 @@ coaAssert(str_contains($ui,"if(dates.children.length>1)root.append(dates)"),'Emp
 coaAssert(str_contains($api,"'physical_received_at'"),'Detail API must expose the actual warehouse receipt timestamp when known.');
 coaAssert(str_contains($ui,'operationalDate(c.physical_received_at)'),'Receipt date must come from the physical receipt event, not case closure time.');
 coaAssert(str_contains($ui,'function externalWriteSummary('),'Last automatic action must describe queued, successful, or failed execution truthfully.');
+coaAssert(str_contains($ui,"includes(String(c.state||''))?null:(c.next_action_at||c.eligibility_at)"),'Concluded cases must not display an obsolete next action date.');
 
 // Repeated telemetry is condensed while material events remain visible behind an explicit disclosure.
 coaAssert(str_contains($ui,'function condenseTimeline('),'Timeline condensation is required.');
