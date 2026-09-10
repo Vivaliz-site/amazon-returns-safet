@@ -10,7 +10,8 @@ require_once __DIR__ . '/BridgeLiveness.php';
 
 final class SvAmazonReturnsRuntime
 {
-    private static ?string $nextKnownActionAt=null;
+    /** @var list<array<string,mixed>> */
+    private static array $knownActionCases=[];
 
     /** @return array<string,int> */
     public static function cadences(): array
@@ -40,13 +41,14 @@ final class SvAmazonReturnsRuntime
     }
 
     /** @param list<array<string,mixed>> $cases */
-    public static function nextKnownWakeAt(array $cases): ?string
+    public static function nextKnownWakeAt(array $cases,?DateTimeImmutable $after=null): ?string
     {
+        $after=$after?->setTimezone(new DateTimeZone('UTC'));
         $next=null;
         foreach($cases as $case){
             if(!is_array($case) || ($case['closed_at'] ?? null)!==null)continue;
             $when=self::timestamp($case['next_action_at'] ?? null);
-            if($when===null)continue;
+            if($when===null || ($after!==null && $when<=$after))continue;
             if($next===null || $when<$next)$next=$when;
         }
         return $next?->format(DATE_ATOM);
@@ -63,9 +65,9 @@ final class SvAmazonReturnsRuntime
         }
     }
 
-    private static function refreshNextKnownActionAt(SvAmazonTenantPersistence $p): void
+    private static function refreshKnownActionCases(SvAmazonTenantPersistence $p): void
     {
-        self::$nextKnownActionAt=self::nextKnownWakeAt($p->cases->openCases(1000));
+        self::$knownActionCases=$p->cases->openCases(1000);
     }
 
     public static function decisionStackRevision(): string
@@ -140,7 +142,11 @@ final class SvAmazonReturnsRuntime
             if($now->getTimestamp()-$when->getTimestamp()>=$seconds)$due[]=$task;
         }
         $wakeState=$state;
-        if(self::$nextKnownActionAt!==null)$wakeState['next_known_action_at']=self::$nextKnownActionAt;
+        if(self::$knownActionCases!==[]){
+            $lastScheduler=self::timestamp($state['scheduler'] ?? null);
+            $nextWake=self::nextKnownWakeAt(self::$knownActionCases,$lastScheduler);
+            if($nextWake!==null)$wakeState['next_known_action_at']=$nextWake;
+        }
         if(self::knownActionDue($wakeState,$now)){
             $due=[...$due,'known_action_wake','gmail','sp_api','financial','scheduler','seller_central'];
         }
@@ -215,7 +221,7 @@ final class SvAmazonReturnsRuntime
         $policySeeds=SvAmazonReturnPolicySeeder::ensure($p->policies);
         $policyAudit=$policySeeds>0 ? SvAmazonReturnPolicySeeder::auditDefinitions($p->policies->allActive()) : ['valid'=>true,'policy_key'=>null];
         if(!$policyAudit['valid'])throw new RuntimeException('Active operational policy does not match approved opening rule.');
-        self::refreshNextKnownActionAt($p);
+        self::refreshKnownActionCases($p);
         return [
             'status'=>'OK',
             'tenant_id'=>$context->tenantId(),
@@ -223,7 +229,7 @@ final class SvAmazonReturnsRuntime
             'schema_tables'=>count(SvAmazonReturnsSchema::statements()),
             'policy_seeds'=>$policySeeds,
             'policy_audit'=>$policyAudit,
-            'next_known_action_at'=>self::$nextKnownActionAt,
+            'next_known_action_at'=>self::nextKnownWakeAt(self::$knownActionCases),
         ];
     }
 
