@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__.'/Config.php';
 require_once __DIR__.'/ReviewAdvisor.php';
-require_once __DIR__.'/OpenAiReviewAdvisor.php';
+require_once __DIR__.'/HybridReviewAdvisor.php';
+require_once __DIR__.'/ReviewMemoryContext.php';
 require_once __DIR__.'/GmailApi.php';
 
 /**
@@ -48,12 +49,17 @@ final class SvAmazonReviewOperations
                 continue;
             }
             try{
-                $advisor=$this->advisor??=new SvAmazonOpenAiReviewAdvisor($this->config);
-                $suggestion=$advisor->suggest(is_array($row['context']??null)?$row['context']:[]);
+                $advisor=$this->advisor??=new SvAmazonHybridReviewAdvisor($this->config);
+                $context=(new SvAmazonReviewMemoryContext($this->persistence))->enrich(
+                    is_array($row['context']??null)?$row['context']:[]
+                );
+                $suggestion=$advisor->suggest($context);
                 $model=method_exists($advisor,'model')?trim((string)$advisor->model()):'review-advisor';
                 if($model==='')$model='review-advisor';
+                $provider=method_exists($advisor,'provider')?strtoupper(trim((string)$advisor->provider())):'OPENAI';
+                if($provider==='')$provider='OPENAI';
                 $saved=$this->persistence->reviews->saveSuggestion(
-                    (int)$row['id'],(int)($row['version']??0),$suggestion,$model
+                    (int)$row['id'],(int)($row['version']??0),$suggestion,$model,$provider
                 );
                 $ready[]=$saved;
                 $result['suggested']++;
@@ -69,7 +75,6 @@ final class SvAmazonReviewOperations
         }
         $result['ready_reviews']=count($ready);
 
-        // A human notification is only valid when every currently-open review is AI-ready.
         if(count($ready)!==count($rows)){
             $result['reminder_skipped']=1;
             return $result;
