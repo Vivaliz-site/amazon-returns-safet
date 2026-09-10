@@ -94,6 +94,14 @@ final class SvAmazonReturnsRuntime
         return hash('sha256',implode('|',$parts));
     }
 
+    public static function outboxStackRevision(): string
+    {
+        $file=__DIR__.'/TenantOutbox.php';
+        $hash=@hash_file('sha256',$file);
+        if(!is_string($hash) || $hash==='')throw new RuntimeException('Unable to fingerprint Amazon returns outbox stack.');
+        return $hash;
+    }
+
     public static function financialRefreshContinuationRequired(array $results): bool
     {
         if((int)($results['scheduler']['financial_checks_requested']??0)<1)return false;
@@ -123,7 +131,8 @@ final class SvAmazonReturnsRuntime
         array $state,
         DateTimeImmutable $now,
         ?string $decisionStackRevision=null,
-        ?string $gmailEvidenceRevision=null
+        ?string $gmailEvidenceRevision=null,
+        ?string $outboxStackRevision=null
     ): array {
         $now=$now->setTimezone(new DateTimeZone('UTC'));
         $due=['bootstrap'];
@@ -156,6 +165,13 @@ final class SvAmazonReturnsRuntime
             && ($state['decision_stack_revision'] ?? null)!==$decisionStackRevision
         ){
             $due[]='scheduler';
+        }
+        if(
+            is_string($outboxStackRevision)
+            && $outboxStackRevision!==''
+            && ($state['outbox_stack_revision'] ?? null)!==$outboxStackRevision
+        ){
+            $due=[...$due,'scheduler','seller_central'];
         }
         if(
             is_string($gmailEvidenceRevision)

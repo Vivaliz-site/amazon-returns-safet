@@ -60,9 +60,10 @@ final class SvAmazonReturnsDaemon
         $decisionStackRevision=SvAmazonReturnsRuntime::decisionStackRevision();
         $decisionStackChanged=($state['decision_stack_revision'] ?? null)!==$decisionStackRevision;
         $gmailEvidenceRevision=SvAmazonReturnsRuntime::gmailEvidenceRevision();
+        $outboxStackRevision=SvAmazonReturnsRuntime::outboxStackRevision();
         $gmailEvidenceChanged=($state['gmail_evidence_revision'] ?? null)!==$gmailEvidenceRevision;
         $due=SvAmazonReturnsRuntime::dueTasks(
-            $state,$now,$decisionStackRevision,$gmailEvidenceRevision
+            $state,$now,$decisionStackRevision,$gmailEvidenceRevision,$outboxStackRevision
         );
         $openingRevision=$bootstrap['policy_audit']['policy_key']??null;
         if($openingRevision!==null && ($state['opening_policy_revision']??null)!==$openingRevision){
@@ -108,6 +109,9 @@ final class SvAmazonReturnsDaemon
             && ($results['scheduler']['status'] ?? null)==='OK'
         ){
             $state['decision_stack_revision']=$decisionStackRevision;
+        }
+        if(isset($results['seller_central']) && ($results['seller_central']['status'] ?? null)==='OK'){
+            $state['outbox_stack_revision']=$outboxStackRevision;
         }
         if(
             $gmailEvidenceChanged
