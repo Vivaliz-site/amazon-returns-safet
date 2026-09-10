@@ -12,7 +12,7 @@ final class SvAmazonCockpitTimeline
         'outbox_id','write_content_sha256','claim_status','safe_t_id','order_id','decision_text',
         'decision_fingerprint','financial_status','refund_amount','reimbursement_amount','outcome',
         'review_outcome','review_suggested_action','review_excerpt','promised_date','deadline_at',
-        'appeal_deadline_at','state','physical_status','resume_scope','gmail_message_id','gmail_thread_id',
+        'appeal_deadline_at','state','physical_status','resume_scope','gmail_message_id','gmail_thread_id','communications',
     ];
     private const SECRET_KEYS=[
         'access_token','refresh_token','client_secret','password','cookie','authorization','mfa','otp',
