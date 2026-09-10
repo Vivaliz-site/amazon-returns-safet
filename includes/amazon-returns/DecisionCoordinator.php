@@ -60,7 +60,7 @@ final class SvAmazonDecisionCoordinator
         $policyState=(string)($policy['state']??'');
         if(SvAmazonReturnStates::isValid($policyState) && $policyState!==SvAmazonReturnStates::POLICY_REVIEW_REQUIRED){
             $state=$policyState;
-        }elseif(($decision['action']??'')==='CHECK_FINANCES'){
+        }else{
             $financialExposure=trim((string)($case['refund_at']??''))!==''
                 || trim((string)($case['seller_debit_at']??''))!==''
                 || (float)($case['expected_reimbursement_amount']??0)>0.00001;
@@ -71,11 +71,6 @@ final class SvAmazonDecisionCoordinator
                     SvAmazonReturnPhysicalStatuses::CARRIER_DELIVERED_PENDING_PHYSICAL=>SvAmazonReturnStates::CARRIER_DELIVERED_PENDING_PHYSICAL,
                     default=>SvAmazonReturnStates::AWAITING_RETURN,
                 };
-        }elseif(($decision['action']??'')==='WAIT'
-            && (trim((string)($case['refund_at']??''))!==''
-                || trim((string)($case['seller_debit_at']??''))!==''
-                || (float)($case['expected_reimbursement_amount']??0)>0.00001)){
-            $state=SvAmazonReturnStates::CREDIT_PENDING;
         }
         if($state!==null)$this->persistence->cases->update((int)$case['id'],['state'=>$state]);
     }
