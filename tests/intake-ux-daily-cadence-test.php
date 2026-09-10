@@ -20,6 +20,11 @@ foreach(['gmail','gmail_refund_reconciliation','seller_central','financial','sp_
     );
 }
 intakeUxAssert(preg_match("/'scheduler'\\s*=>\\s*300/",$runtime)!==1,'No business scheduler may remain at five-minute cadence.');
+intakeUxAssert(preg_match("/'health'\\s*=>\\s*900/",$runtime)===1,'Technical health monitoring may remain frequent.');
+intakeUxAssert(str_contains($runtime,'knownActionDue'),'Runtime must expose an event/date-driven due check for known next-action timestamps.');
+$daemon=intakeUxRead('workers/amazon-returns/daemon.php');
+intakeUxAssert(str_contains($daemon,'SvAmazonReturnsRuntime::knownActionDue'),'Daemon must wake the scheduler for a known due action without restoring periodic five-minute sweeps.');
+intakeUxAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'When a due decision requires financial revalidation, it must force a fresh external read instead of waiting for the routine 12-hour cadence.');
 
 $intakePage=intakeUxRead('admin/amazon-returns/intake.php');
 intakeUxAssert(str_contains($intakePage,'Número da NF de venda'),'Intake must offer NF as a lookup option.');
@@ -59,7 +64,12 @@ intakeUxAssert(str_contains($invoiceSearch,"$.invoice_number"),'Invoice lookup m
 intakeUxAssert(str_contains($invoiceSearch,'tenant_id=:invoice_tenant_id') && str_contains($invoiceSearch,'amazon_connection_id=:invoice_connection_id'),'NF lookup must remain tenant/connection scoped.');
 
 $memory=intakeUxRead('docs/MEMORIA-DO-PROJETO.md');
-intakeUxAssert(str_contains($memory,'duas vezes por dia'),'Project memory must record the approved twelve-hour cadence.');
+intakeUxAssert(str_contains($memory,'duas vezes por dia') || str_contains($memory,'duas vezes ao dia'),'Project memory must record the approved twelve-hour cadence.');
+intakeUxAssert(str_contains($memory,'12 horas'),'Project memory must state the twelve-hour interval.');
+intakeUxAssert(str_contains($memory,'sem depender de um ciclo periódico de cinco minutos'),'Project memory must record that known dates wake the scheduler without a five-minute routine.');
 intakeUxAssert(!str_contains($memory,'deve executar a cada **cinco minutos**'),'Project memory must not retain the superseded five-minute scheduler rule.');
+intakeUxAssert(str_contains($memory,'consulta manual') && str_contains($memory,'imediatamente'),'Project memory must preserve immediate on-demand lookup.');
+$delivery=intakeUxRead('docs/REGRAS-DE-ENTREGA.md');
+intakeUxAssert(str_contains($delivery,'teste funcional de ponta a ponta') && str_contains($delivery,'não pode ser considerada concluída'),'Delivery rules must require real end-to-end functional validation before completion.');
 
 echo "intake-ux-daily-cadence-test: OK\n";

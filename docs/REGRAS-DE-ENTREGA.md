@@ -9,7 +9,7 @@ O agente executa a tarefa; não se limita a diagnóstico, plano, sugestão ou al
 
 O ciclo obrigatório é **inspecionar → reproduzir → corrigir → testar → revisar → commitar → publicar → conferir CI → fazer merge → acompanhar auto gate → validar produção**. Etapas sem aplicação devem ter justificativa concreta. Uma atualização exclusivamente documental não dispensa revisão, CI, merge e verificação do release implantado.
 
-Não declarar conclusão por ter criado PR, obtido teste verde, feito merge ou recebido HTTP 200. A conclusão técnica exige o código pretendido realmente implantado. A homologação funcional exige, separadamente, evidência do comportamento solicitado.
+Não declarar conclusão por ter criado PR, obtido teste verde, feito merge ou recebido HTTP 200. A conclusão técnica exige o código pretendido realmente implantado. A homologação funcional exige, separadamente, evidência do comportamento solicitado. Quando houver fluxo executável, o **teste funcional de ponta a ponta** deve exercitar o caminho real ou a representação segura mais fiel disponível; sem essa evidência, a alteração **não pode ser considerada concluída**.
 
 ## 2. Nenhuma alteração abandonada
 No início e antes da entrega, inventariar `git status`, diferenças staged/unstaged, arquivos não rastreados, stashes, commits não publicados, branches e worktrees deste repositório. Registrar a origem e a finalidade de cada pendência relevante.

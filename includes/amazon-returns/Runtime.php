@@ -29,12 +29,16 @@ final class SvAmazonReturnsRuntime
         ];
     }
 
-    public static function knownActionDue(array $state,DateTimeImmutable $now): bool
+    public static function knownActionDue(array $stateOrCases,DateTimeImmutable $now): bool
     {
-        $wake=self::timestamp($state['next_known_action_at'] ?? null);
-        if($wake===null)return false;
         $now=$now->setTimezone(new DateTimeZone('UTC'));
-        return $wake<=$now;
+        if(array_key_exists('next_known_action_at',$stateOrCases)){
+            $wake=self::timestamp($stateOrCases['next_known_action_at']);
+            return $wake!==null && $wake<=$now;
+        }
+        $wake=self::nextKnownWakeAt($stateOrCases,$now);
+        $due=self::timestamp($wake);
+        return $due!==null && $due<=$now;
     }
 
     /** @param list<mixed> $candidates */

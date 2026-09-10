@@ -6,7 +6,7 @@ foreach(['gmail','gmail_refund_reconciliation','financial','sp_api','returns_rep
     if(($cadence[$task]??null)!==43200)throw new RuntimeException($task.' routine must run twice per day.');
 }
 if(($cadence['review_operations']??null)!==14400){
-    throw new RuntimeException('Internal review follow-up may remain every four hours.');
+    throw new RuntimeException('Internal review follow-up remains independent from business polling.');
 }
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 if(!str_contains($daemon,'gmail_refund_reconciliation') || !str_contains($daemon,'reembolso iniciado')){
@@ -14,6 +14,12 @@ if(!str_contains($daemon,'gmail_refund_reconciliation') || !str_contains($daemon
 }
 if(!str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])")){
     throw new RuntimeException('A due action may force fresh financial data instead of using stale data.');
+}
+if(!str_contains($daemon,'SvAmazonReturnsRuntime::knownActionDue')){
+    throw new RuntimeException('Known next-action timestamps must wake the scheduler without a periodic five-minute sweep.');
+}
+if(!str_contains($daemon,"'next_action_at'=>null")){
+    throw new RuntimeException('Scheduler must clear a consumed next-action timestamp to avoid repeated due-trigger execution.');
 }
 $deployTimer=(string)file_get_contents(__DIR__.'/../deploy/systemd/amazon-returns-deploy.timer');
 if(str_contains($deployTimer,'OnUnitActiveSec=300') || str_contains($deployTimer,'every five minutes')){

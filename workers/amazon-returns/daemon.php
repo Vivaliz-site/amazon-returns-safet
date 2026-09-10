@@ -64,6 +64,9 @@ final class SvAmazonReturnsDaemon
         $due=SvAmazonReturnsRuntime::dueTasks(
             $state,$now,$decisionStackRevision,$gmailEvidenceRevision
         );
+        if(SvAmazonReturnsRuntime::knownActionDue($this->persistence->cases->openCases(1000),$now)){
+            $due=array_values(array_unique([...$due,'scheduler']));
+        }
         $openingRevision=$bootstrap['policy_audit']['policy_key']??null;
         if($openingRevision!==null && ($state['opening_policy_revision']??null)!==$openingRevision){
             $due=array_values(array_unique([...$due,'scheduler','sp_api','financial']));
@@ -376,26 +379,35 @@ final class SvAmazonReturnsDaemon
             $timeline=$this->persistence->events->eventsForCase($caseId);
             $decision=$coordinator->nextAction($projected,$timeline,$policy,$now);
             $decision=SvAmazonReturnsScheduler::normalizeRecoveryChannel($projected,$decision,$now);
+            $action=(string)($decision['action'] ?? 'WAIT');
+            $isWrite=SvAmazonReturnsScheduler::isWriteAction($decision);
             $keepKind=null;
             $keepKey=null;
-            if(SvAmazonReturnsScheduler::isWriteAction($decision)){
-                $keepKind=(string)($decision['action']??'');
+            if($isWrite){
+                $keepKind=$action;
                 $keepKey=trim((string)($decision['idempotency_key']??''));
                 if($keepKey==='')throw new LogicException('Current write decision missing idempotency key during stale-write sweep.');
             }
             $supersedeReason='SUPERSEDED_BY_CURRENT_DECISION:'
-                .(string)($decision['action']??'WAIT').':'
+                .$action.':'
                 .(string)($decision['reason']??'UNSPECIFIED');
             $supersededWrites+=$this->persistence->outbox->supersedePendingWritesExcept(
                 $caseId,$keepKind,$keepKey,$supersedeReason
             );
             $timing=['eligibility_at'=>$policy['eligibility_at']??null,'policy_version_id'=>$policy['policy_version_id']??null];
-            if(array_key_exists('next_action_at',$decision))$timing['next_action_at']=$decision['next_action_at'];
-            elseif(trim((string)($projected['safe_t_id']??''))==='')$timing['next_action_at']=$policy['eligibility_at']??null;
+            if(array_key_exists('next_action_at',$decision)){
+                $candidate=SvAmazonRequestedWait::timestamp($decision['next_action_at']);
+                if($candidate!==null && $candidate>$now)$timing['next_action_at']=$candidate->format('Y-m-d H:i:s');
+                elseif($action==='CHECK_FINANCES')$timing['next_action_at']=$decision['next_action_at'];
+                elseif(!$isWrite)$timing['next_action_at']=null;
+            }elseif(trim((string)($projected['safe_t_id']??''))==='' && ($policy['eligible']??false)!==true){
+                $timing['next_action_at']=$policy['eligibility_at']??null;
+            }elseif(!$isWrite){
+                $timing['next_action_at']=null;
+            }
             $this->persistence->cases->update($caseId,$timing);
             $projected=array_replace($projected,$timing);
             $decisions++;
-            $action=(string)($decision['action'] ?? 'WAIT');
             if($action==='CHECK_FINANCES')$financialChecks++;
             if($action==='CHECK_FINANCES')$requestedFinancialRecheck=true;
             $decisionAudit[]=SvAmazonReturnsRuntimeAudit::decision($projected,$timeline,$policy,$decision);
@@ -431,7 +443,10 @@ final class SvAmazonReturnsDaemon
             $scheduled=(new SvAmazonReturnsScheduler($engine))->scheduleDecision(
                 $this->persistence->outbox,$projected,$decision,$timeline
             );
-            if(($scheduled['outbox_id'] ?? null)!==null)$enqueued++;
+            if(($scheduled['outbox_id'] ?? null)!==null){
+                $enqueued++;
+                $this->persistence->cases->update($caseId,['next_action_at'=>null]);
+            }
         }
         return [
             'status'=>'OK','cases'=>count($cases),'decisions'=>$decisions,
