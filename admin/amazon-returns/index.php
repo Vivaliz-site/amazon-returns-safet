@@ -14,6 +14,7 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <title>Devoluções Amazon</title>
 <link rel="stylesheet" href="/admin/amazon-returns/assets/cockpit.css">
 <link rel="stylesheet" href="/admin/amazon-returns/assets/cockpit-operational.css?v=1">
+<link rel="stylesheet" href="/admin/amazon-returns/assets/cockpit-conversation.css?v=1">
 </head><body><main class="wrap">
 <div class="top"><div><h1>Devoluções Amazon</h1><div class="muted">Acompanhe valores, prazos, mensagens e ações necessárias para recuperar reembolsos.</div></div><a class="btn" href="/admin/amazon-returns/intake.php">Registrar devolução recebida</a></div>
 <section id="operational-overview" class="operational-overview" aria-label="Resumo operacional"><span class="muted">Carregando resumo operacional…</span></section>
@@ -51,4 +52,4 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <div class="review-submit"><button type="button" id="review-preview">Ver casos afetados</button><button type="button" id="review-confirm" disabled>Confirmar decisão</button></div>
 </section>
 </section>
-</main><script src="/admin/amazon-returns/assets/cockpit.js" defer></script><script src="/admin/amazon-returns/assets/operator-language.js" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=review-open-2" defer></script><script src="/admin/amazon-returns/assets/ux-polish.js?v=1" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational.js?v=1" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational-bootstrap.js?v=1" defer></script></body></html>
+</main><script src="/admin/amazon-returns/assets/cockpit.js" defer></script><script src="/admin/amazon-returns/assets/operator-language.js" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=review-open-2" defer></script><script src="/admin/amazon-returns/assets/ux-polish.js?v=1" defer></script><script src="/admin/amazon-returns/assets/cockpit-conversation.js?v=1" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational.js?v=2" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational-bootstrap.js?v=1" defer></script></body></html>
