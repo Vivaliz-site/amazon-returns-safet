@@ -44,7 +44,7 @@ rtAssert(str_contains($daemon,"['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_
 rtAssert(str_contains($daemon,'amazon_returns_pdo()'),'Daemon must use standalone DB bootstrap.');
 rtAssert(str_contains($daemon,'listSafeTReimbursements'),'Daemon must read documented Finances v0 SAFE-T reimbursements.');
 rtAssert(str_contains($daemon,'persistSafeTReimbursements'),'Daemon must persist SAFE-T reimbursements through tenant-scoped stores.');
-rtAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'A deadline decision must be able to force a fresh financial read.');
+rtAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'Known-date decisions may force a fresh financial read when they are evaluated.');
 rtAssert(str_contains($daemon,'SvAmazonReturnsRuntime::knownActionDue'),'Known next-action dates must trigger the scheduler without a five-minute polling cadence.');
 rtAssert(str_contains($daemon,"'next_action_at'=>null"),'Consumed next-action dates must be cleared so a due trigger does not spin forever.');
 rtAssert(!str_contains($daemon,'EventStore.php'),'Daemon cannot load global EventStore.');
@@ -53,11 +53,10 @@ rtAssert(!str_contains($daemon,'config/constants.php'),'Daemon cannot load websi
 rtAssert(!str_contains($daemon,'includes/pdo-database.php'),'Daemon cannot load website DB layer.');
 
 $cadence=SvAmazonReturnsRuntime::cadences();
-foreach(['gmail','gmail_refund_reconciliation','financial','sp_api','returns_report','seller_central','policy_monitor'] as $task){
-    rtSame(43200,$cadence[$task],$task.' routine external business consultation must run twice per day.');
+foreach(['gmail','gmail_refund_reconciliation','financial','sp_api','returns_report','scheduler','seller_central','policy_monitor'] as $task){
+    rtSame(43200,$cadence[$task],$task.' routine must run twice per day.');
 }
-rtSame(43200,$cadence['scheduler'],'Routine internal scheduler sweep must run twice per day.');
-rtSame(14400,$cadence['review_operations'],'Internal review follow-up remains independent from business polling.');
+rtSame(14400,$cadence['review_operations'],'Internal review follow-up is not an external business consultation.');
 rtSame(900,$cadence['health'],'Health monitoring remains frequent and is not an external business routine.');
 
 $now=new DateTimeImmutable('2026-09-10T12:00:00Z');

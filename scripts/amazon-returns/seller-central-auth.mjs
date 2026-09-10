@@ -9,10 +9,12 @@ export function classifyAmazonAuthState(state = {}) {
   const text = normalize(state.text);
   const combined = `${href}\n${title}\n${text}`;
 
+  if (href.includes('sellercentral.amazon.') && href.includes('/account-switcher/')) return 'ACCOUNT_SWITCHER';
+
   const humanMarkers = [
     'captcha', 'digite os caracteres', '/ap/cvf', 'verifique sua identidade',
     'confirme sua identidade', 'aprove esta solicitação', 'outro dispositivo',
-    'chave de segurança', 'security key', 'passkey', 'recuperar sua conta',
+    'chave de segurança', 'security key', 'recuperar sua conta',
     'account recovery',
   ];
   if (humanMarkers.some(marker => combined.includes(marker))) return 'HUMAN_CHALLENGE';
@@ -97,10 +99,19 @@ export function readSecretFile(file) {
 
 const defaultSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+async function defaultApplyMarketplace(cdp, marketplaceLabel) {
+  if (!cdp || typeof cdp.evaluate !== 'function') return false;
+  const marker = String(marketplaceLabel ?? '').trim().toLowerCase();
+  if (!marker) return false;
+  const serialized = JSON.stringify(marker);
+  const expression = `(()=>new Promise(resolve=>{const cards=[...document.querySelectorAll('button.full-page-account-switcher-account-details')];const matches=cards.filter(card=>(card.innerText||'').toLowerCase().includes(${serialized}));if(matches.length!==1){resolve(false);return}matches[0].click();setTimeout(()=>{const host=document.querySelector('kat-button.full-page-account-switcher-button');const button=host?.shadowRoot?.querySelector('button');if(!button||button.disabled){resolve(false);return}button.click();resolve(true)},900)}))()`;
+  return (await cdp.evaluate(expression)) === true;
+}
+
 async function defaultCredentialStage(cdp) {
   if (!cdp || typeof cdp.evaluate !== 'function') return 'UNKNOWN';
   try {
-    const stage = String(await cdp.evaluate(`(()=>{const pass=document.querySelector('#ap_password,input[name="password"],input[type="password"]');const email=document.querySelector('#ap_email,input[name="email"],input[type="email"]');return pass?'PASSWORD':(email?'IDENTIFIER':'UNKNOWN')})()`));
+    const stage = String(await cdp.evaluate(`(()=>{const pass=document.querySelector('#ap_password,input[name="password"]:not(#ap-credential-autofill-hint):not(.hide):not([hidden]),input[type="password"]:not(#ap-credential-autofill-hint):not(.hide):not([hidden])');const email=document.querySelector('#ap_email,input[name="email"],input[type="email"]');return pass?'PASSWORD':(email?'IDENTIFIER':'UNKNOWN')})()`));
     return stage === 'PASSWORD' || stage === 'IDENTIFIER' ? stage : 'UNKNOWN';
   } catch {
     return 'UNKNOWN';
@@ -114,9 +125,10 @@ async function defaultApplyCredentials(cdp, username, password, previousStage = 
   const expression = `(()=>{\n`
     + `const set=(el,val)=>{if(!el)return false;const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const d=Object.getOwnPropertyDescriptor(proto,'value');d?.set?.call(el,val);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return true};\n`
     + `const email=document.querySelector('#ap_email,input[name="email"],input[type="email"]');\n`
-    + `const pass=document.querySelector('#ap_password,input[name="password"],input[type="password"]');\n`
+    + `const pass=document.querySelector('#ap_password,input[name="password"]:not(#ap-credential-autofill-hint):not(.hide):not([hidden]),input[type="password"]:not(#ap-credential-autofill-hint):not(.hide):not([hidden])');\n`
     + `const stage=pass?'PASSWORD':(email?'IDENTIFIER':'UNSUPPORTED');if(stage==='UNSUPPORTED')return 'UNSUPPORTED';if(stage===${previous})return 'STAGE_UNCHANGED';\n`
     + `let touched=false;if(email)touched=set(email,${u})||touched;if(pass)touched=set(pass,${p})||touched;if(!touched)return 'UNSUPPORTED';\n`
+    + `if(stage==='IDENTIFIER'&&email?.form){HTMLFormElement.prototype.submit.call(email.form);return 'IDENTIFIER_SUBMITTED'};\n`
     + `const button=(pass?document.querySelector('#signInSubmit,input[type="submit"],button[type="submit"]'):document.querySelector('#continue,input[type="submit"],button[type="submit"]'))||document.querySelector('#signInSubmit,#continue');\n`
     + `if(!button)return 'UNSUPPORTED';if(button.disabled)return 'STAGE_PENDING';button.click();return stage+'_SUBMITTED'})()`;
   return cdp.evaluate(expression);
@@ -137,6 +149,8 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
   const readSecret = options.readSecret || readSecretFile;
   const applyCredentials = options.applyCredentials || defaultApplyCredentials;
   const applyTotp = options.applyTotp || defaultApplyTotp;
+  const applyMarketplace = options.applyMarketplace || defaultApplyMarketplace;
+  const marketplaceLabel = String(options.marketplaceLabel ?? process.env.SELLER_CENTRAL_MARKETPLACE_LABEL ?? 'Brazil').trim();
   const sleep = options.sleep || defaultSleep;
   const credentialStage = options.credentialStage
     || (typeof cdp.evaluate === 'function' ? defaultCredentialStage : null);
@@ -151,6 +165,21 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
 
   let state = await cdp.pageState();
   let auth = classifyAmazonAuthState(state);
+  const resolveMarketplace = async () => {
+    if (auth !== 'ACCOUNT_SWITCHER') return null;
+    if (!marketplaceLabel) return { status: 'AUTH_REQUIRED', reason: 'ACCOUNT_SWITCHER_NOT_RESOLVED' };
+    let applied = false;
+    try { applied = await applyMarketplace(cdp, marketplaceLabel); } catch {}
+    if (!applied) return { status: 'AUTH_REQUIRED', reason: 'ACCOUNT_SWITCHER_NOT_RESOLVED' };
+    await sleep(1500);
+    state = await cdp.pageState();
+    auth = classifyAmazonAuthState(state);
+    if (auth === 'AUTHENTICATED') return { status: 'AUTHENTICATED', reason: 'MARKETPLACE_SELECTED' };
+    if (auth === 'HUMAN_CHALLENGE') return { status: 'HUMAN_CHALLENGE', reason: 'AMAZON_HUMAN_CHALLENGE' };
+    return { status: 'AUTH_REQUIRED', reason: 'MARKETPLACE_SELECTION_NOT_COMPLETED' };
+  };
+  let marketplaceResult = await resolveMarketplace();
+  if (marketplaceResult) return marketplaceResult;
   if (auth === 'AUTHENTICATED') return { status: 'AUTHENTICATED', reason: 'SESSION_REUSED' };
   if (auth === 'HUMAN_CHALLENGE') return { status: 'HUMAN_CHALLENGE', reason: 'AMAZON_HUMAN_CHALLENGE' };
   if (auth === 'UNKNOWN') return { status: 'AUTH_REQUIRED', reason: 'UNKNOWN_AUTH_CHALLENGE' };
@@ -227,6 +256,8 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
     if (auth === 'UNKNOWN') return { status: 'AUTH_REQUIRED', reason: 'UNKNOWN_AUTH_CHALLENGE' };
   }
   if (auth === 'SIGN_IN') return { status: 'AUTH_REQUIRED', reason: 'SIGN_IN_NOT_COMPLETED' };
+  marketplaceResult = await resolveMarketplace();
+  if (marketplaceResult) return marketplaceResult;
 
   if (auth === 'TOTP') {
     let code;
@@ -249,6 +280,8 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
     auth = classifyAmazonAuthState(state);
   }
 
+  marketplaceResult = await resolveMarketplace();
+  if (marketplaceResult) return marketplaceResult;
   if (auth === 'AUTHENTICATED') return { status: 'AUTHENTICATED', reason: reauthenticated ? 'SESSION_REAUTHENTICATED' : 'SESSION_REUSED' };
   if (auth === 'HUMAN_CHALLENGE') return { status: 'HUMAN_CHALLENGE', reason: 'AMAZON_HUMAN_CHALLENGE' };
   return { status: 'AUTH_REQUIRED', reason: auth === 'UNKNOWN' ? 'UNKNOWN_AUTH_CHALLENGE' : 'REAUTHENTICATION_NOT_COMPLETED' };

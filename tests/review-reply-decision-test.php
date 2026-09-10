@@ -10,7 +10,9 @@ $event=static fn(string $outcome,string $action):array=>['event_type'=>'SAFE_T_E
 
 rdSame('WAIT',$engine->nextAction($case,[$event('WAIT','WAIT')],$policy)['action'],'Promised future action must wait.');
 rdSame('BLOCKED_REVIEW',$engine->nextAction($case,[$event('UNKNOWN_AMBIGUOUS','HUMAN_REVIEW')],$policy)['action'],'Ambiguous email reply must fail closed.');
-rdSame('SELLER_SUPPORT_OPEN',$engine->nextAction($case,[$event('DENIED_ACTIONABLE','OPEN_SUPPORT')],$policy)['action'],'Actionable email denial may escalate to Support when analyzer selects it.');
+$support=$engine->nextAction($case,[$event('DENIED_ACTIONABLE','OPEN_SUPPORT')],$policy);
+rdSame('SELLER_SUPPORT_OPEN',$support['action'],'Actionable email denial may escalate to Support when analyzer selects it.');
+rdSame('GENERAL_ORDER_SUPPORT',$support['support_route']??null,'Analyzer-selected Seller Support must use the general support route.');
 rdSame('SAFE_T_EMAIL_REPLY',$engine->nextAction($case,[$event('INFO_REQUESTED','RESPOND_EMAIL')],$policy)['action'],'Verified information request may create one email reply.');
 rdSame('BLOCKED_REVIEW',$engine->nextAction($case,[$event('DENIED_FINAL','HUMAN_REVIEW')],$policy)['action'],'Final language alone cannot auto-close without terminal gate.');
 rdSame('CLOSE_LOSS',$engine->nextAction($case,[$event('DENIED_FINAL','CLOSED_LOSS')],$policy)['action'],'Explicit terminal approval may close documented loss.');

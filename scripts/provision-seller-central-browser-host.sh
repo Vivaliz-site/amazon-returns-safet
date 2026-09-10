@@ -22,10 +22,16 @@ done
 [[ -n "$TOTP_HOST" ]] || { echo "--totp-host is required" >&2; exit 64; }
 
 browser=""
-for candidate in /usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome-stable /usr/bin/google-chrome; do
-  if [[ -x "$candidate" ]]; then browser="$candidate"; break; fi
+for candidate in /home/ubuntu/.cache/ms-playwright-arm64/chromium-*/chrome-linux-arm64/chrome /usr/bin/google-chrome-stable /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+  [[ -x "$candidate" ]] || continue
+  resolved="$(readlink -f "$candidate" 2>/dev/null || true)"
+  if [[ "$resolved" == "/usr/bin/snap" || "$resolved" == "/snap/bin/chromium" ]]; then
+    continue
+  fi
+  browser="$candidate"
+  break
 done
-[[ -n "$browser" ]] || { echo "supported Chromium browser not installed" >&2; exit 69; }
+[[ -n "$browser" ]] || { echo "supported non-Snap Chromium browser not installed" >&2; exit 69; }
 
 install -d -o ubuntu -g www-data -m 0750 "$BROWSER_ROOT"
 install -d -o ubuntu -g www-data -m 0700 "$BROWSER_ROOT/profile"
@@ -44,11 +50,13 @@ SELLER_CENTRAL_TOTP_KNOWN_HOSTS_FILE=$BROWSER_ROOT/totp_known_hosts
 SELLER_CENTRAL_TOTP_SSH_BINARY=/usr/bin/ssh
 SELLER_CENTRAL_WORKER_ID=vm-a1-seller-central
 SELLER_CENTRAL_STATUS_WORKER_ID=vm-a1-safe-t-status
+SELLER_CENTRAL_MARKETPLACE_LABEL=Brazil
 EOF
 chown root:www-data "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
 
 install -o root -g root -m 0644 "$SOURCE_ROOT/deploy/systemd/amazon-returns-seller-central-browser.service" /etc/systemd/system/amazon-returns-seller-central-browser.service
+install -o root -g root -m 0644 "$SOURCE_ROOT/deploy/systemd/amazon-returns-seller-central-auth-check.service" /etc/systemd/system/amazon-returns-seller-central-auth-check.service
 install -o root -g root -m 0644 "$SOURCE_ROOT/deploy/systemd/amazon-returns-seller-central-browser.timer" /etc/systemd/system/amazon-returns-seller-central-browser.timer
 systemctl daemon-reload
 if [[ "$ENABLE_TIMER" -eq 1 ]]; then

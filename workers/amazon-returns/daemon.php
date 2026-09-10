@@ -57,7 +57,13 @@ final class SvAmazonReturnsDaemon
         $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
         $bootstrap=SvAmazonReturnsRuntime::bootstrap($this->db,$this->context);
         $state=$this->loadState();
-        $due=SvAmazonReturnsRuntime::dueTasks($state,$now);
+        $decisionStackRevision=SvAmazonReturnsRuntime::decisionStackRevision();
+        $decisionStackChanged=($state['decision_stack_revision'] ?? null)!==$decisionStackRevision;
+        $gmailEvidenceRevision=SvAmazonReturnsRuntime::gmailEvidenceRevision();
+        $gmailEvidenceChanged=($state['gmail_evidence_revision'] ?? null)!==$gmailEvidenceRevision;
+        $due=SvAmazonReturnsRuntime::dueTasks(
+            $state,$now,$decisionStackRevision,$gmailEvidenceRevision
+        );
         if(SvAmazonReturnsRuntime::knownActionDue($this->persistence->cases->openCases(1000),$now)){
             $due=array_values(array_unique([...$due,'scheduler']));
         }
@@ -77,7 +83,7 @@ final class SvAmazonReturnsDaemon
             $state['write_profile_revision']=$writeRevision;
         }
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
-        $due=$plan['due'];
+        $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
         $results=['bootstrap'=>$bootstrap];
         if(($plan['gate']['status'] ?? '')==='FAILED')$results['financial_refresh_gate']=$plan['gate'];
         foreach($due as $task){
@@ -99,13 +105,26 @@ final class SvAmazonReturnsDaemon
             }
             $state[$task]=$now->format(DATE_ATOM);
         }
+        if(
+            $decisionStackChanged
+            && isset($results['scheduler'])
+            && ($results['scheduler']['status'] ?? null)==='OK'
+        ){
+            $state['decision_stack_revision']=$decisionStackRevision;
+        }
+        if(
+            $gmailEvidenceChanged
+            && isset($results['gmail_refund_reconciliation'],$results['scheduler'])
+            && ($results['gmail_refund_reconciliation']['status'] ?? null)==='OK'
+            && ($results['scheduler']['status'] ?? null)==='OK'
+        ){
+            $state['gmail_evidence_revision']=$gmailEvidenceRevision;
+        }
         try{$results['rule_outcomes']=$this->refreshRuleOutcomes();}
         catch(Throwable $e){$results['rule_outcomes']=['status'=>'FAILED','error_class'=>$e::class];}
-        if(($results['scheduler']['financial_recheck_requested']??false) && !isset($results['sp_api'])){
-            $state['sp_api']=$now->modify('-1800 seconds')->format(DATE_ATOM);
-            $state['financial']=$state['sp_api'];
+        if(SvAmazonReturnsRuntime::financialRefreshContinuationRequired($results)){
+            unset($state['sp_api'],$state['financial']);
         }
-        if((int)($results['scheduler']['financial_checks_requested']??0)>0){unset($state['sp_api'],$state['financial']);}
         $this->saveState($state);
         return [
             'status'=>$this->overallStatus($results),
@@ -306,7 +325,7 @@ final class SvAmazonReturnsDaemon
         $gate=$this->dependencyGate('gmail');
         if(($gate['status'] ?? '')!=='READY_NO_RUNTIME_PROVIDER')return $gate;
         $gmail=new SvAmazonGmailApiClient($this->config);
-        $messages=$gmail->searchMessages('newer_than:90d "reembolso iniciado"',500);
+        $messages=$gmail->searchMessages('newer_than:90d reembolso iniciado',500);
         $ingestor=new SvAmazonGmailIngestor();
         $ingested=$ingestor->ingest(
             $messages,
@@ -315,7 +334,7 @@ final class SvAmazonReturnsDaemon
         );
         return [
             'status'=>'OK',
-            'query'=>'newer_than:90d "reembolso iniciado"',
+            'query'=>'newer_than:90d reembolso iniciado',
             'messages'=>$ingested['messages'],
             'events'=>$ingested['events'],
             'financial_truth'=>false,
@@ -325,12 +344,25 @@ final class SvAmazonReturnsDaemon
     private function runScheduler(DateTimeImmutable $now): array
     {
         $cases=$this->persistence->cases->openCases(500);
+        $knownCaseIds=[];
+        foreach($cases as $caseRow){
+            $knownId=(int)($caseRow['id']??0);
+            if($knownId>0)$knownCaseIds[$knownId]=true;
+        }
+        foreach($this->persistence->outbox->pendingWriteCaseIds() as $pendingCaseId){
+            if(isset($knownCaseIds[$pendingCaseId]))continue;
+            $pendingCase=$this->persistence->cases->find($pendingCaseId);
+            if(!is_array($pendingCase))continue;
+            $cases[]=$pendingCase;
+            $knownCaseIds[$pendingCaseId]=true;
+        }
         $policies=$this->persistence->policies->allActive();
         $engine=new SvAmazonSafeTDecisionEngine();
         $coordinator=new SvAmazonDecisionCoordinator($engine,$this->persistence,$this->config);
         $decisions=0;
         $enqueued=0;
         $blockedWrites=0;
+        $supersededWrites=0;
         $financialChecks=0;
         $decisionAudit=[];
         $requestedFinancialRecheck=false;
@@ -346,8 +378,22 @@ final class SvAmazonReturnsDaemon
             $policy=SvAmazonReturnPolicyEngine::evaluate($projected,$now);
             $timeline=$this->persistence->events->eventsForCase($caseId);
             $decision=$coordinator->nextAction($projected,$timeline,$policy,$now);
+            $decision=SvAmazonReturnsScheduler::normalizeRecoveryChannel($projected,$decision,$now);
             $action=(string)($decision['action'] ?? 'WAIT');
             $isWrite=SvAmazonReturnsScheduler::isWriteAction($decision);
+            $keepKind=null;
+            $keepKey=null;
+            if($isWrite){
+                $keepKind=$action;
+                $keepKey=trim((string)($decision['idempotency_key']??''));
+                if($keepKey==='')throw new LogicException('Current write decision missing idempotency key during stale-write sweep.');
+            }
+            $supersedeReason='SUPERSEDED_BY_CURRENT_DECISION:'
+                .$action.':'
+                .(string)($decision['reason']??'UNSPECIFIED');
+            $supersededWrites+=$this->persistence->outbox->supersedePendingWritesExcept(
+                $caseId,$keepKind,$keepKey,$supersedeReason
+            );
             $timing=['eligibility_at'=>$policy['eligibility_at']??null,'policy_version_id'=>$policy['policy_version_id']??null];
             if(array_key_exists('next_action_at',$decision)){
                 $candidate=SvAmazonRequestedWait::timestamp($decision['next_action_at']);
@@ -371,6 +417,13 @@ final class SvAmazonReturnsDaemon
                     'terminal_reason'=>'EMAIL_REVIEW_FINAL_DENIAL',
                     'closed_at'=>$projected['closed_at'] ?? gmdate('Y-m-d H:i:s'),
                 ]);
+                continue;
+            }
+            if(SvAmazonReturnsScheduler::isReadAction($decision)){
+                $scheduled=(new SvAmazonReturnsScheduler($engine))->scheduleDecision(
+                    $this->persistence->outbox,$projected,$decision,$timeline
+                );
+                if(($scheduled['outbox_id'] ?? null)!==null)$enqueued++;
                 continue;
             }
             if(!SvAmazonReturnsScheduler::isWriteAction($decision))continue;
@@ -397,7 +450,8 @@ final class SvAmazonReturnsDaemon
         }
         return [
             'status'=>'OK','cases'=>count($cases),'decisions'=>$decisions,
-            'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,'financial_checks_requested'=>$financialChecks,
+            'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,'superseded_writes'=>$supersededWrites,
+            'financial_checks_requested'=>$financialChecks,
             'decision_audit'=>$decisionAudit,
             'financial_recheck_requested'=>$requestedFinancialRecheck,
         ];
@@ -470,7 +524,7 @@ final class SvAmazonReturnsDaemon
             'initial_scan_complete'=>$scan['initial_scan_complete'],
             'cycle_attempted'=>$scan['cycle_attempted'],
             'cycle_failures'=>$scan['cycle_failures'],
-            'rotation_wrapped'=>$batch['wrapped'],
+            'rotation_wrapped'=>$batch['wrapped'],'rotation_has_more'=>$batch['has_more'],
             'synced'=>$synced,'persisted_cases'=>$persistedCases,'failures'=>$failures,
             'safe_t_reads'=>$safeTReads,'safe_t_events'=>$safeTEvents,
             'safe_t_empty'=>$safeTEmpty,'safe_t_failures'=>$safeTFailures,
@@ -647,7 +701,7 @@ final class SvAmazonReturnsDaemon
     private function runSellerCentral(): array
     {
         if($this->config->sellerCentralBridgeMode()==='polling'){
-            return ['status'=>'REMOTE_POLLING','reason'=>'WINDOWS_BRIDGE_OWNS_OUTBOX'];
+            return ['status'=>'REMOTE_POLLING','reason'=>'SELLER_CENTRAL_BRIDGE_OWNS_OUTBOX'];
         }
         $bridge=$this->config->readiness()['seller_central_bridge']
             ?? ['ready'=>false,'missing'=>[]];

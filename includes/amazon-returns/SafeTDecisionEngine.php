@@ -6,6 +6,7 @@ require_once __DIR__ . '/DenialAnalyzer.php';
 require_once __DIR__ . '/SafeTStatus.php';
 require_once __DIR__ . '/AmazonRequestedWait.php';
 require_once __DIR__ . '/ReturnActionRouter.php';
+require_once __DIR__ . '/RecoveryWindow.php';
 
 final class SvAmazonSafeTDecisionEngine
 {
@@ -29,10 +30,15 @@ final class SvAmazonSafeTDecisionEngine
         $amazonCustomerRefund=trim((string)($case['refund_at']??''))!=='' && in_array($initiator,[
             SvAmazonRefundInitiators::AMAZON_AUTOMATIC,
             SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
+            SvAmazonRefundInitiators::AMAZON_INITIATED,
             SvAmazonRefundInitiators::A_TO_Z,
         ],true);
         $customerRefundConfirmed=$amazonCustomerRefund || $deliveryBackedUnknownRefund || $reimbursementBackedUnknownRefund;
         $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
+        if($safeTId==='' && $this->sellerAppConfirmedPhysicalReceipt($case,$timeline)){
+            return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
+        }
         if($safeTId==='' && ($case['program']??'')==='FBA'){
             return $this->classicFbaRecovery($case,$timeline,$now);
         }
@@ -44,10 +50,6 @@ final class SvAmazonSafeTDecisionEngine
             && $this->hasReimbursementEvidence($case,$timeline)){
             return $this->decision('CHECK_FINANCES','PARTIAL_REIMBURSEMENT_VERIFY_BEFORE_RECOVERY_APPEAL',$caseId);
         }
-        if($safeTId==='' && $this->sellerAppConfirmedPhysicalReceipt($case,$timeline)){
-            return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
-        }
-
         if($safeTId==='' && ($policy['eligible']??false)===true){
             if(trim((string)($case['refund_at']??''))==='')return $this->decision('WAIT','REFUND_NOT_CONFIRMED',$caseId);
             if((!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN)
@@ -62,6 +64,15 @@ final class SvAmazonSafeTDecisionEngine
         if($requestedWait!==null)return $requestedWait;
         if($safeTId==='' && $reimbursementBackedUnknownRefund && ($policy['eligible']??false)===true
             && $this->hasFreshConfirmedResidual($case,$timeline,$now)){
+            if($this->safeTSubmissionWindowExpired($case,$now)){
+                return [
+                    'action'=>'SELLER_SUPPORT_OPEN',
+                    'reason'=>'SAFE_T_WINDOW_EXPIRED_RESIDUAL_UNPAID',
+                    'support_route'=>'GENERAL_ORDER_SUPPORT',
+                    'case_id'=>$caseId,
+                    'idempotency_key'=>hash('sha256','seller-support-open|safe-t-window-expired|'.$caseId.'|'.$orderId),
+                ];
+            }
             $policyId=(string)($policy['policy_version_id']??'unknown');
             $eligibilityAt=(string)($policy['eligibility_at']??'unknown');
             return [
@@ -129,6 +140,7 @@ final class SvAmazonSafeTDecisionEngine
                 return [
                     'action'=>'SELLER_SUPPORT_OPEN',
                     'reason'=>'EMAIL_REVIEW_DENIED_REQUIRES_SUPPORT',
+                    'support_route'=>'GENERAL_ORDER_SUPPORT',
                     'denial_fingerprint'=>$fingerprint,
                     'idempotency_key'=>hash('sha256','support-open|'.$safeTId.'|'.$fingerprint.'|'.$round),
                 ];
@@ -170,16 +182,23 @@ final class SvAmazonSafeTDecisionEngine
         ];
     }
 
+    private function safeTSubmissionWindowExpired(array $case,DateTimeImmutable $now): bool
+    {
+        $refundAt=SvAmazonRequestedWait::timestamp($case['refund_at']??null);
+        return $refundAt!==null && $now>$refundAt->modify('+75 days');
+    }
+
     /** Guard a learned effect with the same non-negotiable business invariants. */
     public function guardLearnedEffect(array $effect,array $case,array $timeline,array $policy,DateTimeImmutable $now): array
     {
         $caseId=(int)($case['id']??0);$action=(string)($effect['action']??'');$safeTId=trim((string)($case['safe_t_id']??''));
         if($this->hasRecoveredCredit($case))return $this->decision('WAIT','ALREADY_REIMBURSED',$caseId);
+        if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($action==='SAFE_T_SUBMIT'){
             if($safeTId!=='')return $this->decision('WAIT','SAFE_T_ALREADY_EXISTS',$caseId);
             if($this->sellerAppConfirmedPhysicalReceipt($case,$timeline))return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
             $initiator=(string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN);
-            $confirmed=trim((string)($case['refund_at']??''))!=='' && in_array($initiator,[SvAmazonRefundInitiators::AMAZON_AUTOMATIC,SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,SvAmazonRefundInitiators::A_TO_Z],true);
+            $confirmed=trim((string)($case['refund_at']??''))!=='' && in_array($initiator,[SvAmazonRefundInitiators::AMAZON_AUTOMATIC,SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,SvAmazonRefundInitiators::AMAZON_INITIATED,SvAmazonRefundInitiators::A_TO_Z],true);
             $confirmed=$confirmed || $this->deliveryBackedUnknownRefund($case);
             if(!$confirmed)return $this->decision('WAIT','AMAZON_CUSTOMER_REFUND_NOT_CONFIRMED',$caseId);
             if(($policy['eligible']??false)!==true)return $this->decision('HUMAN_REVIEW','LEARNED_RULE_D45_GATE_BLOCKED',$caseId);
@@ -193,6 +212,7 @@ final class SvAmazonSafeTDecisionEngine
         }
         if(in_array($action,['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true) && $safeTId==='')return $this->decision('HUMAN_REVIEW','LEARNED_RULE_SAFE_T_REQUIRED',$caseId);
         $decision=['action'=>$action,'reason'=>'LEARNED_RULE_APPROVED','case_id'=>$caseId];
+        if($action==='SELLER_SUPPORT_OPEN')$decision['support_route']='GENERAL_ORDER_SUPPORT';
         if(isset($effect['parameters']['resolved_date']))$decision['next_action_at']=$effect['parameters']['resolved_date'];
         if(in_array($action,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))$decision['idempotency_key']=hash('sha256','learned|'.$action.'|'.$caseId.'|'.$safeTId.'|'.json_encode($effect));
         return $decision;
@@ -239,6 +259,7 @@ final class SvAmazonSafeTDecisionEngine
                 return [
                     'action'=>'SELLER_SUPPORT_OPEN',
                     'reason'=>'EMAIL_REVIEW_ANALYZER_SELECTED_SUPPORT',
+                    'support_route'=>'GENERAL_ORDER_SUPPORT',
                     'idempotency_key'=>hash('sha256','support-open|'.$safeTId.'|'.$scope),
                     'denial_fingerprint'=>$scope,
                 ];
@@ -288,8 +309,9 @@ final class SvAmazonSafeTDecisionEngine
         return [
             'action'=>'SELLER_SUPPORT_OPEN',
             'reason'=>'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION',
+            'support_route'=>'FBA_RETURNS_REIMBURSEMENT',
             'case_id'=>$caseId,
-            'idempotency_key'=>hash('sha256','classic-fba-support-open|'.$caseId.'|'.(int)($latest['id']??0).'|'.(string)$payload['outstanding_amount']),
+            'idempotency_key'=>hash('sha256','classic-fba-support-open|'.$caseId.'|'.(trim((string)($case['support_case_id']??'')) ?: 'initial')),
         ];
     }
 
@@ -301,6 +323,8 @@ final class SvAmazonSafeTDecisionEngine
             if(($event['event_type']??'')!=='PHYSICAL_RECEIVED' || ($event['source']??'')!=='WAREHOUSE')continue;
             $payload=$event['payload']??null;
             if(!is_array($payload))continue;
+            $condition=strtoupper(trim((string)($payload['condition']??'OK')));
+            if(!in_array($condition,['OK','INTACT'],true))continue;
             if((int)($payload['quantity']??0)>0)return true;
         }
         return false;

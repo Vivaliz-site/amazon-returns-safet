@@ -85,6 +85,7 @@ final class SvAmazonRefundInitiators
 {
     public const AMAZON_AUTOMATIC = 'AMAZON_AUTOMATIC';
     public const AMAZON_CUSTOMER_SERVICE = 'AMAZON_CUSTOMER_SERVICE';
+    public const AMAZON_INITIATED = 'AMAZON_INITIATED';
     public const SELLER = 'SELLER';
     public const A_TO_Z = 'A_TO_Z';
     public const UNKNOWN = 'UNKNOWN';
@@ -95,6 +96,7 @@ final class SvAmazonRefundInitiators
         return [
             self::AMAZON_AUTOMATIC,
             self::AMAZON_CUSTOMER_SERVICE,
+            self::AMAZON_INITIATED,
             self::SELLER,
             self::A_TO_Z,
             self::UNKNOWN,

@@ -7,6 +7,10 @@ final class SvAmazonTenantReturnsOutbox
 {
     public const MAX_ATTEMPTS = 5;
     public const LEASE_SECONDS = 300;
+    private const EXTERNAL_WRITE_KINDS = [
+        'SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY',
+        'SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE',
+    ];
     private const SECRET_KEYS = [
         'access_token','refresh_token','client_secret','password','cookie','authorization','mfa','otp',
     ];
@@ -173,6 +177,58 @@ final class SvAmazonTenantReturnsOutbox
         return $stmt->fetchColumn()!==false;
     }
 
+    /** @return list<int> */
+    public function pendingWriteCaseIds(): array
+    {
+        $stmt=$this->prepare(
+            'SELECT DISTINCT case_id FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
+            . 'AND amazon_connection_id=:amazon_connection_id AND status=\'PENDING\' '
+            . 'AND kind IN ('.$this->externalWriteKindsSql().') ORDER BY case_id'
+        );
+        $stmt->execute($this->scopeParams());
+        $ids=[];
+        foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row){
+            if(!is_array($row))continue;
+            $id=(int)($row['case_id']??0);
+            if($id>0)$ids[$id]=$id;
+        }
+        return array_values($ids);
+    }
+
+    public function supersedePendingWritesExcept(
+        int $caseId,
+        ?string $keepKind,
+        ?string $keepIdempotencyKey,
+        string $reason
+    ): int {
+        $caseId=$this->positiveId($caseId,'case ID');
+        $this->assertOwnedCase($caseId);
+        $params=$this->scopeParams([
+            ':case_id'=>$caseId,
+            ':last_error'=>$this->errorMessage($reason),
+        ]);
+        $keep='';
+        if($keepKind!==null || $keepIdempotencyKey!==null){
+            if($keepKind===null || $keepIdempotencyKey===null){
+                throw new InvalidArgumentException('Pending write keep kind/key must be provided together.');
+            }
+            $keepKind=$this->kind($keepKind);
+            if(!in_array($keepKind,self::EXTERNAL_WRITE_KINDS,true)){
+                throw new InvalidArgumentException('Pending write keep kind is not an external write action.');
+            }
+            $params[':keep_kind']=$keepKind;
+            $params[':keep_key']=$this->idempotencyKey($keepIdempotencyKey);
+            $keep=' AND NOT (kind=:keep_kind AND idempotency_key=:keep_key)';
+        }
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_outbox SET status='SUPERSEDED',locked_at=NULL,last_error=:last_error,updated_at=UTC_TIMESTAMP() "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id AND status='PENDING' "
+            . 'AND kind IN ('.$this->externalWriteKindsSql().')'.$keep
+        );
+        $stmt->execute($params);
+        return max(0,$stmt->rowCount());
+    }
+
     public function defer(int $id,DateTimeImmutable $availableAt,string $error,bool $refundAttempt=false): void
     {
         $id=$this->positiveId($id,'outbox ID');
@@ -214,6 +270,20 @@ final class SvAmazonTenantReturnsOutbox
             $this->positiveId($id, 'outbox ID'),
             'Scoped outbox success acknowledgement failed.'
         );
+    }
+
+    public function markSuperseded(int $id,string $reason): void
+    {
+        $id=$this->positiveId($id,'outbox ID');
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_outbox SET status='SUPERSEDED',locked_at=NULL,last_error=:last_error,updated_at=UTC_TIMESTAMP() "
+            . "WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status='PROCESSING'"
+        );
+        $stmt->execute($this->scopeParams([
+            ':id'=>$id,
+            ':last_error'=>$this->errorMessage($reason),
+        ]));
+        if($stmt->rowCount()!==1)throw new RuntimeException('Scoped outbox supersede failed.');
     }
 
     public function releaseUnprocessed(int $id): void
@@ -316,14 +386,10 @@ final class SvAmazonTenantReturnsOutbox
     {
         $now = $now->setTimezone(new DateTimeZone('UTC'));
         $attempt = max(0, (int)($row['attempt_count'] ?? 0));
-        if ($attempt >= self::MAX_ATTEMPTS) {
-            return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'MAX_ATTEMPTS_EXHAUSTED'];
-        }
-        $delay = min(3600, 60 * (2 ** max(0, $attempt - 1)));
-        $next = $now->modify('+' . $delay . ' seconds');
         $payload = is_array($row['payload'] ?? null)
             ? $row['payload']
             : self::decodePayloadStatic($row['payload_json'] ?? null);
+        $deadline = null;
         $deadlineRaw = $payload['deadline_at'] ?? null;
         if (is_scalar($deadlineRaw) && trim((string)$deadlineRaw) !== '') {
             try {
@@ -331,9 +397,24 @@ final class SvAmazonTenantReturnsOutbox
             } catch (Throwable) {
                 return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'INVALID_DEADLINE'];
             }
-            if ($deadline <= $now || $next >= $deadline) {
+            if ($deadline <= $now) {
                 return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'DEADLINE_WOULD_EXPIRE'];
             }
+        }
+        if ($attempt >= self::MAX_ATTEMPTS) {
+            if (!$deadline instanceof DateTimeImmutable) {
+                return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'MAX_ATTEMPTS_EXHAUSTED'];
+            }
+            $next = $now->modify('+1 day');
+            if ($next >= $deadline) {
+                return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'DEADLINE_WOULD_EXPIRE'];
+            }
+            return ['status'=>'RETRY','next_at'=>$next,'reason'=>'RECOVERY_WINDOW_RETRY'];
+        }
+        $delay = min(3600, 60 * (2 ** max(0, $attempt - 1)));
+        $next = $now->modify('+' . $delay . ' seconds');
+        if ($deadline instanceof DateTimeImmutable && $next >= $deadline) {
+            return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'DEADLINE_WOULD_EXPIRE'];
         }
         return ['status'=>'RETRY','next_at'=>$next,'reason'=>'TRANSIENT_FAILURE'];
     }
@@ -404,6 +485,11 @@ final class SvAmazonTenantReturnsOutbox
             throw new InvalidArgumentException('Outbox kind is invalid.');
         }
         return $value;
+    }
+
+    private function externalWriteKindsSql(): string
+    {
+        return implode(',',array_map(static fn(string $kind):string=>"'{$kind}'",self::EXTERNAL_WRITE_KINDS));
     }
 
     private function idempotencyKey(string $value): string

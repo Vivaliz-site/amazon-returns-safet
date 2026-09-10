@@ -117,11 +117,20 @@ final class SvAmazonReviewRepository
         self::hash($contextHash);
         self::text($reason,96);
         return $this->atomic(function () use ($caseId,$reason,$contextHash,$context): array {
-            // Serializes duplicate episodes without overwriting the first context snapshot.
+            // The case lock serializes review replacement so only one current OPEN episode can exist.
             $this->owned('amazon_return_cases',$caseId,true);
             $key=hash('sha256',$caseId.'|'.$contextHash);
-            $existing=$this->rows(self::TABLE,'open_key=:key',[':key'=>$key],'FOR UPDATE');
-            if ($existing) return $existing[0];
+            $open=$this->rows(self::TABLE,"case_id=:case_id AND status='OPEN'",[':case_id'=>$caseId],'FOR UPDATE');
+            $matching=null;
+            foreach($open as $row){
+                if(($row['open_key']??null)===$key && $matching===null){$matching=$row;continue;}
+                $version=(int)($row['version']??0);
+                $this->change(self::TABLE,(int)$row['id'],[
+                    'status'=>'RESOLVED','open_key'=>null,'version'=>$version+1,
+                    'actor'=>'SYSTEM','source_version'=>'review-context-replaced-v1','decided_at'=>self::now(),
+                ],"status='OPEN' AND version=:expected",[':expected'=>$version]);
+            }
+            if($matching!==null)return $matching;
             $id=$this->insert(self::TABLE,['case_id'=>$caseId,'reason'=>$reason,'context_hash'=>$contextHash,'context_json'=>self::json($context),'open_key'=>$key,'created_at'=>self::now()]);
             return $this->owned(self::TABLE,$id);
         });

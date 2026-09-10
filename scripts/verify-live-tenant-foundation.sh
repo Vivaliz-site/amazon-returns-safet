@@ -114,7 +114,7 @@ profile_value() {
     printf '%s' "$write_profile_json" | php -r '$j=json_decode(stream_get_contents(STDIN),true);$k=$argv[1];if($k==="version"){echo $j["version"]??"";exit;}echo !empty($j["flags"][$k])?"1":"0";' "$key"
 }
 write_profile_version="$(profile_value version)"
-[[ "$write_profile_version" == 'safet-full-recovery-v1' ]] || { echo "write_profile_invalid version=$write_profile_version" >&2; exit 1; }
+[[ "$write_profile_version" == 'safet-full-recovery-v2' ]] || { echo "write_profile_invalid version=$write_profile_version" >&2; exit 1; }
 for spec in SAFE_T_SUBMIT:1 SAFE_T_APPEAL:1 SAFE_T_EMAIL_REVIEW:1 SAFE_T_EMAIL_REPLY:1 SELLER_SUPPORT_OPEN:1 SELLER_SUPPORT_UPDATE:1; do
     action="${spec%%:*}"; expected="${spec##*:}"; actual="$(profile_value "$action")"
     [[ "$actual" == "$expected" ]] || { echo "write_profile_flag_mismatch action=$action expected=$expected actual=$actual" >&2; exit 1; }

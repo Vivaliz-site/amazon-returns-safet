@@ -7,6 +7,8 @@ require_once __DIR__ . '/../../includes/amazon-returns/SourceCursorStore.php';
 
 final class SvAmazonGmailIngestor
 {
+    public const HISTORY_CURSOR_KEY = 'history_id_v2';
+
     public function __construct(private ?SvAmazonGmailParser $parser = null)
     {
         $this->parser ??= new SvAmazonGmailParser();
@@ -42,9 +44,9 @@ final class SvAmazonGmailIngestor
         string $cursorValue,
         array $metadata=[]
     ): void {
-        $cursorKey=trim($cursorKey);
+        $cursorKey=self::persistedCursorKey($cursorKey);
         $cursorValue=trim($cursorValue);
-        if($cursorKey==='' || $cursorValue===''){
+        if($cursorValue===''){
             throw new InvalidArgumentException('Gmail cursor key/value cannot be empty.');
         }
         $target->save('GMAIL',$cursorKey,$cursorValue,$metadata);
@@ -54,8 +56,14 @@ final class SvAmazonGmailIngestor
         SvAmazonSourceCursorStore $target,
         string $cursorKey
     ): ?string {
-        $row=$target->load('GMAIL',trim($cursorKey));
+        $row=$target->load('GMAIL',self::persistedCursorKey($cursorKey));
         return is_array($row)?(string)$row['value']:null;
     }
 
+    private static function persistedCursorKey(string $cursorKey): string
+    {
+        $cursorKey=trim($cursorKey);
+        if($cursorKey==='')throw new InvalidArgumentException('Gmail cursor key/value cannot be empty.');
+        return $cursorKey==='history_id' ? self::HISTORY_CURSOR_KEY : $cursorKey;
+    }
 }

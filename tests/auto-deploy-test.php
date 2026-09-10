@@ -15,8 +15,11 @@ $t=(string)file_get_contents($timer);
 adAssert(str_contains($s,'Vivaliz-site/amazon-returns-safet'),'Auto-deploy must validate target repo CI.');
 adAssert(str_contains($s,'check-runs'),'Auto-deploy must require GitHub checks before deploying.');
 adAssert(str_contains($s,'AMAZON_RETURNS_IMPORT_SOURCE=0'),'Routine deploy must never re-import website state.');
-adAssert(str_contains($svc,'/home/ubuntu/amazon-returns-safet/scripts/auto-deploy.sh'),'Deploy service must be owned by target repo checkout.');
-adAssert(str_contains($t,'OnUnitActiveSec=300'),'Deploy cadence must be five minutes.');
+adAssert(str_contains($svc,'/home/ubuntu/amazon-returns-deploy-source/scripts/auto-deploy.sh'),'Deploy service must be owned by isolated deploy checkout.');
+adAssert(str_contains($svc,'Environment=AMAZON_RETURNS_REPO=/home/ubuntu/amazon-returns-deploy-source'),'Deploy service must pin isolated checkout through the environment.');
+adAssert(!str_contains($svc,'/home/ubuntu/amazon-returns-safet/scripts/auto-deploy.sh'),'Deploy service must not depend on the agent work checkout.');
+adAssert(str_contains($t,'OnUnitActiveSec=3600'),'Deploy cadence must be hourly.');
+adAssert(!str_contains($t,'OnUnitActiveSec=300'),'Deploy cadence must never regress to five minutes.');
 adAssert(!str_contains($svc,'shopvivaliz'),'Deploy service cannot own website lifecycle.');
 
 echo "auto-deploy-test: OK\n";

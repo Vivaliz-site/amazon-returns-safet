@@ -12,7 +12,7 @@ $policy=['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'];
 $base=[
     'id'=>496,'amazon_order_id'=>'702-2751217-8386605','program'=>'FBA','safe_t_id'=>null,
     'state'=>'POLICY_REVIEW_REQUIRED','physical_status'=>'NOT_RECEIVED',
-    'refund_at'=>'2026-04-28 21:06:57','seller_debit_at'=>'2026-04-28 21:06:57',
+    'refund_at'=>'2026-06-15 21:06:57','seller_debit_at'=>'2026-06-15 21:06:57',
     'refund_initiator'=>'UNKNOWN','expected_reimbursement_amount'=>'106.14','reconciled_credit_amount'=>'0.00',
 ];
 $finance=[

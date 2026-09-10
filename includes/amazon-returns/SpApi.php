@@ -3,6 +3,11 @@
 declare(strict_types=1);
 
 /**
+ * Raised when the current Amazon application is not authorized for Invoices API reads.
+ */
+final class SvAmazonInvoiceAccessException extends RuntimeException {}
+
+/**
  * Read/ingestion facade for Amazon Returns recovery.
  *
  * There is intentionally no SAFE-T filing/appeal operation here. Amazon does
@@ -44,6 +49,13 @@ final class SvAmazonReturnsSpApi
         $normalizedOrderId = trim((string)($order['orderId'] ?? $order['amazonOrderId'] ?? $orderId));
         $salesChannel = is_array($order['salesChannel'] ?? null) ? $order['salesChannel'] : [];
         $items = is_array($order['orderItems'] ?? null) ? array_values(array_filter($order['orderItems'], 'is_array')) : [];
+        $items = array_map(static function(array $item): array {
+            $product = is_array($item['product'] ?? null) ? $item['product'] : [];
+            foreach (['asin','sellerSku','title'] as $key) {
+                if ((!array_key_exists($key, $item) || trim((string)$item[$key]) === '') && isset($product[$key])) $item[$key] = $product[$key];
+            }
+            return $item;
+        }, $items);
         $programs = is_array($order['programs'] ?? null) ? array_values(array_map('strval', $order['programs'])) : [];
 
         return [
@@ -58,6 +70,67 @@ final class SvAmazonReturnsSpApi
             'packages' => is_array($order['packages'] ?? null) ? array_values($order['packages']) : [],
             'order_items' => $items,
         ];
+    }
+
+    /** @return array<string,mixed>|null */
+    public function findOrderByInvoiceNumber(string $invoiceNumber): ?array
+    {
+        $invoiceNumber = trim($invoiceNumber);
+        if (preg_match('/^[0-9]{1,20}$/D', $invoiceNumber) !== 1) {
+            throw new InvalidArgumentException('Amazon invoice number is invalid.');
+        }
+        $response = $this->client->request(
+            'GET',
+            '/tax/invoices/2024-06-19/invoices',
+            [
+                'externalInvoiceId'=>$invoiceNumber,
+                'marketplaceId'=>(string)$this->client->marketplaceId(),
+                'pageSize'=>200,
+            ]
+        );
+        $status=(int)($response['status'] ?? 0);
+        $responseData=self::responseData($response);
+        $responseText=strtolower((string)json_encode($responseData,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
+        if(in_array($status,[401,403],true)
+            || ($status===400 && (
+                str_contains($responseText,'do not have access')
+                || str_contains($responseText,'access to requested resource is denied')
+                || str_contains($responseText,'access to the resource is forbidden')
+            ))
+        ){
+            throw new SvAmazonInvoiceAccessException('Amazon Invoices API access is not authorized.');
+        }
+        self::assertSuccess($response, 'Invoices getInvoices');
+        $payload=self::firstArray($responseData,['payload']) ?? $responseData;
+        $invoices=is_array($payload['invoices'] ?? null) ? $payload['invoices'] : [];
+        foreach($invoices as $invoice){
+            if(!is_array($invoice))continue;
+            $externalId=trim((string)($invoice['externalInvoiceId'] ?? ''));
+            if($externalId!==$invoiceNumber)continue;
+            $orderId='';
+            $transactionIds=is_array($invoice['transactionIds'] ?? null) ? $invoice['transactionIds'] : [];
+            foreach($transactionIds as $identifier){
+                if(!is_array($identifier))continue;
+                $value=trim((string)($identifier['id'] ?? $identifier['value'] ?? ''));
+                if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$value)===1){
+                    $orderId=$value;
+                    break;
+                }
+            }
+            if($orderId==='')continue;
+            return [
+                'source'=>'SP_API_INVOICES',
+                'request_id'=>trim((string)($response['request_id'] ?? '')),
+                'invoice_id'=>trim((string)($invoice['id'] ?? '')),
+                'invoice_number'=>$externalId,
+                'series'=>self::nullableString($invoice['series'] ?? null),
+                'status'=>self::nullableString($invoice['status'] ?? null),
+                'invoice_type'=>self::nullableString($invoice['invoiceType'] ?? null),
+                'transaction_type'=>self::nullableString($invoice['transactionType'] ?? null),
+                'order_id'=>$orderId,
+            ];
+        }
+        return null;
     }
 
     /** @return array{source:string,financial_truth:bool,request_ids:list<string>,transactions:list<array<string,mixed>>} */

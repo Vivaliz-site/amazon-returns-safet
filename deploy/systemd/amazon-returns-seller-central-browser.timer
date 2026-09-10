@@ -1,8 +1,9 @@
 [Unit]
-Description=Run ShopVivaliz Seller Central browser cycle daily
+Description=Run ShopVivaliz Seller Central browser cycle twice daily
 
 [Timer]
 OnCalendar=*-*-* 08:00:00 America/Sao_Paulo
+OnCalendar=*-*-* 20:00:00 America/Sao_Paulo
 Persistent=true
 RandomizedDelaySec=5m
 Unit=amazon-returns-seller-central-browser.service

@@ -4,8 +4,8 @@ require_once __DIR__.'/../includes/amazon-returns/SafeTDecisionEngine.php';
 require_once __DIR__.'/../includes/amazon-returns/SafeTStatusService.php';
 $errors=[];function riEq(mixed $want,mixed $got,string $why):void{global $errors;if($want!==$got)$errors[]=$why.' expected='.json_encode($want).' actual='.json_encode($got);}
 $engine=new SvAmazonSafeTDecisionEngine();$now=new DateTimeImmutable('2026-09-05T15:00:00Z');
-$case=['id'=>77,'amazon_order_id'=>'702-1111111-2222222','program'=>'STANDARD','order_at'=>'2026-05-01 00:00:00','refund_at'=>'2026-06-01 12:00:00','seller_debit_at'=>'2026-06-01 12:00:00','physical_status'=>'NOT_RECEIVED','refund_initiator'=>'AMAZON_AUTOMATIC','expected_reimbursement_amount'=>'100.00','reconciled_credit_amount'=>'0.00','state'=>'SAFE_T_ELIGIBLE'];
-$policy=['eligible'=>true,'policy_version_id'=>1,'eligibility_at'=>'2026-07-16 12:00:00'];
+$case=['id'=>77,'amazon_order_id'=>'702-1111111-2222222','program'=>'STANDARD','order_at'=>'2026-05-01 00:00:00','refund_at'=>'2026-06-10 12:00:00','seller_debit_at'=>'2026-06-10 12:00:00','physical_status'=>'NOT_RECEIVED','refund_initiator'=>'AMAZON_AUTOMATIC','expected_reimbursement_amount'=>'100.00','reconciled_credit_amount'=>'0.00','state'=>'SAFE_T_ELIGIBLE'];
+$policy=['eligible'=>true,'policy_version_id'=>1,'eligibility_at'=>'2026-07-25 12:00:00'];
 $event=['id'=>1,'case_id'=>77,'event_type'=>'RETURN_REPORT_OBSERVED','source'=>'SP_API_REPORTS','occurred_at'=>'2026-09-01 12:00:00','payload'=>['return_status'=>'Perdido no Transporte']];
 riEq('SAFE_T_SUBMIT',$engine->nextAction($case,[$event],$policy,$now)['action'],'D45 Amazon-refunded loss submits SAFE-T even on proactive transport status');
 riEq('SAFE_T_SUBMIT',$engine->nextAction($case,[],$policy,$now)['action'],'D45 Amazon-refunded loss does not require a transport status to submit SAFE-T');
@@ -24,7 +24,7 @@ riEq('SAFE_T_SUBMIT',$engine->nextAction($returnedLoss,[],$policy,$now)['action'
 $paid=$refunded;$paid['reconciled_credit_amount']='100.00';
 riEq('WAIT',$engine->nextAction($paid,[],$policy,$now)['action'],'real full credit suppresses new SAFE-T');
 
-foreach(['AMAZON_AUTOMATIC','AMAZON_CUSTOMER_SERVICE','A_TO_Z'] as $initiator){
+foreach(['AMAZON_AUTOMATIC','AMAZON_CUSTOMER_SERVICE','AMAZON_INITIATED','A_TO_Z'] as $initiator){
  $c=$case;$c['refund_initiator']=$initiator;$c['physical_status']='NOT_RECEIVED';
  riEq('SAFE_T_SUBMIT',$engine->nextAction($c,[], $policy,$now)['action'],'Amazon-side customer refund is eligible for D45 SAFE-T: '.$initiator);
 }

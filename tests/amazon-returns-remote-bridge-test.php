@@ -172,7 +172,7 @@ rbAssert(!str_contains($endpointSource, "\$_GET['token']"), 'Bridge token must n
 rbAssert(!str_contains($statusEndpointSource, "\$_GET['token']"), 'Status bridge token must never be accepted from query string.');
 $workerSource = (string)file_get_contents($windowsWorker);
 $statusWorkerSource = (string)file_get_contents($statusWorker);
-rbAssert(str_contains($workerSource, 'bridge.token'), 'Windows worker must read token from protected file.');
+rbAssert(str_contains($workerSource, 'SELLER_CENTRAL_BRIDGE_TOKEN_FILE'), 'Bridge worker must read its token from an explicitly configured protected file.');
 rbAssert(str_contains($workerSource, 'write_snapshot'), 'Windows writer must consume persisted write snapshots.');
 rbAssert(str_contains($workerSource, 'WRITE_SNAPSHOT_MISSING'), 'Version-2 writer jobs must fail closed when persisted narrative is missing.');
 $bridgeServiceSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/BridgeService.php');

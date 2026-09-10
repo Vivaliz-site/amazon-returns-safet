@@ -170,7 +170,7 @@ assertTrue(!SvAmazonReturnStates::isValid('MADE_UP'), 'An undeclared state must 
 assertTrue(SvAmazonReturnStates::isTerminal('RECOVERED'), 'RECOVERED must be terminal.');
 assertTrue(!SvAmazonReturnStates::isTerminal('SAFE_T_APPROVED'), 'Approval is not terminal before credit.');
 assertSameValue(
-    ['AMAZON_AUTOMATIC', 'AMAZON_CUSTOMER_SERVICE', 'SELLER', 'A_TO_Z', 'UNKNOWN'],
+    ['AMAZON_AUTOMATIC', 'AMAZON_CUSTOMER_SERVICE', 'AMAZON_INITIATED', 'SELLER', 'A_TO_Z', 'UNKNOWN'],
     SvAmazonRefundInitiators::all(),
     'Refund initiators must match the approved spec.'
 );

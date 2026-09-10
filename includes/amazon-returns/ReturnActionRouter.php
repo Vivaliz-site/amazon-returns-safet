@@ -30,7 +30,13 @@ final class SvAmazonReturnActionRouter
         if(($case['program']??'')==='FBA' && $claim==='')return self::decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$case);
         $sent=self::latest($events,['SAFE_T_EMAIL_REVIEW_SENT','SAFE_T_EMAIL_REPLY_SENT']);
         $reply=self::latest($events,['SAFE_T_EMAIL_REVIEW_RESPONSE']);
-        if($sent!==null && ($reply===null || self::rank($sent)>self::rank($reply)))return self::decision('WAIT','EXISTING_EMAIL_REVIEW_AWAITING_RESPONSE',$case);
+        if($sent!==null && ($reply===null || self::rank($sent)>self::rank($reply))){
+            $deadline=self::date($case['appeal_deadline_at']??null);
+            if($deadline!==null && $now>$deadline && $claim!=='' && !self::acceptedAppeal($events,$claim)){
+                return self::decision('SAFE_T_APPEAL','EMAIL_REVIEW_DEADLINE_EXPIRED_RECOVERY_ATTEMPT',$case);
+            }
+            return self::decision('WAIT','EXISTING_EMAIL_REVIEW_AWAITING_RESPONSE',$case);
+        }
         $message=self::latest($events,['SAFE_T_STATUS_OBSERVED','SAFE_T_EMAIL_REVIEW_RESPONSE']);
         $text=self::normalized((string)($message['payload']['decision_text']??$message['payload']['review_excerpt']??''));
         $promise=self::promiseDeadline($text);
@@ -50,10 +56,19 @@ final class SvAmazonReturnActionRouter
         if($claim!==''
             && strtoupper(trim((string)($message['payload']['claim_status']??'')))==='APPROVED'
             && ($message['payload']['appeal_submitted']??null)===false
-            && self::freshUnpaidFinance($events,$now->modify('-2 hours'),$now)){
+            && self::hasOutstandingCredit($case)){
             if(self::acceptedAppeal($events,$claim))return self::decision('WAIT','APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$case);
+            if(!self::freshUnpaidFinance($events,$now->modify('-2 hours'),$now)){
+                return self::decision('CHECK_FINANCES','APPROVED_PARTIAL_CREDIT_VERIFY_FINANCES',$case);
+            }
             $deadline=self::date($case['appeal_deadline_at']??$message['payload']['appeal_deadline_at']??null);
-            if($deadline===null)return self::decision('HUMAN_REVIEW','OFFICIAL_APPEAL_DEADLINE_MISSING',$case);
+            if($deadline===null){
+                $read=self::decision('SAFE_T_READ','OFFICIAL_APPEAL_DEADLINE_REFRESH_REQUIRED',$case);
+                $read['idempotency_key']=hash('sha256',implode('|',[
+                    'safe-t-deadline-refresh-v1',$case['id']??0,$claim,(int)($message['id']??0),
+                ]));
+                return $read;
+            }
             if($deadline<$now)return self::decision('SAFE_T_APPEAL','MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT',$case);
             return self::decision('SAFE_T_APPEAL','PARTIAL_REIMBURSEMENT_BALANCE_APPEAL_REQUIRED',$case);
         }
@@ -107,8 +122,16 @@ final class SvAmazonReturnActionRouter
         return in_array((string)($case['refund_initiator']??''),[
             SvAmazonRefundInitiators::AMAZON_AUTOMATIC,
             SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
+            SvAmazonRefundInitiators::AMAZON_INITIATED,
             SvAmazonRefundInitiators::A_TO_Z,
         ],true);
+    }
+
+    private static function hasOutstandingCredit(array $case): bool
+    {
+        $expected=(float)($case['expected_reimbursement_amount']??0);
+        $credited=(float)($case['reconciled_credit_amount']??0);
+        return $expected>0 && $credited+0.00001<$expected;
     }
 
     private static function hasOutstandingSellerLoss(array $case): bool
@@ -166,9 +189,11 @@ final class SvAmazonReturnActionRouter
 
     private static function decision(string $action,string $reason,array $case,?DateTimeImmutable $next=null): array
     {
-        return ['action'=>$action,'reason'=>$reason,'case_id'=>(int)($case['id']??0),'operational_mode'=>$action,
+        $decision=['action'=>$action,'reason'=>$reason,'case_id'=>(int)($case['id']??0),'operational_mode'=>$action,
             'next_action_at'=>$next?->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
             'idempotency_key'=>hash('sha256',implode('|',['route-v1',$case['id']??0,$case['refund_at']??'',$action,$reason]))];
+        if($action==='SELLER_SUPPORT_OPEN')$decision['support_route']='GENERAL_ORDER_SUPPORT';
+        return $decision;
     }
 
     private static function trustedEvents(array $timeline,int $caseId): array

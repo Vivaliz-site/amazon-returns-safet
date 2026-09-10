@@ -84,13 +84,15 @@ final class SvAmazonReturnsShadowAudit
         $sourceInitiator=strtoupper(trim((string)($source['refund_initiator']??'')));
         $targetInitiator=strtoupper(trim((string)($target['refund_initiator']??'')));
         if($sourceInitiator!=='UNKNOWN'||!in_array($targetInitiator,[
-            'AMAZON_AUTOMATIC','AMAZON_CUSTOMER_SERVICE','SELLER','A_TO_Z',
+            'AMAZON_AUTOMATIC','AMAZON_CUSTOMER_SERVICE','AMAZON_INITIATED','SELLER','A_TO_Z',
         ],true))return false;
         foreach($targetEvents as $event){
-            if(!is_array($event)||($event['source']??'')!=='SP_API_REPORTS'
-                ||!in_array((string)($event['event_type']??''),[
-                    'RETURN_REPORT_OBSERVED','RETURNS_REPORT_MATCHED',
-                ],true))continue;
+            if(!is_array($event))continue;
+            $eventSource=strtoupper(trim((string)($event['source']??'')));
+            $eventType=strtoupper(trim((string)($event['event_type']??'')));
+            $verifiedReport=$eventSource==='SP_API_REPORTS' && in_array($eventType,['RETURN_REPORT_OBSERVED','RETURNS_REPORT_MATCHED'],true);
+            $verifiedGmail=$eventSource==='GMAIL' && $eventType==='REFUND_INITIATOR_CONFIRMED';
+            if(!$verifiedReport && !$verifiedGmail)continue;
             $payload=is_array($event['payload']??null)?$event['payload']:[];
             if(strtoupper(trim((string)($payload['refund_initiator']??'')))===$targetInitiator){
                 return true;

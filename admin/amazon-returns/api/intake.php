@@ -25,9 +25,12 @@ function sv_amz_intake_files(): array
 {
     if(!isset($_FILES['photos']))return [];
     $files=$_FILES['photos'];
-    if(!is_array($files['name'] ?? null))return [$files];
+    if(!is_array($files['name'] ?? null)){
+        return (int)($files['error'] ?? UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE ? [] : [$files];
+    }
     $result=[];
     foreach($files['name'] as $index=>$name){
+        if((int)($files['error'][$index] ?? UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE)continue;
         $result[]=[
             'name'=>$name,
             'type'=>$files['type'][$index] ?? '',
@@ -47,7 +50,11 @@ function sv_amz_intake_store_photos(
     if($files===[])return [];
     if(count($files)>6)throw new InvalidArgumentException('Máximo de 6 fotos por recebimento.');
     $base=trim((string)getenv('AMAZON_RETURN_EVIDENCE_DIR'));
-    if($base==='')throw new RuntimeException('AMAZON_RETURN_EVIDENCE_DIR não configurado.');
+    if($base===''){
+        $envFile=trim((string)getenv('AMAZON_RETURNS_ENV_FILE'));
+        if($envFile==='')$envFile='/home/ubuntu/amazon-returns-deploy/shared/.env';
+        $base=dirname($envFile).'/evidence';
+    }
     $dir=rtrim($base,'/').'/tenant-'.$context->tenantId()
         .'/connection-'.$context->amazonConnectionId().'/case-'.$caseId;
     if(!is_dir($dir) && !mkdir($dir,0700,true) && !is_dir($dir)){
@@ -143,12 +150,6 @@ if($caseId===false){
     ],422);
 }
 $note=mb_substr(trim((string)($input['note'] ?? '')),0,2000,'UTF-8');
-$salesInvoiceNumber=trim((string)($input['sales_invoice_number'] ?? ''));
-if($salesInvoiceNumber!=='' && preg_match('/^[0-9]{1,20}$/',$salesInvoiceNumber)!==1){
-    sv_amz_intake_reply([
-        'success'=>false,'error'=>'Informe somente os números da NF de venda.',
-    ],422);
-}
 $db=amazon_returns_pdo();
 if(!$db instanceof PDO){
     sv_amz_intake_reply(['success'=>false,'error'=>'Banco indisponível.'],503);
@@ -163,14 +164,6 @@ try{
     $p->cases->assertOwned((int)$caseId);
     $case=$p->cases->find((int)$caseId);
     if(!is_array($case))throw new OutOfBoundsException('Caso não encontrado.');
-    $knownRefundQuantity=(int)$case['quantity_refunded'];
-    $expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case['quantity_ordered']);
-    $outstanding=max(0,$expectedQuantity-(int)$case['quantity_received']);
-    if($quantity>$outstanding){
-        throw new InvalidArgumentException(
-            'Quantidade recebida excede a quantidade ainda pendente.'
-        );
-    }
     $idempotency=hash(
         'sha256','warehouse-intake|'.$context->scopeKey().'|'.$operationId
     );
@@ -184,6 +177,15 @@ try{
             'success'=>true,'duplicate'=>true,
             'event_id'=>$existingId,'case'=>$projection,
         ]);
+    }
+
+    $knownRefundQuantity=(int)$case['quantity_refunded'];
+    $expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case['quantity_ordered']);
+    $outstanding=max(0,$expectedQuantity-(int)$case['quantity_received']);
+    if($quantity>$outstanding){
+        throw new InvalidArgumentException(
+            'Quantidade recebida excede a quantidade ainda pendente.'
+        );
     }
 
     $stored=sv_amz_intake_store_photos($context,(int)$caseId,$files);
@@ -200,11 +202,10 @@ try{
             'quantity'=>(int)$quantity,
             'condition'=>$condition,
             'note'=>$note,
-            'sales_invoice_number'=>$salesInvoiceNumber!=='' ? $salesInvoiceNumber : null,
             'operator_id'=>crc32(SvAmazonReturnsAdminAuth::username()),
         ],
         'evidence_sha256'=>hash(
-            'sha256',implode('|',$photoHashes).'|'.$condition.'|'.$note.'|'.$salesInvoiceNumber
+            'sha256',implode('|',$photoHashes).'|'.$condition.'|'.$note
         ),
     ]);
     foreach($stored as $photo){
@@ -232,7 +233,7 @@ try{
 }catch(Throwable $e){
     if($db->inTransaction())$db->rollBack();
     foreach($stored as $photo)@unlink($photo['path']);
-    error_log('[amazon-returns-intake] '.get_class($e));
+    error_log('[amazon-returns-intake] '.get_class($e).': '.$e->getMessage());
     sv_amz_intake_reply([
         'success'=>false,'error'=>'Não foi possível registrar o recebimento.',
     ],500);

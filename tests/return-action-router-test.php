@@ -38,7 +38,9 @@ raEq('WAIT',SvAmazonReturnActionRouter::decide($claim,[$sent],$policy,$now)['act
 $late=$claim;$late['state']='APPEAL_DENIED_FINAL';raEq('WAIT',SvAmazonReturnActionRouter::decide($late,[$sent],$policy,$now)['action'],'repeated status reads cannot resend existing review');
 $support=$case+['support_case_id'=>'12345678901'];$lost=$return;$lost['payload']['return_status']='Perdido no Transporte';
 raEq('WAIT',SvAmazonReturnActionRouter::decide($support,[$lost,$checked],$policy,$now)['action'],'reuse existing support, do not open a duplicate');
-raEq('SELLER_SUPPORT_OPEN',SvAmazonReturnActionRouter::decide($case,[$lost,$checked],$policy,$now)['action'],'overdue proactive route with fresh unpaid finance can escalate');
+$proactiveSupport=SvAmazonReturnActionRouter::decide($case,[$lost,$checked],$policy,$now);
+raEq('SELLER_SUPPORT_OPEN',$proactiveSupport['action'],'overdue proactive route with fresh unpaid finance can escalate');
+raEq('GENERAL_ORDER_SUPPORT',$proactiveSupport['support_route']??null,'non-FBA support escalation must explicitly select the general Seller Support route');
 $old=$checked;$old['occurred_at']='2026-07-01 00:00:00';
 raEq('CHECK_FINANCES',SvAmazonReturnActionRouter::decide($case,[$lost,$old],$policy,$now)['action'],'stale finance cannot authorize escalation');
 $delivered=$return;$delivered['payload']=['return_status'=>'Entregue ao vendedor','return_delivery_at'=>'2026-09-01 14:00:00'];
