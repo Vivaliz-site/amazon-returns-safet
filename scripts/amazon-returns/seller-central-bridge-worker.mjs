@@ -499,7 +499,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '') {
         const summary=JSON.stringify(item);
         if(needles.some(n=>summary.includes(n))&&activeSupportStatus(item.status))return JSON.stringify({status:'FOUND',case_id:String(item.caseId||'')});
       }
-      const candidates=rows.filter(item=>relevant.test(String(item.shortDescription||'')));
+      const candidates=rows.filter(item=>activeSupportStatus(item.status)&&relevant.test(String(item.shortDescription||'')));
       for(const item of candidates){
         try{
           const detail=await viewCase(item.caseId);
