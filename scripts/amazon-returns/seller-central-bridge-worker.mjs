@@ -154,6 +154,15 @@ class Cdp {
     return (await this.evaluate(`(()=>{const d=${docExpr};const h=d?.querySelector(${JSON.stringify(selector)});const b=h?.shadowRoot?.querySelector('button,.checkbox,[role=checkbox]');if(!b||b.disabled)return false;b.click();return true})()`)) === true;
   }
 
+  async clickHillButtonTrusted(selector) {
+    const point = await this.evaluate(`(()=>{const selector=${JSON.stringify(selector)};for(const f of document.querySelectorAll('iframe')){const outer=f.contentDocument;const hill=outer?.querySelector('spl-hill-form');const innerFrame=hill?.shadowRoot?.querySelector('iframe');const inner=innerFrame?.contentDocument;if(!inner)continue;const host=inner.querySelector(selector);const button=host?.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(!button||button.disabled)continue;f.scrollIntoView({block:'center'});hill.scrollIntoView({block:'center'});button.scrollIntoView({block:'center'});const a=f.getBoundingClientRect(),b=innerFrame.getBoundingClientRect(),c=button.getBoundingClientRect();const x=a.left+b.left+c.left+(c.width/2),y=a.top+b.top+c.top+(c.height/2);if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>innerWidth||y>innerHeight)return null;return {x,y}}return null})()`);
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y, button: 'none' });
+    await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+    return true;
+  }
+
   async selectKatOption(dropdownSelector, value) {
     return (await this.evaluate(`(()=>{const h=document.querySelector(${JSON.stringify(dropdownSelector)});const o=[...h?.shadowRoot?.querySelectorAll('kat-option')||[]].find(x=>x.getAttribute('value')===${JSON.stringify(value)});if(!o)return false;o.click();return true})()`)) === true;
   }
@@ -549,10 +558,17 @@ async function submitHillEmail(cdp, job) {
   const prepared = text(await cdp.evaluate(`(()=>{const subject=${JSON.stringify(subject)};for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;const email=d.querySelector('kat-tab[tab-id="Email"]');if(!email)continue;const required=email.querySelector('kat-input[required="true"]')?.shadowRoot?.querySelector('input');if(!required||!required.value.trim())return 'SUPPORT_EMAIL_ADDRESS_MISSING';const label=[...d.querySelectorAll('kat-label')].find(x=>/^(Subject|Assunto)/i.test((x.innerText||'').trim()));const id=label?.getAttribute('for')||'';const host=[...d.querySelectorAll('kat-input')].find(x=>x.getAttribute('unique-id')===id);const input=host?.shadowRoot?.querySelector('input');if(!input)return 'SUPPORT_EMAIL_SUBJECT_MISSING';Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,subject);input.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:subject}));input.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return input.value===subject?'READY':'SUPPORT_EMAIL_SUBJECT_NOT_WRITABLE'}return 'SUPPORT_EMAIL_FORM_MISSING'})()`));
   if (prepared !== 'READY') return prepared || 'SUPPORT_EMAIL_SUBJECT_NOT_WRITABLE';
   await sleep(500);
-  return text(await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;const email=d.querySelector('kat-tab[tab-id="Email"]');const send=email?.querySelector('kat-button[label="Send"],kat-button[label="Enviar"]');const button=send?.shadowRoot?.querySelector('button');if(!button||button.disabled)return 'SUPPORT_EMAIL_SEND_MISSING';const label=(send.getAttribute('label')||send.innerText||'').trim();if(label!=='Send'&&label!=='Enviar')return 'SUPPORT_EMAIL_SEND_MISSING';button.click();return 'Email'}return 'SUPPORT_EMAIL_FORM_MISSING'})()`));
+  const sendReady = text(await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;const email=d.querySelector('kat-tab[tab-id="Email"]');const send=email?.querySelector('kat-button[label="Send"],kat-button[label="Enviar"]');const button=send?.shadowRoot?.querySelector('button');if(!button||button.disabled)return 'SUPPORT_EMAIL_SEND_MISSING';const label=(send.getAttribute('label')||send.innerText||'').trim();return label==='Send'||label==='Enviar'?'READY':'SUPPORT_EMAIL_SEND_MISSING'}return 'SUPPORT_EMAIL_FORM_MISSING'})()`));
+  if (sendReady !== 'READY') return sendReady || 'SUPPORT_EMAIL_SEND_MISSING';
+  if (!(await cdp.clickHillButtonTrusted('#send-email-button'))) return 'SUPPORT_EMAIL_SEND_MISSING';
+  return 'Email';
 }
 async function supportCaseReadbackSnapshot(cdp) {
   return await cdp.evaluate(`(()=>{const out=[];const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){out.push({url:d.location?.href||'',links:[...d.querySelectorAll('a[href]')].map(a=>({href:a.href||'',text:(a.innerText||'').trim().slice(0,120)})).filter(x=>/case|support/i.test(x.href+x.text)).slice(0,30),text:(d.body?.innerText||'').slice(0,5000)})}return out})()`);
+}
+
+async function hillSupportUnavailable(cdp) {
+  return (await cdp.evaluate(`(()=>{const phrases=['No support agents are available right now','Support currently unavailable','Nenhum agente de suporte está disponível no momento','Suporte indisponível no momento'];for(const f of document.querySelectorAll('iframe')){const outer=f.contentDocument;const hill=outer?.querySelector('spl-hill-form');const inner=hill?.shadowRoot?.querySelector('iframe')?.contentDocument;const bodies=[outer?.body?.innerText||'',inner?.body?.innerText||''];if(bodies.some(body=>phrases.some(p=>body.includes(p))))return true}return false})()`)) === true;
 }
 
 async function currentSupportCaseId(cdp) {
@@ -572,7 +588,16 @@ async function contactSupportAndReadBack(cdp, job) {
     }
     return bridgeResult('UI_DRIFT', { reason: channel || 'SUPPORT_EMAIL_SEND_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
-  await sleep(6000);
+  await sleep(1500);
+  if (await hillSupportUnavailable(cdp)) {
+    return bridgeResult('BLOCKED_UNTIL', {
+      block_reason: 'SELLER_SUPPORT_CURRENTLY_UNAVAILABLE',
+      reason: 'SELLER_SUPPORT_CURRENTLY_UNAVAILABLE',
+      retry_safe: true,
+      next_allowed_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    });
+  }
+  await sleep(4500);
   let caseId = await currentSupportCaseId(cdp);
   for (let attempt = 0; !caseId && attempt < 5; attempt++) {
     caseId = text(await findSupportCase(cdp, job));
@@ -649,7 +674,7 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
   }
 
   const associateCategories = text(job.case?.program).toUpperCase() === 'FBA'
-    ? ['A-to-z Claims','FBA related']
+    ? ['FBA related','A-to-z Claims']
     : ['A-to-z Claims'];
   const category = await clickFirstFrameTextWhenReady(cdp, associateCategories, 45000);
   if (!category) {

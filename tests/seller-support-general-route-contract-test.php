@@ -35,7 +35,7 @@ foreach([
 }
 sgrAssert(str_contains($worker,'async function clickFirstFrameTextWhenReady'),'Dynamic associate categories must be polled until an enabled live category exists.');
 sgrAssert(str_contains($generic,"const associateCategories = text(job.case?.program).toUpperCase() === 'FBA'"),'FBA-only terminal categories must be scoped to FBA cases.');
-sgrAssert(str_contains($generic,"? ['A-to-z Claims','FBA related']"),'FBA general support may use the validated terminal FBA category when A-to-z is unavailable.');
+sgrAssert(str_contains($generic,"? ['FBA related','A-to-z Claims']"),'FBA general support must prefer the semantically correct FBA associate category before the A-to-z fallback.');
 sgrAssert(str_contains($generic,": ['A-to-z Claims'];"),'Non-FBA general support must fail closed rather than route through an FBA-only category.');
 sgrAssert(str_contains($generic,"clickFirstFrameTextWhenReady(cdp, associateCategories"),'General Seller Support must poll only terminal associate categories.');
 sgrAssert(!str_contains($generic,"['A-to-z Claims','Check FBA order reimbursement status','FBA related']"),'The troubleshooting label Check FBA order reimbursement status must never be used as a final associate category.');
