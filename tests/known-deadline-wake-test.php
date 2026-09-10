@@ -28,11 +28,20 @@ kdSame(['bootstrap','gmail','sp_api','financial','scheduler','gmail','seller_cen
 kdSame('2026-09-10T03:15:00+00:00',SvAmazonReturnsRuntime::nextKnownActionAt([
     null,'invalid','2026-09-10T03:30:00Z','2026-09-10T03:15:00Z','2026-09-10T02:00:00Z'
 ],$now),'Runtime must remember the earliest future action only.');
-kdSame(null,SvAmazonReturnsRuntime::nextKnownActionAt(['2026-09-10T02:00:00Z',null],$now),'Consumed/past timestamps must not be treated as future wakes.');
+kdSame('2026-09-10T02:59:00+00:00',SvAmazonReturnsRuntime::nextKnownWakeAt([
+    ['next_action_at'=>'2026-09-10T03:15:00Z','updated_at'=>'2026-09-10T02:00:00Z','closed_at'=>null],
+    ['next_action_at'=>'2026-09-10T02:59:00Z','updated_at'=>'2026-09-10T02:00:00Z','closed_at'=>null],
+    ['next_action_at'=>'2026-09-10T02:58:00Z','updated_at'=>'2026-09-10T03:00:00Z','closed_at'=>null],
+    ['next_action_at'=>'2026-09-10T02:30:00Z','updated_at'=>'2026-09-10T02:00:00Z','closed_at'=>'2026-09-10T02:45:00Z'],
+],$now),'Runtime must wake for the earliest unprocessed open deadline, including an overdue deadline after restart.');
+kdSame(null,SvAmazonReturnsRuntime::nextKnownWakeAt([
+    ['next_action_at'=>'2026-09-10T02:59:00Z','updated_at'=>'2026-09-10T03:00:00Z','closed_at'=>null],
+    ['next_action_at'=>null,'updated_at'=>'2026-09-10T03:00:00Z','closed_at'=>null],
+],$now),'A deadline already evaluated at or after its timestamp must not create a tight loop.');
 
 $runtime=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
-kdAssert(str_contains($runtime,'SELECT MIN(next_action_at)'),'Daemon bootstrap must discover the earliest known business timestamp from the local scoped case store.');
-kdAssert(str_contains($runtime,'updated_at<next_action_at'),'A due timestamp already evaluated after its deadline must not create a tight loop.');
+kdAssert(str_contains($runtime,'$p->cases->openCases(1000)'),'Daemon bootstrap must discover known business timestamps through tenant-scoped persistence.');
+kdAssert(!str_contains($runtime,'FROM amazon_return_cases'),'Runtime must not bypass tenant repositories with direct case SQL.');
 kdAssert(str_contains($runtime,"'known_action_wake'"),'Known-date execution must be an event marker, not a shorter periodic business cadence.');
 
 $memory=(string)file_get_contents(__DIR__.'/../docs/MEMORIA-DO-PROJETO.md');
