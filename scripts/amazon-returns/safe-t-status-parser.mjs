@@ -115,7 +115,7 @@ export function parseSafeTStatus(rawBody, expected = {}) {
     safe_t_id: safeTId || null,
     order_id: orderId || null,
     denied_at: extractLabeledDate(body, 'Data de negação'),
-    appeal_deadline_at: extractLabeledDate(body, 'Recorrer por'),
+    appeal_deadline_at: extractLabeledDate(body, 'Recorrer por') || extractLabeledDate(body, 'Appeal by'),
     decision_text: decision || null,
     decision_fingerprint: decision ? sha(decision.toLowerCase().replace(/\s+/g, ' ').trim()) : null,
     appeal_submitted: appeal.appeal_submitted,
