@@ -10,6 +10,8 @@ require_once __DIR__ . '/BridgeLiveness.php';
 
 final class SvAmazonReturnsRuntime
 {
+    private static ?string $nextKnownActionAt=null;
+
     /** @return array<string,int> */
     public static function cadences(): array
     {
@@ -57,6 +59,24 @@ final class SvAmazonReturnsRuntime
         }catch(Throwable){
             return null;
         }
+    }
+
+    private static function refreshNextKnownActionAt(PDO $db,SvAmazonTenantContext $context): void
+    {
+        self::$nextKnownActionAt=null;
+        $stmt=$db->prepare(
+            'SELECT MIN(next_action_at) FROM amazon_return_cases '
+            . 'WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'AND closed_at IS NULL AND next_action_at IS NOT NULL '
+            . 'AND (next_action_at>UTC_TIMESTAMP() OR updated_at<next_action_at)'
+        );
+        $stmt->execute([
+            ':tenant_id'=>$context->tenantId(),
+            ':amazon_connection_id'=>$context->amazonConnectionId(),
+        ]);
+        $value=$stmt->fetchColumn();
+        $when=self::timestamp(is_string($value)?$value:null);
+        if($when!==null)self::$nextKnownActionAt=$when->format(DATE_ATOM);
     }
 
     public static function decisionStackRevision(): string
@@ -130,7 +150,11 @@ final class SvAmazonReturnsRuntime
             }
             if($now->getTimestamp()-$when->getTimestamp()>=$seconds)$due[]=$task;
         }
-        if(self::knownActionDue($state,$now))$due[]='scheduler';
+        $wakeState=$state;
+        if(self::$nextKnownActionAt!==null)$wakeState['next_known_action_at']=self::$nextKnownActionAt;
+        if(self::knownActionDue($wakeState,$now)){
+            $due=[...$due,'known_action_wake','gmail','sp_api','financial','scheduler','seller_central'];
+        }
         if(
             is_string($decisionStackRevision)
             && $decisionStackRevision!==''
@@ -151,15 +175,18 @@ final class SvAmazonReturnsRuntime
     /**
      * Refresh read-side evidence before deciding, then execute newly queued writes and
      * human-review reminders only after deterministic decisions have been re-evaluated.
+     * A known-date wake gets a second Gmail pass after the scheduler so email writes
+     * created by that decision are delivered in the same cycle.
      *
      * @param list<string> $due
      * @return list<string>
      */
     public static function decisionSafeOrder(array $due): array
     {
+        $knownActionWake=in_array('known_action_wake',$due,true);
         $due=array_values(array_unique(array_filter(
             $due,
-            static fn(mixed $task):bool=>is_string($task) && $task!==''
+            static fn(mixed $task):bool=>is_string($task) && $task!=='' && $task!=='known_action_wake'
         )));
         $evidenceOrder=[
             'gmail',
@@ -184,6 +211,7 @@ final class SvAmazonReturnsRuntime
         $append('bootstrap');
         foreach($evidenceOrder as $task)$append($task);
         $append('scheduler');
+        if($knownActionWake && in_array('gmail',$due,true))$ordered[]='gmail';
         $append('seller_central');
         $append('review_operations');
         foreach($due as $task)$append($task);
@@ -198,6 +226,7 @@ final class SvAmazonReturnsRuntime
         $policySeeds=SvAmazonReturnPolicySeeder::ensure($p->policies);
         $policyAudit=$policySeeds>0 ? SvAmazonReturnPolicySeeder::auditDefinitions($p->policies->allActive()) : ['valid'=>true,'policy_key'=>null];
         if(!$policyAudit['valid'])throw new RuntimeException('Active operational policy does not match approved opening rule.');
+        self::refreshNextKnownActionAt($db,$context);
         return [
             'status'=>'OK',
             'tenant_id'=>$context->tenantId(),
@@ -205,6 +234,7 @@ final class SvAmazonReturnsRuntime
             'schema_tables'=>count(SvAmazonReturnsSchema::statements()),
             'policy_seeds'=>$policySeeds,
             'policy_audit'=>$policyAudit,
+            'next_known_action_at'=>self::$nextKnownActionAt,
         ];
     }
 
