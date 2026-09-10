@@ -34,6 +34,12 @@ final class SvAmazonTenantReturnsOutbox
     /** @param array<string,mixed> $payload */
     public function enqueue(string $kind, int $caseId, array $payload, string $idempotencyKey): int
     {
+        return $this->enqueueResult($kind, $caseId, $payload, $idempotencyKey)['id'];
+    }
+
+    /** @param array<string,mixed> $payload @return array{id:int,enqueued:bool} */
+    public function enqueueResult(string $kind, int $caseId, array $payload, string $idempotencyKey): array
+    {
         $kind = $this->kind($kind);
         $caseId = $this->positiveId($caseId, 'case ID');
         $idempotencyKey = $this->idempotencyKey($idempotencyKey);
@@ -54,7 +60,7 @@ final class SvAmazonTenantReturnsOutbox
             $stmt->execute($params);
             $id = (int)$this->db->lastInsertId();
             if ($id < 1) throw new RuntimeException('Scoped outbox insert did not return an ID.');
-            return $id;
+            return ['id'=>$id,'enqueued'=>true];
         } catch (PDOException $exception) {
             if (!$this->isUniqueViolation($exception)) throw $exception;
         }
@@ -83,8 +89,9 @@ final class SvAmazonTenantReturnsOutbox
                 ':kind'=>$kind,
                 ':case_id'=>$caseId,
             ]));
+            return ['id'=>$id,'enqueued'=>$reactivate->rowCount()===1];
         }
-        return $id;
+        return ['id'=>$id,'enqueued'=>false];
     }
 
     /** @return list<array<string,mixed>> */

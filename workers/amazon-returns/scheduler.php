@@ -96,7 +96,11 @@ final class SvAmazonReturnsScheduler
             $deadline=SvAmazonRecoveryWindow::effectiveDeadlineAt($case,$action);
             if($deadline instanceof DateTimeImmutable)$payload['deadline_at']=$deadline->format('Y-m-d H:i:s');
         }
-        $outboxId=$target->enqueue($action,$caseId,$payload,$key);
-        return ['decision'=>$decision,'outbox_id'=>$outboxId];
+        $enqueueResult=$target->enqueueResult($action,$caseId,$payload,$key);
+        return [
+            'decision'=>$decision,
+            'outbox_id'=>$enqueueResult['id'],
+            'enqueued'=>$enqueueResult['enqueued'],
+        ];
     }
 }
