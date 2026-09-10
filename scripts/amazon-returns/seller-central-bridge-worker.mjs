@@ -177,6 +177,24 @@ class Cdp {
     return true;
   }
 
+  async fillFrameInputTrustedByLabel(labels, value) {
+    const wanted = [...new Set((Array.isArray(labels) ? labels : [labels]).map(v => String(v ?? '').trim()).filter(Boolean))];
+    const expected = String(value ?? '');
+    if (wanted.length === 0 || expected === '') return false;
+    const point = await this.evaluate(`(()=>{const wanted=${JSON.stringify(wanted)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const row of d.querySelectorAll('.meld-text-input')){const label=(row.querySelector('.meld-label-description')?.innerText||'').trim();if(!wanted.some(x=>label.includes(x)))continue;const host=row.querySelector('kat-input');const input=host?.shadowRoot?.querySelector('input');if(!host||!input||host.hasAttribute('disabled')||input.disabled)continue;f.scrollIntoView({block:'center'});input.scrollIntoView({block:'center'});const outer=f.getBoundingClientRect(),inner=input.getBoundingClientRect();const x=outer.left+inner.left+(inner.width/2),y=outer.top+inner.top+(inner.height/2);if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>innerWidth||y>innerHeight)return null;return {x,y}}}return null})()`);
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y, button: 'none' });
+    await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+    await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65 });
+    await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65 });
+    await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+    await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+    await this.send('Input.insertText', { text: expected });
+    await sleep(300);
+    return (await this.evaluate(`(()=>{const wanted=${JSON.stringify(wanted)},expected=${JSON.stringify(expected)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const row of d.querySelectorAll('.meld-text-input')){const label=(row.querySelector('.meld-label-description')?.innerText||'').trim();if(!wanted.some(x=>label.includes(x)))continue;const input=row.querySelector('kat-input')?.shadowRoot?.querySelector('input');if(input)return input.value===expected}}return false})()`)) === true;
+  }
+
   async selectKatOption(dropdownSelector, value) {
     return (await this.evaluate(`(()=>{const h=document.querySelector(${JSON.stringify(dropdownSelector)});const o=[...h?.shadowRoot?.querySelectorAll('kat-option')||[]].find(x=>x.getAttribute('value')===${JSON.stringify(value)});if(!o)return false;o.click();return true})()`)) === true;
   }
@@ -719,7 +737,10 @@ async function fillGeneralSupportIssue(cdp, job, narrative) {
 async function fillDirectSupportCaseDetails(cdp, narrative) {
   const value = text(narrative);
   if (!value) return false;
-  return (await cdp.evaluate(`(()=>{const value=${JSON.stringify(value)};const labels=['Provide details about the order reimbursement error','Forneça detalhes sobre o erro de reembolso do pedido'];for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const row of d.querySelectorAll('.meld-text-input')){const label=(row.querySelector('.meld-label-description')?.innerText||'').trim();if(!labels.some(x=>label.includes(x)))continue;const host=row.querySelector('kat-input');const input=host?.shadowRoot?.querySelector('input');if(!host||!input||host.hasAttribute('disabled')||input.disabled)continue;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:value}));input.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return input.value===value}return false}return false})()`)) === true;
+  return await cdp.fillFrameInputTrustedByLabel([
+    'Provide details about the order reimbursement error',
+    'Forneça detalhes sobre o erro de reembolso do pedido',
+  ], value);
 }
 
 async function waitForDirectSupportCaseDetails(cdp, narrative, timeoutMs = 15000) {
