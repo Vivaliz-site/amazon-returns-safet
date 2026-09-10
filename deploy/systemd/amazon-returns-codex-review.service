@@ -1,0 +1,25 @@
+[Unit]
+Description=Amazon Returns Codex ChatGPT Review Broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/amazon-returns-deploy/current
+Environment=AMAZON_RETURNS_CODEX_REVIEW_SOCKET=/run/amazon-returns-safet/codex-review.sock
+ExecStart=/usr/bin/php /home/ubuntu/amazon-returns-deploy/current/scripts/amazon-returns/codex-review-broker.php
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RuntimeDirectory=amazon-returns-safet
+RuntimeDirectoryMode=0770
+ReadOnlyPaths=/home/ubuntu/.codex/auth.json /home/ubuntu/amazon-returns-deploy/current
+ReadWritePaths=/run/amazon-returns-safet
+
+[Install]
+WantedBy=multi-user.target
