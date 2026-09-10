@@ -279,7 +279,7 @@ async function supportRead(job) {
       if(!caseStatus)return JSON.stringify({status:'INVALID'});
       const values=[];
       const walk=value=>{
-        if(typeof value==='string'){const v=value.replace(/\s+/g,' ').trim();if(v)values.push(v);return;}
+        if(typeof value==='string'){const v=value.replace(/\\s+/g,' ').trim();if(v)values.push(v);return;}
         if(Array.isArray(value)){for(const item of value)walk(item);return;}
         if(value&&typeof value==='object'){for(const item of Object.values(value))walk(item);}
       };
