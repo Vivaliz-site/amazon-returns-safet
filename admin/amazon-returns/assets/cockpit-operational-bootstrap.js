@@ -30,6 +30,21 @@ renderOperationalCase=function auditedOperationalRenderCase(data,relatedCount=nu
   const checked=c.last_read_back?.occurred_at;
   if(checked){const checkedAt=new Date(String(checked).replace(' ','T')+'Z');if(!Number.isNaN(checkedAt.getTime())&&Date.now()-checkedAt.getTime()>36*60*60*1000){document.querySelector('#case-detail .case-summary')?.append(text('div','Dados podem estar desatualizados: a última verificação ocorreu há mais de 36 horas.','stale-data-note'));}}
 };
+const baseOperationalLoadBucketCases=loadBucketCases;
+loadBucketCases=async function auditedLoadBucketCases(filters,bucket){
+  if(bucket==='attention'){
+    const q=new URLSearchParams(filters);q.delete('action');q.set('review_status','OPEN');q.set('page','1');q.set('per_page','100');
+    return json(`/admin/amazon-returns/api/cases.php?${q}`);
+  }
+  return baseOperationalLoadBucketCases(filters,bucket);
+};
+function syncOperationalChrome(){
+  const hide=state.view!=='cases';
+  document.querySelector('.quick-filters')?.classList.toggle('hidden',state.view!=='cases');
+  document.querySelector('#operational-overview')?.classList.toggle('hidden',hide);
+}
+const baseOperationalSelectView=selectView;
+selectView=function operationalSelectView(view){baseOperationalSelectView(view);syncOperationalChrome();};
 async function loadOperationalOverview(){
   const root=document.querySelector('#operational-overview');if(!root)return;
   try{
@@ -47,5 +62,6 @@ async function loadOperationalOverview(){
     root.append(breakdown);
   }catch(_e){root.replaceChildren(text('span','Resumo operacional indisponível no momento. A lista de casos continua disponível.','muted'));}
 }
+syncOperationalChrome();
 loadOperationalOverview();
 if(state.view==='cases')loadCases();
