@@ -11,7 +11,13 @@ final class SvAmazonDecisionCoordinator
         $this->resolveTerminalReviews();
     }
     public function previewAction(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null):array{return $this->decide($case,$timeline,$policy,$now,false);}
-    public function nextAction(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null):array{return $this->decide($case,$timeline,$policy,$now,true);}
+    public function nextAction(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null):array
+    {
+        $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        $decision=$this->decide($case,$timeline,$policy,$now,true);
+        $this->recordDecision($case,$policy,$decision,$now);
+        return $decision;
+    }
     public function buildReviewContext(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null): ?array
     {
         $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));$base=$this->base->nextAction($case,$timeline,$policy,$now);
@@ -26,6 +32,18 @@ final class SvAmazonDecisionCoordinator
     private function decide(array $case,array $timeline,array $policy,?DateTimeImmutable $now,bool $persist):array
     {
         $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));$base=$this->base->nextAction($case,$timeline,$policy,$now);
+        if($persist && ($blocker=$this->writeBlocker($base,$case))!==null){
+            $action=strtoupper(trim((string)($base['action']??'')));
+            $reason='WRITE_BLOCKED_'.$action;
+            $reviewDecision=['action'=>'HUMAN_REVIEW','reason'=>$reason,'case_id'=>(int)($case['id']??0),'blocked_action'=>$action,'blocked_reason'=>$base['reason']??null,'write_blocker'=>$blocker,'next_action_at'=>$base['next_action_at']??null];
+            $context=SvAmazonReviewContext::build($case,$timeline,$policy,$reviewDecision);
+            $context['facts']['blocked_action']=$action;
+            $context['facts']['write_blocker']=$blocker;
+            $context['facts']['blocked_decision']=$this->safeBlockedDecision($base);
+            $context['signature_hash']=hash('sha256',implode('|',[(string)$context['signature_hash'],$reason,(string)($base['idempotency_key']??'')]));
+            $this->persistence->reviews->open((int)$case['id'],$reason,$context['signature_hash'],$context);
+            return $reviewDecision+['review_reason'=>$reason,'review_context'=>$context];
+        }
         if(!in_array($base['action']??'',['HUMAN_REVIEW','BLOCKED_REVIEW'],true)){
             if($persist){
                 if(method_exists($this->persistence->reviews,'resolveOpenForCase'))$this->persistence->reviews->resolveOpenForCase((int)$case['id']);
@@ -51,6 +69,45 @@ final class SvAmazonDecisionCoordinator
         $reason=$match['status']==='CONFLICT'?'LEARNED_RULE_CONFLICT':(string)($base['reason']??'UNRESOLVED_REVIEW');
         if($persist)$this->persistence->reviews->open((int)$case['id'],$reason,$context['signature_hash'],$context);
         return $base+['review_reason'=>$reason,'review_context'=>$context,'learned_rule_conflicts'=>$match['conflicts']??[]];
+    }
+    private function writeBlocker(array $decision,array $case):?string
+    {
+        $action=strtoupper(trim((string)($decision['action']??'')));
+        if(!in_array($action,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))return null;
+        if($this->config===null)return null;
+        if(method_exists($this->config,'externalWriteAllowed')&&!$this->config->externalWriteAllowed($action))return 'WRITE_DISABLED';
+        $caseId=(int)($case['id']??0);
+        if(method_exists($this->config,'writeCaseAllowed')&&!$this->config->writeCaseAllowed($caseId))return 'WRITE_CANARY_BLOCKED';
+        if(method_exists($this->config,'readiness')){
+            $dependency=in_array($action,['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY'],true)?'gmail':'seller_central_bridge';
+            $ready=$this->config->readiness()[$dependency]['ready']??false;
+            if($ready!==true)return 'DEPENDENCY_UNREADY';
+        }
+        return null;
+    }
+    private function safeBlockedDecision(array $decision):array
+    {
+        $safe=[];
+        foreach(['action','reason','idempotency_key','next_action_at','promised_by_date','outstanding_amount','support_route','operational_mode'] as $field){
+            if(array_key_exists($field,$decision)&&is_scalar($decision[$field]))$safe[$field]=$decision[$field];
+        }
+        return $safe;
+    }
+    private function recordDecision(array $case,array $policy,array $decision,DateTimeImmutable $now):void
+    {
+        if(!isset($this->persistence->events)||!method_exists($this->persistence->events,'append'))return;
+        $payload=[
+            'action'=>(string)($decision['action']??'WAIT'),
+            'reason'=>(string)($decision['reason']??'UNSPECIFIED'),
+            'next_action_at'=>$decision['next_action_at']??null,
+            'policy_version_id'=>$policy['policy_version_id']??null,
+            'operational_idempotency_key'=>$decision['idempotency_key']??null,
+            'blocked_action'=>$decision['blocked_action']??null,
+            'write_blocker'=>$decision['write_blocker']??null,
+        ];
+        $material=json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        $key=hash('sha256','decision-evaluated-v1|'.(int)($case['id']??0).'|'.$material);
+        $this->persistence->events->append(['case_id'=>(int)$case['id'],'event_type'=>'DECISION_EVALUATED','source'=>'INTERNAL','source_event_id'=>$key,'idempotency_key'=>$key,'occurred_at'=>$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),'payload'=>$payload,'evidence_sha256'=>null]);
     }
     private function clearResolvedReviewGate(array $case,array $policy,array $decision):void
     {
