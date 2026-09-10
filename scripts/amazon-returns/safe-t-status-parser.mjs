@@ -103,6 +103,31 @@ function appealState(body, decision) {
   return { appeal_submitted: submitted, appeal_denied: denied };
 }
 
+function safeCommunicationText(value) {
+  return compact(value)
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
+    .replace(/\b(access_token|refresh_token|client_secret|password|cookie|authorization|mfa|otp)\b\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+    .slice(0, 8000);
+}
+
+function communications(body) {
+  const amazon = /(?:Negamos sua reivindica[cç][aã]o SAFE-T|Analisamos (?:seu|o) recurso|reafirmamos nossa decis[aã]o|Nenhuma a[cç][aã]o [ée] necess[aá]ria da nossa parte neste momento|Sua reivindica[cç][aã]o n[aã]o foi registrada dentro do prazo do recurso|A reivindica[cç][aã]o SAFE-T[^\n]{0,200}(?:foi )?(?:concedida|aprovada)|mais informa[cç][oõ]es necess[aá]rias|informa[cç][oõ]es solicitad[ao]s?)/i;
+  const seller = /(?:solicito reavalia[cç][aã]o da decis[aã]o|solicito (?:nova )?revis[aã]o|solicito[^\n]{0,160}\brecurso\b)/i;
+  const seen = new Set();
+  const result = [];
+  for (const rawLine of body.split('\n')) {
+    const line = safeCommunicationText(rawLine);
+    if (!line) continue;
+    const actor = seller.test(line) ? 'SELLER' : (amazon.test(line) ? 'AMAZON' : null);
+    if (!actor) continue;
+    const key = `${actor}|${line.toLowerCase().replace(/\s+/g, ' ').trim()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ actor, body: line, occurred_at: null, kind: actor === 'SELLER' ? 'APPEAL' : 'DECISION' });
+  }
+  return result;
+}
+
 export function parseSafeTStatus(rawBody, expected = {}) {
   const body = compact(rawBody);
   const claimStatus = statusFrom(body);
@@ -120,6 +145,7 @@ export function parseSafeTStatus(rawBody, expected = {}) {
       ?? extractLabeledDate(body, 'Reply by'),
     decision_text: decision || null,
     decision_fingerprint: decision ? sha(decision.toLowerCase().replace(/\s+/g, ' ').trim()) : null,
+    communications: communications(body),
     appeal_submitted: appeal.appeal_submitted,
     appeal_denied: appeal.appeal_denied,
   };
