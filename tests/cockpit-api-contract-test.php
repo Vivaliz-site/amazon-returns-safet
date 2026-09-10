@@ -76,10 +76,18 @@ foreach($apis as $api){
 $casesSrc=caSource('admin/amazon-returns/api/cases.php');
 caAssert(str_contains($casesSrc,'previewAction('),'Case listing must use side-effect-free previewAction.');
 caAssert(!str_contains($casesSrc,'->nextAction('),'Read-only case listing must never call mutating nextAction.');
+caAssert(str_contains($casesSrc,"'order_at'"),'Case listing must expose order date.');
+caAssert(str_contains($casesSrc,"'seller_debit_at'"),'Case listing must expose seller debit date.');
+caAssert(str_contains($casesSrc,"'refund_amount'"),'Case listing must expose customer refund amount.');
+caAssert(str_contains($casesSrc,"'customer_tracking_ids'"),'Case listing must expose customer tracking evidence.');
 $caseSrc=caSource('admin/amazon-returns/api/case.php');
 caAssert(str_contains($caseSrc,'SvAmazonCockpitTimeline'),'Case detail must use 360 timeline projector.');
 caAssert(str_contains($caseSrc,"'timeline'"),'Case detail must expose timeline.');
 caAssert(str_contains($caseSrc,"'current_review'"),'Case detail must expose current review.');
 caAssert(str_contains($caseSrc,"'rule_applications'"),'Case detail must expose rule applications.');
+caAssert(str_contains($caseSrc,"'sales_invoice_number'"),'Case detail must expose sales invoice number when available.');
+caAssert(str_contains($caseSrc,"SALES_INVOICE_LINKED"),'Case detail must derive invoice from linked invoice evidence.');
+caAssert(str_contains($caseSrc,"'last_external_write'"),'Case detail must expose the last external write.');
+caAssert(str_contains($caseSrc,"'last_read_back'"),'Case detail must expose the last verification.');
 
 echo "cockpit-api-contract-test: OK\n";
