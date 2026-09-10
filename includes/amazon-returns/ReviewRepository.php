@@ -117,7 +117,6 @@ final class SvAmazonReviewRepository
         self::hash($contextHash);
         self::text($reason,96);
         return $this->atomic(function () use ($caseId,$reason,$contextHash,$context): array {
-            // The case lock serializes review replacement so only one current OPEN episode can exist.
             $this->owned('amazon_return_cases',$caseId,true);
             $key=hash('sha256',$caseId.'|'.$contextHash);
             $open=$this->rows(self::TABLE,"case_id=:case_id AND status='OPEN'",[':case_id'=>$caseId],'FOR UPDATE');
@@ -196,13 +195,15 @@ final class SvAmazonReviewRepository
             'affected_case_preview_json'=>self::json($decision['affected_case_preview']??[]),'decided_at'=>self::now(),
         ]);
     }
-    public function saveSuggestion(int $reviewId, int $expectedVersion, array $suggestion, string $model): array
+    public function saveSuggestion(int $reviewId, int $expectedVersion, array $suggestion, string $model, string $provider='OPENAI'): array
     {
-        return $this->mutate($reviewId,$expectedVersion,['ai_suggestion_json'=>self::json($suggestion),'ai_provider'=>'OPENAI','ai_model'=>self::text($model),'ai_suggested_at'=>self::now()]);
+        $provider=strtoupper(trim($provider));
+        if(!in_array($provider,['CHATGPT_SESSION','CODEX_CHATGPT','ANTHROPIC','GEMINI','OPENAI'],true))throw new InvalidArgumentException('Invalid review AI provider.');
+        return $this->mutate($reviewId,$expectedVersion,['ai_suggestion_json'=>self::json($suggestion),'ai_provider'=>$provider,'ai_model'=>self::text($model),'ai_suggested_at'=>self::now()]);
     }
     public function recordAiFailure(int $reviewId, int $expectedVersion, string $errorClass): array
     {
-        if (!preg_match('/^[A-Za-z_\\\\][A-Za-z0-9_\\\\]{0,190}$/D',$errorClass)) throw new InvalidArgumentException('Error telemetry accepts a class name only.');
+        if (!preg_match('/^[A-Za-z_\\][A-Za-z0-9_\\]{0,190}$/D',$errorClass)) throw new InvalidArgumentException('Error telemetry accepts a class name only.');
         return $this->atomic(function () use ($reviewId,$expectedVersion,$errorClass): array {
             $row=$this->owned(self::TABLE,$reviewId,true);
             return $this->mutate($reviewId,$expectedVersion,['ai_error_count'=>min(2147483647,(int)$row['ai_error_count']+1),'ai_error_class'=>$errorClass,'ai_error_at'=>self::now()]);
