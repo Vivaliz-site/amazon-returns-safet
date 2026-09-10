@@ -10,6 +10,9 @@ require_once __DIR__ . '/BridgeLiveness.php';
 
 final class SvAmazonReturnsRuntime
 {
+    /** @var list<array<string,mixed>> */
+    private static array $knownActionCases=[];
+
     /** @return array<string,int> */
     public static function cadences(): array
     {
@@ -25,6 +28,46 @@ final class SvAmazonReturnsRuntime
             'health'=>900,
             'policy_monitor'=>43200,
         ];
+    }
+
+    public static function knownActionDue(array $state,DateTimeImmutable $now): bool
+    {
+        $wake=self::timestamp($state['next_known_action_at'] ?? null);
+        if($wake===null)return false;
+        $now=$now->setTimezone(new DateTimeZone('UTC'));
+        if($wake>$now)return false;
+        $lastScheduler=self::timestamp($state['scheduler'] ?? null);
+        return $lastScheduler===null || $lastScheduler<$wake;
+    }
+
+    /** @param list<array<string,mixed>> $cases */
+    public static function nextKnownWakeAt(array $cases,?DateTimeImmutable $after=null): ?string
+    {
+        $after=$after?->setTimezone(new DateTimeZone('UTC'));
+        $next=null;
+        foreach($cases as $case){
+            if(!is_array($case) || ($case['closed_at'] ?? null)!==null)continue;
+            $when=self::timestamp($case['next_action_at'] ?? null);
+            if($when===null || ($after!==null && $when<=$after))continue;
+            if($next===null || $when<$next)$next=$when;
+        }
+        return $next?->format(DATE_ATOM);
+    }
+
+    private static function timestamp(mixed $raw): ?DateTimeImmutable
+    {
+        if(!is_string($raw) || trim($raw)==='')return null;
+        try{
+            return (new DateTimeImmutable(trim($raw),new DateTimeZone('UTC')))
+                ->setTimezone(new DateTimeZone('UTC'));
+        }catch(Throwable){
+            return null;
+        }
+    }
+
+    private static function refreshKnownActionCases(SvAmazonTenantPersistence $p): void
+    {
+        self::$knownActionCases=$p->cases->openCases(1000);
     }
 
     public static function decisionStackRevision(): string
@@ -98,6 +141,15 @@ final class SvAmazonReturnsRuntime
             }
             if($now->getTimestamp()-$when->getTimestamp()>=$seconds)$due[]=$task;
         }
+        $wakeState=$state;
+        if(self::$knownActionCases!==[]){
+            $lastScheduler=self::timestamp($state['scheduler'] ?? null);
+            $nextWake=self::nextKnownWakeAt(self::$knownActionCases,$lastScheduler);
+            if($nextWake!==null)$wakeState['next_known_action_at']=$nextWake;
+        }
+        if(self::knownActionDue($wakeState,$now)){
+            $due=[...$due,'known_action_wake','gmail','sp_api','financial','scheduler','seller_central'];
+        }
         if(
             is_string($decisionStackRevision)
             && $decisionStackRevision!==''
@@ -118,15 +170,18 @@ final class SvAmazonReturnsRuntime
     /**
      * Refresh read-side evidence before deciding, then execute newly queued writes and
      * human-review reminders only after deterministic decisions have been re-evaluated.
+     * A known-date wake gets a second Gmail pass after the scheduler so email writes
+     * created by that decision are delivered in the same cycle.
      *
      * @param list<string> $due
      * @return list<string>
      */
     public static function decisionSafeOrder(array $due): array
     {
+        $knownActionWake=in_array('known_action_wake',$due,true);
         $due=array_values(array_unique(array_filter(
             $due,
-            static fn(mixed $task):bool=>is_string($task) && $task!==''
+            static fn(mixed $task):bool=>is_string($task) && $task!=='' && $task!=='known_action_wake'
         )));
         $evidenceOrder=[
             'gmail',
@@ -151,28 +206,11 @@ final class SvAmazonReturnsRuntime
         $append('bootstrap');
         foreach($evidenceOrder as $task)$append($task);
         $append('scheduler');
+        if($knownActionWake && in_array('gmail',$due,true))$ordered[]='gmail';
         $append('seller_central');
         $append('review_operations');
         foreach($due as $task)$append($task);
         return $ordered;
-    }
-
-    /** @param list<array<string,mixed>> $cases */
-    public static function knownActionDue(array $cases, DateTimeImmutable $now): bool
-    {
-        $now=$now->setTimezone(new DateTimeZone('UTC'));
-        foreach($cases as $case){
-            if(!is_array($case))continue;
-            $raw=$case['next_action_at'] ?? null;
-            if(!is_string($raw) || trim($raw)==='')continue;
-            try{
-                $due=(new DateTimeImmutable($raw,new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));
-            }catch(Throwable){
-                continue;
-            }
-            if($due<=$now)return true;
-        }
-        return false;
     }
 
     /** @return array<string,mixed> */
@@ -183,6 +221,7 @@ final class SvAmazonReturnsRuntime
         $policySeeds=SvAmazonReturnPolicySeeder::ensure($p->policies);
         $policyAudit=$policySeeds>0 ? SvAmazonReturnPolicySeeder::auditDefinitions($p->policies->allActive()) : ['valid'=>true,'policy_key'=>null];
         if(!$policyAudit['valid'])throw new RuntimeException('Active operational policy does not match approved opening rule.');
+        self::refreshKnownActionCases($p);
         return [
             'status'=>'OK',
             'tenant_id'=>$context->tenantId(),
@@ -190,6 +229,7 @@ final class SvAmazonReturnsRuntime
             'schema_tables'=>count(SvAmazonReturnsSchema::statements()),
             'policy_seeds'=>$policySeeds,
             'policy_audit'=>$policyAudit,
+            'next_known_action_at'=>self::nextKnownWakeAt(self::$knownActionCases),
         ];
     }
 

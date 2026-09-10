@@ -54,11 +54,11 @@ A quantidade física recebida deve ser validada contra a quantidade reembolsada 
 
 Na interface do usuário, revisão e consulta de caso devem priorizar linguagem simples e objetiva. Termos/códigos internos permanecem no backend. A revisão deve mostrar primeiro o que aconteceu e o que já foi verificado, depois explicar por que uma decisão é necessária e apresentar a recomendação. A linha do tempo deve ficar recolhida por padrão e abrir somente quando o usuário escolher **Ver histórico**.
 
-A redução de cadência não elimina datas oficiais já conhecidas. A próxima avaliação de negócio usa as datas persistidas e, ao processar uma ação vencida, pode invalidar dados financeiros antigos e fazer a reconsulta específica necessária antes de agir; não é necessário manter polling de cinco minutos para isso.
+A redução de cadência não elimina datas oficiais já conhecidas. O daemon compara localmente a próxima data persistida e, quando ela vence, dispara a revalidação de evidências, a decisão e o canal de entrega necessário **sem esperar o próximo ciclo de 12 horas**. Isso é um gatilho por data já conhecida, não polling rotineiro de negócio.
 
 ## Decisão de 09/09/2026: rotina de 12 horas com gatilho por data conhecida
 Esta decisão supersede a cadência diária e qualquer ciclo periódico curto do agendador definidos anteriormente. As consultas rotineiras de negócio e a varredura interna passam a ocorrer **duas vezes ao dia**, a cada **12 horas**. Health e acompanhamento de revisão mantêm suas cadências próprias.
 
-Uma data oficial já conhecida continua sendo obedecida no momento em que vence, **sem depender de um ciclo periódico de cinco minutos**. O daemon leve detecta `next_action_at` vencido entre as varreduras, executa o scheduler e, quando necessário, invalida apenas a leitura financeira pertinente para obter dados frescos antes da ação. Depois que uma providência é consumida ou enfileirada, a data vencida deve ser limpa ou substituída pela próxima data real para evitar repetição em loop.
+Uma data oficial já conhecida continua sendo obedecida no momento em que vence, **sem depender de um ciclo periódico de cinco minutos**. Nesse gatilho, o sistema atualiza as evidências necessárias, reavalia a decisão e drena o canal de escrita correspondente no mesmo ciclo. Depois que uma providência é consumida ou enfileirada, a data vencida deve ser limpa ou marcada como processada para evitar repetição em loop.
 
 A redução de polling não muda o comportamento sob demanda: uma **consulta manual** solicitada pelo usuário deve continuar sendo executada **imediatamente**, sem esperar a próxima janela de 12 horas.

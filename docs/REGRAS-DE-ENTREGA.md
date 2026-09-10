@@ -23,6 +23,8 @@ Não apagar arquivos, executar limpeza destrutiva, forçar checkout ou remover w
 ## 3. Testes, revisão e integração
 Para defeitos, criar primeiro o teste que reproduz a falha e observar o resultado negativo; corrigir e observar o resultado positivo. Executar a suíte completa, lint, build quando existir, integração, smoke test e validação funcional aplicáveis. Revisões independentes não substituem a inspeção do diff e a execução real dos testes pelo agente responsável.
 
+Uma alteração funcional **não pode ser considerada concluída** sem **teste funcional de ponta a ponta** do fluxo afetado e confirmação do efeito persistido/externo esperado. Teste unitário, CI verde, deploy, health ou smoke isolado não substituem essa homologação. Se a execução real for insegura ou impossível por bloqueio externo comprovado, registrar o bloqueio e manter a alteração como não concluída.
+
 Antes do merge, conferir novamente o HEAD do PR, a base atual e as verificações exigidas para **aquele SHA**. Uma aprovação de versão antiga não autoriza uma nova alteração não revisada. Resolver conflitos preservando mudanças válidas; repetir os testes depois da integração. Não usar força administrativa para ignorar checks ou revisão obrigatória.
 
 ## 4. PRs e Actions sem abandono
