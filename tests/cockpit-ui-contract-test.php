@@ -40,7 +40,7 @@ foreach(['case-row-id','case-row-status','case-row-finance','case-row-responsibi
 cuAssert(!str_contains($operationalJs,"return 'Aguardar';"),'Generic standalone waiting label is prohibited.');
 
 // Optional operational facts must never be rendered as false zeroes or meaningless fallbacks.
-cuAssert(str_contains($operationalJs,"const decisionReason=c.current_reason?reasonLabel(c.current_reason):"),'Missing decision reason must use a human fallback instead of an em dash.');
+cuAssert(str_contains($operationalJs,"mappedReason&&mappedReason!=='Informação não disponível'")&&str_contains($operationalJs,'summary.decision_explanation'),'Missing or internal decision reasons must use an operator-readable fallback.');
 cuAssert(str_contains($operationalJs,"x!=='Informação não disponível'"),'Unknown evidence source labels must be omitted.');
 cuAssert(str_contains($operationalJs,"Number(c.refund_amount)>0?brl(c.refund_amount):null"),'Unknown customer refund amount must not be rendered as R$ 0,00.');
 

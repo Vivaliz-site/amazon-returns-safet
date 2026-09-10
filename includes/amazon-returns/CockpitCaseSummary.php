@@ -22,6 +22,8 @@ final class SvAmazonCockpitCaseSummary
             'what_happened'=>self::whatHappened($case),
             'last_action'=>self::lastAction($case),
             'next_step'=>self::nextStep($case,$responsibility),
+            'decision_explanation'=>self::decisionExplanation($case,$responsibility),
+            'decision_basis'=>self::decisionBasis($case),
             'overdue'=>$overdue,'stale'=>$stale,'due_at'=>$due,
             'outstanding_amount'=>(float)($case['outstanding_amount']??0),
             'last_read_at'=>$lastRead?->format('Y-m-d H:i:s'),
@@ -83,6 +85,35 @@ final class SvAmazonCockpitCaseSummary
             'CHECK_FINANCES'=>'O sistema verificará se o crédito entrou no financeiro.',
             default=>'O sistema continuará acompanhando e retomará o caso quando houver nova condição ou data conhecida.',
         };
+    }
+
+    private static function decisionExplanation(array $case,string $responsibility):string
+    {
+        if($responsibility==='USER')return 'O sistema encontrou uma dúvida material que impede uma ação segura sem sua confirmação.';
+        if($responsibility==='COMPLETE')return 'O caso atingiu um estado final e não há nova ação prevista.';
+        return match(strtoupper(trim((string)($case['current_action']??'WAIT')))){
+            'SAFE_T_SUBMIT'=>'Os fatos disponíveis indicam que o caso pode seguir para solicitação de ressarcimento SAFE-T.',
+            'SAFE_T_APPEAL'=>'A situação atual exige recurso e o sistema identificou esse caminho como a próxima ação segura.',
+            'SAFE_T_EMAIL_REVIEW'=>'O fluxo SAFE-T já foi usado e a próxima etapa é pedir nova análise à Amazon por e-mail.',
+            'SAFE_T_EMAIL_REPLY'=>'A Amazon pediu ou forneceu informação que exige resposta no e-mail existente.',
+            'SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'=>'O caso precisa continuar pelo Suporte da Amazon usando o atendimento apropriado.',
+            'CHECK_FINANCES'=>'Antes de qualquer nova cobrança, o sistema precisa confirmar se o crédito já entrou.',
+            default=>'Os fatos atuais não exigem uma ação externa imediata; o sistema continuará acompanhando o caso.',
+        };
+    }
+
+    /** @return list<string> */
+    private static function decisionBasis(array $case):array
+    {
+        $items=[];$refund=(float)($case['refund_amount']??0);$credit=(float)($case['reconciled_credit_amount']??0);
+        if($refund>0)$items[]='Reembolso ao cliente confirmado: R$ '.number_format($refund,2,',','.').'.';
+        if($credit>0)$items[]='Crédito já localizado para a loja: R$ '.number_format($credit,2,',','.').'.';
+        if(!empty($case['customer_delivery_confirmed']))$items[]='Rastreio do pedido original confirma entrega ao cliente.';
+        if(($case['physical_status']??null)==='NOT_RECEIVED')$items[]='Recebimento físico da devolução ainda não confirmado pela loja.';
+        if(($case['physical_status']??null)==='RECEIVED_DISCREPANT')$items[]='A devolução física foi registrada com divergência.';
+        if(trim((string)($case['safe_t_id']??''))!=='')$items[]='Existe uma solicitação SAFE-T vinculada ao caso.';
+        if(trim((string)($case['support_case_id']??''))!=='')$items[]='Existe atendimento do Suporte da Amazon vinculado ao caso.';
+        return $items!==[]?$items:['Pedido, reembolso, devolução e financeiro foram avaliados com os dados disponíveis.'];
     }
 
     private static function dueDate(array $case,string $action):?string

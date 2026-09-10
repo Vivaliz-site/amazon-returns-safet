@@ -10,7 +10,8 @@ const sourceLabels={SELLER_CENTRAL:'Amazon',SP_API:'Amazon',SP_API_FINANCES:'Fin
 const miscLabels={NONE:'Nenhuma data específica',PROMISED_DATE:'Data prometida pela Amazon',APPEAL_DEADLINE:'Prazo para recurso',AMAZON_AUTOMATIC:'Amazon',AMAZON_CUSTOMER_SERVICE:'Atendimento da Amazon',SELLER:'Loja',A_TO_Z:'Garantia de A a Z'};
 const state={view:'cases',page:1,selectedCase:null,selectedReview:null,expected_version:null,suggestion:null,reviewDecision:null,filters:{}};
 const brl=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v||0));
-const date=v=>v?new Date(String(v).replace(' ','T')+'Z').toLocaleString('pt-BR'):'—';
+function parsedDate(v){if(!v)return null;const raw=String(v).trim().replace(' ','T');const iso=/(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)?raw:`${raw}Z`;const d=new Date(iso);return Number.isNaN(d.getTime())?null:d;}
+const date=v=>{const d=parsedDate(v);return d?d.toLocaleString('pt-BR'):'—';};
 function enumLabel(value,map){if(value==null||value==='')return '—';const key=String(value);if(map[key])return map[key];if(/^[A-Z0-9_]+$/.test(key))return 'Informação não disponível';return humanText(key);}
 const actionLabel=v=>enumLabel(v,actionLabels);
 const stateLabel=v=>enumLabel(v,stateLabels);

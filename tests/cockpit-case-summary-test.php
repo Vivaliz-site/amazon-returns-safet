@@ -17,6 +17,9 @@ csSame('SYSTEM',$summary['responsibility'],'Automatable case belongs to system.'
 csSame(true,$summary['overdue'],'Past due automatic appeal must be flagged.');
 csSame(true,$summary['stale'],'Old readback must be flagged as stale.');
 csAssert(str_contains($summary['next_step'],'recurso'),'Next step must explain appeal in plain language.');
+csAssert(str_contains($summary['decision_explanation'],'recurso'),'Decision explanation must be operator-readable.');
+csAssert(in_array('Reembolso ao cliente confirmado: R$ 100,00.',$summary['decision_basis'],true),'Decision basis must include confirmed refund.');
+csAssert(in_array('Crédito já localizado para a loja: R$ 20,00.',$summary['decision_basis'],true),'Decision basis must include reconciled credit.');
 
 $review=$base;$review['current_action']='HUMAN_REVIEW';
 $reviewSummary=SvAmazonCockpitCaseSummary::build($review,['status'=>'OPEN'],$now);
