@@ -22,8 +22,8 @@ foreach(['gmail','gmail_refund_reconciliation','seller_central','financial','sp_
 intakeUxAssert(preg_match("/'scheduler'\\s*=>\\s*300/",$runtime)!==1,'No business scheduler may remain at five-minute cadence.');
 intakeUxAssert(preg_match("/'health'\\s*=>\\s*900/",$runtime)===1,'Technical health monitoring may remain frequent.');
 intakeUxAssert(str_contains($runtime,'knownActionDue'),'Runtime must expose an event/date-driven due check for known next-action timestamps.');
+intakeUxAssert(str_contains($runtime,"'known_action_wake'"),'Known due actions must request the complete wake path without restoring periodic five-minute sweeps.');
 $daemon=intakeUxRead('workers/amazon-returns/daemon.php');
-intakeUxAssert(str_contains($daemon,'SvAmazonReturnsRuntime::knownActionDue'),'Daemon must wake the scheduler for a known due action without restoring periodic five-minute sweeps.');
 intakeUxAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'When a due decision requires financial revalidation, it must force a fresh external read instead of waiting for the routine 12-hour cadence.');
 
 $intakePage=intakeUxRead('admin/amazon-returns/intake.php');

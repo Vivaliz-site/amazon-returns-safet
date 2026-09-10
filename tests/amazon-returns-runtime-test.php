@@ -45,7 +45,8 @@ rtAssert(str_contains($daemon,'amazon_returns_pdo()'),'Daemon must use standalon
 rtAssert(str_contains($daemon,'listSafeTReimbursements'),'Daemon must read documented Finances v0 SAFE-T reimbursements.');
 rtAssert(str_contains($daemon,'persistSafeTReimbursements'),'Daemon must persist SAFE-T reimbursements through tenant-scoped stores.');
 rtAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'Known-date decisions may force a fresh financial read when they are evaluated.');
-rtAssert(str_contains($daemon,'SvAmazonReturnsRuntime::knownActionDue'),'Known next-action dates must trigger the scheduler without a five-minute polling cadence.');
+$runtimeSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
+rtAssert(str_contains($runtimeSource,"'known_action_wake'"),'Known next-action dates must trigger the full due-date wake without five-minute polling.');
 rtAssert(str_contains($daemon,"'next_action_at'=>null"),'Consumed next-action dates must be cleared so a due trigger does not spin forever.');
 rtAssert(!str_contains($daemon,'EventStore.php'),'Daemon cannot load global EventStore.');
 rtAssert(!str_contains($daemon,'Outbox.php'),'Daemon cannot load global Outbox.');
@@ -60,10 +61,11 @@ rtSame(14400,$cadence['review_operations'],'Internal review follow-up is not an 
 rtSame(900,$cadence['health'],'Health monitoring remains frequent and is not an external business routine.');
 
 $now=new DateTimeImmutable('2026-09-10T12:00:00Z');
-rtSame(false,SvAmazonReturnsRuntime::knownActionDue([], $now),'No case means no date-triggered scheduler run.');
-rtSame(false,SvAmazonReturnsRuntime::knownActionDue([['next_action_at'=>'2026-09-10T13:00:00Z']],$now),'Future action must not trigger early.');
-rtSame(true,SvAmazonReturnsRuntime::knownActionDue([['next_action_at'=>'2026-09-10T12:00:00Z']],$now),'Known action must trigger at its exact due time.');
-rtSame(true,SvAmazonReturnsRuntime::knownActionDue([['next_action_at'=>'2026-09-10T11:59:59Z']],$now),'Overdue known action must trigger immediately.');
-rtSame(false,SvAmazonReturnsRuntime::knownActionDue([['next_action_at'=>null],['next_action_at'=>'invalid']],$now),'Missing or invalid dates must not create a tight loop.');
+rtSame(false,SvAmazonReturnsRuntime::knownActionDue([], $now),'No known timestamp means no date-triggered scheduler run.');
+rtSame(false,SvAmazonReturnsRuntime::knownActionDue(['next_known_action_at'=>'2026-09-10T13:00:00Z'],$now),'Future action must not trigger early.');
+rtSame(true,SvAmazonReturnsRuntime::knownActionDue(['next_known_action_at'=>'2026-09-10T12:00:00Z','scheduler'=>'2026-09-10T11:59:59Z'],$now),'Known action must trigger at its exact due time.');
+rtSame(false,SvAmazonReturnsRuntime::knownActionDue(['next_known_action_at'=>'2026-09-10T12:00:00Z','scheduler'=>'2026-09-10T12:00:00Z'],$now),'Scheduler execution at the deadline must mark that deadline evaluated.');
+rtSame(true,SvAmazonReturnsRuntime::knownActionDue(['next_known_action_at'=>'2026-09-10T11:59:59Z'],$now),'Overdue known action must trigger when not yet evaluated.');
+rtSame(false,SvAmazonReturnsRuntime::knownActionDue(['next_known_action_at'=>'invalid'],$now),'Invalid date must not create a tight loop.');
 
 echo "amazon-returns-runtime-test: OK\n";

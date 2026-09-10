@@ -15,8 +15,9 @@ if(!str_contains($daemon,'gmail_refund_reconciliation') || !str_contains($daemon
 if(!str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])")){
     throw new RuntimeException('A due action may force fresh financial data instead of using stale data.');
 }
-if(!str_contains($daemon,'SvAmazonReturnsRuntime::knownActionDue')){
-    throw new RuntimeException('Known next-action timestamps must wake the scheduler without a periodic five-minute sweep.');
+$runtimeSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
+if(!str_contains($runtimeSource,"'known_action_wake'")){
+    throw new RuntimeException('Known next-action timestamps must wake evidence, scheduler and delivery channels without periodic five-minute sweeps.');
 }
 if(!str_contains($daemon,"'next_action_at'=>null")){
     throw new RuntimeException('Scheduler must clear a consumed next-action timestamp to avoid repeated due-trigger execution.');

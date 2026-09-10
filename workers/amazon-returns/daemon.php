@@ -64,9 +64,6 @@ final class SvAmazonReturnsDaemon
         $due=SvAmazonReturnsRuntime::dueTasks(
             $state,$now,$decisionStackRevision,$gmailEvidenceRevision
         );
-        if(SvAmazonReturnsRuntime::knownActionDue($this->persistence->cases->openCases(1000),$now)){
-            $due=array_values(array_unique([...$due,'scheduler']));
-        }
         $openingRevision=$bootstrap['policy_audit']['policy_key']??null;
         if($openingRevision!==null && ($state['opening_policy_revision']??null)!==$openingRevision){
             $due=array_values(array_unique([...$due,'scheduler','sp_api','financial']));
