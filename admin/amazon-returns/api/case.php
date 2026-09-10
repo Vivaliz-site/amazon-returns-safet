@@ -32,16 +32,17 @@ try{
         $policy=SvAmazonReturnPolicyEngine::evaluate($case,$now);
         $coordinator=new SvAmazonDecisionCoordinator(new SvAmazonSafeTDecisionEngine(),$p,$config);
         $decision=$coordinator->previewAction($case,$events,$policy,$now);
-        $invoiceNumber=null;$returnReason=null;$lastRead=null;
+        $invoiceNumber=null;$returnReason=null;$lastRead=null;$physicalReceivedAt=null;
         for($i=count($events)-1;$i>=0;$i--){
             $event=$events[$i];$type=strtoupper(trim((string)($event['event_type']??'')));$payload=is_array($event['payload']??null)?$event['payload']:[];
             if($invoiceNumber===null && $type==='SALES_INVOICE_LINKED'){$candidate=trim((string)($payload['invoice_number']??$payload['sales_invoice_number']??''));if($candidate!=='')$invoiceNumber=$candidate;}
             if($returnReason===null && $type==='RETURNS_REPORT_MATCHED'){$candidate=trim((string)($payload['return_reason']??''));if($candidate!=='')$returnReason=$candidate;}
+            if($physicalReceivedAt===null && $type==='PHYSICAL_RECEIVED' && strtoupper(trim((string)($event['source']??'')))==='WAREHOUSE'){$candidate=trim((string)($event['occurred_at']??''));if($candidate!=='')$physicalReceivedAt=$candidate;}
             if($lastRead===null && in_array($type,['SAFE_T_STATUS_OBSERVED','SELLER_CENTRAL_ACTION_RESULT','SAFE_T_EMAIL_REVIEW_RESPONSE','FINANCIAL_TRANSACTION_OBSERVED','SAFE_T_REIMBURSEMENT_OBSERVED'],true)){$lastRead=['id'=>(int)($event['id']??0),'event_type'=>$type,'occurred_at'=>$event['occurred_at']??null,'source'=>$event['source']??null];}
         }
         $lastWrite=null;for($i=count($outbox)-1;$i>=0;$i--){$kind=strtoupper(trim((string)($outbox[$i]['kind']??'')));if(in_array($kind,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){$lastWrite=['id'=>(int)($outbox[$i]['id']??0),'kind'=>$kind,'status'=>$outbox[$i]['status']??null,'created_at'=>$outbox[$i]['created_at']??null,'updated_at'=>$outbox[$i]['updated_at']??null];break;}}
         $expected=(float)($case['expected_reimbursement_amount']??0);$refund=(float)($case['refund_amount']??0);$credit=(float)($case['reconciled_credit_amount']??0);
-        $case['sales_invoice_number']=$invoiceNumber;$case['return_reason']=$returnReason;$case['last_external_write']=$lastWrite;$case['last_read_back']=$lastRead;
+        $case['sales_invoice_number']=$invoiceNumber;$case['return_reason']=$returnReason;$case['physical_received_at']=$physicalReceivedAt;$case['last_external_write']=$lastWrite;$case['last_read_back']=$lastRead;
         $case['current_action']=$decision['action']??'WAIT';$case['current_reason']=$decision['reason']??null;$case['eligibility_at']=$policy['eligibility_at']??($case['eligibility_at']??null);
         $case['outstanding_amount']=max(0,($expected>0?$expected:$refund)-$credit);
         sv_amz_case_reply(['success'=>true,'case'=>$case,'timeline'=>$timeline,'current_review'=>$currentReview,'rule_applications'=>$apps,'last_external_write'=>$lastWrite,'last_read_back'=>$lastRead]);

@@ -33,7 +33,7 @@ renderOperationalCase=function auditedOperationalRenderCase(data,relatedCount=nu
 const baseOperationalLoadBucketCases=loadBucketCases;
 loadBucketCases=async function auditedLoadBucketCases(filters,bucket){
   if(bucket==='attention'){
-    const q=new URLSearchParams(filters);q.delete('action');q.set('review_status','OPEN');q.set('page','1');q.set('per_page','100');
+    const q=new URLSearchParams(filters);q.delete('action');q.set('review_status','OPEN');q.set('per_page','100');
     return json(`/admin/amazon-returns/api/cases.php?${q}`);
   }
   return baseOperationalLoadBucketCases(filters,bucket);

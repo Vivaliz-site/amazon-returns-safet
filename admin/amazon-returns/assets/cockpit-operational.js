@@ -54,8 +54,18 @@ function appendAvailable(root,...nodes){for(const node of nodes)if(node)root.app
 function sectionBlock(title,className=''){
   const section=text('section','',`case-block ${className}`.trim());section.append(text('h3',title));return section;
 }
+function externalWriteSummary(c){
+  const write=c?.last_external_write;if(!write)return null;
+  const action=actionLabel(write.kind),status=String(write.status||'').toUpperCase(),at=write.updated_at||write.created_at;
+  const when=at?` em ${date(at)}`:'';
+  if(['PENDING','QUEUED'].includes(status))return `Última ação programada: ${action}${when}. Ela ainda aguarda execução.`;
+  if(status==='PROCESSING')return `Última ação em execução: ${action}${when}.`;
+  if(['FAILED','ERROR','DEAD','CANCELLED'].includes(status))return `A última tentativa de ${action.toLowerCase()} não foi concluída${when}. O sistema deve tentar novamente.`;
+  if(['SUCCEEDED','SUCCESS','ALREADY_EXISTS'].includes(status))return `Última ação concluída: ${action}${when}.`;
+  return `Última ação registrada: ${action}${when}.`;
+}
 function operatorLastAction(c){
-  if(c?.last_external_write){const at=c.last_external_write.updated_at||c.last_external_write.created_at;return `${actionLabel(c.last_external_write.kind)}${at?` em ${date(at)}`:''}.`;}
+  const writeSummary=externalWriteSummary(c);if(writeSummary)return writeSummary;
   if(c?.last_read_back?.occurred_at)return `O sistema consultou as informações mais recentes em ${date(c.last_read_back.occurred_at)}.`;
   return 'O sistema já registrou o caso e continuará acompanhando.';
 }
@@ -94,7 +104,7 @@ function renderCondensedTimeline(items){
   const all=items||[],condensed=condenseTimeline(all);const details=document.createElement('details');details.className='case-history-toggle';
   const summary=text('summary',`Ver histórico completo (${condensed.length} marcos relevantes de ${all.length} eventos)`);details.append(summary);
   const timeline=text('section','', 'timeline compact-timeline');
-  for(const item of condensed){const card=text('article','', 'timeline-item');const label=item.repeat_count>1?`${item.operational_title} · ${item.repeat_count} verificações`:item.operational_title;card.append(text('h4',label),text('div',`${date(item.occurred_at)} · ${sourceLabel(item.source)}`,'muted'));const content=item.content||{};const body=content.narrative||content.message?.body||content.review_excerpt;if(body)card.append(text('p',humanText(body)));timeline.append(card);}
+  for(const item of condensed){const card=text('article','', 'timeline-item');const label=item.repeat_count>1?`${item.operational_title} · ${item.repeat_count} verificações`:item.operational_title;const source=sourceLabel(item.source),meta=[date(item.occurred_at)];if(source&&source!=='—'&&source!=='Informação não disponível')meta.push(source);card.append(text('h4',label),text('div',meta.join(' · '),'muted'));const content=item.content||{};const body=content.narrative||content.message?.body||content.review_excerpt;if(body)card.append(text('p',humanText(body)));timeline.append(card);}
   details.append(timeline);return details;
 }
 function renderOperationalList(items){
@@ -130,7 +140,7 @@ function renderOperationalCase(data,relatedCount=null){
   const flow=sectionBlock('Situação do caso','case-flow');
   for(const [title,value] of [['O que aconteceu',operatorWhatHappened(c)],['O que o sistema fez',operatorLastAction(c)],['O que acontece agora',operatorNextStep({...c,review_status:data.current_review?.status})]]){const item=text('div','', 'flow-item');item.append(text('strong',title),text('p',value));flow.append(item);}root.append(flow);
   const dates=sectionBlock('Datas importantes');const nextDate=c.next_action_at||c.eligibility_at;
-  appendAvailable(dates,operationalField('Data do pedido',operationalDate(c.order_at)),operationalField('Reembolso concedido ao cliente',operationalDate(c.refund_at)),operationalField('Débito na conta da loja',operationalDate(c.seller_debit_at)),operationalField('Devolução recebida',String(c.physical_status||'').startsWith('RECEIVED_')?operationalDate(c.closed_at):null),operationalField('Última verificação',operationalDate(c.last_read_back?.occurred_at)),operationalField('Próxima providência',nextDate?`${date(nextDate)} · ${daysUntil(nextDate)}`:null),operationalField('Prazo para recurso',c.appeal_deadline_at&&!['APPEAL_SUBMITTED','APPEAL_APPROVED'].includes(String(c.state||''))?`${date(c.appeal_deadline_at)} · ${daysUntil(c.appeal_deadline_at)}`:null));if(dates.children.length>1)root.append(dates);
+  appendAvailable(dates,operationalField('Data do pedido',operationalDate(c.order_at)),operationalField('Reembolso concedido ao cliente',operationalDate(c.refund_at)),operationalField('Débito na conta da loja',operationalDate(c.seller_debit_at)),operationalField('Devolução recebida',operationalDate(c.physical_received_at)),operationalField('Última verificação',operationalDate(c.last_read_back?.occurred_at)),operationalField('Próxima providência',nextDate?`${date(nextDate)} · ${daysUntil(nextDate)}`:null),operationalField('Prazo para recurso',c.appeal_deadline_at&&!['APPEAL_SUBMITTED','APPEAL_APPROVED'].includes(String(c.state||''))?`${date(c.appeal_deadline_at)} · ${daysUntil(c.appeal_deadline_at)}`:null));if(dates.children.length>1)root.append(dates);
   const finance=sectionBlock('Valores','case-financial');appendAvailable(finance,operationalField('Valor reembolsado ao cliente',Number(c.refund_amount)>0?brl(c.refund_amount):null),operationalField('Valor já recuperado',brl(c.reconciled_credit_amount)),operationalField('Saldo ainda a recuperar',brl(c.outstanding_amount),'emphasis'));root.append(finance);
   const product=sectionBlock('Produto e documentos');appendAvailable(product,operationalField('SKU',c.sku||null),operationalField('ASIN',c.asin||null),operationalField('Quantidade do pedido',c.quantity_ordered?String(c.quantity_ordered):null),operationalField('Quantidade reembolsada',c.quantity_refunded?String(c.quantity_refunded):null),operationalField('SAFE-T',c.safe_t_id||null),operationalField('NF de venda',c.sales_invoice_number||null),operationalField('Tipo de logística',programLabel(c.program)),operationalField('Ocorrências relacionadas',relatedCount&&relatedCount>1?String(relatedCount):null));root.append(product);
   root.append(renderOperationalEvidence(c,timeline));

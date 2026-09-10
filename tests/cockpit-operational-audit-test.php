@@ -30,8 +30,10 @@ coaAssert(str_contains($listApi,'SvAmazonInvoiceSearch::caseIds'),'NF search mus
 coaAssert(str_contains($ui,"review_status==='OPEN'"),'Open review must be shown as user responsibility.');
 coaAssert(str_contains($ui,"'Sua decisão é necessária'"),'User-decision state missing.');
 coaAssert(!str_contains($ui,"return 'Aguardar';"),'Generic Aguardar status is prohibited.');
+coaAssert(!str_contains($page,'>Aguardar<'),'Standalone Aguardar labels are prohibited in operator-facing controls.');
 coaAssert(str_contains($bootstrap,"q.set('review_status','OPEN')"),'Attention quick filter must include every open review, including blocked reviews.');
 coaAssert(str_contains($bootstrap,"q.delete('action')"),'Attention quick filter must not retain a narrower action filter.');
+coaAssert(!str_contains($bootstrap,"q.set('page','1')"),'Attention quick filter must preserve pagination.');
 
 // A past appeal deadline must not create a false operational failure after an appeal/follow-up was already sent.
 foreach(['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','RECOVERED','CLOSED_LOSS'] as $state){
@@ -44,11 +46,15 @@ coaAssert(str_contains($bootstrap,"field.querySelector('.muted')?.textContent===
 // Missing facts are omitted rather than rendered as meaningless dashes.
 coaAssert(str_contains($ui,"value===null||value===undefined||value===''||value==='—'"),'Unavailable detail fields must be omitted.');
 coaAssert(str_contains($ui,"if(dates.children.length>1)root.append(dates)"),'Empty date block must be omitted.');
+coaAssert(str_contains($api,"'physical_received_at'"),'Detail API must expose the actual warehouse receipt timestamp when known.');
+coaAssert(str_contains($ui,'operationalDate(c.physical_received_at)'),'Receipt date must come from the physical receipt event, not case closure time.');
+coaAssert(str_contains($ui,'function externalWriteSummary('),'Last automatic action must describe queued, successful, or failed execution truthfully.');
 
 // Repeated telemetry is condensed while material events remain visible behind an explicit disclosure.
 coaAssert(str_contains($ui,'function condenseTimeline('),'Timeline condensation is required.');
 coaAssert(str_contains($ui,"repeatable=title==='Pedido sincronizado'||title==='Movimentação financeira identificada'"),'Only repetitive telemetry should be grouped.');
 coaAssert(str_contains($ui,'Ver histórico completo'),'Full history disclosure is required.');
+coaAssert(str_contains($ui,"source!=='Informação não disponível'"),'Unknown timeline source labels must be omitted instead of displaying a meaningless fallback.');
 
 // Initial legacy rendering is replaced once the operational layer is loaded and case-only controls do not leak into other tabs.
 coaAssert(str_contains($bootstrap,"if(state.view==='cases')loadCases()"),'Operational list must rerender after deferred scripts load.');
