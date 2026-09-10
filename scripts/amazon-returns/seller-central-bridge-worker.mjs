@@ -974,9 +974,10 @@ async function supportOpen(cdp, job) {
       await sleep(750);
       continue;
     }
-    const asinRequired = await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll("iframe")){const h=f.contentDocument?.querySelector("kat-input[placeholder=\"Inserir ASIN\"]");if(h&&!h.hasAttribute("disabled"))return true}return false})()`);
+    const asinSelector = 'kat-input[placeholder="Inserir ASIN"],kat-input[placeholder="Enter ASIN"]';
+    const asinRequired = await cdp.evaluate(`(()=>{const selector=${JSON.stringify(asinSelector)};for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector(selector);if(h&&!h.hasAttribute('disabled'))return true}return false})()`);
     if (asinRequired && !fbaAsinFilled) {
-      if (!resolvedAsin || !(await cdp.setFrameKat('kat-input[placeholder="Inserir ASIN"]', resolvedAsin))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ASIN_INPUT_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      if (!resolvedAsin || !(await cdp.setFrameKat(asinSelector, resolvedAsin))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ASIN_INPUT_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
       fbaAsinFilled = true;
       await sleep(500);
       continue;
