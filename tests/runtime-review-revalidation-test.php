@@ -17,6 +17,14 @@ if (!in_array('scheduler', $due, true)) {
     throw new RuntimeException('A changed decision-stack revision must force scheduler revalidation immediately.');
 }
 
+$state['outbox_stack_revision'] = 'old-outbox';
+$outboxRevision = str_repeat('b', 64);
+$due = SvAmazonReturnsRuntime::dueTasks($state, $now, $revision, null, $outboxRevision);
+if (!in_array('scheduler', $due, true) || !in_array('seller_central', $due, true)) {
+    throw new RuntimeException('A changed outbox-stack revision must immediately re-evaluate decisions and execute eligible writes.');
+}
+$state['outbox_stack_revision'] = $outboxRevision;
+
 $state['decision_stack_revision'] = $revision;
 $due = SvAmazonReturnsRuntime::dueTasks($state, $now, $revision);
 if (in_array('scheduler', $due, true)) {
