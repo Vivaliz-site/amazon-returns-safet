@@ -5,6 +5,7 @@ $worker=(string)file_get_contents(__DIR__.'/../scripts/amazon-returns/seller-cen
 foreach(['async function fillDirectSupportCaseDetails','async function waitForDirectSupportCaseDetails','async fillFrameInputTrustedByLabel','Provide details about the order reimbursement error','Input.insertText','async clickFrameButtonTrustedByText','Create a case','SUPPORT_CASE_OPENED_DIRECTLY'] as $needle){
     dcAssert(str_contains($worker,$needle),'Direct Seller Support case route must implement observed live contract: '.$needle);
 }
+dcAssert(substr_count($worker,'async function submitDirectSupportCaseAndReadBack(cdp, job, narrative)')===1,'Direct support submit/read-back helper must be declared exactly once so the worker parses.');
 $start=strpos($worker,'async function submitDirectSupportCaseAndReadBack');
 $end=$start===false?false:strpos($worker,'async function openGeneralSupportRoute',$start);
 dcAssert($start!==false&&$end!==false,'Direct support submit/read-back helper must remain independently auditable.');
