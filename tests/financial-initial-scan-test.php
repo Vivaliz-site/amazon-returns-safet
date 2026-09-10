@@ -15,7 +15,9 @@ fisSame(['bootstrap','sp_api','financial'],SvAmazonFinancialRefresh::schedule(['
 fisSame(['bootstrap'],SvAmazonFinancialRefresh::schedule(['bootstrap'],false),'completed scan respects normal cadences');
 fisSame(false,SvAmazonFinancialRefresh::canReconcile(['status'=>'PARTIAL'],true),'partial refresh cannot authorize closure');
 fisSame(false,SvAmazonFinancialRefresh::canReconcile(['status'=>'OK'],false),'first incomplete page cannot authorize closure');
-fisSame(true,SvAmazonFinancialRefresh::canReconcile(['status'=>'OK'],true),'complete successful scan permits projection');
+fisSame(false,SvAmazonFinancialRefresh::canReconcile(['status'=>'OK','rotation_has_more'=>true],true),'partial SP-API rotation must not reconcile the same cases repeatedly');
+fisSame(true,SvAmazonFinancialRefresh::canReconcile(['status'=>'OK','rotation_has_more'=>false],true),'completed SP-API rotation permits projection');
+fisSame(true,SvAmazonFinancialRefresh::canReconcile(['status'=>'OK'],true),'legacy complete successful scan permits projection');
 $db->push(['fetch'=>false]);$db->push(['rows'=>$rows(array_slice($ids,0,26))]);
 $first=SvAmazonFinancialRefresh::nextBatch($p,25);fisSame(true,$first['has_more'],'lookahead detects remaining pages');
 $db->push([]);$meta=SvAmazonFinancialRefresh::recordAttempted($p,$first,0);

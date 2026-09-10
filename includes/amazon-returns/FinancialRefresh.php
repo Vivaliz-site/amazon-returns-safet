@@ -115,6 +115,8 @@ final class SvAmazonFinancialRefresh
 
     public static function canReconcile(array $refreshResult, bool $initialScanComplete): bool
     {
-        return $initialScanComplete && ($refreshResult['status'] ?? '') === 'OK';
+        return $initialScanComplete
+            && ($refreshResult['status'] ?? '') === 'OK'
+            && ($refreshResult['rotation_has_more'] ?? false) !== true;
     }
 }
