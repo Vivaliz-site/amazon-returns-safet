@@ -57,16 +57,16 @@
 
 ```php
 [
-    'operator_status' => 'NORMAL|DEGRADED|USER_ACTION_REQUIRED',
+    'operator_status' => 'NORMAL',
     'human_action_count' => 0,
-    'automatic_work_count' => 0,
-    'concluded_count' => 0,
+    'automatic_work_count' => 131,
+    'concluded_count' => 17,
     'operational_problem_count' => 0,
-    'last_successful_cycle_at' => null,
+    'last_successful_cycle_at' => '2026-09-10T18:00:00+00:00',
     'connectors' => [
-        'amazon' => ['status'=>'OK|DEGRADED|UNKNOWN','observed_at'=>null,'reason'=>'...'],
-        'gmail' => ['status'=>'OK|DEGRADED|UNKNOWN','observed_at'=>null,'reason'=>'...'],
-        'seller_central' => ['status'=>'OK|DEGRADED|NOT_REQUIRED|UNKNOWN','observed_at'=>null,'reason'=>'...'],
+        'amazon' => ['status'=>'OK','observed_at'=>'2026-09-10T18:00:00+00:00','reason'=>'source_fresh'],
+        'gmail' => ['status'=>'OK','observed_at'=>'2026-09-10T18:00:00+00:00','reason'=>'source_fresh'],
+        'seller_central' => ['status'=>'NOT_REQUIRED','observed_at'=>null,'reason'=>'on_demand'],
     ],
     'operational_problems' => [],
 ]
@@ -187,7 +187,7 @@ Return `$overallStatus` instead of recomputing it. Do not add or remove due task
 
 - [ ] **Step 5: Make runtime liveness deterministic for the presenter**
 
-Change only the signature and clock source:
+Change the signature to accept an optional clock and pass that same `$now` into bridge liveness:
 
 ```php
 public static function health(
@@ -196,11 +196,17 @@ public static function health(
     ?DateTimeImmutable $now=null
 ): array {
     $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
-    // existing body
+    $browserLiveness=SvAmazonBridgeLiveness::evaluate(
+        $p->cursors->load('SELLER_CENTRAL','browser_auth'),
+        $now,
+        $bridgeRequired,
+        $p->cursors->load('SELLER_CENTRAL','read_process_heartbeat'),
+        $primaryStatusWorker
+    );
 }
 ```
 
-Pass `$now` to `SvAmazonBridgeLiveness::evaluate()` instead of constructing a second current timestamp. Existing two-argument callers remain compatible.
+The rest of the current `health()` return contract remains unchanged. Existing two-argument callers remain compatible.
 
 - [ ] **Step 6: Extend repository summary and previews**
 
@@ -227,12 +233,22 @@ Build `operational_problems` as issue categories rather than summing affected ca
 
 - [ ] **Step 8: Replace the summary API assembly with one coherent snapshot**
 
-In `summary.php`, start a transaction before reading cases/reviews/cursors/outbox and commit after assembling the payload so all headline counts come from one repeatable-read snapshot. Do not call `SvAmazonReturnProjector::project()` from summary because it writes projections.
+In `summary.php`, start a transaction before reading cases/reviews/cursors/outbox and commit after assembling the payload so all headline counts come from one repeatable-read snapshot. Do not call `SvAmazonReturnProjector::project()` from summary because projection writes are not appropriate in this read endpoint.
 
-Build the four primary monetary values:
+Build the breakdown explicitly from the repository summary:
 
 ```php
-$breakdown=[/* existing nine keys, formatted as decimal strings */];
+$breakdown=[
+    'at_risk'=>number_format((float)($summary['at_risk']??0),2,'.',''),
+    'eligible_now'=>number_format((float)($summary['eligible_now']??0),2,'.',''),
+    'safe_t_submitted'=>number_format((float)($summary['safe_t_submitted']??0),2,'.',''),
+    'denied'=>number_format((float)($summary['denied']??0),2,'.',''),
+    'appeal'=>number_format((float)($summary['appeal']??0),2,'.',''),
+    'support'=>number_format((float)($summary['support']??0),2,'.',''),
+    'approved_awaiting_credit'=>number_format((float)($summary['approved_awaiting_credit']??0),2,'.',''),
+    'recovered'=>number_format((float)($summary['recovered']??0),2,'.',''),
+    'loss'=>number_format((float)($summary['loss']??0),2,'.',''),
+];
 $money=$breakdown;
 $money['awaiting_credit']=$breakdown['approved_awaiting_credit'];
 $money['in_dispute']=number_format(
@@ -282,15 +298,7 @@ git commit -m "feat: expose coherent cockpit health summary"
 
 **Interfaces:**
 
-`window.AmazonReturnsSummary.load()` owns summary fetch/render/cache. It must render:
-- autonomy banner;
-- `Precisa de você?`;
-- `Sistema tratando agora`;
-- four primary financial cards;
-- detail financial breakdown under `<details>`;
-- operational problems;
-- connector state;
-- deadlines.
+`window.AmazonReturnsSummary.load()` owns summary fetch/render/cache. It must render autonomy banner, `Precisa de você?`, `Sistema tratando agora`, four primary financial metrics, detailed breakdown under `<details>`, operational problems, connector state and deadlines.
 
 It stores a safe last-known-good summary in `sessionStorage` under `amazonReturns:lastGoodSummary:v1` with a 20-minute display TTL. Storage failure is non-fatal.
 
@@ -340,9 +348,7 @@ Replace the current independent `#operational-overview`, nine equal financial ca
 <section id="connector-health" class="connector-health" aria-label="Conexões do sistema"></section>
 ```
 
-Keep existing cockpit tabs/review count/case list intact. Load `cockpit-summary.js` before `cockpit.js`, all with `defer`, and version the new asset. Change the search help to:
-
-`Pedido, NF, TBR, SAFE-T, rastreio, SKU ou ASIN`.
+Keep existing cockpit tabs/review count/case list intact. Load `cockpit-summary.js` before `cockpit.js`, all with `defer`, and version the new asset. Change the search help to `Pedido, NF, TBR, SAFE-T, rastreio, SKU ou ASIN`.
 
 - [ ] **Step 4: Implement safe summary fetch/cache/render**
 
@@ -364,11 +370,7 @@ function readLastGood(){
 }
 ```
 
-On fresh success, render and cache. On failure with cache, retain all last-known values and prepend:
-
-`Últimos dados disponíveis, atualizados às <hora>. A atualização mais recente falhou e será tentada novamente.`
-
-On failure without cache, show an explicit unavailable state that does not look like zero problems.
+On fresh success, render and cache. On failure with cache, retain all last-known values and prepend `Últimos dados disponíveis, atualizados às <hora>. A atualização mais recente falhou e será tentada novamente.` On failure without cache, show an explicit unavailable state that does not look like zero problems.
 
 Map status keys only to operator copy:
 
@@ -384,9 +386,7 @@ const statusCopy={
 
 `#user-work` uses only `human_action_count`. If zero, show exactly `Nenhuma ação sua é necessária.`. If positive, show count plus a button that activates the existing Reviews tab.
 
-`#operational-problems` uses `operational_problem_count` and the category items. If there are operational faults but `human_action_count===0`, the banner subcopy must explicitly say that the system owns them, for example:
-
-`Você não precisa agir. O sistema identificou 3 problemas operacionais e está tratando ou tentando novamente.`
+`#operational-problems` uses `operational_problem_count` and the category items. If there are operational faults but `human_action_count===0`, the banner subcopy must explicitly say `Você não precisa agir. O sistema identificou N problemas operacionais e está tratando ou tentando novamente.`
 
 A category with `owner==='USER'` is rendered as a user action and must also be reflected in `human_action_count`; inconsistent payloads are displayed as degraded rather than silently normalized to healthy.
 
@@ -396,7 +396,7 @@ Primary money cards are only `Em risco`, `Aguardando crédito`, `Em disputa`, `R
 
 `#automation-work` renders the server preview with order, human state label, outstanding exposure and known next date/condition. It does not infer that no visible row means no automatic work; the headline count still comes from the server.
 
-Connector copy maps `OK` to `Funcionando`, `DEGRADED` to `Requer atenção`, `NOT_REQUIRED` to `Sob demanda` and `UNKNOWN` to `Sem confirmação recente`. Raw `reason` keys never appear.
+Connector copy maps `OK` to `Funcionando`, `DEGRADED` to `Requer atenção`, `NOT_REQUIRED` to `Sob demanda` and `UNKNOWN` to `Sem confirmação recente`. Raw connector reason keys never appear.
 
 Deadlines are labeled `Atrasado`, `Hoje`, `Amanhã` or `Próximos 7 dias` from timestamps and identify order + amount + plain next-step label.
 
@@ -498,9 +498,9 @@ crsSame('RETURN_TRACKING',SvAmazonCaseReferenceSearch::kind('tbr015328001'),'TBR
 crsSame('REFERENCE',SvAmazonCaseReferenceSearch::kind('B0ABC12345'),'Generic reference classification.');
 ```
 
-The fake PDO test must inspect executed SQL and prove both `tenant_id=:tenant_id` and `amazon_connection_id=:amazon_connection_id` are present, that event evidence is searched only through known reference fields, and that duplicate case IDs are de-duplicated.
+The fake PDO test inspects executed SQL and proves both `tenant_id=:tenant_id` and `amazon_connection_id=:amazon_connection_id` are present, event evidence is searched only through known reference fields, and duplicate case IDs are de-duplicated.
 
-Extend `tests/amazon-returns-gmail-test.php`:
+Extend `tests/amazon-returns-gmail-test.php` with an actual parser fixture:
 
 ```php
 $returnWithTbr=message(
@@ -510,12 +510,16 @@ $returnWithTbr=message(
 );
 $parsed=$parser->parse($returnWithTbr);
 gmSame('TBR015328001',$parsed[0]['return_tracking_id']??null,'Return authorization must preserve TBR separately.');
-$payload=SvAmazonGmailEventSink::payloadForTest($parsed[0],$parsed[0]['order_id']);
-gmSame(['TBR015328001'],$payload['return_tracking_ids']??null,'TBR must be return tracking evidence.');
-gmSame([], $payload['customer_tracking_ids']??null,'TBR must not become customer delivery tracking.');
 ```
 
-If exposing `payloadForTest()` would create production API solely for a test, instead assert through a persisted event fixture or a focused existing public helper; do not weaken visibility just for testing.
+Then inspect `GmailEventSink.php` as a contract to require separate assignments:
+
+```php
+$sinkSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/GmailEventSink.php');
+gmAssert(str_contains($sinkSource,"'return_tracking_ids'=>"),'Sink must persist return tracking separately.');
+gmAssert(str_contains($sinkSource,"'customer_tracking_ids'=>\$tracking"),'Customer delivery tracking remains sourced from delivery tracking field.');
+gmAssert(str_contains($sinkSource,"\$returnTracking"),'Return tracking needs a distinct variable.');
+```
 
 - [ ] **Step 2: Run the focused tests and confirm red**
 
@@ -543,7 +547,7 @@ In `GmailEventSink::payload()`, add a separate array:
 
 ```php
 $returnTracking=trim((string)($event['return_tracking_id'] ?? ''));
-'return_tracking_ids'=>$returnTracking!==''?[strtoupper($returnTracking)]:[],
+$payload['return_tracking_ids']=$returnTracking!==''?[strtoupper($returnTracking)]:[];
 ```
 
 Do not put this value in `customer_tracking_ids`.
@@ -565,10 +569,7 @@ if(preg_match('/^[0-9]{1,20}$/',$term)===1)return self::INVOICE;
 return self::REFERENCE;
 ```
 
-`caseIds()` unions IDs from:
-- direct case fields: order, SAFE-T, SKU, ASIN;
-- `SvAmazonInvoiceSearch::caseIds()`;
-- scoped event payload reference paths: `return_tracking_id`, `return_tracking_ids`, `customer_tracking_ids`, `tracking_id`, `tracking_ids`, `invoice_number`, `sales_invoice_number`.
+`caseIds()` unions IDs from direct case fields (order, SAFE-T, SKU, ASIN), `SvAmazonInvoiceSearch::caseIds()` and scoped event payload reference paths `return_tracking_id`, `return_tracking_ids`, `customer_tracking_ids`, `tracking_id`, `tracking_ids`, `invoice_number`, `sales_invoice_number`.
 
 Use unique PDO parameter names for every occurrence. For TBR and exact structured identifiers, prefer exact normalized matching; for free search, use escaped partial matching. Never search arbitrary message bodies/JSON keys.
 
@@ -630,23 +631,11 @@ git commit -m "feat: unify case reference search with return tracking"
 - Modify: `tests/invoice-intake-live-lookup-contract-test.php`
 - Create: `tests/intake-reference-search-test.php`
 
-**Interfaces:**
-
-Primary request becomes:
-
-```json
-{"query":"702-1234567-7654321","csrf_token":"..."}
-```
-
-For one deploy generation, keep accepting legacy `order_id` and `sales_invoice_number` if `query` is absent so an old browser asset cannot break during rolling deploy.
-
-Response cases are always projected and include `return_tracking_ids`, `outstanding_amount`/financial context needed for preview, regardless of whether the source was local or remote.
+**Interfaces:** Primary request becomes `{"query":"702-1234567-7654321","csrf_token":"token-da-sessao"}`. For one deploy generation, keep accepting legacy `order_id` and `sales_invoice_number` if `query` is absent so an old browser asset cannot break during rolling deploy. Response cases are always projected and include `return_tracking_ids` plus financial/physical context needed for preview.
 
 - [ ] **Step 1: Write failing intake reference tests**
 
 Assert source code and request behavior require `query`, retain legacy compatibility, include `SvAmazonCaseReferenceSearch`, and expose operator help `Pedido, NF ou TBR / rastreio da devolução`.
-
-Core fixture expectations:
 
 ```php
 intakeSame('RETURN_TRACKING',SvAmazonCaseReferenceSearch::kind('TBR015328001'),'TBR input must use return-reference path.');
@@ -698,21 +687,13 @@ This is a user-initiated read/reconciliation path, not a scheduled new business 
 
 - [ ] **Step 6: Replace two lookup inputs with one operator search field**
 
-`intake.php` uses one search field labeled `Localizar devolução` with help:
-
-`Use número do pedido Amazon, NF de venda ou TBR / rastreio da devolução.`
+`intake.php` uses one search field labeled `Localizar devolução` with help `Use número do pedido Amazon, NF de venda ou TBR / rastreio da devolução.`
 
 Keep the lookup and save requests CSRF-protected. On no match, preserve the input value and say which identifiers are accepted.
 
 - [ ] **Step 7: Render a confirmation preview before enabling state-changing controls**
 
-For each matched case render, using `textContent` only:
-- pedido;
-- TBR/rastreio da devolução when available;
-- SKU and ASIN;
-- quantidade esperada;
-- reembolso/retorno context when known;
-- current physical status.
+For each matched case render, using `textContent` only: pedido; TBR/rastreio da devolução when available; SKU/ASIN; quantidade esperada; reembolso/retorno context when known; current physical status.
 
 Only after the user selects the correct matched case reveal quantity/condition/notes and `Confirmar recebimento`. Preserve existing idempotency and double-click guard in `api/intake.php`.
 
@@ -749,7 +730,7 @@ git commit -m "feat: unify return intake lookup and preview"
 
 Add assertions that require `operatorFinancialSummary`, TBR rendering and explicit responsibility labels. Include a negative assertion that the renderer cannot append the literal `saldo ainda a recuperar` unconditionally.
 
-Recommended pure helper behavior to encode in the source contract:
+Encode this exact helper behavior in the source contract:
 
 ```js
 function operatorFinancialSummary(c){
@@ -781,11 +762,7 @@ Show first `return_tracking_ids[0]` as `TBR / devolução <id>` when present. Ke
 
 - [ ] **Step 5: Keep urgency truthful**
 
-Reuse the existing completed-write suppression for appeal deadlines. A red `Providência automática atrasada` requires:
-- due time genuinely in the past;
-- action still requires execution;
-- no pending/processing/succeeded matching external write;
-- case not already in a post-action/concluded state.
+Reuse the existing completed-write suppression for appeal deadlines. A red `Providência automática atrasada` requires due time genuinely in the past, action still requiring execution, no pending/processing/succeeded matching external write, and case not already in a post-action/concluded state.
 
 - [ ] **Step 6: Run focused tests**
 
@@ -817,23 +794,11 @@ git commit -m "feat: clarify case list responsibility and balances"
 - Modify: `tests/cockpit-timeline-test.php`
 - Create: `tests/cockpit-case-explanation-test.php`
 
-**Contract:** Detail must make available projected `return_tracking_ids`, sales invoice, return reason when persisted, `last_external_write`, `last_read_back`, latest rule application reference, safe message items, all important dates and financial values.
+**Contract:** Detail makes available projected `return_tracking_ids`, sales invoice, return reason when persisted, `last_external_write`, `last_read_back`, latest rule application reference, safe message items, all important dates and financial values.
 
 - [ ] **Step 1: Write failing case explanation contracts**
 
-Require the rendered headings/copy:
-
-```text
-O que aconteceu
-O que o sistema fez
-O que acontece agora
-Mensagens com a Amazon
-Evidências
-Por que o sistema decidiu isso?
-Datas importantes
-Valores
-Ver histórico completo
-```
+Require the rendered headings/copy `O que aconteceu`, `O que o sistema fez`, `O que acontece agora`, `Mensagens com a Amazon`, `Evidências`, `Por que o sistema decidiu isso?`, `Datas importantes`, `Valores`, `Ver histórico completo`.
 
 Require API/timeline support for `return_tracking_ids`, `return_reason`, persisted write narrative and `review_excerpt`. Assert that `MISSING_HISTORICAL_SNAPSHOT` is not transformed into fabricated text.
 
@@ -855,24 +820,13 @@ Keep important date fields semantic: `order_at`, `refund_at`, `seller_debit_at`,
 
 - [ ] **Step 4: Build a safe message projection from the timeline**
 
-Add a small frontend selector over timeline items. Include only:
-- external-write items with persisted `write_snapshot` v2 narrative/message;
-- Amazon response items with safe stored response/review excerpts;
-- Gmail SAFE-T review response excerpts already persisted.
+Add a frontend selector over timeline items. Include only external-write items with persisted `write_snapshot` v2 narrative/message, Amazon response items with safe stored response/review excerpts, and Gmail SAFE-T review response excerpts already persisted.
 
-Do not show hashes, idempotency keys or raw unavailable markers as message body. For a historical write without snapshot, show a neutral line such as `O conteúdo histórico dessa mensagem não foi armazenado.`.
+Do not show hashes, idempotency keys or raw unavailable markers as message body. For a historical write without snapshot, show `O conteúdo histórico dessa mensagem não foi armazenado.`.
 
 - [ ] **Step 5: Render decision explanation under progressive disclosure**
 
-Add:
-
-```html
-<details class="decision-explanation">
-  <summary>Por que o sistema decidiu isso?</summary>
-</details>
-```
-
-Inside it, use projected facts + `reasonLabel(current_reason)` + rule application presence. Suggested structure:
+Create a `<details class="decision-explanation">` with `<summary>Por que o sistema decidiu isso?</summary>`. Inside it show:
 - `Fatos decisivos`: delivered/refund/receipt/credit/tracking facts actually present;
 - `Regra aplicada`: plain-language current reason or `Uma decisão aprendida anteriormente foi aplicada a este caso.`;
 - `Conclusão`: `operatorNextStep(c)`;
@@ -919,17 +873,9 @@ git commit -m "feat: explain case decisions with messages and evidence"
 
 - [ ] **Step 1: Write failing review presentation assertions**
 
-Require the review panel to present this order:
-1. `Qual decisão precisa ser tomada?`
-2. `O que aconteceu`
-3. `O que já foi verificado`
-4. `Mensagens com a Amazon`
-5. `Impacto financeiro e prazo`
-6. `Recomendação`
-7. `O que o sistema aprenderá`
-8. `Casos semelhantes afetados` before reusable confirmation.
+Require the review panel order: `Qual decisão precisa ser tomada?`, `O que aconteceu`, `O que já foi verificado`, `Mensagens com a Amazon`, `Impacto financeiro e prazo`, `Recomendação`, `O que o sistema aprenderá`, `Casos semelhantes afetados` before reusable confirmation.
 
-Assert no raw `reason`, `facts` JSON, action enum or internal signature is visible.
+Assert no raw review reason, facts JSON, action enum or internal signature is visible.
 
 - [ ] **Step 2: Run review tests and confirm red**
 
@@ -947,7 +893,7 @@ In `api/review.php`, after guarding `status==='OPEN'`, return `SvAmazonReturnPro
 
 - [ ] **Step 4: Turn the review reason into one business question**
 
-Add a deterministic `humanReviewQuestion(review,ctx,caseData)` mapper in UI. Examples:
+Add deterministic `humanReviewQuestion(review,ctx,caseData)`. Required mappings:
 - missing refund initiator → `Quem realizou o reembolso ao cliente?`
 - ambiguous Amazon response → `A resposta da Amazon permite continuar a recuperação ou precisamos aguardar?`
 - learned rule conflict → `Qual regra deve prevalecer para este tipo de caso?`
@@ -1050,13 +996,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Commit audit findings**
 
-Stage only validated changes and tests, run `git diff --cached --check`, then:
-
-```bash
-git commit -m "test: harden autonomy cockpit consistency"
-```
-
-If no implementation change is required after the audit, commit only the new/strengthened tests.
+Stage only validated changes and tests, run `git diff --cached --check`, then `git commit -m "test: harden autonomy cockpit consistency"`. If no implementation change is required after the audit, commit only the new/strengthened tests.
 
 ### Task 9: Full CI, independent review, merge, auto-deploy and real production UI acceptance
 
@@ -1099,16 +1039,7 @@ Expected: all PASS. The TOTP tests are regression-only; do not alter TOTP code t
 
 - [ ] **Step 2: Invoke `superpowers:requesting-code-review`**
 
-Ask an independent reviewer to inspect the complete diff against the approved spec, focusing on:
-- contradictory user/system responsibility;
-- financial false claims;
-- TBR/customer-tracking conflation;
-- tenant isolation and request-scoping;
-- hidden N+1/full-tenant browser scans;
-- stale summary semantics;
-- review regression/reopening;
-- privacy leakage from Gmail/timeline;
-- accessibility and mobile density.
+Ask an independent reviewer to inspect the complete diff against the approved spec, focusing on contradictory user/system responsibility, financial false claims, TBR/customer-tracking conflation, tenant isolation/request scoping, hidden N+1/full-tenant browser scans, stale summary semantics, review regression/reopening, privacy leakage from Gmail/timeline, accessibility and mobile density.
 
 Implement only findings that are reproduced/valid. Every accepted fix gets a focused regression test and the relevant suite is rerun.
 
@@ -1116,101 +1047,56 @@ Implement only findings that are reproduced/valid. Every accepted fix gets a foc
 
 Push the implementation branch, create/update one PR against `main`, and record the PR head SHA. Ensure the approved spec and this plan are included in the same eventual integration so the documentation is not abandoned on a side branch.
 
-Before merge:
-
-```bash
-git fetch origin
-# compare current PR head with the locally validated commit
-```
-
-Check GitHub Actions for that exact SHA. If `main` advanced, rebase/merge safely, rerun affected/full tests and obtain green checks for the new head. Do not merge an older validated SHA after later code changes.
+Before merge, fetch current `origin/main`, confirm the PR head still equals the locally validated commit, and check GitHub Actions for that exact SHA. If `main` advanced, integrate it safely, rerun affected/full tests and obtain green checks for the new head. Do not merge an older validated SHA after later code changes.
 
 - [ ] **Step 4: Merge the validated head and clear task-owned pending state**
 
-Merge only after required checks/review are green. Confirm:
-- PR is merged, not merely closed;
-- `main` contains the spec, plan, code and tests;
-- no task-owned PR remains open/draft/conflicted;
-- no task-owned Action remains failed/pending;
-- no unique valid work remains only in a worktree/stash/local branch.
+Merge only after required checks/review are green. Confirm PR is merged, `main` contains spec/plan/code/tests, no task-owned PR remains open/draft/conflicted, no task-owned Action remains failed/pending, and no unique valid work remains only in a worktree/stash/local branch.
 
 - [ ] **Step 5: Follow the repository auto-deploy gate**
 
 Read `AGENTS-VM-ACCESS.md` before VM work. Use the chat-specific CLI namespace and approved access order. Do not manually copy the release.
 
-Confirm:
-- auto-deploy selected the merge SHA (or a later descendant containing it);
-- `/home/ubuntu/amazon-returns-deploy/current/.release-sha` matches the actually deployed release;
-- `amazon-returns-safet.service` is active;
-- deploy journal has no unresolved gate failure;
-- health endpoint succeeds;
-- no new dead letters or repeated task failures were introduced by the deployment.
+Confirm auto-deploy selected the merge SHA (or a later descendant containing it), `/home/ubuntu/amazon-returns-deploy/current/.release-sha` matches the actually deployed release, `amazon-returns-safet.service` is active, deploy journal has no unresolved gate failure, health endpoint succeeds, and no new dead letters/repeated task failures were introduced.
 
-If deploy fails, investigate and patch through the repository/PR/CI loop; do not bypass the gate.
+If deploy fails, investigate and patch through repository/PR/CI; do not bypass the gate.
 
 - [ ] **Step 6: Perform real rendered UI acceptance in production**
 
-Use the authenticated Opera Browser Connector session at `https://returns.shopvivaliz.com.br/admin/amazon-returns/`. The test evidence must come from actual screenshots/accessibility tree and user-visible transitions, not direct DB/API assertions.
+Use the authenticated Opera Browser Connector session at `https://returns.shopvivaliz.com.br/admin/amazon-returns/`. Evidence comes from actual screenshots/accessibility tree and user-visible transitions, not direct DB/API assertions.
 
 Verify in this order:
-1. Top of dashboard lets an operator answer within about 10 seconds: `Preciso fazer algo?`, `O sistema está saudável?`, `Quanto dinheiro ainda está exposto?`.
-2. Human-action count and operational-problem count are visibly separate. If operational problems exist while reviews=0, the screen explicitly says the user does not need to act and the system owns the issues.
+1. Top dashboard answers within about 10 seconds `Preciso fazer algo?`, `O sistema está saudável?`, `Quanto dinheiro ainda está exposto?`.
+2. Human-action count and operational-problem count are visibly separate. If operational problems exist while reviews=0, screen explicitly says the user does not need to act and system owns the issues.
 3. Four primary financial metrics have clear hierarchy; detailed breakdown is secondary.
-4. `Sistema tratando agora` shows real active/waiting cases and what happens next.
+4. `Sistema tratando agora` shows real active/waiting cases and next behavior.
 5. Connector health and last successful cycle/freshness are visible without raw technical status.
-6. Search by a real Amazon order returns the expected case.
-7. Search by a real NF returns the expected case when evidence exists.
-8. Search by a real TBR returns the related case. Prefer an already known real TBR; if none is locally projected, use the on-demand Gmail reconciliation path with a real Amazon TBR message.
+6. Search by a real Amazon order returns expected case.
+7. Search by a real NF returns expected case when evidence exists.
+8. Search by a real TBR returns related case. Prefer an already known real TBR; if none is locally projected, use on-demand Gmail reconciliation with a real Amazon TBR message.
 9. Search by tracking/SKU/ASIN remains functional.
 10. Open a real case and verify order date, customer refund date, seller debit when available, physical receipt when available, financial values, TBR/return tracking, customer delivery tracking, NF and SAFE-T are semantically separated.
-11. Verify a case with outstanding R$ 0,00 does not say `saldo ainda a recuperar`; verify it also does not claim identified credit unless positive reconciled-credit evidence exists.
+11. A case with outstanding R$ 0,00 does not say `saldo ainda a recuperar`; it also does not claim identified credit unless positive reconciled-credit evidence exists.
 12. `Mensagens com a Amazon` shows persisted outbound narratives and available Amazon response excerpts; missing historical text is labeled unavailable rather than invented.
 13. `Por que o sistema decidiu isso?` is collapsed by default and explains facts/rule/next step in plain Portuguese.
 14. Full timeline is collapsed by default and repeated polling/sync does not dominate it.
 15. `Registrar devolução recebida` finds a real case by order, NF or TBR and displays preview before any save. Do not confirm a fake physical receipt.
-16. Reviews tab shows the correct zero state when no true review exists. If a genuine ambiguous review exists, inspect its business-question layout without making a fabricated decision.
-17. A deterministic delivered-tracking/refunded-customer pattern does not appear as a human review solely because customer text says not received. If historical orders `702-9784843-4752235` or `702-0707321-6872209` still exist, use them read-only; otherwise use an equivalent real case discovered in the UI.
-18. Reload once normally. If a safe way to observe a transient summary refresh failure occurs naturally, verify last-known-good behavior; do not induce a production outage merely to test degraded mode.
+16. Reviews tab shows correct zero state when no true review exists. If a genuine ambiguous review exists, inspect its business-question layout without making a fabricated decision.
+17. A deterministic delivered-tracking/refunded-customer pattern does not appear as human review solely because customer text says not received. If historical orders `702-9784843-4752235` or `702-0707321-6872209` still exist, use them read-only; otherwise use an equivalent real case discovered in UI.
+18. Reload once normally. If a transient summary refresh failure occurs naturally, verify last-known-good behavior; do not induce a production outage to test degraded mode.
 
-Capture screenshots of the dashboard top, one case detail, intake preview, and review/zero-review state as acceptance evidence without exposing secrets.
+Capture screenshots of dashboard top, one case detail, intake preview, and review/zero-review state as acceptance evidence without exposing secrets.
 
 - [ ] **Step 7: Treat any production UI discrepancy as an open defect**
 
-For each discrepancy found in Step 6:
-1. reproduce it in the real UI;
-2. add a failing focused regression test where technically applicable;
-3. patch surgically;
-4. rerun focused + full CI;
-5. merge the fix;
-6. wait for auto-deploy;
-7. repeat the affected real UI step.
-
-Do not mark this plan complete while a reproduced UI contradiction remains.
+For each discrepancy found in Step 6: reproduce in real UI; add failing focused regression test where applicable; patch surgically; rerun focused/full CI; merge fix; wait auto-deploy; repeat affected real UI step. Do not mark the plan complete while a reproduced contradiction remains.
 
 - [ ] **Step 8: Invoke `superpowers:verification-before-completion`**
 
-Provide the verifier with fresh evidence for:
-- full tests/lint/audit;
-- final PR and merge SHA;
-- deployed release SHA;
-- service/deploy health;
-- task-owned PR/Action cleanliness;
-- final production UI screenshots and acceptance checklist.
-
-Only after verification passes may the spec status be changed from approved design to implemented/validated and the task be described as concluded.
+Provide fresh evidence for full tests/lint/audit, final PR/merge SHA, deployed release SHA, service/deploy health, task-owned PR/Action cleanliness, and final production UI screenshots/checklist. Only after verification passes may the spec status change from approved design to implemented/validated and the task be described as concluded.
 
 - [ ] **Step 9: Record final delivery evidence**
 
-The final task report records, without secrets:
-- initial base SHA;
-- implementation branch;
-- commits by slice;
-- PR number/head SHA;
-- merge SHA;
-- deployed SHA;
-- tests and CI result;
-- production validation timestamp;
-- exact UI flows verified;
-- any real external writes that happened independently because they were legitimate scheduled case actions, clearly separated from test activity.
+Final report records, without secrets: initial base SHA; implementation branch; commits by slice; PR number/head SHA; merge SHA; deployed SHA; tests/CI result; production validation timestamp; exact UI flows verified; and any real external writes that happened independently because they were legitimate scheduled case actions, clearly separated from test activity.
 
 The success condition is product-level: the seller can see that routine cases continue autonomously, can distinguish system faults from personal decisions, can find returns by the identifiers they actually possess, and can understand each important case without supervising backend machinery.
