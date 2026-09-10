@@ -529,18 +529,39 @@ async function hillChatReady(cdp) {
 async function clickHillChat(cdp) {
   return (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;for(const b of d.querySelectorAll('kat-button,button')){const label=(b.getAttribute('label')||b.innerText||'').trim();if(!['Chat now','Conversar agora','Iniciar chat'].includes(label))continue;const button=b.tagName==='KAT-BUTTON'?b.shadowRoot?.querySelector('button'):b;if(button&&!button.disabled){button.click();return label}}}return ''})()`)).toString().trim();
 }
+
+async function hillContactReady(cdp) {
+  if (await hillChatReady(cdp)) return true;
+  return (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d?.querySelector('kat-tab[tab-id="Email"]'))return true}return false})()`)) === true;
+}
+
+async function submitHillEmail(cdp, job) {
+  const orderId = text(job.case?.order_id);
+  const safeTId = text(job.case?.safe_t_id);
+  const subject = (`Revisão de reembolso - pedido ${orderId}${safeTId ? ` - SAFE-T ${safeTId}` : ''}`).slice(0, 180);
+  const selected = (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;const tabs=d.querySelector('kat-tabs');const email=tabs?.querySelector('kat-tab[tab-id="Email"]');if(!tabs||!email)continue;tabs.selected='Email';tabs.setAttribute('selected','Email');tabs.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return true}return false})()`)) === true;
+  if (!selected) return 'SUPPORT_EMAIL_FORM_MISSING';
+  await sleep(750);
+  const prepared = text(await cdp.evaluate(`(()=>{const subject=${JSON.stringify(subject)};for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;const email=d.querySelector('kat-tab[tab-id="Email"]');if(!email)continue;const required=email.querySelector('kat-input[required="true"]')?.shadowRoot?.querySelector('input');if(!required||!required.value.trim())return 'SUPPORT_EMAIL_ADDRESS_MISSING';const label=[...d.querySelectorAll('kat-label')].find(x=>/^(Subject|Assunto)/i.test((x.innerText||'').trim()));const id=label?.getAttribute('for')||'';const host=[...d.querySelectorAll('kat-input')].find(x=>x.getAttribute('unique-id')===id);const input=host?.shadowRoot?.querySelector('input');if(!input)return 'SUPPORT_EMAIL_SUBJECT_MISSING';Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,subject);input.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:subject}));input.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return input.value===subject?'READY':'SUPPORT_EMAIL_SUBJECT_NOT_WRITABLE'}return 'SUPPORT_EMAIL_FORM_MISSING'})()`));
+  if (prepared !== 'READY') return prepared || 'SUPPORT_EMAIL_SUBJECT_NOT_WRITABLE';
+  await sleep(500);
+  return text(await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;const email=d.querySelector('kat-tab[tab-id="Email"]');const send=email?.querySelector('kat-button[label="Send"],kat-button[label="Enviar"]');const button=send?.shadowRoot?.querySelector('button');if(!button||button.disabled)return 'SUPPORT_EMAIL_SEND_MISSING';const label=(send.getAttribute('label')||send.innerText||'').trim();if(label!=='Send'&&label!=='Enviar')return 'SUPPORT_EMAIL_SEND_MISSING';button.click();return 'Email'}return 'SUPPORT_EMAIL_FORM_MISSING'})()`));
+}
 async function currentSupportCaseId(cdp) {
   return text(await cdp.evaluate(`(()=>{const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){for(const a of d.querySelectorAll('a[href*="caseID="]')){const m=(a.href||'').match(/[?&]caseID=(\\d{8,14})/);if(m)return m[1]}const body=d.body?.innerText||'';const m=body.match(/(?:ID do caso|Case ID)[:\\s#-]*(\\d{8,14})/i);if(m)return m[1]}return ''})()`));
 }
 
 async function contactSupportAndReadBack(cdp, job) {
   const deadline = Date.now() + 90000;
-  while (Date.now() < deadline && !(await hillChatReady(cdp))) await sleep(750);
-  if (!(await hillChatReady(cdp))) {
-    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  while (Date.now() < deadline && !(await hillContactReady(cdp))) await sleep(750);
+  if (!(await hillContactReady(cdp))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
-  const channel = await clickHillChat(cdp);
-  if (!channel) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_START_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  let channel = await clickHillChat(cdp);
+  if (!channel) {
+    channel = await submitHillEmail(cdp, job);
+    if (channel !== 'Email') return bridgeResult('UI_DRIFT', { reason: channel || 'SUPPORT_EMAIL_SEND_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
   await sleep(6000);
   let caseId = await currentSupportCaseId(cdp);
   for (let attempt = 0; !caseId && attempt < 5; attempt++) {
@@ -550,7 +571,8 @@ async function contactSupportAndReadBack(cdp, job) {
   if (!/^\d{8,14}$/.test(caseId)) {
     return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
   }
-  return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason: `SUPPORT_CASE_OPENED_VIA_${channel.toUpperCase().replace(/\s+/g,'_')}`, evidence: await evidence(cdp, 'help-v1') });
+  const reason = channel === 'Email' ? 'SUPPORT_CASE_OPENED_VIA_EMAIL' : `SUPPORT_CASE_OPENED_VIA_${channel.toUpperCase().replace(/\s+/g,'_')}`;
+  return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason, evidence: await evidence(cdp, 'help-v1') });
 }
 async function fillGeneralSupportIssue(cdp, job, narrative) {
   const orderId = text(job.case?.order_id);
@@ -603,6 +625,8 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
       'Solicitar reembolso para um pedido',
       'Get help',
       'Obter ajuda',
+      'Having issues with your order?',
+      'Está com problemas com seu pedido?',
     ], 1500);
     if (troubleshootingAction) {
       await sleep(750);
@@ -625,7 +649,7 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
   const identityDeadline = Date.now() + 30000;
   let idsReady = false;
   while (Date.now() < identityDeadline) {
-    if (await hillChatReady(cdp)) return null;
+    if (await hillContactReady(cdp)) return null;
     idsReady = (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;if(d.querySelector('kat-input[placeholder*="ASIN"]')&&d.querySelector('kat-input[placeholder*="SKU"]'))return true}return false})()`)) === true;
     if (idsReady) break;
     await sleep(500);
@@ -679,7 +703,7 @@ async function supportOpen(cdp, job) {
   let fbaAsinFilled = false;
   let narrativeFilled = false;
   while (Date.now() < flowDeadline) {
-    if (await hillChatReady(cdp)) return await contactSupportAndReadBack(cdp, job);
+    if (await hillContactReady(cdp)) return await contactSupportAndReadBack(cdp, job);
     if (await frameHas(cdp, 'Request Reimbursement for an Order')) {
       await clickFrameTextWhenReady(cdp, 'Request Reimbursement for an Order', 5000);
       await sleep(750);
