@@ -14,7 +14,6 @@ Environment=AMAZON_RETURNS_RELEASE_ROOT=/home/ubuntu/amazon-returns-deploy/curre
 ExecStart=/home/ubuntu/amazon-returns-deploy/current/scripts/amazon-returns/run-seller-central-daily.sh --auth-check-only
 TimeoutStartSec=5min
 UMask=0077
-NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ReadWritePaths=/home/ubuntu/amazon-returns-deploy/shared/seller-central-browser
