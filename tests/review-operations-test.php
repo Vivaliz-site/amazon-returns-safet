@@ -91,7 +91,7 @@ roSame(1,$p->cursors->cleared,'notification episode resets after queue drains');
 
 $runtime=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
-roAssert(str_contains($runtime,"'review_operations'=>14400"),'review operations use Gmail API and must run every four hours');
+roAssert(str_contains($runtime,"'review_operations'=>7200"),'review operations must run every two hours so pending-review reminders meet the approved cadence');
 roAssert(str_contains($daemon,"'review_operations'"),'daemon must dispatch automatic review operations');
 roAssert(str_contains($daemon,'SvAmazonReviewOperations'),'daemon must use the review operations service');
 

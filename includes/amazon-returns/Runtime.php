@@ -20,7 +20,7 @@ final class SvAmazonReturnsRuntime
             'gmail'=>43200,
             'gmail_refund_reconciliation'=>43200,
             'scheduler'=>43200,
-            'review_operations'=>14400,
+            'review_operations'=>7200,
             'seller_central'=>43200,
             'financial'=>43200,
             'sp_api'=>43200,
