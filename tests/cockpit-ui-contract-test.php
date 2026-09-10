@@ -5,23 +5,34 @@ $root=dirname(__DIR__);
 $page=(string)file_get_contents($root.'/admin/amazon-returns/index.php');
 $cssFile=$root.'/admin/amazon-returns/assets/cockpit.css';
 $jsFile=$root.'/admin/amazon-returns/assets/cockpit.js';
+$operationalCssFile=$root.'/admin/amazon-returns/assets/cockpit-operational.css';
+$operationalJsFile=$root.'/admin/amazon-returns/assets/cockpit-operational.js';
 if(!is_file($cssFile))throw new RuntimeException('cockpit.css missing');
 if(!is_file($jsFile))throw new RuntimeException('cockpit.js missing');
+if(!is_file($operationalCssFile))throw new RuntimeException('cockpit-operational.css missing');
+if(!is_file($operationalJsFile))throw new RuntimeException('cockpit-operational.js missing');
 $css=(string)file_get_contents($cssFile);$js=(string)file_get_contents($jsFile);
-foreach(['viewport','cockpit.css','cockpit.js','Casos','Revisões','case-list','case-detail'] as $needle)cuAssert(str_contains($page,$needle),'Cockpit page missing '.$needle);
+$operationalCss=(string)file_get_contents($operationalCssFile);$operationalJs=(string)file_get_contents($operationalJsFile);
+foreach(['viewport','cockpit.css','cockpit.js','cockpit-operational.css','cockpit-operational.js','Casos','Revisões','case-list','case-detail'] as $needle)cuAssert(str_contains($page,$needle),'Cockpit page missing '.$needle);
 foreach(['Pesquisar','Situação','Próxima ação','Tipo de logística','Recebimento','Prazo'] as $label)cuAssert(str_contains($page,$label),'Cockpit filter label missing '.$label);
+foreach(['Todos','Precisa da minha atenção','Sistema tratando','Concluídos'] as $label)cuAssert(str_contains($page,$label),'Quick filter missing '.$label);
 cuAssert(str_contains($page,'data-view="cases"'),'Cases tab required.');
 cuAssert(str_contains($page,'data-view="reviews"'),'Reviews tab required.');
 cuAssert(str_contains($page,'id="review-count"'),'Visible pending-review count target required.');
 cuAssert(str_contains($page,'id="review-alert"'),'Visible pending-review alert required.');
 cuAssert(str_contains($js,'pending_reviews'),'Cockpit JS must render pending review count from summary.');
 cuAssert(!str_contains($js,'innerHTML'),'API text must not be injected as HTML.');
+cuAssert(!str_contains($operationalJs,'innerHTML'),'Operational UI must not inject API text as HTML.');
 foreach(['textContent','createElement','loadCases','loadReviews','openCase','renderTimeline','renderMessageThread','humanReviewSummary'] as $needle)cuAssert(str_contains($js,$needle),'Cockpit JS missing '.$needle);
 cuAssert(str_contains($js,"Intl.NumberFormat('pt-BR'"),'BRL formatter required.');
 cuAssert(str_contains($js,"toLocaleString('pt-BR'"),'pt-BR date formatter required.');
 cuAssert(str_contains($css,'@media(max-width:600px)'),'Mobile layout required.');
 cuAssert(str_contains($css,'min-height:44px'),'Mobile action targets must be at least 44px.');
 cuAssert(!str_contains($css,'overflow-x:auto'),'Cockpit must not rely on page-level horizontal scrolling.');
+foreach(['operatorStatus','operatorResponsibility','operatorNextStep','operatorAlert','condenseTimeline','renderOperationalCase','renderOperationalList'] as $needle)cuAssert(str_contains($operationalJs,$needle),'Operational cockpit missing '.$needle);
+foreach(['Nenhuma ação sua é necessária','Sua decisão é necessária','Aguardando resposta da Amazon','Aguardando crédito da Amazon','Providência automática atrasada','Data do pedido','Reembolso concedido ao cliente','Débito na conta da loja','Saldo ainda a recuperar','NF de venda','Última verificação','Próxima providência','Ver histórico completo','Pedido sincronizado','Movimentação financeira identificada'] as $needle)cuAssert(str_contains($operationalJs,$needle),'Operational copy missing '.$needle);
+foreach(['case-row-id','case-row-status','case-row-finance','case-row-responsibility','case-summary','case-flow','case-financial','case-evidence','case-history-toggle'] as $needle)cuAssert(str_contains($operationalCss.$operationalJs,$needle),'Operational cockpit structure missing '.$needle);
+cuAssert(!str_contains($operationalJs,"return 'Aguardar';"),'Generic standalone waiting label is prohibited.');
 
 // Internal API values are preserved in form values, but every visible label is humanized.
 foreach([
