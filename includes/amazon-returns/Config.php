@@ -15,7 +15,44 @@ final class SvAmazonReturnsConfig
     public function reviewAiAnthropicModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_ANTHROPIC_MODEL','claude-sonnet-4-6'); }
     public function reviewAiGeminiModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_GEMINI_MODEL','gemini-3.5-flash-lite'); }
     public function reviewAiGeminiFallbackModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_GEMINI_FALLBACK_MODEL','gemini-3.1-flash-lite'); }
-    public function reviewAiReady(): bool { return $this->openAiKey()!=='' || $this->anthropicKey()!=='' || $this->geminiKey()!==''; }
+    public function reviewAiChatGptSessionUrl(): string { return $this->get('AMAZON_RETURNS_CHATGPT_SESSION_URL'); }
+    public function reviewAiChatGptSessionHeartbeatFile(): string { return $this->get('AMAZON_RETURNS_CHATGPT_SESSION_HEARTBEAT_FILE'); }
+    public function reviewAiChatGptSessionHeartbeatTtl(): int { return max(5,min(300,(int)$this->get('AMAZON_RETURNS_CHATGPT_SESSION_HEARTBEAT_TTL','30'))); }
+    public function reviewAiChatGptSessionTimeout(): int { return max(1,min(5,(int)$this->get('AMAZON_RETURNS_CHATGPT_SESSION_TIMEOUT','2'))); }
+    public function reviewAiChatGptSessionToken(): string { return $this->aiSecret('AMAZON_RETURNS_CHATGPT_SESSION_TOKEN'); }
+    public function reviewAiChatGptSessionReady(): bool
+    {
+        $url=$this->reviewAiChatGptSessionUrl();$parts=$url!==''?parse_url($url):false;
+        if(!is_array($parts)||!isset($parts['scheme'],$parts['host']))return false;
+        $scheme=strtolower((string)$parts['scheme']);$host=strtolower((string)$parts['host']);
+        $loopback=in_array($host,['127.0.0.1','localhost','::1'],true);
+        if($scheme!=='https'&&!($scheme==='http'&&$loopback))return false;
+        if(!$loopback&&$this->reviewAiChatGptSessionToken()==='')return false;
+        $file=$this->reviewAiChatGptSessionHeartbeatFile();if($file==='')return false;
+        clearstatcache(true,$file);if(!is_file($file)||!is_readable($file))return false;
+        $mtime=@filemtime($file);$now=time();
+        return is_int($mtime)&&$mtime<=$now&&$mtime>=($now-$this->reviewAiChatGptSessionHeartbeatTtl());
+    }
+    public function reviewAiCodexSocket(): string { return $this->get('AMAZON_RETURNS_CODEX_REVIEW_SOCKET','/run/amazon-returns-safet/codex-review.sock'); }
+    public function reviewAiCodexTimeout(): int { return max(5,min(60,(int)$this->get('AMAZON_RETURNS_CODEX_REVIEW_TIMEOUT','35'))); }
+    public function reviewAiCodexReady(): bool
+    {
+        $path=$this->reviewAiCodexSocket();if($path==='')return false;
+        clearstatcache(true,$path);
+        return file_exists($path)&&@filetype($path)==='socket'&&is_readable($path);
+    }
+    /** @return array<string,bool> */
+    public function reviewAiProviderReadiness(): array
+    {
+        return [
+            'chatgpt_session'=>$this->reviewAiChatGptSessionReady(),
+            'codex_chatgpt'=>$this->reviewAiCodexReady(),
+            'anthropic'=>$this->anthropicKey()!=='',
+            'gemini'=>$this->geminiKey()!=='',
+            'openai'=>$this->openAiKey()!=='',
+        ];
+    }
+    public function reviewAiReady(): bool { return in_array(true,$this->reviewAiProviderReadiness(),true); }
     public function learnedRuleExecutionEnabled(): bool { return $this->bool('AMAZON_RETURNS_LEARNED_RULE_EXECUTION', false); }
 
     public function mode(): string
