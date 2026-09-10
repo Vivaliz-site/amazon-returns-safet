@@ -903,6 +903,23 @@ async function supportOpen(cdp, job) {
     throw error;
   }
   if (existing) return bridgeResult('ALREADY_EXISTS', { external_id: existing, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  if (Number(job.attempt_count || 0) > 1) {
+    let prior;
+    try {
+      prior = await findSupportCase(cdp, job, { includeTerminal: true });
+    } catch (error) {
+      if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_RETRY_RECONCILIATION', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      }
+      throw error;
+    }
+    if (prior) return bridgeResult('ALREADY_EXISTS', {
+      external_id: prior,
+      retry_safe: true,
+      reason: 'SUPPORT_RETRY_RECONCILED_TERMINAL_CASE',
+      evidence: await evidence(cdp, 'help-v1'),
+    });
+  }
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'SUPPORT_ORDER_ID_REQUIRED' });
   const resolvedAsin = text(job.case?.asin || await resolveOrderAsin(cdp, orderId));

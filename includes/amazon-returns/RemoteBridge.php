@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/SafeTStatus.php';
+require_once __DIR__ . '/SellerSupportStatus.php';
 
 final class SvAmazonReturnsRemoteBridge
 {
@@ -122,6 +123,7 @@ final class SvAmazonReturnsRemoteBridge
             'next_allowed_at' => self::nullableString($result['next_allowed_at'] ?? null),
             'reason' => self::nullableString($result['reason'] ?? null),
             'evidence' => is_array($result['evidence'] ?? null) ? $result['evidence'] : [],
+            'support' => is_array($result['support'] ?? null) ? SvAmazonSellerSupportStatus::normalize($result['support']) : null,
             'read' => is_array($result['read'] ?? null) ? SvAmazonSafeTStatus::normalize($result['read']) : null,
         ];
     }

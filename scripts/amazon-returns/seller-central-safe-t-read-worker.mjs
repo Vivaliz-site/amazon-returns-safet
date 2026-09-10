@@ -14,6 +14,7 @@ const BROWSER = process.env.SELLER_CENTRAL_BROWSER || process.env.SELLER_CENTRAL
 const STATUS_WORKER_ID = process.env.SELLER_CENTRAL_STATUS_WORKER_ID || 'seller-central-status';
 const POLL_MS = Math.max(15000, Number(process.env.SELLER_CENTRAL_STATUS_POLL_MS || 30000));
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
+const CASE_LOBBY = 'https://sellercentral.amazon.com.br/cu/case-lobby';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -167,7 +168,7 @@ async function authenticatedPage(cdp, targetUrl, waitMs) {
 }
 
 function result(status, extra = {}) {
-  return { status, submitted: false, external_id: null, retry_safe: false, block_reason: null, next_allowed_at: null, reason: null, evidence: {}, read: null, ...extra };
+  return { status, submitted: false, external_id: null, retry_safe: false, block_reason: null, next_allowed_at: null, reason: null, evidence: {}, read: null, support: null, ...extra };
 }
 
 function evidence(state) {
@@ -235,6 +236,73 @@ async function safeTRead(job) {
   }
 }
 
+async function supportRead(job) {
+  const supportCaseId = clean(job.case?.support_case_id);
+  const orderId = clean(job.case?.order_id);
+  const safeTId = clean(job.case?.safe_t_id);
+  if (!/^\d{8,14}$/.test(supportCaseId)) return result('FAILED', { reason: 'SUPPORT_CASE_ID_REQUIRED' });
+  const cdp = await Cdp.connect();
+  try {
+    const page = await authenticatedPage(cdp, CASE_LOBBY, 4500);
+    const state = page.state;
+    const auth = page.auth;
+    if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: page.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
+    if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: page.reason || 'CAPTCHA_PRESENT', evidence: evidence(state) });
+    const raw = await cdp.evaluate(`(async()=>{
+      const caseId=${JSON.stringify(supportCaseId)};
+      const needles=${JSON.stringify([orderId, safeTId].filter(Boolean))};
+      const view=async id=>{
+        const response=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(id)+'&timeZone=UTC&pageSize=10',{credentials:'include'});
+        if(!response.ok)return null;
+        return await response.json();
+      };
+      let detail=await view(caseId);
+      let searchStatus='';
+      if(!detail){
+        for(let index=0;index<10;index++){
+          const response=await fetch('/hill/hillservice/mons-api/SearchForCases',{
+            method:'POST',credentials:'include',headers:{'content-type':'application/json'},
+            body:JSON.stringify({page:index,searchPageSize:50,sortBy:'CreationDate',sortByOrder:'DESC',getCountOnly:false,caseFilters:{caseOwner:'MerchantCases'}})
+          });
+          if(!response.ok)break;
+          const search=await response.json();
+          const rows=Array.isArray(search.caseSearchResultList)?search.caseSearchResultList:[];
+          const item=rows.find(row=>String(row?.caseId||'')===caseId);
+          if(item){searchStatus=String(item.status||'');detail=await view(caseId);break;}
+          if(rows.length<50)break;
+        }
+      }
+      if(!detail)return JSON.stringify({status:'NOT_FOUND'});
+      const serialized=JSON.stringify(detail);
+      if(needles.length>0 && !needles.some(needle=>serialized.includes(needle)))return JSON.stringify({status:'MISMATCH'});
+      const caseStatus=String(detail?.viewCaseMetaData?.caseStatus||searchStatus||'').trim();
+      if(!caseStatus)return JSON.stringify({status:'INVALID'});
+      const values=[];
+      const walk=value=>{
+        if(typeof value==='string'){const v=value.replace(/\s+/g,' ').trim();if(v)values.push(v);return;}
+        if(Array.isArray(value)){for(const item of value)walk(item);return;}
+        if(value&&typeof value==='object'){for(const item of Object.values(value))walk(item);}
+      };
+      walk(detail);
+      return JSON.stringify({status:'FOUND',case_status:caseStatus,latest_text:[...new Set(values)].join(' ').slice(0,12000)});
+    })()`);
+    let observed;
+    try { observed = JSON.parse(raw || '{}'); } catch { observed = {}; }
+    if (observed.status === 'NOT_FOUND') return result('NOT_FOUND', { reason: 'SELLER_SUPPORT_CASE_NOT_FOUND', retry_safe: true, evidence: evidence(state) });
+    if (observed.status === 'MISMATCH') return result('UI_DRIFT', { reason: 'SELLER_SUPPORT_CASE_IDENTITY_MISMATCH', retry_safe: true, evidence: evidence(state) });
+    if (observed.status !== 'FOUND') return result('UI_DRIFT', { reason: 'SELLER_SUPPORT_CASE_RESPONSE_INVALID', retry_safe: true, evidence: evidence(state) });
+    return result('ACCEPTED', {
+      external_id: supportCaseId,
+      retry_safe: true,
+      reason: 'SELLER_SUPPORT_STATUS_READ',
+      evidence: evidence(state),
+      support: { case_id: supportCaseId, case_status: clean(observed.case_status), latest_text: clean(observed.latest_text).slice(0, 12000) },
+    });
+  } finally {
+    cdp.close();
+  }
+}
+
 function log(event, data = {}) {
   process.stdout.write(`${JSON.stringify({
     at: new Date().toISOString(), event,
@@ -256,6 +324,7 @@ async function runOnce() {
   try {
     if (job.action === 'SAFE_T_READ') readResult = await safeTRead(job);
     else if (job.action === 'SAFE_T_DISCOVERY') readResult = await safeTDiscovery(job);
+    else if (job.action === 'SELLER_SUPPORT_READ') readResult = await supportRead(job);
     else readResult = result('FAILED', { reason: 'UNSUPPORTED_READ_ACTION' });
   } catch (error) {
     readResult = result('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: false });

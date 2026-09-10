@@ -1,0 +1,97 @@
+<?php
+declare(strict_types=1);
+
+final class SvAmazonSellerSupportStatus
+{
+    private const TERMINAL=['RESOLVED','CLOSED','CANCELLED'];
+
+    /** @return array{case_id:string,case_status:string,latest_text:string,content_fingerprint:string} */
+    public static function normalize(array $support): array
+    {
+        $caseId=trim((string)($support['case_id']??''));
+        if(preg_match('/^\d{8,14}$/',$caseId)!==1)throw new RuntimeException('Invalid Seller Support case ID.');
+        $status=strtoupper(trim((string)($support['case_status']??'')));
+        if($status==='' || preg_match('/^[A-Z0-9_:-]{2,64}$/',$status)!==1)throw new RuntimeException('Invalid Seller Support case status.');
+        $latest=self::boundedText($support['latest_text']??'',12000);
+        return [
+            'case_id'=>$caseId,
+            'case_status'=>$status,
+            'latest_text'=>$latest,
+            'content_fingerprint'=>hash('sha256',$latest),
+        ];
+    }
+
+    public static function isTerminalStatus(string $status): bool
+    {
+        return in_array(strtoupper(trim($status)),self::TERMINAL,true);
+    }
+
+    public static function readKey(int $caseId,string $supportCaseId,DateTimeInterface $now): string
+    {
+        if($caseId<1 || preg_match('/^\d{8,14}$/',trim($supportCaseId))!==1)throw new InvalidArgumentException('Seller Support read key requires case and support case ID.');
+        $day=DateTimeImmutable::createFromInterface($now)->setTimezone(new DateTimeZone('UTC'))->format('Ymd');
+        return hash('sha256','seller-support-read|'.$caseId.'|'.trim($supportCaseId).'|'.$day);
+    }
+
+    /** @return array{append:bool,idempotency_key:string} */
+    public static function observationPlan(int $caseId,array $support,array $timeline): array
+    {
+        $current=self::normalize($support);
+        $latest=null;$rank=[0,0];
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='SELLER_SUPPORT_STATUS_OBSERVED' || ($event['source']??'')!=='SELLER_CENTRAL')continue;
+            $payload=$event['payload']??null;
+            if(!is_array($payload) || trim((string)($payload['case_id']??''))!==$current['case_id'])continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            $candidate=[$at->getTimestamp(),(int)($event['id']??0)];
+            if($candidate>$rank){$rank=$candidate;$latest=$event;}
+        }
+        $base=self::fingerprint($current);
+        if(is_array($latest)){
+            $payload=is_array($latest['payload']??null)?$latest['payload']:[];
+            try{$same=self::fingerprint(self::normalize($payload))===$base;}catch(Throwable){$same=false;}
+            if($same)return ['append'=>false,'idempotency_key'=>(string)($latest['idempotency_key']??hash('sha256',$base))];
+        }
+        return ['append'=>true,'idempotency_key'=>hash('sha256','seller-support-status-v1|'.$base.'|'.(int)($latest['id']??0))];
+    }
+
+    public static function resolution(array $support): string
+    {
+        $support=self::normalize($support);
+        if(!self::isTerminalStatus($support['case_status']))return 'ACTIVE';
+        $text=mb_strtolower($support['latest_text'],'UTF-8');
+        if(str_contains($text,'safe-t-review@amazon.com'))return 'EMAIL_REVIEW';
+        $money=preg_match('/(?:reembols|reimbursement|cr[eé]dito|credit)/u',$text)===1;
+        $processed=preg_match('/(?:processad|processed|successful|sucesso|emitid|issued)/u',$text)===1;
+        $delay=preg_match('/(?:4\s*(?:a|to|[-–])\s*5\s*(?:dias\s*[uú]teis|business\s*days)|reimbursement\s*id|id\s*(?:do|de)?\s*reembolso)/u',$text)===1;
+        if($money && $processed && $delay)return 'REIMBURSEMENT_PROCESSING';
+        $safeT=str_contains($text,'safe-t') || str_contains($text,'safet');
+        $appeal=preg_match('/(?:appeal|recurso|recorr)/u',$text)===1;
+        if($safeT && $appeal)return 'SAFE_T_APPEAL';
+        return 'TERMINAL_AMBIGUOUS';
+    }
+
+    public static function reimbursementDueAt(DateTimeImmutable $observedAt,int $businessDays=5): DateTimeImmutable
+    {
+        $remaining=max(1,$businessDays);$cursor=$observedAt->setTimezone(new DateTimeZone('UTC'));
+        while($remaining>0){
+            $cursor=$cursor->modify('+1 day');
+            $weekday=(int)$cursor->format('N');
+            if($weekday<=5)$remaining--;
+        }
+        return $cursor;
+    }
+
+    private static function fingerprint(array $support): string
+    {
+        return hash('sha256',implode('|',[$support['case_id'],$support['case_status'],$support['content_fingerprint']]));
+    }
+
+    private static function boundedText(mixed $value,int $limit): string
+    {
+        if(!is_scalar($value))return '';
+        $text=preg_replace('/\s+/u',' ',trim((string)$value)) ?? trim((string)$value);
+        return mb_substr($text,0,$limit,'UTF-8');
+    }
+}
