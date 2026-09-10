@@ -16,7 +16,6 @@ TimeoutStartSec=30min
 TimeoutStopSec=15s
 KillMode=control-group
 UMask=0077
-NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ReadWritePaths=/home/ubuntu/amazon-returns-deploy/shared/seller-central-browser
