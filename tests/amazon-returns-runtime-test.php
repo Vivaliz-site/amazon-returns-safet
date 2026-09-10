@@ -57,7 +57,7 @@ $cadence=SvAmazonReturnsRuntime::cadences();
 foreach(['gmail','gmail_refund_reconciliation','financial','sp_api','returns_report','scheduler','seller_central','policy_monitor'] as $task){
     rtSame(43200,$cadence[$task],$task.' routine must run twice per day.');
 }
-rtSame(14400,$cadence['review_operations'],'Internal review follow-up is not an external business consultation.');
+rtSame(7200,$cadence['review_operations'],'Review suggestions and reminders must run every two hours while reviews are pending.');
 rtSame(900,$cadence['health'],'Health monitoring remains frequent and is not an external business routine.');
 
 $now=new DateTimeImmutable('2026-09-10T12:00:00Z');
