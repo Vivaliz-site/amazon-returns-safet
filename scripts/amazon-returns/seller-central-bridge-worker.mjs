@@ -15,6 +15,11 @@ const POLL_MS = Math.max(10000, Number(process.env.SELLER_CENTRAL_BRIDGE_POLL_MS
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
 const HELP_URL = 'https://sellercentral.amazon.com.br/help/center?redirectSource=Hill';
 const CASE_LOBBY = 'https://sellercentral.amazon.com.br/cu/case-lobby';
+const supportHistoryRaw = Number(process.env.SELLER_CENTRAL_SUPPORT_CASE_HISTORY_LIMIT || 500);
+const SUPPORT_CASE_HISTORY_LIMIT = Number.isFinite(supportHistoryRaw)
+  ? Math.max(50, Math.min(500, Math.trunc(supportHistoryRaw)))
+  : 500;
+const SUPPORT_CASE_TERMINAL_STATUSES = ['RESOLVED','CLOSED','CANCELLED'];
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const text = value => String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -449,16 +454,91 @@ async function safeTAppeal(cdp, job) {
   });
 }
 
-async function findSupportCase(cdp, job) {
-  const known = text(job.case?.support_case_id);
-  if (/^\d{8,14}$/.test(known)) return known;
-  await cdp.navigate(CASE_LOBBY, 4500);
-  const auth = await authGate(cdp, 'help-v1', CASE_LOBBY, 4500);
-  if (auth) return null;
+async function scanSupportCaseHistory(cdp, job, preferredCaseId = '') {
   const orderId = text(job.case?.order_id);
   const safeTId = text(job.case?.safe_t_id);
-  const result = await cdp.evaluate(`(()=>{const needles=${JSON.stringify([safeTId, orderId].filter(Boolean))};const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const hd=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(hd)docs.push(hd)}for(const d of docs){const body=d.body?.innerText||'';if(!needles.some(n=>body.includes(n)))continue;for(const a of d.querySelectorAll('a[href*="view-case"],a[href*="caseID="]')){const row=a.closest('tr,[role=row],div');const t=row?.innerText||'';if(needles.some(n=>t.includes(n))){const m=(a.href||'').match(/[?&]caseID=(\d{8,14})/);if(m)return m[1]}}}return ''})()`);
-  return text(result) || null;
+  const needles = [orderId, safeTId].filter(Boolean);
+  if (needles.length === 0) return null;
+  const preferred = /^\d{8,14}$/.test(text(preferredCaseId)) ? text(preferredCaseId) : '';
+  const raw = await cdp.evaluate(`(async()=>{
+    const needles=${JSON.stringify(needles)};
+    const preferred=${JSON.stringify(preferred)};
+    const terminal=new Set(${JSON.stringify(SUPPORT_CASE_TERMINAL_STATUSES)});
+    const activeSupportStatus=value=>{const status=String(value||'').trim().toUpperCase();return status!==''&&!terminal.has(status)};
+    const limit=${SUPPORT_CASE_HISTORY_LIMIT};
+    const pageSize=50;
+    const relevant=/reemb|refund|safe[- ]?t|pedido|order|fba|devolu|return|reimbursement|claim|reclama|review|revis/i;
+    const viewCase=async caseId=>{
+      const response=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(caseId)+'&timeZone=UTC&pageSize=10',{credentials:'include'});
+      if(!response.ok)throw new Error('VIEW_CASE_HTTP_'+response.status);
+      return await response.json();
+    };
+    if(preferred){
+      try{
+        const detail=await viewCase(preferred);
+        const raw=JSON.stringify(detail);
+        if(needles.some(n=>raw.includes(n))&&activeSupportStatus(detail?.viewCaseMetaData?.caseStatus))return JSON.stringify({status:'FOUND',case_id:preferred});
+      }catch{return JSON.stringify({status:'UNAVAILABLE',reason:'PREFERRED_CASE_LOOKUP_FAILED'})}
+    }
+    let total=null;
+    let inspected=0;
+    let detailFailure=false;
+    for(let page=0;inspected<limit;page++){
+      const response=await fetch('/hill/hillservice/mons-api/SearchForCases',{
+        method:'POST',credentials:'include',headers:{'content-type':'application/json'},
+        body:JSON.stringify({page,searchPageSize:50,sortBy:'CreationDate',sortByOrder:'DESC',getCountOnly:false,caseFilters:{caseOwner:'MerchantCases'}})
+      });
+      if(!response.ok)return JSON.stringify({status:'UNAVAILABLE',reason:'SEARCH_HTTP_'+response.status});
+      const search=await response.json();
+      if(!Array.isArray(search.caseSearchResultList)||!Number.isFinite(Number(search.totalNumberOfResults))){
+        return JSON.stringify({status:'UNAVAILABLE',reason:'SEARCH_RESPONSE_INVALID'});
+      }
+      const rows=search.caseSearchResultList;
+      if(total===null)total=Number(search.totalNumberOfResults);
+      for(const item of rows){
+        const summary=JSON.stringify(item);
+        if(needles.some(n=>summary.includes(n))&&activeSupportStatus(item.status))return JSON.stringify({status:'FOUND',case_id:String(item.caseId||'')});
+      }
+      const candidates=rows.filter(item=>relevant.test(String(item.shortDescription||'')));
+      for(const item of candidates){
+        try{
+          const detail=await viewCase(item.caseId);
+          const status=detail?.viewCaseMetaData?.caseStatus||item.status;
+          if(activeSupportStatus(status)&&needles.some(n=>JSON.stringify(detail).includes(n))){
+            return JSON.stringify({status:'FOUND',case_id:String(item.caseId||'')});
+          }
+        }catch{detailFailure=true}
+      }
+      inspected+=rows.length;
+      if(rows.length<pageSize||inspected>=total)break;
+    }
+    if(detailFailure)return JSON.stringify({status:'UNAVAILABLE',reason:'DETAIL_LOOKUP_FAILED'});
+    return JSON.stringify({status:'NOT_FOUND',total:Number(total||0),inspected});
+  })()`);
+  let parsed;
+  try { parsed = JSON.parse(raw || '{}'); } catch { parsed = {}; }
+  if (parsed.status === 'FOUND' && /^\d{8,14}$/.test(text(parsed.case_id))) return text(parsed.case_id);
+  if (parsed.status === 'NOT_FOUND') return null;
+  throw new Error('SUPPORT_CASE_LOOKUP_UNAVAILABLE');
+}
+
+async function findSupportCase(cdp, job) {
+  const known = text(job.case?.support_case_id);
+  const lookup = await Cdp.connect();
+  try {
+    await lookup.navigate(CASE_LOBBY, 4500);
+    const auth = await authGate(lookup, 'help-v1', CASE_LOBBY, 4500);
+    if (auth) throw new Error('SUPPORT_CASE_LOOKUP_UNAVAILABLE');
+    const orderId = text(job.case?.order_id);
+    const safeTId = text(job.case?.safe_t_id);
+    const quick = text(await lookup.evaluate(`(()=>{const needles=${JSON.stringify([safeTId, orderId].filter(Boolean))};const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const hd=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(hd)docs.push(hd)}for(const d of docs){const body=d.body?.innerText||'';if(!needles.some(n=>body.includes(n)))continue;for(const a of d.querySelectorAll('a[href*="view-case"],a[href*="caseID="]')){const row=a.closest('tr,[role=row],div');const t=row?.innerText||'';if(needles.some(n=>t.includes(n))){const m=(a.href||'').match(/[?&]caseID=(\d{8,14})/);if(m)return m[1]}}}return ''})()`));
+    return await scanSupportCaseHistory(lookup, job, known || quick);
+  } catch (error) {
+    if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') throw error;
+    throw new Error('SUPPORT_CASE_LOOKUP_UNAVAILABLE', { cause: error });
+  } finally {
+    lookup.close();
+  }
 }
 
 async function clickFrameIncludes(cdp, phrase) {
@@ -600,7 +680,14 @@ async function contactSupportAndReadBack(cdp, job) {
   await sleep(4500);
   let caseId = await currentSupportCaseId(cdp);
   for (let attempt = 0; !caseId && attempt < 5; attempt++) {
-    caseId = text(await findSupportCase(cdp, job));
+    try {
+      caseId = text(await findSupportCase(cdp, job));
+    } catch (error) {
+      if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
+        return bridgeResult('FAILED', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+      }
+      throw error;
+    }
     if (!caseId) await sleep(4000);
   }
   if (!/^\d{8,14}$/.test(caseId)) {
@@ -724,7 +811,15 @@ async function supportOpen(cdp, job) {
   if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION' && physicalStatus === 'RECEIVED_OK') {
     return bridgeResult('SUPERSEDED', { reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN', retry_safe: false });
   }
-  const existing = await findSupportCase(cdp, job);
+  let existing;
+  try {
+    existing = await findSupportCase(cdp, job);
+  } catch (error) {
+    if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
+      return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    }
+    throw error;
+  }
   if (existing) return bridgeResult('ALREADY_EXISTS', { external_id: existing, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'SUPPORT_ORDER_ID_REQUIRED' });
