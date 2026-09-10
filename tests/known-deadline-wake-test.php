@@ -19,17 +19,21 @@ $state=[];
 foreach(SvAmazonReturnsRuntime::cadences() as $task=>$seconds)$state[$task]=$now->format(DATE_ATOM);
 $state['next_known_action_at']='2026-09-10T03:00:00Z';
 $due=SvAmazonReturnsRuntime::dueTasks($state,$now);
-kdAssert(in_array('scheduler',$due,true),'A due persisted business date must wake the scheduler even when its 12-hour sweep is not due.');
+foreach(['known_action_wake','gmail','sp_api','financial','scheduler','seller_central'] as $task){
+    kdAssert(in_array($task,$due,true),'Known-date wake must request '.$task.' without waiting for the routine 12-hour cadence.');
+}
+$ordered=SvAmazonReturnsRuntime::decisionSafeOrder($due);
+kdSame(['bootstrap','gmail','sp_api','financial','scheduler','gmail','seller_central'],$ordered,'Known-date execution must refresh evidence, decide, then drain both possible write channels in the same cycle.');
 
 kdSame('2026-09-10T03:15:00+00:00',SvAmazonReturnsRuntime::nextKnownActionAt([
     null,'invalid','2026-09-10T03:30:00Z','2026-09-10T03:15:00Z','2026-09-10T02:00:00Z'
 ],$now),'Runtime must remember the earliest future action only.');
-kdSame(null,SvAmazonReturnsRuntime::nextKnownActionAt(['2026-09-10T02:00:00Z',null],$now),'Consumed/past timestamps must not keep waking the scheduler.');
+kdSame(null,SvAmazonReturnsRuntime::nextKnownActionAt(['2026-09-10T02:00:00Z',null],$now),'Consumed/past timestamps must not be treated as future wakes.');
 
-$daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
-kdAssert(str_contains($daemon,"'next_known_action_at'"),'Daemon must persist the next known business wake timestamp after scheduler evaluation.');
-kdAssert(str_contains($daemon,"'delivery_tasks_requested'"),'A write queued by a date-triggered scheduler run must request its delivery channel immediately.');
-kdAssert(str_contains($daemon,"runTriggeredDeliveryTasks"),'Date-triggered writes must be drained in the same daemon cycle instead of waiting up to 12 hours.');
+$runtime=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
+kdAssert(str_contains($runtime,'SELECT MIN(next_action_at)'),'Daemon bootstrap must discover the earliest known business timestamp from the local scoped case store.');
+kdAssert(str_contains($runtime,'updated_at<next_action_at'),'A due timestamp already evaluated after its deadline must not create a tight loop.');
+kdAssert(str_contains($runtime,"'known_action_wake'"),'Known-date execution must be an event marker, not a shorter periodic business cadence.');
 
 $memory=(string)file_get_contents(__DIR__.'/../docs/MEMORIA-DO-PROJETO.md');
 kdAssert(str_contains($memory,'sem esperar o próximo ciclo de 12 horas'),'Project memory must preserve exact known-date execution independently from routine polling.');
