@@ -30,6 +30,7 @@ coaAssert(str_contains($listApi,'SvAmazonInvoiceSearch::caseIds'),'NF search mus
 coaAssert(str_contains($ui,"review_status==='OPEN'"),'Open review must be shown as user responsibility.');
 coaAssert(str_contains($ui,"'Sua decisão é necessária'"),'User-decision state missing.');
 coaAssert(!str_contains($ui,"return 'Aguardar';"),'Generic Aguardar status is prohibited.');
+coaAssert(str_contains($bootstrap,"filters.set('review_status','OPEN')"),'Attention quick filter must include every open review, including blocked reviews.');
 
 // A past appeal deadline must not create a false operational failure after an appeal/follow-up was already sent.
 foreach(['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','RECOVERED','CLOSED_LOSS'] as $state){
@@ -48,9 +49,11 @@ coaAssert(str_contains($ui,'function condenseTimeline('),'Timeline condensation 
 coaAssert(str_contains($ui,"repeatable=title==='Pedido sincronizado'||title==='Movimentação financeira identificada'"),'Only repetitive telemetry should be grouped.');
 coaAssert(str_contains($ui,'Ver histórico completo'),'Full history disclosure is required.');
 
-// Initial legacy rendering is replaced once the operational layer is loaded.
+// Initial legacy rendering is replaced once the operational layer is loaded and case-only controls do not leak into other tabs.
 coaAssert(str_contains($bootstrap,"if(state.view==='cases')loadCases()"),'Operational list must rerender after deferred scripts load.');
 coaAssert(str_contains($bootstrap,'Dados podem estar desatualizados'),'Stale source data must be visibly identified.');
+coaAssert(str_contains($bootstrap,'function syncOperationalChrome('),'Operational chrome must follow the selected tab.');
+coaAssert(str_contains($bootstrap,"classList.toggle('hidden',state.view!=='cases')"),'Case quick filters must be hidden outside the cases tab.');
 
 // Responsive layout and usable touch targets.
 coaAssert(str_contains($css,'@media(max-width:980px)'),'Tablet responsive layout missing.');
