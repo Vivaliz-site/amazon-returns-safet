@@ -137,6 +137,39 @@ $db->queue(['fetch'=>['id'=>301]]);
 $duplicate = $outbox->enqueue('SAFE_T_SUBMIT', 77, ['order_id'=>'ignored'], $key);
 toSame($first, $duplicate, 'Scoped duplicate outbox action must resolve locally.');
 
+$reviveDb = new TenantOutboxMemoryPdo();
+$reviveOutbox = new SvAmazonTenantReturnsOutbox($reviveDb, $context);
+$reviveKey = $reviveOutbox->deterministicKey('SELLER_SUPPORT_OPEN', 77, 'expired-appeal-recovery');
+$reviveDb->queue(['fetch'=>['id'=>77]]);
+$reviveDb->queue(['throw'=>outboxDuplicate()]);
+$reviveDb->queue(['fetch'=>[
+    'id'=>404,'status'=>'SUPERSEDED','attempt_count'=>0,'kind'=>'SELLER_SUPPORT_OPEN','case_id'=>77,
+]]);
+$reviveDb->queue(['row_count'=>1]);
+$revived = $reviveOutbox->enqueue('SELLER_SUPPORT_OPEN', 77, ['order_id'=>'702-7654321-1234567'], $reviveKey);
+toSame(404, $revived, 'An unattempted superseded action must be reusable when the exact decision becomes current again.');
+$reviveSql = $reviveDb->executed[array_key_last($reviveDb->executed)]['sql'] ?? '';
+toAssert(str_contains($reviveSql, "SET status='PENDING'"), 'Reusing an unattempted superseded action must reactivate it.');
+toAssert(str_contains($reviveSql, "status='SUPERSEDED'"), 'Reactivation must only target a superseded row.');
+toAssert(str_contains($reviveSql, 'attempt_count=0'), 'Reactivation must never revive an action that may already have reached an external system.');
+$reviveParams = $reviveDb->executed[array_key_last($reviveDb->executed)]['params'] ?? [];
+toSame('{"order_id":"702-7654321-1234567"}', $reviveParams[':payload_json'] ?? null, 'Reactivated action must use the current write snapshot/payload.');
+
+$attemptedDb = new TenantOutboxMemoryPdo();
+$attemptedOutbox = new SvAmazonTenantReturnsOutbox($attemptedDb, $context);
+$attemptedDb->queue(['fetch'=>['id'=>77]]);
+$attemptedDb->queue(['throw'=>outboxDuplicate()]);
+$attemptedDb->queue(['fetch'=>[
+    'id'=>405,'status'=>'SUPERSEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_OPEN','case_id'=>77,
+]]);
+$attempted = $attemptedOutbox->enqueue('SELLER_SUPPORT_OPEN', 77, ['order_id'=>'702-7654321-1234567'], $reviveKey);
+toSame(405, $attempted, 'An attempted superseded action must remain idempotently addressable.');
+$attemptedReactivation = array_values(array_filter(
+    $attemptedDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql'] ?? ''), "SET status='PENDING'")
+));
+toSame([], $attemptedReactivation, 'A superseded action with any prior attempt must never be reactivated automatically.');
+
 $pendingRow = [
     'id'=>301,'tenant_id'=>1,'amazon_connection_id'=>10,'case_id'=>77,'kind'=>'SAFE_T_SUBMIT',
     'idempotency_key'=>$key,'payload_json'=>'{"order_id":"702-1234567-7654321"}',

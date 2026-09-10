@@ -60,13 +60,30 @@ final class SvAmazonTenantReturnsOutbox
         }
 
         $existing = $this->prepare(
-            'SELECT id FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
+            'SELECT id,status,attempt_count,kind,case_id FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
             . 'AND amazon_connection_id=:amazon_connection_id AND idempotency_key=:idempotency_key LIMIT 1'
         );
         $existing->execute($this->scopeParams([':idempotency_key'=>$idempotencyKey]));
         $row = $existing->fetch(PDO::FETCH_ASSOC);
         $id = is_array($row) ? (int)($row['id'] ?? 0) : 0;
         if ($id < 1) throw new RuntimeException('Scoped duplicate outbox action could not be resolved.');
+        if ((string)($row['status'] ?? '') === 'SUPERSEDED'
+            && (int)($row['attempt_count'] ?? -1) === 0
+            && (string)($row['kind'] ?? '') === $kind
+            && (int)($row['case_id'] ?? 0) === $caseId) {
+            $reactivate = $this->prepare(
+                "UPDATE amazon_return_outbox SET status='PENDING',payload_json=:payload_json,available_at=UTC_TIMESTAMP(),"
+                . "locked_at=NULL,last_error=NULL,updated_at=UTC_TIMESTAMP() WHERE id=:id "
+                . "AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+                . "AND status='SUPERSEDED' AND attempt_count=0 AND kind=:kind AND case_id=:case_id"
+            );
+            $reactivate->execute($this->scopeParams([
+                ':id'=>$id,
+                ':payload_json'=>json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                ':kind'=>$kind,
+                ':case_id'=>$caseId,
+            ]));
+        }
         return $id;
     }
 
