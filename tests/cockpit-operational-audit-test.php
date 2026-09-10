@@ -66,6 +66,11 @@ coaAssert(str_contains($bootstrap,"classList.toggle('hidden',state.view!=='cases
 coaAssert(str_contains($css,'@media(max-width:980px)'),'Tablet responsive layout missing.');
 coaAssert(str_contains($css,'@media(max-width:600px)'),'Mobile responsive layout missing.');
 coaAssert(str_contains($css,'min-height:44px'),'Operational controls require touch-sized targets.');
+coaAssert(str_contains($css,'grid-template-areas:"id open" "status open" "finance open" "responsibility responsibility"'),'Desktop case rows must keep the Abrir control visible inside the narrow list pane.');
+coaAssert(str_contains($css,'.operational-case-row .case-open{grid-area:open;align-self:center;justify-self:stretch}'),'Desktop Abrir control must stay touch-sized instead of stretching vertically across the whole case.');
+coaAssert(str_contains($css,'.case-flow{display:grid;grid-template-columns:1fr'),'Operational explanation cards must remain readable in the detail pane instead of being squeezed into three narrow columns.');
+coaAssert(str_contains($css,'grid-template-areas:"id" "status" "finance" "responsibility" "open"'),'Mobile case rows must collapse to a single readable column.');
+coaAssert(str_contains($css,'.result-head{align-items:flex-start;flex-direction:column;gap:4px}'),'Mobile result heading must stack instead of squeezing the case count beside its helper text.');
 
 // User-provided/API content remains text-only; no HTML injection shortcut.
 coaAssert(!str_contains($ui,'innerHTML')&&!str_contains($bootstrap,'innerHTML'),'Operational cockpit must not use innerHTML.');
