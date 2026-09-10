@@ -8,6 +8,8 @@ require_once __DIR__.'/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitTimeline.php';
+require_once __DIR__.'/../../../includes/amazon-returns/CockpitConversation.php';
+require_once __DIR__.'/../../../includes/amazon-returns/CockpitCaseSummary.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 require_once __DIR__.'/../../../includes/amazon-returns/PolicyEngine.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SafeTDecisionEngine.php';
@@ -45,7 +47,9 @@ try{
         $case['sales_invoice_number']=$invoiceNumber;$case['return_reason']=$returnReason;$case['physical_received_at']=$physicalReceivedAt;$case['last_external_write']=$lastWrite;$case['last_read_back']=$lastRead;
         $case['current_action']=$decision['action']??'WAIT';$case['current_reason']=$decision['reason']??null;$case['eligibility_at']=$policy['eligibility_at']??($case['eligibility_at']??null);
         $case['outstanding_amount']=max(0,($expected>0?$expected:$refund)-$credit);
-        sv_amz_case_reply(['success'=>true,'case'=>$case,'timeline'=>$timeline,'current_review'=>$currentReview,'rule_applications'=>$apps,'last_external_write'=>$lastWrite,'last_read_back'=>$lastRead]);
+        $conversation=SvAmazonCockpitConversation::project($timeline);
+        $operatorSummary=SvAmazonCockpitCaseSummary::build($case,$currentReview,$now);
+        sv_amz_case_reply(['success'=>true,'case'=>$case,'operator_summary'=>$operatorSummary,'conversation'=>$conversation,'timeline'=>$timeline,'current_review'=>$currentReview,'rule_applications'=>$apps,'last_external_write'=>$lastWrite,'last_read_back'=>$lastRead]);
     }
     if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/',$orderId)!==1)sv_amz_case_reply(['success'=>false,'error'=>'Informe um pedido Amazon válido.'],422);
     sv_amz_case_reply(['success'=>true,'cases'=>$p->cases->forOrder($orderId)]);
