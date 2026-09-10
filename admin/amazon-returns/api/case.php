@@ -10,6 +10,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitTimeline.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitConversation.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitCaseSummary.php';
+require_once __DIR__.'/../../../includes/amazon-returns/CockpitHistory.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 require_once __DIR__.'/../../../includes/amazon-returns/PolicyEngine.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SafeTDecisionEngine.php';
@@ -49,7 +50,9 @@ try{
         $case['outstanding_amount']=max(0,($expected>0?$expected:$refund)-$credit);
         $conversation=SvAmazonCockpitConversation::project($timeline);
         $operatorSummary=SvAmazonCockpitCaseSummary::build($case,$currentReview,$now);
-        sv_amz_case_reply(['success'=>true,'case'=>$case,'operator_summary'=>$operatorSummary,'conversation'=>$conversation,'timeline'=>$timeline,'current_review'=>$currentReview,'rule_applications'=>$apps,'last_external_write'=>$lastWrite,'last_read_back'=>$lastRead]);
+        $historySummary=SvAmazonCockpitHistory::summarize($timeline);
+        $includeHistory=((string)($_GET['include_history']??''))==='1';
+        sv_amz_case_reply(['success'=>true,'case'=>$case,'operator_summary'=>$operatorSummary,'conversation'=>$conversation,'history_summary'=>$historySummary,'timeline'=>$includeHistory?$timeline:[],'current_review'=>$currentReview,'rule_applications'=>$apps,'last_external_write'=>$lastWrite,'last_read_back'=>$lastRead]);
     }
     if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/',$orderId)!==1)sv_amz_case_reply(['success'=>false,'error'=>'Informe um pedido Amazon válido.'],422);
     sv_amz_case_reply(['success'=>true,'cases'=>$p->cases->forOrder($orderId)]);

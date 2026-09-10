@@ -91,18 +91,18 @@ function operationalTimelineTitle(item){
 function condenseTimeline(items){
   const result=[],groups=new Map();
   for(const item of items||[]){
-    const title=operationalTimelineTitle(item);const repeatable=title==='Pedido sincronizado'||title==='Movimentação financeira identificada';
-    if(!repeatable){result.push({...item,operational_title:title,repeat_count:1});continue;}
+    const title=operationalTimelineTitle(item);const repeatable=title==='Pedido sincronizado'||title==='Movimentação financeira identificada';const incomingCount=Math.max(1,Number(item.repeat_count||1));
+    if(!repeatable){result.push({...item,operational_title:title,repeat_count:incomingCount});continue;}
     const day=String(item.occurred_at||'').slice(0,10),key=`${title}|${day}`;
     const current=groups.get(key);
-    if(current){current.repeat_count++;if(String(item.occurred_at||'')>String(current.occurred_at||''))Object.assign(current,item,{operational_title:title,repeat_count:current.repeat_count});}
-    else{const copy={...item,operational_title:title,repeat_count:1};groups.set(key,copy);result.push(copy);}
+    if(current){current.repeat_count+=incomingCount;if(String(item.occurred_at||'')>String(current.occurred_at||''))Object.assign(current,item,{operational_title:title,repeat_count:current.repeat_count});}
+    else{const copy={...item,operational_title:title,repeat_count:incomingCount};groups.set(key,copy);result.push(copy);}
   }
   return result.sort((a,b)=>String(a.occurred_at||'').localeCompare(String(b.occurred_at||'')));
 }
-function renderCondensedTimeline(items){
-  const all=items||[],condensed=condenseTimeline(all);const details=document.createElement('details');details.className='case-history-toggle';
-  const summary=text('summary',`Ver histórico completo (${condensed.length} marcos relevantes de ${all.length} eventos)`);details.append(summary);
+function renderCondensedTimeline(items,historyMeta={}){
+  const all=items||[],condensed=condenseTimeline(all),total=Number(historyMeta.total_events||all.length);const details=document.createElement('details');details.className='case-history-toggle';
+  const summary=text('summary',`Ver histórico (${total} eventos em ${condensed.length} marcos)`);details.append(summary);
   const timeline=text('section','', 'timeline compact-timeline');
   for(const item of condensed){const card=text('article','', 'timeline-item');const label=item.repeat_count>1?`${item.operational_title} · ${item.repeat_count} verificações`:item.operational_title;const source=sourceLabel(item.source),meta=[date(item.occurred_at)];if(source&&source!=='—'&&source!=='Informação não disponível')meta.push(source);card.append(text('h4',label),text('div',meta.join(' · '),'muted'));const content=item.content||{};const body=content.narrative||content.message?.body||content.review_excerpt;if(body)card.append(text('p',humanText(body)));timeline.append(card);}
   details.append(timeline);return details;
@@ -132,7 +132,7 @@ function renderOperationalEvidence(c,timeline){
   block.append(details);return block;
 }
 function renderOperationalCase(data,relatedCount=null){
-  const c=data.case||{},timeline=data.timeline||[],summary=data.operator_summary||{},root=document.querySelector('#case-detail');root.replaceChildren();
+  const c=data.case||{},history=data.history_summary||{},rawTimeline=data.timeline||[],timeline=rawTimeline.length?rawTimeline:(history.items||[]),summary=data.operator_summary||{},root=document.querySelector('#case-detail');root.replaceChildren();
   const head=text('header','', 'case-summary');head.append(text('div',`Pedido ${c.amazon_order_id||'—'}`,'case-order'),text('h2',summary.headline||operatorStatus(c)));
   const responsibilityKey=summary.responsibility||null;const responsibilityLabel=responsibilityKey==='USER'?'Sua decisão é necessária':responsibilityKey==='COMPLETE'?'Caso concluído':responsibilityKey==='SYSTEM'?'Sistema cuidando deste caso':operatorResponsibility({...c,review_status:data.current_review?.status});const responsibility=text('div',responsibilityLabel,'responsibility-banner');if(responsibilityKey==='USER'||responsibilityLabel==='Sua decisão é necessária')responsibility.classList.add('needs-user');head.append(responsibility);
   const alert=summary.overdue?'Providência automática atrasada':operatorAlert({...c,review_status:data.current_review?.status});if(alert)head.append(text('div',alert,'operational-alert'));
@@ -146,7 +146,7 @@ function renderOperationalCase(data,relatedCount=null){
   root.append(renderOperationalEvidence(c,timeline));
   const decisionReason=c.current_reason?reasonLabel(c.current_reason):'A decisão foi tomada com base nos dados atuais do pedido, do reembolso, da devolução e do financeiro.';const reason=sectionBlock('Por que o sistema tomou esta decisão?');reason.append(text('p',decisionReason));root.append(reason);
   const attempts=(timeline||[]).filter(x=>x.category==='EXTERNAL_WRITE').length;if(attempts){const attemptsBlock=sectionBlock('Tentativas e resposta da Amazon');attemptsBlock.append(text('p',`${attempts} ação${attempts===1?' foi executada':' foram executadas'} neste caso.`));const latest=[...(timeline||[])].reverse().find(x=>x.category==='AMAZON_RESPONSE');if(latest)attemptsBlock.append(text('p',`Resposta mais recente: ${humanText(latest.content?.narrative||latest.content?.review_excerpt||latest.title||'Resposta registrada')}.`));root.append(attemptsBlock);}
-  root.append(renderCondensedTimeline(timeline));
+  root.append(renderCondensedTimeline(timeline,history));
 }
 let operationalBucket='all';
 async function loadBucketCases(filters,bucket){
