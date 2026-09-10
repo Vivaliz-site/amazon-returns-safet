@@ -463,7 +463,7 @@ async function safeTAppeal(cdp, job) {
   });
 }
 
-async function scanSupportCaseHistory(cdp, job, preferredCaseId = '') {
+async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeTerminal = false } = {}) {
   const orderId = text(job.case?.order_id);
   const safeTId = text(job.case?.safe_t_id);
   const needles = [orderId, safeTId].filter(Boolean);
@@ -472,8 +472,10 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '') {
   const raw = await cdp.evaluate(`(async()=>{
     const needles=${JSON.stringify(needles)};
     const preferred=${JSON.stringify(preferred)};
+    const includeTerminal=${includeTerminal === true ? 'true' : 'false'};
     const terminal=new Set(${JSON.stringify(SUPPORT_CASE_TERMINAL_STATUSES)});
     const activeSupportStatus=value=>{const status=String(value||'').trim().toUpperCase();return status!==''&&!terminal.has(status)};
+    const supportStatusAllowed=value=>includeTerminal ? true : activeSupportStatus(value);
     const limit=${SUPPORT_CASE_HISTORY_LIMIT};
     const pageSize=50;
     const relevant=/reemb|refund|safe[- ]?t|pedido|order|fba|devolu|return|reimbursement|claim|reclama|review|revis/i;
@@ -486,7 +488,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '') {
       try{
         const detail=await viewCase(preferred);
         const raw=JSON.stringify(detail);
-        if(needles.some(n=>raw.includes(n))&&activeSupportStatus(detail?.viewCaseMetaData?.caseStatus))return JSON.stringify({status:'FOUND',case_id:preferred});
+        if(needles.some(n=>raw.includes(n))&&supportStatusAllowed(detail?.viewCaseMetaData?.caseStatus))return JSON.stringify({status:'FOUND',case_id:preferred});
       }catch{return JSON.stringify({status:'UNAVAILABLE',reason:'PREFERRED_CASE_LOOKUP_FAILED'})}
     }
     let total=null;
@@ -506,14 +508,14 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '') {
       if(total===null)total=Number(search.totalNumberOfResults);
       for(const item of rows){
         const summary=JSON.stringify(item);
-        if(needles.some(n=>summary.includes(n))&&activeSupportStatus(item.status))return JSON.stringify({status:'FOUND',case_id:String(item.caseId||'')});
+        if(needles.some(n=>summary.includes(n))&&supportStatusAllowed(item.status))return JSON.stringify({status:'FOUND',case_id:String(item.caseId||'')});
       }
-      const candidates=rows.filter(item=>activeSupportStatus(item.status)&&relevant.test(String(item.shortDescription||'')));
+      const candidates=rows.filter(item=>supportStatusAllowed(item.status)&&relevant.test(String(item.shortDescription||'')));
       for(const item of candidates){
         try{
           const detail=await viewCase(item.caseId);
           const status=detail?.viewCaseMetaData?.caseStatus||item.status;
-          if(activeSupportStatus(status)&&needles.some(n=>JSON.stringify(detail).includes(n))){
+          if(supportStatusAllowed(status)&&needles.some(n=>JSON.stringify(detail).includes(n))){
             return JSON.stringify({status:'FOUND',case_id:String(item.caseId||'')});
           }
         }catch{detailFailure=true}
@@ -531,7 +533,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '') {
   throw new Error('SUPPORT_CASE_LOOKUP_UNAVAILABLE');
 }
 
-async function findSupportCase(cdp, job) {
+async function findSupportCase(cdp, job, options = {}) {
   const known = text(job.case?.support_case_id);
   const lookup = await Cdp.connect();
   try {
@@ -541,7 +543,7 @@ async function findSupportCase(cdp, job) {
     const orderId = text(job.case?.order_id);
     const safeTId = text(job.case?.safe_t_id);
     const quick = text(await lookup.evaluate(`(()=>{const needles=${JSON.stringify([safeTId, orderId].filter(Boolean))};const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const hd=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(hd)docs.push(hd)}for(const d of docs){const body=d.body?.innerText||'';if(!needles.some(n=>body.includes(n)))continue;for(const a of d.querySelectorAll('a[href*="view-case"],a[href*="caseID="]')){const row=a.closest('tr,[role=row],div');const t=row?.innerText||'';if(needles.some(n=>t.includes(n))){const m=(a.href||'').match(/[?&]caseID=(\d{8,14})/);if(m)return m[1]}}}return ''})()`));
-    return await scanSupportCaseHistory(lookup, job, known || quick);
+    return await scanSupportCaseHistory(lookup, job, known || quick, options);
   } catch (error) {
     if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') throw error;
     throw new Error('SUPPORT_CASE_LOOKUP_UNAVAILABLE', { cause: error });
@@ -690,7 +692,7 @@ async function contactSupportAndReadBack(cdp, job) {
   let caseId = await currentSupportCaseId(cdp);
   for (let attempt = 0; !caseId && attempt < 5; attempt++) {
     try {
-      caseId = text(await findSupportCase(cdp, job));
+      caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
     } catch (error) {
       if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
         return bridgeResult('FAILED', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
@@ -740,7 +742,7 @@ async function submitDirectSupportCaseAndReadBack(cdp, job, narrative) {
   let caseId = await currentSupportCaseId(cdp);
   for (let attempt = 0; !caseId && attempt < 6; attempt++) {
     try {
-      caseId = text(await findSupportCase(cdp, job));
+      caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
     } catch (error) {
       if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
         return bridgeResult('FAILED', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });

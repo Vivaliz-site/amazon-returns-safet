@@ -25,5 +25,7 @@ deepAssert(str_contains($contact,"SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE"),
 deepAssert(str_contains($worker,'SUPPORT_CASE_TERMINAL_STATUSES'),'Duplicate suppression must distinguish active support cases from resolved historical cases.');
 deepAssert(str_contains($worker,'viewCaseMetaData?.caseStatus'),'Deep lookup must read the authoritative support case status.');
 deepAssert(str_contains($worker,'activeSupportStatus'),'Only active Seller Support cases may suppress a new support escalation.');
-deepAssert(str_contains($worker,"rows.filter(item=>activeSupportStatus(item.status)&&relevant.test"),'Deep history lookup must inspect details only for active support cases to avoid Seller Central rate limiting.');
+deepAssert(str_contains($worker,'{ includeTerminal = false }'),'Deep history lookup must default to active-only duplicate suppression.');
+deepAssert(str_contains($worker,'supportStatusAllowed(item.status)&&relevant.test'),'Deep history lookup must preserve bounded status-aware detail inspection.');
+deepAssert(str_contains($worker,'includeTerminal ? true : activeSupportStatus'),'Post-write confirmation may include terminal cases without weakening pre-write duplicate suppression.');
 echo "seller-support-deep-case-readback-test: OK\n";
