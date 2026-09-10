@@ -448,7 +448,7 @@ async function findSupportCase(cdp, job) {
   if (auth) return null;
   const orderId = text(job.case?.order_id);
   const safeTId = text(job.case?.safe_t_id);
-  const result = await cdp.evaluate(`(()=>{const body=document.body?.innerText||'';const needles=${JSON.stringify([safeTId, orderId].filter(Boolean))};if(!needles.some(n=>body.includes(n)))return '';const links=[...document.querySelectorAll('a[href*="view-case"]')];for(const a of links){const row=a.closest('tr,[role=row],div');const t=row?.innerText||'';if(needles.some(n=>t.includes(n))){const m=(a.href||'').match(/[?&]caseID=(\d{8,14})/);if(m)return m[1]}}return ''})()`);
+  const result = await cdp.evaluate(`(()=>{const needles=${JSON.stringify([safeTId, orderId].filter(Boolean))};const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const hd=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(hd)docs.push(hd)}for(const d of docs){const body=d.body?.innerText||'';if(!needles.some(n=>body.includes(n)))continue;for(const a of d.querySelectorAll('a[href*="view-case"],a[href*="caseID="]')){const row=a.closest('tr,[role=row],div');const t=row?.innerText||'';if(needles.some(n=>t.includes(n))){const m=(a.href||'').match(/[?&]caseID=(\d{8,14})/);if(m)return m[1]}}}return ''})()`);
   return text(result) || null;
 }
 
@@ -659,7 +659,7 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
     }
     const postOrderDeadline = Date.now() + 30000;
     while (Date.now() < postOrderDeadline) {
-      if (await hillChatReady(cdp)) return null;
+      if (await hillContactReady(cdp)) return null;
       if (!(await supportOrderInputReady(cdp))) break;
       await sleep(500);
     }
