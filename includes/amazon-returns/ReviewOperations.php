@@ -9,8 +9,8 @@ require_once __DIR__.'/GmailApi.php';
 
 /**
  * Keeps the human-review queue operator-ready without weakening decision gates.
- * Genuine reviews receive an AI recommendation first; only then may the operator
- * receive a reminder. The reminder repeats every two hours while the queue stays open.
+ * Genuine reviews receive an AI recommendation when possible. Operator reminders
+ * continue every two hours even if every AI provider is temporarily unavailable.
  */
 final class SvAmazonReviewOperations
 {
@@ -39,13 +39,14 @@ final class SvAmazonReviewOperations
             return $result;
         }
 
-        $ready=[];
+        $notifyRows=[];
         foreach($rows as $row){
             if(!is_array($row))continue;
-            if(is_array($row['ai_suggestion']??null)){$ready[]=$row;continue;}
+            if(is_array($row['ai_suggestion']??null)){$notifyRows[]=$row;$result['ready_reviews']++;continue;}
             if(!$this->config->reviewAiReady()){
                 $result['ai_failed']++;
                 $result['status']='PARTIAL';
+                $notifyRows[]=$row;
                 continue;
             }
             try{
@@ -61,23 +62,20 @@ final class SvAmazonReviewOperations
                 $saved=$this->persistence->reviews->saveSuggestion(
                     (int)$row['id'],(int)($row['version']??0),$suggestion,$model,$provider
                 );
-                $ready[]=$saved;
+                $notifyRows[]=$saved;
                 $result['suggested']++;
+                $result['ready_reviews']++;
             }catch(Throwable $e){
                 try{
-                    $this->persistence->reviews->recordAiFailure(
+                    $failed=$this->persistence->reviews->recordAiFailure(
                         (int)$row['id'],(int)($row['version']??0),$e::class
                     );
+                    if(is_array($failed))$row=$failed;
                 }catch(Throwable){}
+                $notifyRows[]=$row;
                 $result['ai_failed']++;
                 $result['status']='PARTIAL';
             }
-        }
-        $result['ready_reviews']=count($ready);
-
-        if(count($ready)!==count($rows)){
-            $result['reminder_skipped']=1;
-            return $result;
         }
 
         $last=$this->persistence->cursors->load(self::CURSOR_SOURCE,self::CURSOR_KEY);
@@ -97,19 +95,19 @@ final class SvAmazonReviewOperations
             $episode=is_array($last)?trim((string)($last['value']??'')):'new-episode';
             if($episode==='')$episode='new-episode';
             $identity=[];
-            foreach($ready as $row)$identity[]=(int)$row['id'].':'.(int)($row['version']??0);
+            foreach($notifyRows as $row)$identity[]=(int)$row['id'].':'.(int)($row['version']??0);
             sort($identity,SORT_STRING);
             $ctx=method_exists($this->persistence,'context')?$this->persistence->context():null;
             $tenant=is_object($ctx)&&method_exists($ctx,'tenantId')?(int)$ctx->tenantId():0;
             $connection=is_object($ctx)&&method_exists($ctx,'amazonConnectionId')?(int)$ctx->amazonConnectionId():0;
             $key=hash('sha256',implode('|',['review-reminder-v1',$tenant,$connection,$to,$episode,implode(',',$identity)]));
-            $count=count($ready);
+            $count=count($notifyRows);
             $subject='Amazon Returns: '.$count.' '.($count===1?'revisão pendente':'revisões pendentes');
-            $sent=$gmail->sendOnce($to,$subject,$this->message($ready),$key);
+            $sent=$gmail->sendOnce($to,$subject,$this->message($notifyRows),$key);
             $this->persistence->cursors->save(
                 self::CURSOR_SOURCE,self::CURSOR_KEY,$now->format(DATE_ATOM),[
                     'review_count'=>$count,
-                    'review_ids'=>array_values(array_map(static fn(array $r):int=>(int)$r['id'],$ready)),
+                    'review_ids'=>array_values(array_map(static fn(array $r):int=>(int)$r['id'],$notifyRows)),
                     'gmail_message_id'=>(string)($sent['message_id']??''),
                 ]
             );
@@ -137,17 +135,17 @@ final class SvAmazonReviewOperations
         $count=count($rows);
         $lines=[
             'Há '.$count.' '.($count===1?'revisão pendente':'revisões pendentes').' no Amazon Returns / SAFE-T.',
-            'Cada situação abaixo já foi analisada pelo sistema e possui uma recomendação de IA antes da sua decisão.',
+            'O sistema tenta gerar uma recomendação de IA automaticamente. Quando ela estiver indisponível, a revisão continua visível e exige sua decisão.',
             '',
         ];
         foreach($rows as $row){
             $case=$this->persistence->cases->find((int)$row['case_id']);
             $order=is_array($case)?trim((string)($case['amazon_order_id']??'')):'';
-            $suggestion=is_array($row['ai_suggestion']??null)?$row['ai_suggestion']:[];
-            $confidence=is_numeric($suggestion['confidence']??null)?(int)round((float)$suggestion['confidence']*100):null;
+            $suggestion=is_array($row['ai_suggestion']??null)?$row['ai_suggestion']:null;
+            $confidence=$suggestion!==null&&is_numeric($suggestion['confidence']??null)?(int)round((float)$suggestion['confidence']*100):null;
             $line='Revisão #'.(int)$row['id'];
             if($order!=='')$line.=' · Pedido '.$order;
-            $line.=' · Sugestão da IA: '.$this->actionLabel((string)($suggestion['action']??''));
+            $line.=$suggestion===null?' · Sugestão da IA: indisponível no momento':' · Sugestão da IA: '.$this->actionLabel((string)($suggestion['action']??''));
             if($confidence!==null)$line.=' · Confiança '.$confidence.'%';
             $lines[]=$line;
         }
