@@ -419,6 +419,33 @@ final class SvAmazonSafeTDecisionEngine
         return $latest;
     }
 
+    private function hasEmailReviewHistory(array $timeline,int $caseId,string $safeTId): bool
+    {
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId || ($event['source']??'')!=='GMAIL')continue;
+            if(!in_array((string)($event['event_type']??''),['SAFE_T_EMAIL_REVIEW_SENT','SAFE_T_EMAIL_REVIEW_RESPONSE','SAFE_T_EMAIL_REPLY_SENT'],true))continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            $claim=trim((string)($payload['safe_t_id']??''));
+            if($safeTId!=='' && $claim!=='' && $claim!==$safeTId)continue;
+            return true;
+        }
+        return false;
+    }
+
+    private function hasAcceptedAppealHistory(array $timeline,int $caseId,string $safeTId): bool
+    {
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId || ($event['source']??'')!=='SELLER_CENTRAL')continue;
+            if(($event['event_type']??'')!=='SELLER_CENTRAL_ACTION_RESULT')continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if(strtoupper(trim((string)($payload['action']??'')))!=='SAFE_T_APPEAL')continue;
+            if(strtoupper(trim((string)($payload['status']??'')))!=='ACCEPTED' || ($payload['submitted']??false)!==true)continue;
+            $external=trim((string)($payload['external_id']??''));
+            if($safeTId==='' || $external==='' || $external===$safeTId)return true;
+        }
+        return false;
+    }
+
     private function supportResolutionAction(array $case,array $timeline,DateTimeImmutable $now): ?array
     {
         $event=$this->latestSupportObservation($case,$timeline);
@@ -443,7 +470,7 @@ final class SvAmazonSafeTDecisionEngine
             return $this->decision('CHECK_FINANCES','SUPPORT_REIMBURSEMENT_PROMISE_DUE',$caseId);
         }
         if($resolution==='EMAIL_REVIEW'){
-            if(in_array((string)($case['state']??''),[SvAmazonReturnStates::EMAIL_REVIEW_SENT,SvAmazonReturnStates::EMAIL_REVIEW_RESPONSE_PENDING],true))return null;
+            if(in_array((string)($case['state']??''),[SvAmazonReturnStates::EMAIL_REVIEW_SENT,SvAmazonReturnStates::EMAIL_REVIEW_RESPONSE_PENDING],true) || $this->hasEmailReviewHistory($timeline,$caseId,$safeTId))return null;
             if($safeTId==='')return $this->decision('BLOCKED_REVIEW','SUPPORT_RESOLUTION_SAFE_T_ID_MISSING',$caseId);
             return [
                 'action'=>'SAFE_T_EMAIL_REVIEW','reason'=>'SUPPORT_RESOLUTION_DIRECTS_EMAIL_REVIEW','case_id'=>$caseId,
@@ -451,6 +478,7 @@ final class SvAmazonSafeTDecisionEngine
             ];
         }
         if($resolution==='SAFE_T_APPEAL'){
+            if($this->hasAcceptedAppealHistory($timeline,$caseId,$safeTId))return $this->decision('WAIT','APPEAL_ALREADY_SUBMITTED',$caseId);
             if(in_array((string)($case['state']??''),[
                 SvAmazonReturnStates::APPEAL_SUBMITTED,SvAmazonReturnStates::APPEAL_APPROVED,SvAmazonReturnStates::APPEAL_DENIED_FINAL,
                 SvAmazonReturnStates::EMAIL_REVIEW_SENT,SvAmazonReturnStates::EMAIL_REVIEW_RESPONSE_PENDING,

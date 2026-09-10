@@ -98,4 +98,20 @@ $afterAppeal=$engine->nextAction($appealSubmitted,[$directAppealObserved],$polic
 ssrdSame('WAIT',$afterAppeal['action']??null,'A support instruction must not send an already-submitted SAFE-T appeal into human review.');
 ssrdAssert(($afterAppeal['reason']??null)!=='SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE','An already-submitted appeal is progress, not an unavailable appeal window.');
 
+$historicalEmailSent=[
+    'id'=>1999,'case_id'=>3,'event_type'=>'SAFE_T_EMAIL_REVIEW_SENT','source'=>'GMAIL',
+    'occurred_at'=>'2026-09-07 20:23:23','payload'=>['safe_t_id'=>'12797-64249-3531034'],
+];
+$afterHistoricalEmail=$engine->nextAction($appealCase,[$historicalEmailSent,$reviewResolved],$policy,new DateTimeImmutable('2026-09-10 05:20:00',new DateTimeZone('UTC')));
+ssrdSame('WAIT',$afterHistoricalEmail['action']??null,'A reconciled support case must honor an earlier email-review send even when state was overwritten by support escalation.');
+ssrdSame('EXISTING_EMAIL_REVIEW_AWAITING_RESPONSE',$afterHistoricalEmail['reason']??null,'Email-review history must prevent a duplicate support-directed email.');
+
+$acceptedAppealHistory=[
+    'id'=>1998,'case_id'=>5,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-10 05:12:00','payload'=>['action'=>'SAFE_T_APPEAL','status'=>'ACCEPTED','submitted'=>true,'external_id'=>'27845-46811-9805451'],
+];
+$afterHistoricalAppeal=$engine->nextAction($directAppealCase,[$acceptedAppealHistory,$directAppealObserved],$policy,new DateTimeImmutable('2026-09-10 05:20:00',new DateTimeZone('UTC')));
+ssrdSame('WAIT',$afterHistoricalAppeal['action']??null,'A reconciled support case must not repeat a SAFE-T appeal already accepted in the event history.');
+ssrdSame('APPEAL_ALREADY_SUBMITTED',$afterHistoricalAppeal['reason']??null,'Accepted appeal history must remain authoritative after state changes.');
+
 echo "seller-support-resolution-decision-test: OK\n";
