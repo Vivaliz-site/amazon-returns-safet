@@ -127,7 +127,13 @@ class Cdp {
       const description = text(details.exception?.description || details.text || 'browser expression failed').replace(/\s+/g, ' ').slice(0, 240);
       const lineNumber = Number.isInteger(details.lineNumber) ? details.lineNumber : -1;
       const columnNumber = Number.isInteger(details.columnNumber) ? details.columnNumber : -1;
-      throw new Error(`browser expression failed: ${description} @${lineNumber}:${columnNumber}`);
+      const expressionPrefix = String(expression)
+        .replace(/"(?:\\.|[^"\\])*"/g, '"…"')
+        .replace(/'(?:\\.|[^'\\])*'/g, "'…'")
+        .replace(/\s+/g, ' ')
+        .slice(0, 120);
+      const stackSummary = text(new Error().stack?.split('\n').slice(2, 5).join(' | ') || '').slice(0, 240);
+      throw new Error(`browser expression failed: ${description} @${lineNumber}:${columnNumber} expr=${expressionPrefix} caller=${stackSummary}`);
     }
     return result.result?.value;
   }
