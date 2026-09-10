@@ -192,13 +192,13 @@ grep -q '^live_tenant_verification=ok$' "$verification_file"
 ln -sfn "releases/$(basename "$release")" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
 
-install -m 0644 "$root/current/deploy/apache/returns-http.conf" /etc/apache2/sites-available/amazon-returns-safet.conf
 a2enmod ssl rewrite >/dev/null
 a2ensite amazon-returns-safet.conf >/dev/null
-apache2ctl configtest
-systemctl reload apache2
 
 if [[ ! -s /etc/letsencrypt/live/returns.shopvivaliz.com.br/fullchain.pem ]]; then
+    install -m 0644 "$root/current/deploy/apache/returns-http.conf" /etc/apache2/sites-available/amazon-returns-safet.conf
+    apache2ctl configtest
+    systemctl reload apache2
     cf_token="${CLOUDFLARE_DNS_API_TOKEN:-}"
     if [[ -z "$cf_token" && -n "${CLOUDFLARE_DNS_API_TOKEN_FILE:-}" && -r "$CLOUDFLARE_DNS_API_TOKEN_FILE" ]]; then
         cf_token="$(cat "$CLOUDFLARE_DNS_API_TOKEN_FILE")"
