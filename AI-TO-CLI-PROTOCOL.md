@@ -1,6 +1,7 @@
 # Protocolo Canônico IA-to-CLI
 
-**Versão:** 2026-09-09  
+**Versão:** 2026-09-09
+
 **Escopo:** toda IA/agente que leia, analise, altere, valide, faça commit, PR, merge, deploy ou opere infraestrutura deste projeto.
 
 Esta política é obrigatória e complementar às regras específicas do repositório. Em conflito, prevalece: instruções de segurança/plataforma > regras organizacionais/legais > regras específicas do projeto/AGENTS/ADR > este protocolo > instrução da tarefa. Nunca reduza segurança, privacidade, integridade de dados ou proteções do repositório para cumprir uma regra inferior.
@@ -27,17 +28,17 @@ Antes de **cada** escrita, revalidar HEAD, arquivo-alvo e trecho-alvo. Se mudara
 
 Arquivos existentes não devem ser reescritos integralmente para uma mudança localizada. Use mudança mínima e formato SEARCH/REPLACE quando o executor suportar:
 
-```diff
+```text
 File: caminho/do/arquivo.ext
-<<<<<<< SEARCH
+[marcador inicial: <<<<<<< SEARCH]
 [no mínimo 2 linhas exatas de contexto inalterado acima]
 [trecho literal atual]
 [no mínimo 2 linhas exatas de contexto inalterado abaixo]
-=======
+[marcador separador: =======]
 [mesmo contexto acima]
 [novo trecho]
 [mesmo contexto abaixo]
->>>>>>> REPLACE
+[marcador final: >>>>>>> REPLACE]
 ```
 
 Regras do patch:
