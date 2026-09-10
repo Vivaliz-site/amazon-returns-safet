@@ -720,8 +720,17 @@ async function fillDirectSupportCaseDetails(cdp, narrative) {
   return (await cdp.evaluate(`(()=>{const value=${JSON.stringify(value)};const labels=['Provide details about the order reimbursement error','Forneça detalhes sobre o erro de reembolso do pedido'];for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const row of d.querySelectorAll('.meld-text-input')){const label=(row.querySelector('.meld-label-description')?.innerText||'').trim();if(!labels.some(x=>label.includes(x)))continue;const host=row.querySelector('kat-input');const input=host?.shadowRoot?.querySelector('input');if(!host||!input||host.hasAttribute('disabled')||input.disabled)continue;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:value}));input.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return input.value===value}return false}return false})()`)) === true;
 }
 
+async function waitForDirectSupportCaseDetails(cdp, narrative, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await fillDirectSupportCaseDetails(cdp, narrative)) return true;
+    await sleep(500);
+  }
+  return false;
+}
+
 async function submitDirectSupportCaseAndReadBack(cdp, job, narrative) {
-  if (!(await fillDirectSupportCaseDetails(cdp, narrative))) {
+  if (!(await waitForDirectSupportCaseDetails(cdp, narrative, 15000))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_DIRECT_CASE_DETAILS_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
   if (!(await cdp.clickFrameButtonTrustedByText('Create a case'))) {
