@@ -34,33 +34,19 @@ final class SvAmazonReturnsRuntime
         $wake=self::timestamp($state['next_known_action_at'] ?? null);
         if($wake===null)return false;
         $now=$now->setTimezone(new DateTimeZone('UTC'));
-        return $wake<=$now;
-    }
-
-    /** @param list<mixed> $candidates */
-    public static function nextKnownActionAt(array $candidates,DateTimeImmutable $now): ?string
-    {
-        $now=$now->setTimezone(new DateTimeZone('UTC'));
-        $next=null;
-        foreach($candidates as $candidate){
-            $when=self::timestamp($candidate);
-            if($when===null || $when<=$now)continue;
-            if($next===null || $when<$next)$next=$when;
-        }
-        return $next?->format(DATE_ATOM);
+        if($wake>$now)return false;
+        $lastScheduler=self::timestamp($state['scheduler'] ?? null);
+        return $lastScheduler===null || $lastScheduler<$wake;
     }
 
     /** @param list<array<string,mixed>> $cases */
-    public static function nextKnownWakeAt(array $cases,DateTimeImmutable $now): ?string
+    public static function nextKnownWakeAt(array $cases): ?string
     {
-        $now=$now->setTimezone(new DateTimeZone('UTC'));
         $next=null;
         foreach($cases as $case){
             if(!is_array($case) || ($case['closed_at'] ?? null)!==null)continue;
             $when=self::timestamp($case['next_action_at'] ?? null);
             if($when===null)continue;
-            $updated=self::timestamp($case['updated_at'] ?? null);
-            if($when<=$now && $updated!==null && $updated>=$when)continue;
             if($next===null || $when<$next)$next=$when;
         }
         return $next?->format(DATE_ATOM);
@@ -79,10 +65,7 @@ final class SvAmazonReturnsRuntime
 
     private static function refreshNextKnownActionAt(SvAmazonTenantPersistence $p): void
     {
-        self::$nextKnownActionAt=self::nextKnownWakeAt(
-            $p->cases->openCases(1000),
-            new DateTimeImmutable('now',new DateTimeZone('UTC'))
-        );
+        self::$nextKnownActionAt=self::nextKnownWakeAt($p->cases->openCases(1000));
     }
 
     public static function decisionStackRevision(): string
