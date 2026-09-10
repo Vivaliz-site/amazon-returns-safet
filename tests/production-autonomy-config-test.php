@@ -3,20 +3,26 @@ declare(strict_types=1);
 require_once __DIR__.'/../includes/amazon-returns/Runtime.php';
 $cadence=SvAmazonReturnsRuntime::cadences();
 foreach(['gmail','gmail_refund_reconciliation','financial','sp_api','returns_report','seller_central','policy_monitor'] as $task){
-    if(($cadence[$task]??null)!==86400)throw new RuntimeException($task.' external business task must run daily.');
+    if(($cadence[$task]??null)!==43200)throw new RuntimeException($task.' external business task must run twice per day.');
 }
-if(($cadence['scheduler']??null)!==300){
-    throw new RuntimeException('Internal deadline/action scheduler must run every five minutes.');
+if(($cadence['scheduler']??null)!==43200){
+    throw new RuntimeException('Routine internal deadline/action scheduler must run twice per day.');
 }
 if(($cadence['review_operations']??null)!==14400){
-    throw new RuntimeException('Internal review follow-up may remain every four hours.');
+    throw new RuntimeException('Internal review follow-up remains independent from business polling.');
 }
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 if(!str_contains($daemon,'gmail_refund_reconciliation') || !str_contains($daemon,'reembolso iniciado')){
-    throw new RuntimeException('Daily Gmail buyer-refund reconciliation must be explicit in the daemon.');
+    throw new RuntimeException('Twice-daily Gmail buyer-refund reconciliation must be explicit in the daemon.');
 }
 if(!str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])")){
-    throw new RuntimeException('A deadline-triggered finance check must force fresh external financial data instead of waiting for the next routine daily scan.');
+    throw new RuntimeException('A deadline-triggered finance check must force fresh external financial data instead of waiting for the next routine 12-hour scan.');
+}
+if(!str_contains($daemon,'SvAmazonReturnsRuntime::knownActionDue')){
+    throw new RuntimeException('Known next-action timestamps must wake the scheduler without a periodic five-minute sweep.');
+}
+if(!str_contains($daemon,"'next_action_at'=>null")){
+    throw new RuntimeException('Scheduler must clear a consumed next-action timestamp to avoid repeated due-trigger execution.');
 }
 $script=(string)file_get_contents(__DIR__.'/../scripts/provision-production.sh');
 if(!str_contains($script,"set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '1'")){
