@@ -30,7 +30,8 @@ coaAssert(str_contains($listApi,'SvAmazonInvoiceSearch::caseIds'),'NF search mus
 coaAssert(str_contains($ui,"review_status==='OPEN'"),'Open review must be shown as user responsibility.');
 coaAssert(str_contains($ui,"'Sua decisão é necessária'"),'User-decision state missing.');
 coaAssert(!str_contains($ui,"return 'Aguardar';"),'Generic Aguardar status is prohibited.');
-coaAssert(str_contains($bootstrap,"filters.set('review_status','OPEN')"),'Attention quick filter must include every open review, including blocked reviews.');
+coaAssert(str_contains($bootstrap,"q.set('review_status','OPEN')"),'Attention quick filter must include every open review, including blocked reviews.');
+coaAssert(str_contains($bootstrap,"q.delete('action')"),'Attention quick filter must not retain a narrower action filter.');
 
 // A past appeal deadline must not create a false operational failure after an appeal/follow-up was already sent.
 foreach(['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','RECOVERED','CLOSED_LOSS'] as $state){
