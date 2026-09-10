@@ -157,6 +157,24 @@ final class SvAmazonReturnsRuntime
         return $ordered;
     }
 
+    /** @param list<array<string,mixed>> $cases */
+    public static function knownActionDue(array $cases, DateTimeImmutable $now): bool
+    {
+        $now=$now->setTimezone(new DateTimeZone('UTC'));
+        foreach($cases as $case){
+            if(!is_array($case))continue;
+            $raw=$case['next_action_at'] ?? null;
+            if(!is_string($raw) || trim($raw)==='')continue;
+            try{
+                $due=(new DateTimeImmutable($raw,new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));
+            }catch(Throwable){
+                continue;
+            }
+            if($due<=$now)return true;
+        }
+        return false;
+    }
+
     /** @return array<string,mixed> */
     public static function bootstrap(PDO $db, SvAmazonTenantContext $context): array
     {
