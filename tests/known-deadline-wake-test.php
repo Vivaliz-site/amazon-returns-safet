@@ -28,16 +28,19 @@ foreach(['known_action_wake','gmail','sp_api','financial','scheduler','seller_ce
 $ordered=SvAmazonReturnsRuntime::decisionSafeOrder($due);
 kdSame(['bootstrap','gmail','sp_api','financial','scheduler','gmail','seller_central'],$ordered,'Known-date execution must refresh evidence, decide, then drain both possible write channels in the same cycle.');
 
-kdSame('2026-09-10T02:58:00+00:00',SvAmazonReturnsRuntime::nextKnownWakeAt([
+$cases=[
     ['next_action_at'=>'2026-09-10T03:15:00Z','updated_at'=>'2026-09-10T02:00:00Z','closed_at'=>null],
     ['next_action_at'=>'2026-09-10T02:59:00Z','updated_at'=>'2026-09-10T03:00:00Z','closed_at'=>null],
     ['next_action_at'=>'2026-09-10T02:58:00Z','updated_at'=>'2026-09-10T03:00:00Z','closed_at'=>null],
+    ['next_action_at'=>'2026-09-10T03:30:00Z','updated_at'=>'2026-09-10T02:00:00Z','closed_at'=>null],
     ['next_action_at'=>'2026-09-10T02:30:00Z','updated_at'=>'2026-09-10T02:00:00Z','closed_at'=>'2026-09-10T02:45:00Z'],
-]),'Discovery must keep the earliest open deadline even when unrelated evidence updated the case after it; scheduler state decides whether it was evaluated.');
+];
+kdSame('2026-09-10T02:58:00+00:00',SvAmazonReturnsRuntime::nextKnownWakeAt($cases),'Without a prior scheduler evaluation, discovery must retain the earliest open deadline.');
+kdSame('2026-09-10T03:15:00+00:00',SvAmazonReturnsRuntime::nextKnownWakeAt($cases,$now),'An already evaluated old deadline must not hide the next future deadline.');
 kdSame(null,SvAmazonReturnsRuntime::nextKnownWakeAt([
+    ['next_action_at'=>'2026-09-10T02:59:00Z','updated_at'=>'2026-09-10T03:00:00Z','closed_at'=>null],
     ['next_action_at'=>null,'updated_at'=>'2026-09-10T03:00:00Z','closed_at'=>null],
-    ['next_action_at'=>'2026-09-10T03:15:00Z','updated_at'=>'2026-09-10T03:00:00Z','closed_at'=>'2026-09-10T03:01:00Z'],
-]),'Closed or undated cases must not create a wake.');
+],$now),'When every known deadline is at or before the last scheduler run, there must be no further wake.');
 
 $runtime=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
 kdAssert(str_contains($runtime,'$p->cases->openCases(1000)'),'Daemon bootstrap must discover known business timestamps through tenant-scoped persistence.');
