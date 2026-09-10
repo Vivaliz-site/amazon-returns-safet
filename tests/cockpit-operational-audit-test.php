@@ -18,12 +18,12 @@ foreach(["'order_at'","'refund_at'","'seller_debit_at'"] as $fact){
     coaAssert(str_contains($listApi,$fact),'List API missing projected fact '.$fact);
 }
 coaAssert(str_contains($api,'SvAmazonReturnProjector::project('),'Detail API must return the same projected case facts used by the list.');
-coaAssert(str_contains($api,"'case'=>$case"),'Detail API must expose the projected case object.');
+coaAssert(str_contains($api,"'case'=>\$case"),'Detail API must expose the projected case object.');
 coaAssert(str_contains($listApi,'previewAction(')&&str_contains($api,'previewAction('),'Both views must use side-effect-free current decision preview.');
 
 // Search promises only fields the backend actually supports, including projected tracking and invoice evidence.
 coaAssert(str_contains($page,'rastreio'),'Search UI must advertise tracking search.');
-coaAssert(str_contains($listApi,"foreach($case['customer_tracking_ids']"),'Tracking search must use projected tracking IDs.');
+coaAssert(str_contains($listApi,'foreach($case[\'customer_tracking_ids\']'),'Tracking search must use projected tracking IDs.');
 coaAssert(str_contains($listApi,'SvAmazonInvoiceSearch::caseIds'),'NF search must use invoice evidence.');
 
 // Human responsibility must win over automatic states and generic WAIT must never be the operator status.
