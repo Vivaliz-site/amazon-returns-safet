@@ -20,9 +20,10 @@ final class RoReviews {
         ];
     }
     public function openQueue(array $filters=[]):array{return array_values($this->rows);}
-    public function saveSuggestion(int $id,int $expected,array $suggestion,string $model):array{
+    public function forCase(int $caseId):array{return [];}
+    public function saveSuggestion(int $id,int $expected,array $suggestion,string $model,string $provider='OPENAI'):array{
         $row=$this->rows[$id]??null;if(!is_array($row)||$row['version']!==$expected)throw new RuntimeException('STALE_REVIEW_VERSION',409);
-        $row['ai_suggestion']=$suggestion;$row['ai_provider']='OPENAI';$row['ai_model']=$model;$row['version']++;$this->rows[$id]=$row;$this->saved++;return $row;
+        $row['ai_suggestion']=$suggestion;$row['ai_provider']=$provider;$row['ai_model']=$model;$row['version']++;$this->rows[$id]=$row;$this->saved++;return $row;
     }
     public function recordAiFailure(int $id,int $expected,string $class):array{$this->failures++;$row=$this->rows[$id];$row['version']++;$this->rows[$id]=$row;return $row;}
 }
@@ -35,15 +36,19 @@ final class RoCursors {
     public function save(string $source,string $key,string $value,array $metadata=[]):void{$this->row=['value'=>$value,'metadata'=>$metadata,'observed_at'=>$value];$this->saved++;}
     public function clear(string $source,string $key):void{$this->row=null;$this->cleared++;}
 }
+final class RoOutbox{public function historyForCase(int $caseId):array{return [];}}
+final class RoApps{public function forCase(int $caseId):array{return [];}}
+final class RoRules{public function active():array{return [];}}
 final class RoPersistence {
-    public RoReviews $reviews;public RoCases $cases;public RoCursors $cursors;private RoContext $ctx;
-    public function __construct(){ $this->reviews=new RoReviews();$this->cases=new RoCases();$this->cursors=new RoCursors();$this->ctx=new RoContext(); }
+    public RoReviews $reviews;public RoCases $cases;public RoCursors $cursors;public RoOutbox $outbox;public RoApps $ruleApplications;public RoRules $learnedRules;private RoContext $ctx;
+    public function __construct(){ $this->reviews=new RoReviews();$this->cases=new RoCases();$this->cursors=new RoCursors();$this->outbox=new RoOutbox();$this->ruleApplications=new RoApps();$this->learnedRules=new RoRules();$this->ctx=new RoContext(); }
     public function context():RoContext{return $this->ctx;}
 }
 final class RoAdvisor implements SvAmazonReviewAdvisor {
     public int $calls=0;
     public function suggest(array $context):array{$this->calls++;return ['action'=>'CHECK_FINANCES','rationale'=>'Confirmar o crédito financeiro antes de qualquer ação externa.','confidence'=>0.87,'uncertainties'=>[],'parameters'=>['date_binding'=>'NONE']];}
     public function model():string{return 'review-test-model';}
+    public function provider():string{return 'CODEX_CHATGPT';}
 }
 
 $posts=[];$gets=[];
@@ -68,6 +73,7 @@ roSame(2,$r['ready_reviews']??null,'all reviews are AI-ready before notification
 roSame(1,$r['reminder_sent']??null,'first pending-review reminder sent immediately');
 roSame(1,$advisor->calls,'existing AI suggestion is not regenerated');
 roSame(1,$p->reviews->saved,'generated suggestion persisted with optimistic version');
+roSame('CODEX_CHATGPT',$p->reviews->rows[9]['ai_provider']??null,'provider provenance is persisted');
 roSame(1,count($posts),'one reminder POST');
 roSame(1,$p->cursors->saved,'notification timestamp persisted');
 $raw=base64_decode(strtr((string)($posts[0]['raw']??''),'-_','+/'));
@@ -91,7 +97,7 @@ roSame(1,$p->cursors->cleared,'notification episode resets after queue drains');
 
 $runtime=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
-roAssert(str_contains($runtime,"'review_operations'=>14400"),'review operations use Gmail API and must run every four hours');
+roAssert(str_contains($runtime,"'review_operations'=>7200"),'review operations must run every two hours');
 roAssert(str_contains($daemon,"'review_operations'"),'daemon must dispatch automatic review operations');
 roAssert(str_contains($daemon,'SvAmazonReviewOperations'),'daemon must use the review operations service');
 
