@@ -5,7 +5,7 @@ $cadence=SvAmazonReturnsRuntime::cadences();
 foreach(['gmail','gmail_refund_reconciliation','financial','sp_api','returns_report','scheduler','seller_central','policy_monitor'] as $task){
     if(($cadence[$task]??null)!==43200)throw new RuntimeException($task.' routine must run twice per day.');
 }
-if(($cadence['review_operations']??null)!==14400){
+if(($cadence['review_operations']??null)!==7200){
     throw new RuntimeException('Internal review follow-up remains independent from business polling.');
 }
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
