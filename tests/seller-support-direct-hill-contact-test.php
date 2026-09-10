@@ -15,7 +15,7 @@ foreach([
 }
 dhAssert(str_contains($worker,'if (await hillContactReady(cdp)) return null;'),'General route must accept a direct Hill contact form without forcing ASIN/SKU fields.');
 dhAssert(str_contains($worker,"['Chat now','Conversar agora','Iniciar chat']"),'Chat availability detection must remain recognizable.');
-dhAssert(str_contains($worker,"label=(send.getAttribute('label')||send.innerText||'').trim();if(label!=='Send'"),'Email fallback must click only the enabled Hill Send action.');
+dhAssert(str_contains($worker,"return label==='Send'||label==='Enviar'?'READY':'SUPPORT_EMAIL_SEND_MISSING'"),'Email fallback must validate the enabled Hill Send action before issuing a trusted click.');
 $contactStart=strpos($worker,'async function contactSupportAndReadBack');
 $contactEnd=$contactStart===false?false:strpos($worker,'async function fillGeneralSupportIssue',$contactStart);
 dhAssert($contactStart!==false && $contactEnd!==false,'Contact and read-back flow must remain auditable.');
