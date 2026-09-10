@@ -15,14 +15,16 @@ function intakeUxRead(string $path): string {
 $runtime=intakeUxRead('includes/amazon-returns/Runtime.php');
 foreach(['gmail','gmail_refund_reconciliation','seller_central','financial','sp_api','returns_report'] as $task){
     intakeUxAssert(
-        preg_match("/'".preg_quote($task,'/')."'\\s*=>\\s*86400/",$runtime)===1,
-        $task.' routine external consultation must run at most once per day.'
+        preg_match("/'".preg_quote($task,'/')."'\\s*=>\\s*43200/",$runtime)===1,
+        $task.' routine external consultation must run twice per day.'
     );
 }
-intakeUxAssert(preg_match("/'scheduler'\\s*=>\\s*300/",$runtime)===1,'Internal scheduler must remain frequent so known dates are not delayed by daily polling.');
+intakeUxAssert(preg_match("/'scheduler'\\s*=>\\s*43200/",$runtime)===1,'Routine internal scheduler sweep must run twice per day, not every five minutes.');
 intakeUxAssert(preg_match("/'health'\\s*=>\\s*900/",$runtime)===1,'Technical health monitoring may remain frequent.');
+intakeUxAssert(str_contains($runtime,'knownActionDue'),'Runtime must expose an event/date-driven due check for known next-action timestamps.');
 $daemon=intakeUxRead('workers/amazon-returns/daemon.php');
-intakeUxAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'When the scheduler reaches a financial recheck point, it must force a fresh external read instead of waiting for the routine daily cadence.');
+intakeUxAssert(str_contains($daemon,'SvAmazonReturnsRuntime::knownActionDue'),'Daemon must wake the scheduler for a known due action without restoring periodic five-minute sweeps.');
+intakeUxAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'When a due decision requires financial revalidation, it must force a fresh external read instead of waiting for the routine 12-hour cadence.');
 
 $intakePage=intakeUxRead('admin/amazon-returns/intake.php');
 intakeUxAssert(str_contains($intakePage,'sales_invoice_number'),'Intake must offer a sales invoice number field.');
@@ -61,7 +63,10 @@ intakeUxAssert(str_contains($ux,'Ver histórico'),'Timeline must have a clear co
 intakeUxAssert(str_contains($ux,"['O que aconteceu','O que já foi verificado','Por que preciso da sua decisão?','Mensagens trocadas']"),'Review must prioritize facts before asking the user to decide.');
 
 $memory=intakeUxRead('docs/MEMORIA-DO-PROJETO.md');
-intakeUxAssert(str_contains($memory,'consultas rotineiras de negócio') && str_contains($memory,'uma vez por dia'),'Project memory must record the daily routine business-consultation rule.');
-intakeUxAssert(str_contains($memory,'agendador interno') && str_contains($memory,'cinco minutos'),'Project memory must record that due-date/action scheduling is frequent and separate from routine external polling.');
+intakeUxAssert(str_contains($memory,'duas vezes ao dia') && str_contains($memory,'12 horas'),'Project memory must record the latest twice-daily business cadence.');
+intakeUxAssert(str_contains($memory,'sem depender de um ciclo periódico de cinco minutos'),'Project memory must record that known dates wake the scheduler without a five-minute routine.');
+intakeUxAssert(str_contains($memory,'consulta manual') && str_contains($memory,'imediatamente'),'Project memory must preserve immediate on-demand lookup.');
+$delivery=intakeUxRead('docs/REGRAS-DE-ENTREGA.md');
+intakeUxAssert(str_contains($delivery,'teste funcional de ponta a ponta') && str_contains($delivery,'não pode ser considerada concluída'),'Delivery rules must require real end-to-end functional validation before completion.');
 
 echo "intake-ux-daily-cadence-test: OK\n";
