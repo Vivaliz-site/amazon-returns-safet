@@ -45,12 +45,17 @@ final class SvAmazonReturnActionRouter
         if($promise!==null){
             if($now<$promise)return self::decision('WAIT_PROACTIVE_CREDIT','EXPLICIT_AMAZON_REIMBURSEMENT_PROMISE',$case,$promise);
             if(!self::freshUnpaidFinance($events,$promise,$now))return self::decision('CHECK_FINANCES','PROMISE_EXPIRED_VERIFY_REAL_CREDIT',$case);
-            if($claim!=='' && self::acceptedAppeal($events,$claim))return self::decision('WAIT','APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$case);
-            if($claim!=='' && ($message['payload']['appeal_submitted']??null)===false){
-                $deadline=self::date($case['appeal_deadline_at']??$message['payload']['appeal_deadline_at']??null);
-                if($deadline===null)return self::decision('HUMAN_REVIEW','OFFICIAL_APPEAL_DEADLINE_MISSING',$case);
-                if($deadline<$now)return self::decision('SAFE_T_APPEAL','MISSED_APPEAL_WINDOW_RECOVERY_ATTEMPT',$case);
-                return self::decision('SAFE_T_APPEAL','PROMISE_EXPIRED_UNPAID_APPEAL_REQUIRED',$case);
+            if($claim!==''){
+                $amount=self::latestUnpaidAmount($events);
+                if($amount===null)return self::decision('HUMAN_REVIEW','PROMISED_REIMBURSEMENT_AMOUNT_UNRESOLVED',$case);
+                $promisedDate=$promise->setTimezone(new DateTimeZone('America/Sao_Paulo'))->modify('-1 second')->format('Y-m-d');
+                $decision=self::decision('SAFE_T_APPEAL','PROMISED_REIMBURSEMENT_OVERDUE_FOLLOW_UP',$case);
+                $decision['promised_by_date']=$promisedDate;
+                $decision['outstanding_amount']=number_format($amount,2,'.','');
+                $decision['idempotency_key']=hash('sha256',implode('|',[
+                    'promised-reimbursement-overdue-v1',$case['id']??0,$claim,$promisedDate,$decision['outstanding_amount'],
+                ]));
+                return $decision;
             }
         }
         if($claim!==''
@@ -165,6 +170,15 @@ final class SvAmazonReturnActionRouter
             && is_int($ambiguity) && $ambiguity===0
             && is_bool($unsettled) && $unsettled===false
             && is_numeric($p['outstanding_amount']??null) && (float)$p['outstanding_amount']>0;
+    }
+
+    private static function latestUnpaidAmount(array $events): ?float
+    {
+        $event=self::latest($events,['FINANCIAL_RECONCILIATION_CHECKED']);
+        $p=is_array($event['payload']??null)?$event['payload']:[];
+        if(!is_numeric($p['outstanding_amount']??null))return null;
+        $amount=(float)$p['outstanding_amount'];
+        return $amount>0?$amount:null;
     }
 
     private static function acceptedAppeal(array $events,string $claim): bool
