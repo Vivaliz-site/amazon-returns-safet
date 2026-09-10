@@ -24,6 +24,7 @@ require_once __DIR__ . '/../../includes/amazon-returns/FinancialRevalidation.php
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialCheckEvidence.php';
 require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
 require_once __DIR__ . '/../../includes/amazon-returns/LearnedRuleOutcome.php';
+require_once __DIR__ . '/../../includes/amazon-returns/SellerCentralWake.php';
 require_once __DIR__ . '/seller-central-worker.php';
 
 final class SvAmazonReturnsDaemon
@@ -80,6 +81,7 @@ final class SvAmazonReturnsDaemon
             $state['write_profile_revision']=$writeRevision;
         }
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
+        $knownActionWake=in_array('known_action_wake',$plan['due'],true);
         $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
         $results=['bootstrap'=>$bootstrap];
         if(($plan['gate']['status'] ?? '')==='FAILED')$results['financial_refresh_gate']=$plan['gate'];
@@ -91,7 +93,7 @@ final class SvAmazonReturnsDaemon
                 )){
                     $results[$task]=['status'=>'SKIPPED','reason'=>'FINANCIAL_REFRESH_NOT_ACCEPTED'];
                 }else{
-                    $results[$task]=$this->runTask($task,$now);
+                    $results[$task]=$this->runTask($task,$now,$knownActionWake);
                 }
             }catch(Throwable $e){
                 $results[$task]=[
@@ -168,7 +170,7 @@ final class SvAmazonReturnsDaemon
     }
 
     /** @return array<string,mixed> */
-    private function runTask(string $task,DateTimeImmutable $now): array
+    private function runTask(string $task,DateTimeImmutable $now,bool $knownActionWake=false): array
     {
         if($task==='health')return SvAmazonReturnsRuntime::health($this->persistence,$this->config);
         if(!$this->config->enabled()){
@@ -177,7 +179,7 @@ final class SvAmazonReturnsDaemon
         return match($task){
             'gmail'=>$this->runGmail(),
             'gmail_refund_reconciliation'=>$this->runGmailRefundReconciliation(),
-            'scheduler'=>$this->runScheduler($now),
+            'scheduler'=>$this->runScheduler($now,$knownActionWake),
             'review_operations'=>(new SvAmazonReviewOperations($this->persistence,$this->config))->run($now),
             'seller_central'=>$this->runSellerCentral(),
             'financial'=>$this->runFinancial(),
@@ -338,7 +340,7 @@ final class SvAmazonReturnsDaemon
         ];
     }
     /** @return array<string,mixed> */
-    private function runScheduler(DateTimeImmutable $now): array
+    private function runScheduler(DateTimeImmutable $now,bool $knownActionWake=false): array
     {
         $cases=$this->persistence->cases->openCases(500);
         $knownCaseIds=[];
@@ -360,6 +362,9 @@ final class SvAmazonReturnsDaemon
         $enqueued=0;
         $blockedWrites=0;
         $supersededWrites=0;
+        $sellerCentralWakeRequested=0;
+        $sellerCentralWakeFailed=0;
+        $sellerCentralWakeCandidates=[];
         $financialChecks=0;
         $decisionAudit=[];
         $requestedFinancialRecheck=false;
@@ -441,17 +446,60 @@ final class SvAmazonReturnsDaemon
                 $this->persistence->outbox,$projected,$decision,$timeline
             );
             if(($scheduled['outbox_id'] ?? null)!==null){
+                $outboxId=(int)$scheduled['outbox_id'];
                 $enqueued++;
                 $this->persistence->cases->update($caseId,['next_action_at'=>null]);
+                $sellerCentralWakeCandidates[$outboxId]=$action;
+            }
+        }
+        // Publish once after scheduling the whole batch. Re-read rows at delivery time,
+        // because refresh/enqueue can happen seconds after the daemon cycle started.
+        foreach($sellerCentralWakeCandidates as $outboxId=>$action){
+            try{
+                if($this->requestSellerCentralWake($outboxId,$action,$knownActionWake)){
+                    $sellerCentralWakeRequested=1;
+                    break;
+                }
+            }catch(Throwable $e){
+                $sellerCentralWakeFailed=1;
+                error_log('[amazon-returns-seller-central-wake] '.$e::class);
+                break;
             }
         }
         return [
             'status'=>'OK','cases'=>count($cases),'decisions'=>$decisions,
             'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,'superseded_writes'=>$supersededWrites,
+            'seller_central_wake_requested'=>$sellerCentralWakeRequested,
+            'seller_central_wake_failed'=>$sellerCentralWakeFailed,
             'financial_checks_requested'=>$financialChecks,
             'decision_audit'=>$decisionAudit,
             'financial_recheck_requested'=>$requestedFinancialRecheck,
         ];
+    }
+
+    private function requestSellerCentralWake(
+        int $outboxId,string $action,bool $knownActionWake,?DateTimeImmutable $now=null
+    ): bool {
+        if(!$knownActionWake || $this->config->sellerCentralBridgeMode()!=='polling'
+            || !in_array($action,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){
+            return false;
+        }
+        $row=$this->persistence->outbox->findOwned($outboxId);
+        if(!is_array($row) || ($row['kind'] ?? '')!==$action || ($row['status'] ?? '')!=='PENDING')return false;
+        $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        if(!self::outboxAvailableNow($row,$now))return false;
+        return SvAmazonSellerCentralWake::request('known-action',1,$now);
+    }
+
+    /** @param array<string,mixed> $row */
+    private static function outboxAvailableNow(array $row,DateTimeImmutable $now): bool
+    {
+        $raw=$row['available_at'] ?? null;
+        if(!is_string($raw) || $raw==='')return false;
+        $available=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$raw,new DateTimeZone('UTC'));
+        return $available instanceof DateTimeImmutable
+            && $available->format('Y-m-d H:i:s')===$raw
+            && $available<=$now;
     }
 
     /** @return array<string,mixed> */
