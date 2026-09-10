@@ -35,11 +35,20 @@ $tlsBootstrap = strpos(
     $script,
     'if [[ ! -s /etc/letsencrypt/live/returns.shopvivaliz.com.br/fullchain.pem ]]'
 );
+$bootstrapVhostInstall = strpos(
+    $script,
+    'install -m 0644 "$root/current/deploy/apache/returns-http.conf"'
+);
 $secureVhostInstall = strpos(
     $script,
     'deploy/apache/returns.shopvivaliz.com.br.conf'
 );
 pdsAssert($tlsBootstrap !== false, 'Provisioning must verify/bootstrap TLS credentials.');
+pdsAssert($bootstrapVhostInstall !== false, 'Provisioning must retain the first-certificate HTTP bootstrap vhost.');
+pdsAssert(
+    $tlsBootstrap < $bootstrapVhostInstall,
+    'Existing TLS deployments must not replace the live HTTPS vhost with the HTTP bootstrap vhost.'
+);
 pdsAssert($secureVhostInstall !== false, 'Provisioning must install the secure vhost.');
 pdsAssert(
     $tlsBootstrap < $secureVhostInstall,
