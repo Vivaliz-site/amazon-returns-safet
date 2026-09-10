@@ -56,8 +56,11 @@ final class SvAmazonReturnActionRouter
         if($claim!==''
             && strtoupper(trim((string)($message['payload']['claim_status']??'')))==='APPROVED'
             && ($message['payload']['appeal_submitted']??null)===false
-            && self::freshUnpaidFinance($events,$now->modify('-2 hours'),$now)){
+            && self::hasOutstandingCredit($case)){
             if(self::acceptedAppeal($events,$claim))return self::decision('WAIT','APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$case);
+            if(!self::freshUnpaidFinance($events,$now->modify('-2 hours'),$now)){
+                return self::decision('CHECK_FINANCES','APPROVED_PARTIAL_CREDIT_VERIFY_FINANCES',$case);
+            }
             $deadline=self::date($case['appeal_deadline_at']??$message['payload']['appeal_deadline_at']??null);
             if($deadline===null){
                 $read=self::decision('SAFE_T_READ','OFFICIAL_APPEAL_DEADLINE_REFRESH_REQUIRED',$case);
@@ -122,6 +125,13 @@ final class SvAmazonReturnActionRouter
             SvAmazonRefundInitiators::AMAZON_INITIATED,
             SvAmazonRefundInitiators::A_TO_Z,
         ],true);
+    }
+
+    private static function hasOutstandingCredit(array $case): bool
+    {
+        $expected=(float)($case['expected_reimbursement_amount']??0);
+        $credited=(float)($case['reconciled_credit_amount']??0);
+        return $expected>0 && $credited+0.00001<$expected;
     }
 
     private static function hasOutstandingSellerLoss(array $case): bool

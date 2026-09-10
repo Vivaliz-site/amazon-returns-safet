@@ -42,4 +42,10 @@ $accepted=[
 $duplicate=SvAmazonReturnActionRouter::decide($case,[$status,$accepted,$finance],['eligible'=>false],$now);
 pecrSame('WAIT',$duplicate['action']??null,'Accepted appeal must suppress duplicate partial-balance appeal');
 pecrSame('APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$duplicate['reason']??null,'Duplicate suppression must remain auditable');
+$staleFinance=$finance;
+$staleFinance["id"]=4;
+$staleFinance["occurred_at"]="2026-09-08 11:00:00";
+$stale=SvAmazonReturnActionRouter::decide($case,[$status,$staleFinance],["eligible"=>false],$now);
+pecrSame("CHECK_FINANCES",$stale["action"]??null,"Approved partial SAFE-T must request a fresh financial check instead of silently waiting when evidence is stale");
+pecrSame("APPROVED_PARTIAL_CREDIT_VERIFY_FINANCES",$stale["reason"]??null,"Stale partial-balance verification must remain auditable");
 echo "partial-existing-claim-resume-test: OK\n";

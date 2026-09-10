@@ -119,11 +119,9 @@ final class SvAmazonReturnsDaemon
         }
         try{$results['rule_outcomes']=$this->refreshRuleOutcomes();}
         catch(Throwable $e){$results['rule_outcomes']=['status'=>'FAILED','error_class'=>$e::class];}
-        if(($results['scheduler']['financial_recheck_requested']??false) && !isset($results['sp_api'])){
-            $state['sp_api']=$now->modify('-1800 seconds')->format(DATE_ATOM);
-            $state['financial']=$state['sp_api'];
+        if(SvAmazonReturnsRuntime::financialRefreshContinuationRequired($results)){
+            unset($state['sp_api'],$state['financial']);
         }
-        if((int)($results['scheduler']['financial_checks_requested']??0)>0 && !isset($results['sp_api'])){unset($state['sp_api'],$state['financial']);}
         $this->saveState($state);
         return [
             'status'=>$this->overallStatus($results),
@@ -511,7 +509,7 @@ final class SvAmazonReturnsDaemon
             'initial_scan_complete'=>$scan['initial_scan_complete'],
             'cycle_attempted'=>$scan['cycle_attempted'],
             'cycle_failures'=>$scan['cycle_failures'],
-            'rotation_wrapped'=>$batch['wrapped'],
+            'rotation_wrapped'=>$batch['wrapped'],'rotation_has_more'=>$batch['has_more'],
             'synced'=>$synced,'persisted_cases'=>$persistedCases,'failures'=>$failures,
             'safe_t_reads'=>$safeTReads,'safe_t_events'=>$safeTEvents,
             'safe_t_empty'=>$safeTEmpty,'safe_t_failures'=>$safeTFailures,
