@@ -561,10 +561,12 @@ async function contactSupportAndReadBack(cdp, job) {
   if (!(await hillContactReady(cdp))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
-  let channel = await clickHillChat(cdp);
-  if (!channel) {
-    channel = await submitHillEmail(cdp, job);
-    if (channel !== 'Email') return bridgeResult('UI_DRIFT', { reason: channel || 'SUPPORT_EMAIL_SEND_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  let channel = await submitHillEmail(cdp, job);
+  if (channel !== 'Email') {
+    if (await hillChatReady(cdp)) {
+      return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_COMPLETION_NOT_IMPLEMENTED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    }
+    return bridgeResult('UI_DRIFT', { reason: channel || 'SUPPORT_EMAIL_SEND_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
   await sleep(6000);
   let caseId = await currentSupportCaseId(cdp);

@@ -14,8 +14,15 @@ foreach([
     dhAssert(str_contains($worker,$needle),'Seller Support direct Hill/email contract missing: '.$needle);
 }
 dhAssert(str_contains($worker,'if (await hillContactReady(cdp)) return null;'),'General route must accept a direct Hill contact form without forcing ASIN/SKU fields.');
-dhAssert(str_contains($worker,"['Chat now','Conversar agora','Iniciar chat']"),'Chat remains the preferred live channel when available.');
+dhAssert(str_contains($worker,"['Chat now','Conversar agora','Iniciar chat']"),'Chat availability detection must remain recognizable.');
 dhAssert(str_contains($worker,"label=(send.getAttribute('label')||send.innerText||'').trim();if(label!=='Send'"),'Email fallback must click only the enabled Hill Send action.');
+$contactStart=strpos($worker,'async function contactSupportAndReadBack');
+$contactEnd=$contactStart===false?false:strpos($worker,'async function fillGeneralSupportIssue',$contactStart);
+dhAssert($contactStart!==false && $contactEnd!==false,'Contact and read-back flow must remain auditable.');
+$contact=substr($worker,(int)$contactStart,(int)$contactEnd-(int)$contactStart);
+$emailPos=strpos($contact,'submitHillEmail(cdp, job)');$chatPos=strpos($contact,'clickHillChat(cdp)');
+dhAssert($emailPos!==false && ($chatPos===false || $emailPos<$chatPos),'Deterministic email must be attempted before chat because clicking Chat now alone does not submit a support request.');
+dhAssert(!str_contains($contact,'let channel = await clickHillChat(cdp);'),'A Chat now click must never be treated as a completed Seller Support write without message submission/read-back.');
 
 $genericStart=strpos($worker,'async function openGeneralSupportRoute');
 $genericEnd=$genericStart===false?false:strpos($worker,'async function supportOpen',$genericStart);
