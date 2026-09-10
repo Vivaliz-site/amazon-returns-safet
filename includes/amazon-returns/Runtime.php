@@ -27,6 +27,38 @@ final class SvAmazonReturnsRuntime
         ];
     }
 
+    public static function knownActionDue(array $state,DateTimeImmutable $now): bool
+    {
+        $wake=self::timestamp($state['next_known_action_at'] ?? null);
+        if($wake===null)return false;
+        $now=$now->setTimezone(new DateTimeZone('UTC'));
+        return $wake<=$now;
+    }
+
+    /** @param list<mixed> $candidates */
+    public static function nextKnownActionAt(array $candidates,DateTimeImmutable $now): ?string
+    {
+        $now=$now->setTimezone(new DateTimeZone('UTC'));
+        $next=null;
+        foreach($candidates as $candidate){
+            $when=self::timestamp($candidate);
+            if($when===null || $when<=$now)continue;
+            if($next===null || $when<$next)$next=$when;
+        }
+        return $next?->format(DATE_ATOM);
+    }
+
+    private static function timestamp(mixed $raw): ?DateTimeImmutable
+    {
+        if(!is_string($raw) || trim($raw)==='')return null;
+        try{
+            return (new DateTimeImmutable(trim($raw),new DateTimeZone('UTC')))
+                ->setTimezone(new DateTimeZone('UTC'));
+        }catch(Throwable){
+            return null;
+        }
+    }
+
     public static function decisionStackRevision(): string
     {
         $files=[
@@ -98,6 +130,7 @@ final class SvAmazonReturnsRuntime
             }
             if($now->getTimestamp()-$when->getTimestamp()>=$seconds)$due[]=$task;
         }
+        if(self::knownActionDue($state,$now))$due[]='scheduler';
         if(
             is_string($decisionStackRevision)
             && $decisionStackRevision!==''
