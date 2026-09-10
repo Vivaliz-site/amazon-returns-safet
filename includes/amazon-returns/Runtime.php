@@ -20,7 +20,7 @@ final class SvAmazonReturnsRuntime
             'gmail'=>43200,
             'gmail_refund_reconciliation'=>43200,
             'scheduler'=>43200,
-            'review_operations'=>14400,
+            'review_operations'=>7200,
             'seller_central'=>43200,
             'financial'=>43200,
             'sp_api'=>43200,
@@ -262,6 +262,7 @@ final class SvAmazonReturnsRuntime
         $reviewNotifyEmail=trim($config->get('AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL'));
         $reviewNotificationReady=filter_var($reviewNotifyEmail,FILTER_VALIDATE_EMAIL)!==false;
         $readiness=$config->readiness();
+        $reviewAiProviders=$config->reviewAiProviderReadiness();
         $bridgeRequired=$config->enabled() && (($readiness['seller_central_bridge']['ready'] ?? false)===true);
         $primaryStatusWorker=trim($config->get(
             'SELLER_CENTRAL_PRIMARY_STATUS_WORKER_ID','vm-a1-safe-t-status'
@@ -287,6 +288,7 @@ final class SvAmazonReturnsRuntime
             'rule_applications'=>$p->ruleApplications->countAll(),
             'ai_suggestion_failures'=>$p->reviews->countAiFailures(),
             'review_ai_ready'=>$config->reviewAiReady(),
+            'review_ai_providers'=>$reviewAiProviders,
             'review_notification_ready'=>$reviewNotificationReady,
             'learned_rule_execution_enabled'=>$config->learnedRuleExecutionEnabled(),
             'review_memory'=>[
@@ -295,6 +297,7 @@ final class SvAmazonReturnsRuntime
                 'rule_applications'=>$p->ruleApplications->countAll(),
                 'ai_suggestion_failures'=>$p->reviews->countAiFailures(),
                 'review_ai_ready'=>$config->reviewAiReady(),
+                'review_ai_providers'=>$reviewAiProviders,
                 'review_notification_ready'=>$reviewNotificationReady,
                 'learned_rule_execution_enabled'=>$config->learnedRuleExecutionEnabled(),
             ],
