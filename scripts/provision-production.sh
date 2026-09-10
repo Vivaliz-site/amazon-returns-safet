@@ -189,6 +189,9 @@ AMAZON_RETURNS_VERIFICATION_OUTPUT="$verification_file" \
     "$release/scripts/verify-live-tenant-foundation.sh"
 grep -q '^live_tenant_verification=ok$' "$verification_file"
 
+chown -R root:www-data "$release"
+chmod -R go-w "$release"
+
 ln -sfn "releases/$(basename "$release")" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
 
