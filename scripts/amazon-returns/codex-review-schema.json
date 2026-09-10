@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action", "rationale", "confidence", "uncertainties", "parameters"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["WAIT", "CHECK_FINANCES", "SAFE_T_SUBMIT", "SAFE_T_APPEAL", "SAFE_T_EMAIL_REVIEW", "SAFE_T_EMAIL_REPLY", "SELLER_SUPPORT_OPEN", "SELLER_SUPPORT_UPDATE", "CLOSE_LOSS"]
+    },
+    "rationale": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "uncertainties": {"type": "array", "items": {"type": "string", "maxLength": 500}, "maxItems": 10},
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date_binding"],
+      "properties": {
+        "date_binding": {"type": "string", "enum": ["NONE", "PROMISED_DATE", "APPEAL_DEADLINE"]}
+      }
+    }
+  }
+}
