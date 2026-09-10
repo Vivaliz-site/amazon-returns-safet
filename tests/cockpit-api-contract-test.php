@@ -80,6 +80,7 @@ caAssert(str_contains($casesSrc,"'order_at'"),'Case listing must expose order da
 caAssert(str_contains($casesSrc,"'seller_debit_at'"),'Case listing must expose seller debit date.');
 caAssert(str_contains($casesSrc,"'refund_amount'"),'Case listing must expose customer refund amount.');
 caAssert(str_contains($casesSrc,"'customer_tracking_ids'"),'Case listing must expose customer tracking evidence.');
+caAssert(str_contains($casesSrc,'foreach($case[\'customer_tracking_ids\']'),'Cockpit search must match customer tracking IDs after projection.');
 $caseSrc=caSource('admin/amazon-returns/api/case.php');
 caAssert(str_contains($caseSrc,'SvAmazonCockpitTimeline'),'Case detail must use 360 timeline projector.');
 caAssert(str_contains($caseSrc,"'timeline'"),'Case detail must expose timeline.');
