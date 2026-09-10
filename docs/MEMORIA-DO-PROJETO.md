@@ -54,3 +54,10 @@ Na interface do usuário, revisão e consulta de caso devem priorizar linguagem 
 A cadência diária não pode atrasar uma ação que já tenha data oficial conhecida (por exemplo, retomada solicitada pela Amazon ou prazo de recurso). Essas ações continuam obedecendo à data registrada, com as verificações de segurança e idempotência do fluxo.
 
 O **agendador interno** que apenas avalia datas, estados já gravados e próximas ações não é uma consulta externa. Ele deve executar a cada **cinco minutos** para não postergar uma data conhecida. Se essa avaliação identificar que é necessário conferir novamente o financeiro antes de agir, deve invalidar a cadência de SP-API/Finances e forçar a reconsulta específica; essa reconsulta motivada por uma data/ação não é polling rotineiro e não deve aguardar o próximo ciclo diário.
+
+## Decisão de 09/09/2026: rotina de 12 horas com gatilho por data conhecida
+Esta decisão supersede a cadência diária e o ciclo periódico do agendador definidos acima. As consultas rotineiras de negócio e a varredura interna passam a ocorrer **duas vezes ao dia**, a cada **12 horas**. Health e acompanhamento de revisão mantêm suas cadências próprias.
+
+Uma data oficial já conhecida continua sendo obedecida no momento em que vence, **sem depender de um ciclo periódico de cinco minutos**. O daemon leve pode detectar `next_action_at` vencido entre as varreduras, executar o scheduler e, quando necessário, invalidar apenas a leitura financeira pertinente para obter dados frescos antes da ação. Depois que uma providência é consumida ou enfileirada, a data vencida deve ser limpa ou substituída pela próxima data real para evitar repetição em loop.
+
+A redução de polling não muda o comportamento sob demanda: uma **consulta manual** solicitada pelo usuário deve continuar sendo executada **imediatamente**, sem esperar a próxima janela de 12 horas.
