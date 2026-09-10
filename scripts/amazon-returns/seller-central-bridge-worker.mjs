@@ -551,6 +551,10 @@ async function submitHillEmail(cdp, job) {
   await sleep(500);
   return text(await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;const email=d.querySelector('kat-tab[tab-id="Email"]');const send=email?.querySelector('kat-button[label="Send"],kat-button[label="Enviar"]');const button=send?.shadowRoot?.querySelector('button');if(!button||button.disabled)return 'SUPPORT_EMAIL_SEND_MISSING';const label=(send.getAttribute('label')||send.innerText||'').trim();if(label!=='Send'&&label!=='Enviar')return 'SUPPORT_EMAIL_SEND_MISSING';button.click();return 'Email'}return 'SUPPORT_EMAIL_FORM_MISSING'})()`));
 }
+async function supportCaseReadbackSnapshot(cdp) {
+  return await cdp.evaluate(`(()=>{const out=[];const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){out.push({url:d.location?.href||'',links:[...d.querySelectorAll('a[href]')].map(a=>({href:a.href||'',text:(a.innerText||'').trim().slice(0,120)})).filter(x=>/case|support/i.test(x.href+x.text)).slice(0,30),text:(d.body?.innerText||'').slice(0,5000)})}return out})()`);
+}
+
 async function currentSupportCaseId(cdp) {
   return text(await cdp.evaluate(`(()=>{const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){for(const a of d.querySelectorAll('a[href*="caseID="]')){const m=(a.href||'').match(/[?&]caseID=(\\d{8,14})/);if(m)return m[1]}const body=d.body?.innerText||'';const m=body.match(/(?:ID do caso|Case ID)[:\\s#-]*(\\d{8,14})/i);if(m)return m[1]}return ''})()`));
 }
@@ -573,7 +577,7 @@ async function contactSupportAndReadBack(cdp, job) {
     if (!caseId) await sleep(4000);
   }
   if (!/^\d{8,14}$/.test(caseId)) {
-    return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
+    return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
   }
   const reason = channel === 'Email' ? 'SUPPORT_CASE_OPENED_VIA_EMAIL' : `SUPPORT_CASE_OPENED_VIA_${channel.toUpperCase().replace(/\s+/g,'_')}`;
   return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason, evidence: await evidence(cdp, 'help-v1') });
