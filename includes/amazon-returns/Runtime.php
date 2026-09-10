@@ -51,6 +51,13 @@ final class SvAmazonReturnsRuntime
         return hash('sha256',implode('|',$parts));
     }
 
+    public static function financialRefreshContinuationRequired(array $results): bool
+    {
+        if((int)($results['scheduler']['financial_checks_requested']??0)<1)return false;
+        if(!isset($results['sp_api']))return true;
+        return ($results['sp_api']['rotation_has_more']??false)===true;
+    }
+
     public static function gmailEvidenceRevision(): string
     {
         $files=[
