@@ -424,7 +424,7 @@ final class SvAmazonReturnsDaemon
                 $scheduled=(new SvAmazonReturnsScheduler($engine))->scheduleDecision(
                     $this->persistence->outbox,$projected,$decision,$timeline
                 );
-                if(($scheduled['outbox_id'] ?? null)!==null)$enqueued++;
+                if(($scheduled['enqueued'] ?? false))$enqueued++;
                 continue;
             }
             if(!SvAmazonReturnsScheduler::isWriteAction($decision))continue;
@@ -444,8 +444,8 @@ final class SvAmazonReturnsDaemon
             $scheduled=(new SvAmazonReturnsScheduler($engine))->scheduleDecision(
                 $this->persistence->outbox,$projected,$decision,$timeline
             );
+            if(($scheduled['enqueued'] ?? false))$enqueued++;
             if(($scheduled['outbox_id'] ?? null)!==null){
-                $enqueued++;
                 $this->persistence->cases->update($caseId,['next_action_at'=>null]);
             }
         }
