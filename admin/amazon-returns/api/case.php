@@ -22,9 +22,32 @@ try{
         $case=$p->cases->find($caseId);if(!is_array($case))sv_amz_case_reply(['success'=>false,'error'=>'Caso não encontrado.'],404);
         $case=SvAmazonReturnProjector::project($p->cases,$p->events,$caseId);
         $events=$p->events->eventsForCase($caseId);$reviews=$p->reviews->forCase($caseId);$apps=$p->ruleApplications->forCase($caseId);
-        $timeline=SvAmazonCockpitTimeline::project($case,$events,$p->evidence->projectionForCase($caseId),$p->outbox->historyForCase($caseId),$reviews,$apps);
+        $evidence=$p->evidence->projectionForCase($caseId);$outbox=$p->outbox->historyForCase($caseId);
+        $timeline=SvAmazonCockpitTimeline::project($case,$events,$evidence,$outbox,$reviews,$apps);
         $currentReview=null;for($i=count($reviews)-1;$i>=0;$i--){if(($reviews[$i]['status']??'')==='OPEN'){$currentReview=$reviews[$i];break;}}
-        sv_amz_case_reply(['success'=>true,'case'=>$case,'timeline'=>$timeline,'current_review'=>$currentReview,'rule_applications'=>$apps]);
+        $invoiceNumber=null;$returnReason=null;$lastRead=null;
+        for($i=count($events)-1;$i>=0;$i--){
+            $event=$events[$i];$type=strtoupper(trim((string)($event['event_type']??'')));$payload=is_array($event['payload']??null)?$event['payload']:[];
+            if($invoiceNumber===null && $type==='SALES_INVOICE_LINKED'){
+                $candidate=trim((string)($payload['invoice_number']??$payload['sales_invoice_number']??''));
+                if($candidate!=='')$invoiceNumber=$candidate;
+            }
+            if($returnReason===null && $type==='RETURNS_REPORT_MATCHED'){
+                $candidate=trim((string)($payload['return_reason']??''));if($candidate!=='')$returnReason=$candidate;
+            }
+            if($lastRead===null && in_array($type,['SAFE_T_STATUS_OBSERVED','SELLER_CENTRAL_ACTION_RESULT','SAFE_T_EMAIL_REVIEW_RESPONSE','FINANCIAL_TRANSACTION_OBSERVED','SAFE_T_REIMBURSEMENT_OBSERVED'],true)){
+                $lastRead=['id'=>(int)($event['id']??0),'event_type'=>$type,'occurred_at'=>$event['occurred_at']??null,'source'=>$event['source']??null];
+            }
+        }
+        $lastWrite=null;for($i=count($outbox)-1;$i>=0;$i--){
+            $kind=strtoupper(trim((string)($outbox[$i]['kind']??'')));
+            if(in_array($kind,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){
+                $lastWrite=['id'=>(int)($outbox[$i]['id']??0),'kind'=>$kind,'status'=>$outbox[$i]['status']??null,'created_at'=>$outbox[$i]['created_at']??null,'updated_at'=>$outbox[$i]['updated_at']??null];break;
+            }
+        }
+        $case['sales_invoice_number']=$invoiceNumber;$case['return_reason']=$returnReason;
+        $case['last_external_write']=$lastWrite;$case['last_read_back']=$lastRead;
+        sv_amz_case_reply(['success'=>true,'case'=>$case,'timeline'=>$timeline,'current_review'=>$currentReview,'rule_applications'=>$apps,'last_external_write'=>$lastWrite,'last_read_back'=>$lastRead]);
     }
     if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/',$orderId)!==1)sv_amz_case_reply(['success'=>false,'error'=>'Informe um pedido Amazon válido.'],422);
     sv_amz_case_reply(['success'=>true,'cases'=>$p->cases->forOrder($orderId)]);
