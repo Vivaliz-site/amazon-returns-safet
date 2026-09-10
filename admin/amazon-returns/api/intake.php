@@ -164,14 +164,6 @@ try{
     $p->cases->assertOwned((int)$caseId);
     $case=$p->cases->find((int)$caseId);
     if(!is_array($case))throw new OutOfBoundsException('Caso não encontrado.');
-    $knownRefundQuantity=(int)$case['quantity_refunded'];
-    $expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case['quantity_ordered']);
-    $outstanding=max(0,$expectedQuantity-(int)$case['quantity_received']);
-    if($quantity>$outstanding){
-        throw new InvalidArgumentException(
-            'Quantidade recebida excede a quantidade ainda pendente.'
-        );
-    }
     $idempotency=hash(
         'sha256','warehouse-intake|'.$context->scopeKey().'|'.$operationId
     );
@@ -185,6 +177,15 @@ try{
             'success'=>true,'duplicate'=>true,
             'event_id'=>$existingId,'case'=>$projection,
         ]);
+    }
+
+    $knownRefundQuantity=(int)$case['quantity_refunded'];
+    $expectedQuantity=$knownRefundQuantity>0 ? $knownRefundQuantity : max(1,(int)$case['quantity_ordered']);
+    $outstanding=max(0,$expectedQuantity-(int)$case['quantity_received']);
+    if($quantity>$outstanding){
+        throw new InvalidArgumentException(
+            'Quantidade recebida excede a quantidade ainda pendente.'
+        );
     }
 
     $stored=sv_amz_intake_store_photos($context,(int)$caseId,$files);
