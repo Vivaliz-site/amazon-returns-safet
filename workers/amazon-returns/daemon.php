@@ -81,7 +81,7 @@ final class SvAmazonReturnsDaemon
             $state['write_profile_revision']=$writeRevision;
         }
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
-        $knownActionWake=in_array('known_action_wake',$plan['due'],true);
+        $knownActionWake=SvAmazonReturnsRuntime::knownActionWakeActive($state,$plan['due']);
         $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
         $results=['bootstrap'=>$bootstrap];
         if(($plan['gate']['status'] ?? '')==='FAILED')$results['financial_refresh_gate']=$plan['gate'];
@@ -121,9 +121,14 @@ final class SvAmazonReturnsDaemon
         }
         try{$results['rule_outcomes']=$this->refreshRuleOutcomes();}
         catch(Throwable $e){$results['rule_outcomes']=['status'=>'FAILED','error_class'=>$e::class];}
-        if(SvAmazonReturnsRuntime::financialRefreshContinuationRequired($results)){
+        $financialContinuation=SvAmazonReturnsRuntime::financialRefreshContinuationRequired($results);
+        if($financialContinuation){
             unset($state['sp_api'],$state['financial']);
         }
+        SvAmazonReturnsRuntime::applyKnownActionWakeContinuation(
+            $state,$knownActionWake,$financialContinuation,
+            isset($results['scheduler']) && ($results['scheduler']['status'] ?? null)==='OK'
+        );
         $this->saveState($state);
         return [
             'status'=>$this->overallStatus($results),
@@ -368,6 +373,8 @@ final class SvAmazonReturnsDaemon
         $financialChecks=0;
         $decisionAudit=[];
         $requestedFinancialRecheck=false;
+        $schedulerFailure=null;
+        try {
         foreach($cases as $case){
             $caseId=(int)($case['id'] ?? 0);
             if($caseId<1)continue;
@@ -429,6 +436,25 @@ final class SvAmazonReturnsDaemon
                 continue;
             }
             if(!SvAmazonReturnsScheduler::isWriteAction($decision))continue;
+            $dispatchNow=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+            $dispatchDecision=SvAmazonReturnsScheduler::normalizeRecoveryChannel(
+                $projected,$decision,$dispatchNow
+            );
+            if(!SvAmazonReturnsScheduler::isWriteAction($dispatchDecision))continue;
+            $dispatchAction=(string)($dispatchDecision['action'] ?? 'WAIT');
+            if($dispatchAction!==$action){
+                $dispatchKey=trim((string)($dispatchDecision['idempotency_key'] ?? ''));
+                if($dispatchKey==='')throw new LogicException('Final write decision missing idempotency key.');
+                $action=$dispatchAction;
+                $decision=$dispatchDecision;
+                $supersededWrites+=$this->persistence->outbox->supersedePendingWritesExcept(
+                    $caseId,$action,$dispatchKey,
+                    'SUPERSEDED_BY_FINAL_DECISION:'.$action.':'.(string)($decision['reason']??'UNSPECIFIED')
+                );
+                $decisionAudit[array_key_last($decisionAudit)]=SvAmazonReturnsRuntimeAudit::decision(
+                    $projected,$timeline,$policy,$decision
+                );
+            }
             if(!$this->config->externalWriteAllowed($action)){
                 $blockedWrites++;
                 continue;
@@ -443,17 +469,21 @@ final class SvAmazonReturnsDaemon
                 continue;
             }
             $scheduled=(new SvAmazonReturnsScheduler($engine))->scheduleDecision(
-                $this->persistence->outbox,$projected,$decision,$timeline
+                $this->persistence->outbox,$projected,$decision,$timeline,$dispatchNow
             );
             if(($scheduled['outbox_id'] ?? null)!==null){
                 $outboxId=(int)$scheduled['outbox_id'];
+                $scheduledAction=(string)($scheduled['decision']['action'] ?? $action);
                 $enqueued++;
+                $sellerCentralWakeCandidates[$outboxId]=$scheduledAction;
                 $this->persistence->cases->update($caseId,['next_action_at'=>null]);
-                $sellerCentralWakeCandidates[$outboxId]=$action;
             }
         }
-        // Publish once after scheduling the whole batch. Re-read rows at delivery time,
-        // because refresh/enqueue can happen seconds after the daemon cycle started.
+        } catch(Throwable $e) {
+            $schedulerFailure=$e;
+        } finally {
+        // Publish once after scheduling the batch, including an exceptional exit. Re-read rows
+        // at delivery time because refresh/enqueue can happen after the daemon cycle started.
         foreach($sellerCentralWakeCandidates as $outboxId=>$action){
             try{
                 if($this->requestSellerCentralWake($outboxId,$action,$knownActionWake)){
@@ -466,6 +496,8 @@ final class SvAmazonReturnsDaemon
                 break;
             }
         }
+        }
+        if($schedulerFailure instanceof Throwable)throw $schedulerFailure;
         return [
             'status'=>'OK','cases'=>count($cases),'decisions'=>$decisions,
             'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,'superseded_writes'=>$supersededWrites,

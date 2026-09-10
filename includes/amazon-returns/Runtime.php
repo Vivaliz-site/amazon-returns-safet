@@ -101,6 +101,23 @@ final class SvAmazonReturnsRuntime
         return ($results['sp_api']['rotation_has_more']??false)===true;
     }
 
+    /** @param list<string> $due */
+    public static function knownActionWakeActive(array $state,array $due): bool
+    {
+        return in_array('known_action_wake',$due,true)
+            || ($state['known_action_wake_continuation']??false)===true;
+    }
+
+    public static function applyKnownActionWakeContinuation(
+        array &$state,bool $wakeActive,bool $continuationRequired,bool $schedulerSucceeded
+    ): void {
+        if($wakeActive && ($continuationRequired || !$schedulerSucceeded)){
+            $state['known_action_wake_continuation']=true;
+            return;
+        }
+        unset($state['known_action_wake_continuation']);
+    }
+
     public static function gmailEvidenceRevision(): string
     {
         $files=[
