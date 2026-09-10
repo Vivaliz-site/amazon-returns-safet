@@ -9,7 +9,7 @@ final class SvAmazonReviewMemoryContext
     {
         $caseId=(int)($context['facts']['case_id']??0);
         $signature=is_array($context['signature']??null)?$context['signature']:[];
-        $decisions=[];$executions=[];$applications=[];$rules=[];
+        $decisions=[];$engineDecisions=[];$executions=[];$applications=[];$rules=[];
 
         if($caseId>0&&isset($this->persistence->reviews)&&method_exists($this->persistence->reviews,'forCase')){
             foreach(array_reverse($this->persistence->reviews->forCase($caseId)) as $row){
@@ -24,6 +24,15 @@ final class SvAmazonReviewMemoryContext
                     'outcome'=>$outcome['classification']??null,
                 ];
                 if(count($decisions)>=10)break;
+            }
+        }
+
+        if($caseId>0&&isset($this->persistence->events)&&method_exists($this->persistence->events,'eventsForCase')){
+            foreach(array_reverse($this->persistence->events->eventsForCase($caseId)) as $row){
+                if(($row['event_type']??'')!=='DECISION_EVALUATED')continue;
+                $payload=is_array($row['payload']??null)?$row['payload']:[];
+                $engineDecisions[]=['action'=>$payload['action']??null,'reason'=>$payload['reason']??null,'next_action_at'=>$payload['next_action_at']??null,'policy_version_id'=>$payload['policy_version_id']??null,'blocked_action'=>$payload['blocked_action']??null,'write_blocker'=>$payload['write_blocker']??null,'occurred_at'=>$row['occurred_at']??null];
+                if(count($engineDecisions)>=10)break;
             }
         }
 
@@ -48,7 +57,7 @@ final class SvAmazonReviewMemoryContext
             }
         }
 
-        $context['memory']=['case_decisions'=>$decisions,'case_executions'=>$executions,'rule_applications'=>$applications,'matching_learned_rules'=>$rules];
+        $context['memory']=['case_decisions'=>$decisions,'engine_decisions'=>$engineDecisions,'case_executions'=>$executions,'rule_applications'=>$applications,'matching_learned_rules'=>$rules];
         return $context;
     }
 
