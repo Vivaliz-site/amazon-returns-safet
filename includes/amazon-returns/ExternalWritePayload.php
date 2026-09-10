@@ -57,6 +57,15 @@ final class SvAmazonExternalWritePayload
                 .'Solicito revisão manual por equipe especializada. Se a Amazon considera que houve devolução, '
                 .'favor informar data, transportadora, rastreio, endereço de entrega e comprovante de entrega. '.$reason;
         }
+        if($action==='SAFE_T_APPEAL' && $reason==='PROMISED_REIMBURSEMENT_OVERDUE_FOLLOW_UP'){
+            $date=trim((string)($decision['promised_by_date']??''));
+            if(preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D',$date,$m)===1)$date=$m[3].'/'.$m[2].'/'.$m[1];
+            else $date='data prometida registrada';
+            $amount=is_numeric($decision['outstanding_amount']??null)?self::brl((float)$decision['outstanding_amount']):'valor pendente confirmado';
+            return 'Pedido '.$order.', SAFE-T '.$safeT.'. A Amazon informou que realizaria o reembolso até '.$date
+                .', porém o crédito não foi recebido dentro do prazo. O saldo pendente confirmado é de '.$amount.'. '
+                .'Solicito o crédito imediato do valor prometido na mesma SAFE-T, sem abertura de uma nova reivindicação.';
+        }
         if($action==='SAFE_T_APPEAL'){
             return 'Pedido '.$order.', SAFE-T '.$safeT.'. O produto não foi recebido fisicamente pelo vendedor. '
                 .'Solicito reavaliação da decisão com análise do fluxo de devolução, rastreio e eventual comprovante de entrega. '.$reason;
