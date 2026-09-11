@@ -31,7 +31,7 @@ cacAssert(str_contains($search,'SvAmazonInvoiceSearch::caseIdsExact'),'NF must u
 cacAssert(str_contains($cases,'SvAmazonCaseReferenceSearch::caseIds'),'Cockpit must use shared reference resolution.');
 cacAssert(str_contains($intake,'SvAmazonCaseReferenceSearch::caseIds'),'Intake must use the same shared reference resolution.');
 cacAssert(str_contains($cases,'SvAmazonGmailReturnReferenceLookup'),'Historical TBR fallback must remain read-only Gmail lookup.');
-cacAssert(!str_contains($cases,'?1000:'),'Text search cannot scan 1000 projected tenant cases.');
+cacAssert(str_contains($cases,'$requiresPostFilter=$filters->requiresDecisionFilter();'),'Text search must not activate the 1000-row decision post-filter.');
 cacAssert(str_contains($ui,"details.className='case-history-toggle'"),'Timeline must remain collapsed by default.');
 cacAssert(str_contains($ui,"details.className='decision-explanation'"),'Decision explanation must remain collapsed by default.');
 echo "cockpit-autonomy-consistency-test: OK\n";
