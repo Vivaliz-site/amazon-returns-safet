@@ -1,8 +1,8 @@
 # Autonomy Cockpit UX and Operational Trust
 
-**Date:** 2026-09-10  
-**Status:** Approved direction; written specification pending final user review  
-**Product:** Amazon Returns / SAFE-T  
+**Date:** 2026-09-10
+**Status:** Approved direction; written specification pending final user review
+**Product:** Amazon Returns / SAFE-T
 **Scope:** Human-facing cockpit, case consultation, search, return intake and review experience
 
 ## 1. Purpose
