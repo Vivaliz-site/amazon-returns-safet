@@ -57,6 +57,7 @@ final class SvAmazonReturnProjector
             'customer_delivery_confirmed' => false,
             'customer_tracking_ids' => [],
             'customer_delivery_carriers' => [],
+            'return_tracking_ids' => [],
         ];
     }
 
@@ -89,6 +90,15 @@ final class SvAmazonReturnProjector
                 break;
 
             case 'CASE_CREATED':
+                break;
+
+            case 'RETURN_AUTHORIZED_EMAIL':
+            case 'RETURN_REPORT_OBSERVED':
+                self::mergeTextList($facts,$payload,'return_tracking_ids');
+                $returnTracking=trim((string)($payload['return_tracking_id'] ?? ''));
+                if($returnTracking!==''){
+                    self::mergeTextList($facts,['return_tracking_ids'=>[$returnTracking]],'return_tracking_ids');
+                }
                 break;
 
             case 'REFUND_ISSUED_EMAIL':

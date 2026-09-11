@@ -8,13 +8,15 @@ $jsFile=$root.'/admin/amazon-returns/assets/cockpit.js';
 $operationalCssFile=$root.'/admin/amazon-returns/assets/cockpit-operational.css';
 $operationalJsFile=$root.'/admin/amazon-returns/assets/cockpit-operational.js';
 $bootstrapFile=$root.'/admin/amazon-returns/assets/cockpit-operational-bootstrap.js';
+$summaryFile=$root.'/admin/amazon-returns/assets/cockpit-summary.js';
 if(!is_file($cssFile))throw new RuntimeException('cockpit.css missing');
 if(!is_file($jsFile))throw new RuntimeException('cockpit.js missing');
 if(!is_file($operationalCssFile))throw new RuntimeException('cockpit-operational.css missing');
 if(!is_file($operationalJsFile))throw new RuntimeException('cockpit-operational.js missing');
 if(!is_file($bootstrapFile))throw new RuntimeException('cockpit-operational-bootstrap.js missing');
+if(!is_file($summaryFile))throw new RuntimeException('cockpit-summary.js missing');
 $css=(string)file_get_contents($cssFile);$js=(string)file_get_contents($jsFile);
-$operationalCss=(string)file_get_contents($operationalCssFile);$operationalJs=(string)file_get_contents($operationalJsFile);$bootstrap=(string)file_get_contents($bootstrapFile);
+$operationalCss=(string)file_get_contents($operationalCssFile);$operationalJs=(string)file_get_contents($operationalJsFile);$bootstrap=(string)file_get_contents($bootstrapFile);$summary=(string)file_get_contents($summaryFile);
 foreach(['viewport','cockpit.css','cockpit.js','cockpit-operational.css','cockpit-operational.js','cockpit-operational-bootstrap.js','Casos','Revisões','case-list','case-detail'] as $needle)cuAssert(str_contains($page,$needle),'Cockpit page missing '.$needle);
 foreach(['Pesquisar','Situação','Próxima ação','Tipo de logística','Recebimento','Prazo'] as $label)cuAssert(str_contains($page,$label),'Cockpit filter label missing '.$label);
 foreach(['Todos','Precisa da minha atenção','Sistema tratando','Concluídos'] as $label)cuAssert(str_contains($page,$label),'Quick filter missing '.$label);
@@ -22,8 +24,8 @@ cuAssert(str_contains($page,'data-view="cases"'),'Cases tab required.');
 cuAssert(str_contains($page,'data-view="reviews"'),'Reviews tab required.');
 cuAssert(str_contains($page,'id="review-count"'),'Visible pending-review count target required.');
 cuAssert(str_contains($page,'id="review-alert"'),'Visible pending-review alert required.');
-cuAssert(str_contains($page,'id="operational-overview"'),'Operational overview target required.');
-cuAssert(str_contains($js,'pending_reviews'),'Cockpit JS must render pending review count from summary.');
+foreach(['autonomy-status','user-work','automation-work','money-headlines','operational-problems','deadline-list','connector-health'] as $id)cuAssert(str_contains($page,'id="'.$id.'"'),'Operational dashboard target required: '.$id);
+cuAssert(str_contains($summary,'human_action_count'),'Summary renderer must use explicit human-action count.');
 cuAssert(!str_contains($js,'innerHTML'),'API text must not be injected as HTML.');
 cuAssert(!str_contains($operationalJs,'innerHTML'),'Operational UI must not inject API text as HTML.');
 cuAssert(!str_contains($bootstrap,'innerHTML'),'Operational bootstrap must not inject API text as HTML.');
@@ -34,13 +36,14 @@ cuAssert(str_contains($css,'@media(max-width:600px)'),'Mobile layout required.')
 cuAssert(str_contains($css,'min-height:44px'),'Mobile action targets must be at least 44px.');
 cuAssert(!str_contains($css,'overflow-x:auto'),'Cockpit must not rely on page-level horizontal scrolling.');
 foreach(['operatorStatus','operatorResponsibility','operatorNextStep','operatorAlert','condenseTimeline','renderOperationalCase','renderOperationalList'] as $needle)cuAssert(str_contains($operationalJs,$needle),'Operational cockpit missing '.$needle);
-foreach(['loadOperationalOverview','operationalBucket','if(state.view===\'cases\')loadCases()'] as $needle)cuAssert(str_contains($bootstrap.$operationalJs,$needle),'Operational bootstrap missing '.$needle);
-foreach(['Nenhuma ação sua é necessária','Sua decisão é necessária','Aguardando resposta da Amazon','Aguardando crédito da Amazon','Providência automática atrasada','Data do pedido','Reembolso concedido ao cliente','Débito na conta da loja','Saldo ainda a recuperar','NF de venda','Última verificação','Próxima providência','Ver histórico completo','Pedido sincronizado','Movimentação financeira identificada'] as $needle)cuAssert(str_contains($operationalJs.$bootstrap,$needle),'Operational copy missing '.$needle);
+foreach(['operationalBucket','if(state.view===\'cases\')loadCases()'] as $needle)cuAssert(str_contains($bootstrap.$operationalJs,$needle),'Operational bootstrap missing '.$needle);
+cuAssert(str_contains($summary,'AmazonReturnsSummary'),'Dedicated summary module must own top dashboard rendering.');
+foreach(['Nenhuma ação sua é necessária','Sua decisão é necessária','Aguardando resposta da Amazon','Aguardando crédito da Amazon','Providência automática atrasada','Data do pedido','Reembolso concedido ao cliente','Débito na conta da loja','NF de venda','Última verificação','Próxima providência','Ver histórico completo','Pedido sincronizado','Movimentação financeira identificada'] as $needle)cuAssert(str_contains($operationalJs.$bootstrap,$needle),'Operational copy missing '.$needle);
 foreach(['case-row-id','case-row-status','case-row-finance','case-row-responsibility','case-summary','case-flow','case-financial','case-evidence','case-history-toggle'] as $needle)cuAssert(str_contains($operationalCss.$operationalJs,$needle),'Operational cockpit structure missing '.$needle);
 cuAssert(!str_contains($operationalJs,"return 'Aguardar';"),'Generic standalone waiting label is prohibited.');
 
 // Optional operational facts must never be rendered as false zeroes or meaningless fallbacks.
-cuAssert(str_contains($operationalJs,"const decisionReason=c.current_reason?reasonLabel(c.current_reason):"),'Missing decision reason must use a human fallback instead of an em dash.');
+cuAssert(str_contains($operationalJs,"const reason=c.current_reason?reasonLabel(c.current_reason):null") && str_contains($operationalJs,'As regras operacionais atuais foram aplicadas aos fatos disponíveis.'),'Missing decision reason must use a human fallback instead of an em dash.');
 cuAssert(str_contains($operationalJs,"x!=='Informação não disponível'"),'Unknown evidence source labels must be omitted.');
 cuAssert(str_contains($operationalJs,"Number(c.refund_amount)>0?brl(c.refund_amount):null"),'Unknown customer refund amount must not be rendered as R$ 0,00.');
 
@@ -57,7 +60,7 @@ foreach([
     'actionLabel(c.current_action)',
     'stateLabel(c.state)',
     'physicalLabel(c.physical_status)',
-    'reasonLabel(r.reason)',
+    'humanReviewQuestion(r,{},{})',
     'statusLabel(r.status)',
     'actionLabel(suggestion.action)',
     'humanReviewSummary(j.review,ctx,j.case)',
@@ -83,5 +86,13 @@ RAW,
     'localizedJson(ctx.facts)',
 ];
 foreach($rawSnippets as $raw) cuAssert(!str_contains($js,$raw),'Raw internal enum/JSON must not be shown to the operator.');
+
+cuAssert(str_contains($operationalJs,'function operatorFinancialSummary(c)'),'Case list must centralize financial copy.');
+cuAssert(str_contains($operationalJs,"label:'saldo ainda a recuperar'"),'Positive balances must say they remain to recover.');
+cuAssert(str_contains($operationalJs,"label:'Crédito identificado; aguardando confirmação final.'"),'Positive credit with pending confirmation needs precise copy.');
+cuAssert(str_contains($operationalJs,"label:'Nenhum saldo financeiro em aberto.'"),'Zero balance without positive credit needs a neutral settled copy.');
+cuAssert(str_contains($operationalJs,'return_tracking_ids'),'Case list must render return tracking / TBR separately.');
+cuAssert(str_contains($operationalJs,"'Sistema'") && str_contains($operationalJs,"'Você'") && str_contains($operationalJs,"'Concluído'"),'Rows must expose compact explicit responsibility.');
+cuAssert(!str_contains($operationalJs,"finance.append(text('strong',brl(c.outstanding_amount)),text('span','saldo ainda a recuperar'"),'Zero balance copy cannot be unconditional.');
 
 echo "cockpit-ui-contract-test: OK\n";

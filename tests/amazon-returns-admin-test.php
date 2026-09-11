@@ -38,7 +38,7 @@ adAssert(str_contains($intakePage,'crypto.randomUUID'),'Browser retry identity r
 adAssert(str_contains($intakePage,'type="file"'),'Discrepancy photo upload required.');
 $dashboard=source('admin/amazon-returns/index.php');
 adAssert(str_contains($dashboard,'SvAmazonReturnsAdminAuth::requireLogin'),'Dashboard must require standalone login.');
-adAssert(str_contains($dashboard,'Pendências que exigem atenção'),'Dashboard must display the humanized health section.');
+adAssert(str_contains($dashboard,'id="operational-problems"'),'Dashboard must expose the dedicated operational-health section.');
 $login=source('login.php');
 adAssert(str_contains($login,'SvAmazonReturnsAdminAuth::login'),'Standalone login entrypoint required.');
 

@@ -101,6 +101,14 @@ final class SvAmazonReturnsDaemon
                     'error'=>$this->safeError($e->getMessage()),
                 ];
             }
+            $taskStatus=strtoupper(trim((string)($results[$task]['status'] ?? 'UNKNOWN')));
+            try{
+                $this->persistence->cursors->save(
+                    'OPERATIONAL_TASK',$task,$now->format(DATE_ATOM),['status'=>$taskStatus]
+                );
+            }catch(Throwable $observabilityError){
+                error_log('[amazon-returns-operational-observability] '.$observabilityError::class);
+            }
             $state[$task]=$now->format(DATE_ATOM);
         }
         if(
@@ -126,9 +134,22 @@ final class SvAmazonReturnsDaemon
         if(SvAmazonReturnsRuntime::financialRefreshContinuationRequired($results)){
             unset($state['sp_api'],$state['financial']);
         }
+        $overallStatus=$this->overallStatus($results);
+        try{
+            $this->persistence->cursors->save(
+                'OPERATIONAL','cycle_attempt',$now->format(DATE_ATOM),['status'=>$overallStatus]
+            );
+            if($overallStatus==='OK'){
+                $this->persistence->cursors->save(
+                    'OPERATIONAL','cycle_success',$now->format(DATE_ATOM),['status'=>'OK']
+                );
+            }
+        }catch(Throwable $observabilityError){
+            error_log('[amazon-returns-operational-cycle] '.$observabilityError::class);
+        }
         $this->saveState($state);
         return [
-            'status'=>$this->overallStatus($results),
+            'status'=>$overallStatus,
             'at'=>$now->format(DATE_ATOM),
             'tenant_id'=>$this->context->tenantId(),
             'amazon_connection_id'=>$this->context->amazonConnectionId(),

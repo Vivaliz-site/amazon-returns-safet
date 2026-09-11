@@ -16,28 +16,38 @@ function ctSame(mixed $expected,mixed $actual,string $message):void{
 $case=['id'=>77,'amazon_order_id'=>'702-1234567-7654321','safe_t_id'=>'98143-99485-9285859'];
 $appealText='Pedido 702-1234567-7654321, SAFE-T 98143-99485-9285859. Texto exato persistido.';
 $events=[
+    ['id'=>0,'event_type'=>'RETURN_AUTHORIZED_EMAIL','source'=>'GMAIL','occurred_at'=>'2026-09-05 17:50:00','payload'=>['order_id'=>$case['amazon_order_id'],'return_tracking_ids'=>['TBR015328001'],'return_tracking_id'=>'TBR015328001'],'evidence_sha256'=>null],
     ['id'=>1,'event_type'=>'RETURN_STATUS_OBSERVED','source'=>'SP_API','occurred_at'=>'2026-09-05 18:00:00','payload'=>['order_id'=>$case['amazon_order_id'],'authorization'=>'Bearer secret-token','private_blob'=>'must-not-project'],'evidence_sha256'=>null],
     ['id'=>2,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL','occurred_at'=>'2026-09-05 18:10:00','payload'=>['action'=>'SAFE_T_APPEAL','status'=>'ACCEPTED','outbox_id'=>41,'write_content_sha256'=>hash('sha256',$appealText),'reason'=>'submitted'],'evidence_sha256'=>str_repeat('a',64)],
+    ['id'=>3,'event_type'=>'SAFE_T_EMAIL_REVIEW_RESPONSE','source'=>'GMAIL','occurred_at'=>'2026-09-05 18:20:00','payload'=>['review_outcome'=>'APPROVED','review_excerpt'=>'Amazon informou que o crédito será processado.'],'evidence_sha256'=>null],
 ];
 $outbox=[
     ['id'=>41,'case_id'=>77,'kind'=>'SAFE_T_APPEAL','status'=>'SUCCEEDED','attempt_count'=>1,'created_at'=>'2026-09-05 18:05:00','updated_at'=>'2026-09-05 18:10:00','payload'=>['write_snapshot'=>['format_version'=>2,'channel'=>'seller_central_bridge','narrative'=>$appealText,'content_sha256'=>hash('sha256',$appealText)]]],
     ['id'=>42,'case_id'=>77,'kind'=>'SAFE_T_SUBMIT','status'=>'SUCCEEDED','attempt_count'=>1,'created_at'=>'2026-09-04 12:00:00','updated_at'=>'2026-09-04 12:01:00','payload'=>['order_id'=>$case['amazon_order_id']]],
 ];
 $timeline=SvAmazonCockpitTimeline::project($case,$events,[],$outbox,[],[]);
-ctSame(['EXTERNAL_WRITE','OBSERVATION','EXTERNAL_WRITE'],array_column(array_slice($timeline,0,3),'category'),'Timeline must be chronological across sources.');
+ctSame(['EXTERNAL_WRITE','OBSERVATION','OBSERVATION','EXTERNAL_WRITE'],array_column(array_slice($timeline,0,4),'category'),'Timeline must remain chronological across sources.');
 
-$writeItem=null;$legacyItem=null;$responseItem=null;
+$writeItem=null;$legacyItem=null;$responseItem=null;$returnItem=null;$emailResponseItem=null;
 foreach($timeline as $item){
+    if(($item['id']??'')==='event:0')$returnItem=$item;
     if(($item['id']??'')==='outbox:41')$writeItem=$item;
     if(($item['id']??'')==='outbox:42')$legacyItem=$item;
     if(($item['id']??'')==='event:2')$responseItem=$item;
+    if(($item['id']??'')==='event:3')$emailResponseItem=$item;
 }
+ctAssert(is_array($returnItem),'Return authorization event must be projected.');
+ctSame('OBSERVATION',$returnItem['category']??null,'Return authorization must stay an observation.');
+ctSame(['TBR015328001'],$returnItem['content']['return_tracking_ids']??null,'Timeline must expose return tracking evidence.');
+ctSame('TBR015328001',$returnItem['content']['return_tracking_id']??null,'Timeline must expose scalar return tracking evidence.');
 ctAssert(is_array($writeItem),'Persisted appeal write must be projected.');
 ctSame($appealText,$writeItem['content']['narrative']??null,'Exact persisted appeal narrative must be shown unchanged.');
 ctSame(hash('sha256',$appealText),$writeItem['content']['content_sha256']??null,'Write hash must be projected.');
 ctAssert(is_array($legacyItem),'Legacy write must remain visible.');
 ctSame('MISSING_HISTORICAL_SNAPSHOT',$legacyItem['content']['narrative_status']??null,'Legacy narrative must never be reconstructed.');
 ctSame('AMAZON_RESPONSE',$responseItem['category']??null,'Seller Central result must classify as Amazon response.');
+ctSame('AMAZON_RESPONSE',$emailResponseItem['category']??null,'SAFE-T review email must classify as Amazon response.');
+ctSame('Amazon informou que o crédito será processado.',$emailResponseItem['content']['review_excerpt']??null,'Safe Amazon response excerpt must remain exact for operator messages.');
 $serialized=json_encode($timeline,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 ctAssert(!str_contains($serialized,'secret-token'),'Timeline must not expose authorization values.');
 ctAssert(!str_contains($serialized,'must-not-project'),'Timeline must not expose arbitrary private payload fields.');

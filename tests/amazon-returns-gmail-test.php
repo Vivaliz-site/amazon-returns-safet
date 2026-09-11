@@ -39,6 +39,27 @@ $returnAuth = $parser->parse(message('m-return', 'Notificação de autorização
 gmSame('RETURN_AUTHORIZED_EMAIL', $returnAuth[0]['event_type'], 'Return authorization event type.');
 gmSame('702-1111111-2222222', $returnAuth[0]['order_id'], 'Return authorization order ID.');
 
+$returnWithTbr=message(
+    'm-return-tbr',
+    'Notificação de autorização de devolução referente ao pedido de número 702-1111111-2222222',
+    'Acompanhe a devolução pelo código TBR015328001.'
+);
+$parsedReturnTbr=$parser->parse($returnWithTbr);
+gmSame('TBR015328001',$parsedReturnTbr[0]['return_tracking_id']??null,'Return authorization must preserve TBR separately.');
+$sinkSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/GmailEventSink.php');
+gmAssert(str_contains($sinkSource,"'return_tracking_ids'=>"),'Sink must persist return tracking separately.');
+gmAssert(str_contains($sinkSource,"'customer_tracking_ids'=>\$tracking"),'Customer delivery tracking remains sourced from delivery tracking field.');
+gmAssert(str_contains($sinkSource,"\$returnTracking"),'Return tracking needs a distinct variable.');
+
+$returnProjection=SvAmazonReturnProjector::projectFrom([
+    'id'=>19,'quantity_ordered'=>1,'physical_status'=>'NOT_RECEIVED','state'=>'AWAITING_RETURN',
+], [[
+    'case_id'=>19,'event_type'=>'RETURN_AUTHORIZED_EMAIL','source'=>'GMAIL','occurred_at'=>'2026-09-01 18:00:00',
+    'payload'=>['return_tracking_ids'=>['TBR015328001'],'customer_tracking_ids'=>[]],
+]]);
+gmSame(['TBR015328001'],$returnProjection['return_tracking_ids']??null,'Return TBR must project as return tracking evidence.');
+gmSame([], $returnProjection['customer_tracking_ids']??null,'Return TBR must not project as customer delivery tracking.');
+
 $registered = $parser->parse(message('m-register', 'Sua solicitação do SAFE-T 98143-99485-9285859 foi registrada para o pedido 702-3333333-4444444'));
 gmSame('SAFE_T_REGISTERED_EMAIL', $registered[0]['event_type'], 'SAFE-T registration event type.');
 gmSame('98143-99485-9285859', $registered[0]['safe_t_id'], 'SAFE-T registration ID.');

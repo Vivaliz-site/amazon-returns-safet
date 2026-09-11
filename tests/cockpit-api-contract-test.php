@@ -80,7 +80,12 @@ caAssert(str_contains($casesSrc,"'order_at'"),'Case listing must expose order da
 caAssert(str_contains($casesSrc,"'seller_debit_at'"),'Case listing must expose seller debit date.');
 caAssert(str_contains($casesSrc,"'refund_amount'"),'Case listing must expose customer refund amount.');
 caAssert(str_contains($casesSrc,"'customer_tracking_ids'"),'Case listing must expose customer tracking evidence.');
-caAssert(str_contains($casesSrc,'foreach($case[\'customer_tracking_ids\']'),'Cockpit search must match customer tracking IDs after projection.');
+caAssert(str_contains($casesSrc,"'return_tracking_ids'"),'Case listing must expose return tracking evidence separately.');
+caAssert(str_contains($casesSrc,'SvAmazonCaseReferenceSearch::caseIds'),'Cockpit search must resolve references before pagination.');
+caAssert(str_contains($casesSrc,'SvAmazonGmailReturnReferenceLookup'),'TBR search may use read-only Gmail recovery when local evidence is absent.');
+caAssert(str_contains($casesSrc,'$requiresPostFilter=$filters->requiresDecisionFilter();'),'Only decision-action filtering may require post-filter pagination.');
+caAssert(!str_contains($casesSrc,'$filters->requiresDecisionFilter() || $searchTerm'),'Text search must never trigger full-tenant post-filter pagination.');
+caAssert(!str_contains($casesSrc,'foreach($case[\'customer_tracking_ids\']'),'Cockpit search must not post-filter projected tracking in PHP.');
 $caseSrc=caSource('admin/amazon-returns/api/case.php');
 caAssert(str_contains($caseSrc,'SvAmazonCockpitTimeline'),'Case detail must use 360 timeline projector.');
 caAssert(str_contains($caseSrc,"'timeline'"),'Case detail must expose timeline.');
@@ -90,5 +95,9 @@ caAssert(str_contains($caseSrc,"'sales_invoice_number'"),'Case detail must expos
 caAssert(str_contains($caseSrc,"SALES_INVOICE_LINKED"),'Case detail must derive invoice from linked invoice evidence.');
 caAssert(str_contains($caseSrc,"'last_external_write'"),'Case detail must expose the last external write.');
 caAssert(str_contains($caseSrc,"'last_read_back'"),'Case detail must expose the last verification.');
+caAssert(str_contains($caseSrc,"'return_tracking_ids'"),'Case detail must expose TBR / return tracking separately.');
+caAssert(str_contains($caseSrc,"'applied_rule'"),'Case detail must expose a safe latest applied-rule reference.');
+caAssert(str_contains($caseSrc,'RETURN_REPORT_OBSERVED'),'Case detail must derive return reason from the actual returns report event.');
+caAssert(!str_contains($caseSrc,'new SvAmazonReturnsSpApi'),'Opening case detail must not trigger an external SP-API read.');
 
 echo "cockpit-api-contract-test: OK\n";

@@ -36,6 +36,7 @@ final class SvAmazonGmailParser
         $quantityOrdered = null;
         $quantityRefunded = null;
         $review = null;
+        $returnTrackingId = null;
 
         $isReviewChannel = stripos($from, 'safe-t-review@amazon.com') !== false
             || preg_match('/revis[aã]o\s+detalhada.*SAFE-T/iu', $subject) === 1;
@@ -71,6 +72,10 @@ final class SvAmazonGmailParser
             $safeTId = $match[1];
         }
         if ($eventType === null) return [];
+        if($eventType==='RETURN_AUTHORIZED_EMAIL'
+            && preg_match('/\b(TBR[A-Z0-9-]{6,30})\b/i',$combined,$trackingMatch)===1){
+            $returnTrackingId=strtoupper($trackingMatch[1]);
+        }
 
         $contentSha = hash('sha256', $this->canonicalText($subject) . "\n" . $this->canonicalText($body));
         $identityParts = ['gmail',$messageId,$eventType,$orderId,$safeTId ?? ''];
@@ -91,6 +96,7 @@ final class SvAmazonGmailParser
             'refund_initiator'=>$refundInitiator,
             'quantity_ordered'=>$quantityOrdered,
             'quantity_refunded'=>$quantityRefunded,
+            'return_tracking_id'=>$returnTrackingId,
             'review_outcome'=>$review['outcome'] ?? null,
             'review_suggested_action'=>$review['suggested_action'] ?? null,
             'review_reason'=>$review['reason'] ?? null,

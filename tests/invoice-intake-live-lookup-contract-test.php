@@ -8,14 +8,15 @@ $path=__DIR__.'/../admin/amazon-returns/api/intake-lookup.php';
 $source=file_get_contents($path);
 invoiceIntakeAssert(is_string($source),'Unable to read intake lookup endpoint.');
 
-$localPos=strpos($source,'SvAmazonInvoiceSearch::caseIdsExact');
+$localPos=strpos($source,'SvAmazonCaseReferenceSearch::caseIds');
 $livePos=strpos($source,'->findOrderByInvoiceNumber($invoiceNumber)');
-invoiceIntakeAssert(is_int($localPos),'NF lookup must check immutable local evidence first.');
+invoiceIntakeAssert(is_int($localPos),'NF lookup must check the shared immutable local reference evidence first.');
 invoiceIntakeAssert(is_int($livePos),'NF lookup must query Amazon Invoices API when local evidence is absent.');
-invoiceIntakeAssert($localPos<$livePos,'Local NF evidence must be consulted before the live Amazon lookup.');
+invoiceIntakeAssert($localPos<$livePos,'Shared local reference evidence must be consulted before the live Amazon lookup.');
+$referenceSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/CaseReferenceSearch.php');
+invoiceIntakeAssert(str_contains($referenceSource,'SvAmazonInvoiceSearch::caseIdsExact'),'Structured NF resolution must remain exact in the shared resolver.');
 invoiceIntakeAssert(
-    str_contains($source,'$orderId=(string)$invoiceLookup[\'order_id\'];')
-    || str_contains($source,'$orderId=(string)($invoiceLookup[\'order_id\']'),
+    str_contains($source,'$orderId=trim((string)($invoiceLookup[\'order_id\']??\'\'));'),
     'Live invoice lookup must hand the resolved Amazon order to the order sync flow.'
 );
 invoiceIntakeAssert(str_contains($source,'->syncOrder($orderId)'),'Resolved NF order must be synchronized immediately.');

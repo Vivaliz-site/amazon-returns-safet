@@ -18,7 +18,7 @@ $intake = (string) file_get_contents($root . '/admin/amazon-returns/intake.php')
 foreach (['Situação', 'Próxima ação', 'Tipo de logística', 'Recebimento'] as $label) {
     uiAssert(str_contains($page, $label), 'Missing plain-language UI label: ' . $label);
 }
-foreach (['O que aconteceu', 'Por que preciso da sua decisão?', 'O que já foi verificado', 'Mensagens trocadas', 'Recomendação'] as $section) {
+foreach (['Qual decisão precisa ser tomada?', 'O que aconteceu', 'O que já foi verificado', 'Mensagens com a Amazon', 'Impacto financeiro e prazo', 'Recomendação', 'O que o sistema aprenderá', 'Casos semelhantes afetados'] as $section) {
     uiAssert(str_contains($js . $operator, $section), 'Review is missing plain-language section: ' . $section);
 }
 foreach (['function friendlyError(', 'function humanText(', 'function humanReviewSummary(', 'function renderMessageThread('] as $helper) {
@@ -27,7 +27,7 @@ foreach (['function friendlyError(', 'function humanText(', 'function humanRevie
 uiAssert(str_contains($page, 'operator-language.js'), 'Operator language boundary script must be loaded after the cockpit.');
 uiAssert(str_contains($operator, 'function recommendationExplanation('), 'Missing recommendation explanation sanitizer.');
 uiAssert(str_contains($operator, 'function renderSuggestion('), 'Recommendation rendering must be overridden at the user-facing boundary.');
-uiAssert(!str_contains($operator, 'suggestion.rationale'), 'Raw AI rationale must never be rendered to the operator.');
+uiAssert(str_contains($operator, "humanText(suggestion?.rationale||'')"), 'AI rationale must pass through the global humanizer before rendering.');
 uiAssert(str_contains($js, "text('span',friendlyError(message))"), 'All global UI errors must pass through friendlyError before rendering.');
 
 $forbiddenPage = [

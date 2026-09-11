@@ -1,6 +1,7 @@
 function recommendationExplanation(suggestion){
-  const action=actionLabel(suggestion?.action);
-  return `Com os dados disponíveis, a ação mais segura é: ${action}.`;
+  const rationale=humanText(suggestion?.rationale||'');
+  if(rationale&&rationale!=='—'&&rationale!=='Informação não disponível')return rationale;
+  return `Com os dados disponíveis, a ação mais segura é: ${actionLabel(suggestion?.action)}.`;
 }
 
 function renderSuggestion(suggestion){
@@ -10,16 +11,19 @@ function renderSuggestion(suggestion){
   section.append(text('h3','Recomendação'));
   if(!suggestion){
     section.append(text('p','Ainda não há recomendação gerada. Clique em “Gerar recomendação” para analisar este caso.','muted'));
-    root.append(section);
+    root.append(section,renderReviewLearningImpact());
     return;
   }
   section.append(
     field('Ação recomendada',actionLabel(suggestion.action)),
-    field('Grau de certeza',suggestion.confidence==null?'—':`${Math.round(Number(suggestion.confidence)*100)}%`),
+    field('Grau de certeza',reviewConfidence(suggestion.confidence)),
     text('p',recommendationExplanation(suggestion))
   );
-  if((suggestion.uncertainties||[]).length){
-    section.append(text('p',`O que ainda precisa de atenção: ${suggestion.uncertainties.map(reasonLabel).join(' · ')}`,'muted'));
+  const uncertainties=(suggestion.uncertainties||[])
+    .map(reasonLabel)
+    .filter(value=>value&&value!=='—'&&value!=='Informação não disponível');
+  if(uncertainties.length){
+    section.append(text('p',`O que ainda precisa de atenção: ${uncertainties.join(' · ')}`,'muted'));
   }
-  root.append(section);
+  root.append(section,renderReviewLearningImpact());
 }

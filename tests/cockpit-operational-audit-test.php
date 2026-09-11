@@ -8,6 +8,8 @@ $listApi=(string)file_get_contents($root.'/admin/amazon-returns/api/cases.php');
 $ui=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational.js');
 $bootstrap=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational-bootstrap.js');
 $css=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational.css');
+$referenceSearch=(string)file_get_contents($root.'/includes/amazon-returns/CaseReferenceSearch.php');
+$eventStore=(string)file_get_contents($root.'/includes/amazon-returns/TenantEventStore.php');
 
 // Same projected/current decision facts drive both list and detail.
 foreach(["'current_action'","'current_reason'","'outstanding_amount'"] as $fact){
@@ -22,9 +24,10 @@ coaAssert(str_contains($api,"'case'=>\$case"),'Detail API must expose the projec
 coaAssert(str_contains($listApi,'previewAction(')&&str_contains($api,'previewAction('),'Both views must use side-effect-free current decision preview.');
 
 // Search promises only fields the backend actually supports, including projected tracking and invoice evidence.
-coaAssert(str_contains($page,'rastreio'),'Search UI must advertise tracking search.');
-coaAssert(str_contains($listApi,'foreach($case[\'customer_tracking_ids\']'),'Tracking search must use projected tracking IDs.');
-coaAssert(str_contains($listApi,'SvAmazonInvoiceSearch::caseIds'),'NF search must use invoice evidence.');
+coaAssert(str_contains($page,'TBR')&&str_contains($page,'rastreio'),'Search UI must advertise return and delivery tracking search.');
+coaAssert(str_contains($listApi,'SvAmazonCaseReferenceSearch::caseIds'),'List API must resolve references before pagination.');
+coaAssert(str_contains($eventStore,'customer_tracking_ids'),'Scoped evidence store must search customer tracking evidence.');
+coaAssert(str_contains($referenceSearch,'SvAmazonInvoiceSearch::caseIdsExact'),'Structured NF search must use exact invoice evidence.');
 
 // Human responsibility must win over automatic states and generic WAIT must never be the operator status.
 coaAssert(str_contains($ui,"review_status==='OPEN'"),'Open review must be shown as user responsibility.');
@@ -61,7 +64,7 @@ coaAssert(str_contains($ui,"source!=='Informação não disponível'"),'Unknown 
 coaAssert(str_contains($bootstrap,"if(state.view==='cases')loadCases()"),'Operational list must rerender after deferred scripts load.');
 coaAssert(str_contains($bootstrap,'Dados podem estar desatualizados'),'Stale source data must be visibly identified.');
 coaAssert(str_contains($bootstrap,'function syncOperationalChrome('),'Operational chrome must follow the selected tab.');
-coaAssert(str_contains($bootstrap,"classList.toggle('hidden',state.view!=='cases')"),'Case quick filters must be hidden outside the cases tab.');
+coaAssert(str_contains($bootstrap,"classList.toggle('hidden',hide)"),'Case quick filters must be hidden outside the cases tab.');
 
 // Responsive layout and usable touch targets.
 coaAssert(str_contains($css,'@media(max-width:980px)'),'Tablet responsive layout missing.');
@@ -75,5 +78,10 @@ coaAssert(str_contains($css,'.result-head{align-items:flex-start;flex-direction:
 
 // User-provided/API content remains text-only; no HTML injection shortcut.
 coaAssert(!str_contains($ui,'innerHTML')&&!str_contains($bootstrap,'innerHTML'),'Operational cockpit must not use innerHTML.');
+
+coaAssert(str_contains($ui,'operatorFinancialSummary(c)'),'Financial list copy must come from zero-safe helper.');
+coaAssert(str_contains($ui,"const returnTracks=Array.isArray(c.return_tracking_ids)"),'TBR display must stay separate from delivery tracking.');
+coaAssert(str_contains($ui,'operatorCompactResponsibility'),'Compact responsibility labels are required.');
+coaAssert(!str_contains($ui,"text('span','saldo ainda a recuperar','muted')"),'List must not hard-code outstanding copy for zero balances.');
 
 echo "cockpit-operational-audit-test: OK\n";
