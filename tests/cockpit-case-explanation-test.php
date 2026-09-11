@@ -8,9 +8,10 @@ $timeline=(string)file_get_contents($root.'/includes/amazon-returns/CockpitTimel
 foreach(['O que aconteceu','O que o sistema fez','O que acontece agora','Mensagens com a Amazon','Evidências','Por que o sistema decidiu isso?','Datas importantes','Valores','Ver histórico completo'] as $copy){
     cceAssert(str_contains($ui,$copy),'Case explanation UI missing '.$copy);
 }
-foreach(['function caseMessageItems(','decision-explanation','Fatos decisivos','Regra aplicada','Conclusão','Ainda em acompanhamento'] as $needle){
+foreach(['function caseMessageItems(','function operatorUnresolvedFacts(c)','decision-explanation','Fatos decisivos','Regra aplicada','Conclusão','Ainda em acompanhamento'] as $needle){
     cceAssert(str_contains($ui,$needle),'Decision explanation contract missing '.$needle);
 }
+cceAssert(!str_contains($ui,"pending.append(text('h4','Ainda em acompanhamento'),text('p',reason"),'Pending section cannot repeat the decision reason as if it were an unresolved fact.');
 cceAssert(str_contains($ui,'O conteúdo histórico dessa mensagem não foi armazenado.'),'Historical missing message body needs an explicit honest placeholder.');
 cceAssert(!str_contains($ui,"text('p','MISSING_HISTORICAL_SNAPSHOT')"),'Internal narrative marker cannot reach UI.');
 foreach(["'return_tracking_ids'","'return_reason'","'applied_rule'","'physical_received_at'","'last_read_back'"] as $field){
