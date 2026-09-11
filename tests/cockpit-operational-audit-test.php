@@ -61,7 +61,7 @@ coaAssert(str_contains($ui,"source!=='Informação não disponível'"),'Unknown 
 coaAssert(str_contains($bootstrap,"if(state.view==='cases')loadCases()"),'Operational list must rerender after deferred scripts load.');
 coaAssert(str_contains($bootstrap,'Dados podem estar desatualizados'),'Stale source data must be visibly identified.');
 coaAssert(str_contains($bootstrap,'function syncOperationalChrome('),'Operational chrome must follow the selected tab.');
-coaAssert(str_contains($bootstrap,"classList.toggle('hidden',state.view!=='cases')"),'Case quick filters must be hidden outside the cases tab.');
+coaAssert(str_contains($bootstrap,"classList.toggle('hidden',hide)"),'Case quick filters must be hidden outside the cases tab.');
 
 // Responsive layout and usable touch targets.
 coaAssert(str_contains($css,'@media(max-width:980px)'),'Tablet responsive layout missing.');

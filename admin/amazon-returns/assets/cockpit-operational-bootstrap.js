@@ -40,28 +40,12 @@ loadBucketCases=async function auditedLoadBucketCases(filters,bucket){
 };
 function syncOperationalChrome(){
   const hide=state.view!=='cases';
-  document.querySelector('.quick-filters')?.classList.toggle('hidden',state.view!=='cases');
-  document.querySelector('#operational-overview')?.classList.toggle('hidden',hide);
+  document.querySelector('.quick-filters')?.classList.toggle('hidden',hide);
+  for(const id of ['autonomy-status','user-work','automation-work','money-headlines','money-breakdown','operational-problems','deadline-list','connector-health']){
+    document.querySelector('#'+id)?.classList.toggle('hidden',hide);
+  }
 }
 const baseOperationalSelectView=selectView;
 selectView=function operationalSelectView(view){baseOperationalSelectView(view);syncOperationalChrome();};
-async function loadOperationalOverview(){
-  const root=document.querySelector('#operational-overview');if(!root)return;
-  try{
-    const summary=await json('/admin/amazon-returns/api/summary.php');
-    const all=[];let page=1,total=0;
-    do{const part=await json(`/admin/amazon-returns/api/cases.php?page=${page}&per_page=100`);total=Number(part.total||0);all.push(...(part.items||[]));page++;}while(all.length<total&&page<=20);
-    const terminal=new Set(['RECOVERED','CLOSED_LOSS','RECEIVED_OK']);
-    const attention=all.filter(c=>operatorResponsibility(c)==='Sua decisão é necessária').length;
-    const closed=all.filter(c=>terminal.has(String(c.state||''))).length;
-    const system=Math.max(0,all.length-attention-closed);
-    root.replaceChildren();
-    root.append(text('strong',`${Number(summary.total_cases||all.length)} casos · ${brl(summary.money?.at_risk||0)} em aberto · ${brl(summary.money?.recovered||0)} recuperados`));
-    const breakdown=text('div','', 'overview-breakdown');
-    for(const label of [`${attention} precisam da sua atenção`,`${system} sendo tratados pelo sistema`,`${closed} concluídos`])breakdown.append(text('span',label,'overview-chip'));
-    root.append(breakdown);
-  }catch(_e){root.replaceChildren(text('span','Resumo operacional indisponível no momento. A lista de casos continua disponível.','muted'));}
-}
 syncOperationalChrome();
-loadOperationalOverview();
 if(state.view==='cases')loadCases();

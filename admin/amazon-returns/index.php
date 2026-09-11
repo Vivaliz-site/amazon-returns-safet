@@ -16,9 +16,14 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <link rel="stylesheet" href="/admin/amazon-returns/assets/cockpit-operational.css?v=1">
 </head><body><main class="wrap">
 <div class="top"><div><h1>Devoluções Amazon</h1><div class="muted">Acompanhe valores, prazos, mensagens e ações necessárias para recuperar reembolsos.</div></div><a class="btn" href="/admin/amazon-returns/intake.php">Registrar devolução recebida</a></div>
-<section id="operational-overview" class="operational-overview" aria-label="Resumo operacional"><span class="muted">Carregando resumo operacional…</span></section>
-<section class="cards" id="money" aria-label="Resumo financeiro"></section>
-<section class="panel"><h2>Pendências que exigem atenção</h2><div class="gates" id="gates"></div><p class="muted">O objetivo é manter todos estes indicadores em zero.</p></section>
+<section id="autonomy-status" class="autonomy-status" aria-live="polite"><span class="muted">Carregando situação do sistema…</span></section>
+<section id="user-work" class="operator-section" aria-label="Precisa de você?"></section>
+<section id="automation-work" class="operator-section" aria-label="Sistema tratando agora"></section>
+<section id="money-headlines" class="money-headlines" aria-label="Resumo financeiro"></section>
+<details id="money-breakdown" class="money-breakdown"><summary>Ver detalhes financeiros</summary><div id="money-breakdown-items"></div></details>
+<section id="operational-problems" class="operator-section" aria-label="Saúde operacional"></section>
+<section id="deadline-list" class="operator-section" aria-label="Prazos importantes"></section>
+<section id="connector-health" class="connector-health" aria-label="Conexões do sistema"></section>
 <section class="panel cockpit">
 <nav class="cockpit-tabs" aria-label="Painel de devoluções"><button type="button" data-view="cases" aria-selected="true">Casos</button><button type="button" data-view="reviews" aria-selected="false">Revisões <span id="review-count" class="review-count">0</span></button><button type="button" data-view="rules" aria-selected="false">Decisões aprendidas</button></nav>
 <button type="button" id="review-alert" class="review-alert hidden" aria-live="polite"></button>
@@ -30,7 +35,7 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <button type="button" data-quick-filter="closed" aria-pressed="false">Concluídos</button>
 </div>
 <form id="filters" class="filters" onsubmit="return false">
-<label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, NF, SAFE-T, rastreio, SKU ou ASIN"></label>
+<label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, NF, TBR, SAFE-T, rastreio, SKU ou ASIN"></label>
 <label>Situação<select data-filter="state"><option value="">Todas</option><option value="SAFE_T_DENIED">SAFE-T negado</option><option value="APPEAL_REQUIRED">Recurso necessário</option><option value="APPEAL_SUBMITTED">Recurso enviado</option><option value="CREDIT_PENDING">Crédito pendente</option><option value="RECOVERED">Ressarcido</option></select></label>
 <label>Próxima ação<select data-filter="action"><option value="">Todas</option><option value="SAFE_T_SUBMIT">Solicitar ressarcimento SAFE-T</option><option value="SAFE_T_APPEAL">Recorrer no SAFE-T</option><option value="SAFE_T_EMAIL_REVIEW">Pedir nova análise por e-mail</option><option value="SELLER_SUPPORT_OPEN">Abrir atendimento com a Amazon</option><option value="WAIT">Acompanhamento automático</option><option value="HUMAN_REVIEW">Precisa da sua decisão</option></select></label>
 <label>Tipo de logística<select data-filter="program"><option value="">Todos</option><option value="STANDARD">Padrão</option><option value="FBA_ONSITE">FBA no local</option><option value="DELIVERY_BY_AMAZON">Entrega pela Amazon</option></select></label>
@@ -51,4 +56,4 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <div class="review-submit"><button type="button" id="review-preview">Ver casos afetados</button><button type="button" id="review-confirm" disabled>Confirmar decisão</button></div>
 </section>
 </section>
-</main><script src="/admin/amazon-returns/assets/cockpit.js" defer></script><script src="/admin/amazon-returns/assets/operator-language.js" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=review-open-2" defer></script><script src="/admin/amazon-returns/assets/ux-polish.js?v=1" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational.js?v=1" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational-bootstrap.js?v=1" defer></script></body></html>
+</main><script src="/admin/amazon-returns/assets/cockpit-summary.js?v=autonomy-1" defer></script><script src="/admin/amazon-returns/assets/cockpit.js?v=autonomy-1" defer></script><script src="/admin/amazon-returns/assets/operator-language.js" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=review-open-2" defer></script><script src="/admin/amazon-returns/assets/ux-polish.js?v=1" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational.js?v=1" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational-bootstrap.js?v=1" defer></script></body></html>
