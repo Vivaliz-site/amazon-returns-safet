@@ -95,5 +95,9 @@ caAssert(str_contains($caseSrc,"'sales_invoice_number'"),'Case detail must expos
 caAssert(str_contains($caseSrc,"SALES_INVOICE_LINKED"),'Case detail must derive invoice from linked invoice evidence.');
 caAssert(str_contains($caseSrc,"'last_external_write'"),'Case detail must expose the last external write.');
 caAssert(str_contains($caseSrc,"'last_read_back'"),'Case detail must expose the last verification.');
+caAssert(str_contains($caseSrc,"'return_tracking_ids'"),'Case detail must expose TBR / return tracking separately.');
+caAssert(str_contains($caseSrc,"'applied_rule'"),'Case detail must expose a safe latest applied-rule reference.');
+caAssert(str_contains($caseSrc,'RETURN_REPORT_OBSERVED'),'Case detail must derive return reason from the actual returns report event.');
+caAssert(!str_contains($caseSrc,'new SvAmazonReturnsSpApi'),'Opening case detail must not trigger an external SP-API read.');
 
 echo "cockpit-api-contract-test: OK\n";
