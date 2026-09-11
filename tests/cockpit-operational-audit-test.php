@@ -9,6 +9,7 @@ $ui=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operat
 $bootstrap=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational-bootstrap.js');
 $css=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational.css');
 $referenceSearch=(string)file_get_contents($root.'/includes/amazon-returns/CaseReferenceSearch.php');
+$eventStore=(string)file_get_contents($root.'/includes/amazon-returns/TenantEventStore.php');
 
 // Same projected/current decision facts drive both list and detail.
 foreach(["'current_action'","'current_reason'","'outstanding_amount'"] as $fact){
@@ -25,7 +26,7 @@ coaAssert(str_contains($listApi,'previewAction(')&&str_contains($api,'previewAct
 // Search promises only fields the backend actually supports, including projected tracking and invoice evidence.
 coaAssert(str_contains($page,'TBR')&&str_contains($page,'rastreio'),'Search UI must advertise return and delivery tracking search.');
 coaAssert(str_contains($listApi,'SvAmazonCaseReferenceSearch::caseIds'),'List API must resolve references before pagination.');
-coaAssert(str_contains($referenceSearch,'customer_tracking_ids'),'Shared reference resolver must search customer tracking evidence.');
+coaAssert(str_contains($eventStore,'customer_tracking_ids'),'Scoped evidence store must search customer tracking evidence.');
 coaAssert(str_contains($referenceSearch,'SvAmazonInvoiceSearch::caseIdsExact'),'Structured NF search must use exact invoice evidence.');
 
 // Human responsibility must win over automatic states and generic WAIT must never be the operator status.
