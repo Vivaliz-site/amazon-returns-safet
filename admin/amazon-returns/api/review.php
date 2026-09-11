@@ -7,6 +7,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitTimeline.php';
+require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 SvAmazonReturnsAdminAuth::requireLogin(true);header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 function sv_amz_review_reply(array $p,int $s=200):never{http_response_code($s);echo json_encode($p,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);exit;}
 try{
@@ -16,6 +17,9 @@ try{
  $review=$p->reviews->find((int)$reviewId);if(!is_array($review))sv_amz_review_reply(['success'=>false,'error'=>'Revisão não encontrada.'],404);
  if(strtoupper(trim((string)($review['status']??'')))!=='OPEN')sv_amz_review_reply(['success'=>false,'error'=>'REVIEW_NOT_OPEN','case_id'=>(int)($review['case_id']??0)],409);
  $caseId=(int)($review['case_id']??0);$case=$p->cases->find($caseId);if(!is_array($case))sv_amz_review_reply(['success'=>false,'error'=>'Caso não encontrado.'],404);
+ $case=SvAmazonReturnProjector::project($p->cases,$p->events,$caseId);
+ $expected=(float)($case['expected_reimbursement_amount']??0);$refund=(float)($case['refund_amount']??0);$credit=(float)($case['reconciled_credit_amount']??0);
+ $case['outstanding_amount']=max(0,($expected>0?$expected:$refund)-$credit);
  $events=$p->events->eventsForCase($caseId);$timeline=SvAmazonCockpitTimeline::project($case,$events,$p->evidence->projectionForCase($caseId),$p->outbox->historyForCase($caseId),$p->reviews->forCase($caseId),$p->ruleApplications->forCase($caseId));
  sv_amz_review_reply(['success'=>true,'review'=>$review,'case'=>$case,'timeline'=>$timeline]);
 }catch(Throwable $e){error_log('[amazon-returns-review] '.get_class($e));sv_amz_review_reply(['success'=>false,'error'=>'Não foi possível consultar a revisão.'],500);}
