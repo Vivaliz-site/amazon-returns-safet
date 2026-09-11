@@ -107,11 +107,14 @@ final class SvAmazonCockpitHealth
             return ['status'=>'DEGRADED','observed_at'=>$observedAt,'reason'=>'not_ready'];
         }
         if(!is_array($cursor)){
-            return ['status'=>'OK','observed_at'=>null,'reason'=>'configured'];
+            return ['status'=>'UNKNOWN','observed_at'=>null,'reason'=>'not_observed'];
         }
         $taskStatus=strtoupper(trim((string)($cursor['metadata']['status']??'UNKNOWN')));
         if(in_array($taskStatus,['FAILED','PARTIAL'],true)){
             return ['status'=>'DEGRADED','observed_at'=>$observedAt,'reason'=>'last_run_failed'];
+        }
+        if($observedAt===null){
+            return ['status'=>'UNKNOWN','observed_at'=>null,'reason'=>'not_observed'];
         }
         if($observedAt!==null){
             try{
