@@ -28,7 +28,10 @@ final class SvAmazonCaseReferenceSearch
         $kind=self::kind($term);
         $exact=in_array($kind,[self::ORDER,self::INVOICE,self::RETURN_TRACKING],true);
         $pattern=$exact?$term:'%'.self::escapeLike($term).'%';
-        $arrayPattern='%'.self::escapeLike($term).'%';
+        $arrayPattern=$exact?$term:'%'.self::escapeLike($term).'%';
+        $arrayMatch=static fn(string $path,string $placeholder):string=>$exact
+            ? "JSON_CONTAINS(JSON_EXTRACT(payload_json,'$.{$path}'),JSON_QUOTE({$placeholder}))"
+            : "JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.{$path}')) LIKE {$placeholder}";
         $ids=[];
         $caseStmt=$db->prepare(
             'SELECT id FROM amazon_return_cases WHERE tenant_id=:case_tenant_id '
@@ -47,10 +50,10 @@ final class SvAmazonCaseReferenceSearch
             "SELECT DISTINCT case_id FROM amazon_return_events WHERE tenant_id=:event_tenant_id "
             ."AND amazon_connection_id=:event_connection_id AND ("
             ."JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.return_tracking_id')) LIKE :event_return_tracking_id "
-            ."OR JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.return_tracking_ids')) LIKE :event_return_tracking_ids "
-            ."OR JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.customer_tracking_ids')) LIKE :event_customer_tracking_ids "
+            ."OR ".$arrayMatch('return_tracking_ids',':event_return_tracking_ids')." "
+            ."OR ".$arrayMatch('customer_tracking_ids',':event_customer_tracking_ids')." "
             ."OR JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.tracking_id')) LIKE :event_tracking_id "
-            ."OR JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.tracking_ids')) LIKE :event_tracking_ids "
+            ."OR ".$arrayMatch('tracking_ids',':event_tracking_ids')." "
             ."OR JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.invoice_number')) LIKE :event_invoice_number "
             ."OR JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.sales_invoice_number')) LIKE :event_sales_invoice_number) "
             ."ORDER BY case_id LIMIT 1000"

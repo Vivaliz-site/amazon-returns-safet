@@ -44,8 +44,9 @@ foreach($db->executed as $execution){
 $eventExecution=null;
 foreach($db->executed as $execution){if(str_contains($execution['sql'],'amazon_return_events')){$eventExecution=$execution;break;}}
 crsAssert(is_array($eventExecution),'Event evidence query must execute.');
-crsSame('%TBR015328001%',$eventExecution['params'][':event_return_tracking_ids']??null,'JSON array reference must use a containing pattern.');
+crsSame('TBR015328001',$eventExecution['params'][':event_return_tracking_ids']??null,'Structured TBR array lookup must bind the exact token.');
 crsSame('TBR015328001',$eventExecution['params'][':event_return_tracking_id']??null,'Scalar structured TBR must remain exact.');
+crsAssert(str_contains($eventExecution['sql'],'JSON_CONTAINS'),'Structured TBR array lookup must compare an exact JSON array element.');
 $invoiceDb=new CrsPdo();
 $invoiceDb->queue([]);$invoiceDb->queue([]);$invoiceDb->queue([9]);
 crsSame([9],SvAmazonCaseReferenceSearch::caseIds($invoiceDb,$context,'123456'),'Exact NF evidence must resolve.');
