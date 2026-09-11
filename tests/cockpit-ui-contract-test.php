@@ -60,7 +60,7 @@ foreach([
     'actionLabel(c.current_action)',
     'stateLabel(c.state)',
     'physicalLabel(c.physical_status)',
-    'reasonLabel(r.reason)',
+    'humanReviewQuestion(r,{},{})',
     'statusLabel(r.status)',
     'actionLabel(suggestion.action)',
     'humanReviewSummary(j.review,ctx,j.case)',
