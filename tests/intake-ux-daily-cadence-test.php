@@ -27,18 +27,21 @@ $daemon=intakeUxRead('workers/amazon-returns/daemon.php');
 intakeUxAssert(str_contains($daemon,"unset(\$state['sp_api'],\$state['financial'])"),'When a due decision requires financial revalidation, it must force a fresh external read instead of waiting for the routine 12-hour cadence.');
 
 $intakePage=intakeUxRead('admin/amazon-returns/intake.php');
-intakeUxAssert(str_contains($intakePage,'Número da NF de venda'),'Intake must offer NF as a lookup option.');
-intakeUxAssert(str_contains($intakePage,'id="invoice"'),'NF must be in the lookup panel.');
+intakeUxAssert(str_contains($intakePage,'NF de venda'),'Intake must offer NF as a lookup option.');
+intakeUxAssert(str_contains($intakePage,'id="lookup-query"'),'Order, NF and TBR must share one lookup field.');
 intakeUxAssert(!str_contains($intakePage,'name="sales_invoice_number"'),'NF must not be requested again when confirming receipt.');
-intakeUxAssert(str_contains($intakePage,'sales_invoice_number:invoice'),'Lookup request must send the NF alternative.');
+intakeUxAssert(str_contains($intakePage,'query:query'),'Lookup request must send the unified reference.');
+intakeUxAssert(str_contains($intakePage,'id="intake-preview"'),'Matched return must be previewed before confirmation.');
+intakeUxAssert(str_contains($intakePage,'class="panel hidden" id="form"'),'State-changing receipt form must stay hidden until a match is selected.');
 intakeUxAssert(str_contains($intakePage,'/admin/amazon-returns/api/intake-lookup.php'),'Intake lookup must use the on-demand lookup endpoint.');
 intakeUxAssert(str_contains($intakePage,'Number(c.quantity_refunded||0)>0'),'Known refunded quantity must take precedence in the intake UI.');
 intakeUxAssert(str_contains($intakePage,'submitButton.disabled=true'),'Receipt submit must prevent concurrent duplicate clicks.');
 
 $lookup=intakeUxRead('admin/amazon-returns/api/intake-lookup.php');
-intakeUxAssert(str_contains($lookup,"\$input['sales_invoice_number']"),'Lookup API must accept NF as an alternative identifier.');
-intakeUxAssert(str_contains($lookup,'SvAmazonInvoiceSearch::caseIdsExact'),'Receipt lookup must resolve the exact NF through tenant-scoped invoice evidence.');
-intakeUxAssert(str_contains($lookup,'$p->cases->forOrder($orderId)'),'Order lookup must still check the local case store first.');
+intakeUxAssert(str_contains($lookup,"\$input['sales_invoice_number']"),'Lookup API must keep legacy NF input compatible for one release.');
+intakeUxAssert(str_contains($lookup,'SvAmazonCaseReferenceSearch::caseIds'),'Receipt lookup must use the same tenant-scoped resolver as cockpit search.');
+intakeUxAssert(str_contains($lookup,'SvAmazonGmailReturnReferenceLookup'),'Receipt lookup must support TBR recovery through read-only Gmail evidence.');
+intakeUxAssert(str_contains($lookup,'$p->cases->forOrder($orderId)'),'Resolved TBR/order lookup must check the local case store before remote order sync.');
 intakeUxAssert(str_contains($lookup,'->syncOrder($orderId)'),'Order lookup must still query Amazon immediately when absent locally.');
 
 $intakeApi=intakeUxRead('admin/amazon-returns/api/intake.php');

@@ -68,7 +68,10 @@ final class SvAmazonCaseReferenceSearch
         ]);
         foreach($eventStmt->fetchAll(PDO::FETCH_COLUMN) as $id)if((int)$id>0)$ids[]=(int)$id;
 
-        foreach(SvAmazonInvoiceSearch::caseIds($db,$context,$term) as $id)if($id>0)$ids[]=$id;
+        $invoiceIds=$kind===self::INVOICE
+            ? SvAmazonInvoiceSearch::caseIdsExact($db,$context,$term)
+            : SvAmazonInvoiceSearch::caseIds($db,$context,$term);
+        foreach($invoiceIds as $id)if($id>0)$ids[]=$id;
         $ids=array_values(array_unique($ids));
         sort($ids,SORT_NUMERIC);
         return $ids;
