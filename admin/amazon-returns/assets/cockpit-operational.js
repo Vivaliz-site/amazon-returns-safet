@@ -3,6 +3,20 @@ function operatorResponsibility(c){
   if(['RECOVERED','CLOSED_LOSS','RECEIVED_OK'].includes(String(c?.state||'')))return 'Caso concluído';
   return 'Nenhuma ação sua é necessária';
 }
+function operatorCompactResponsibility(c){
+  const responsibility=operatorResponsibility(c);
+  if(responsibility==='Sua decisão é necessária')return 'Você';
+  if(responsibility==='Caso concluído')return 'Concluído';
+  return 'Sistema';
+}
+function operatorFinancialSummary(c){
+  const outstanding=Math.max(0,Number(c?.outstanding_amount||0));
+  if(outstanding>0)return {value:brl(outstanding),label:'saldo ainda a recuperar'};
+  const recovered=Number(c?.reconciled_credit_amount||0);
+  const pending=['SAFE_T_APPROVED','APPEAL_APPROVED','CREDIT_PENDING'].includes(String(c?.state||''));
+  if(recovered>0&&pending)return {value:brl(0),label:'Crédito identificado; aguardando confirmação final.'};
+  return {value:brl(0),label:'Nenhum saldo financeiro em aberto.'};
+}
 function operatorStatus(c){
   const state=String(c?.state||''),action=String(c?.current_action||'');
   if(operatorResponsibility(c)==='Sua decisão é necessária')return 'Precisa da sua decisão';
@@ -111,10 +125,13 @@ function renderOperationalList(items){
   const list=document.querySelector('#case-list');list.replaceChildren();
   for(const c of items){
     const row=text('article','', 'case-row operational-case-row');
-    const id=text('div','', 'case-row-id');id.append(text('strong',c.amazon_order_id||'Pedido sem número'),text('span',c.safe_t_id?`SAFE-T ${c.safe_t_id}`:'Sem SAFE-T','muted'));
-    const status=text('div','', 'case-row-status');status.append(text('strong',operatorStatus(c)),text('span',physicalLabel(c.physical_status),'muted'));
-    const finance=text('div','', 'case-row-finance');finance.append(text('strong',brl(c.outstanding_amount)),text('span','saldo ainda a recuperar','muted'));
-    const responsibility=text('div',operatorResponsibility(c),'case-row-responsibility');
+    const returnTracks=Array.isArray(c.return_tracking_ids)?c.return_tracking_ids:[];
+    const id=text('div','', 'case-row-id');id.append(text('strong',c.amazon_order_id||'Pedido sem número'));
+    if(returnTracks[0])id.append(text('span',`TBR / devolução ${returnTracks[0]}`,'muted'));
+    id.append(text('span',c.safe_t_id?`SAFE-T ${c.safe_t_id}`:'Sem SAFE-T','muted'));
+    const status=text('div','', 'case-row-status');status.append(text('strong',operatorStatus(c)),text('span',physicalLabel(c.physical_status),'muted'),text('small',operatorNextStep(c),'muted case-row-next-step'));
+    const financial=operatorFinancialSummary(c);const finance=text('div','', 'case-row-finance');finance.append(text('strong',financial.value),text('span',financial.label,'muted'));
+    const responsibility=text('div',operatorCompactResponsibility(c),'case-row-responsibility');responsibility.setAttribute('aria-label',operatorResponsibility(c));
     if(operatorAlert(c))row.classList.add('case-overdue');
     row.append(id,status,finance,responsibility,button('Abrir',()=>openCase(c.id),'case-open'));list.append(row);
   }
@@ -141,7 +158,8 @@ function renderOperationalCase(data,relatedCount=null){
   for(const [title,value] of [['O que aconteceu',operatorWhatHappened(c)],['O que o sistema fez',operatorLastAction(c)],['O que acontece agora',operatorNextStep({...c,review_status:data.current_review?.status})]]){const item=text('div','', 'flow-item');item.append(text('strong',title),text('p',value));flow.append(item);}root.append(flow);
   const dates=sectionBlock('Datas importantes');const nextDate=['RECOVERED','CLOSED_LOSS','RECEIVED_OK'].includes(String(c.state||''))?null:(c.next_action_at||c.eligibility_at);
   appendAvailable(dates,operationalField('Data do pedido',operationalDate(c.order_at)),operationalField('Reembolso concedido ao cliente',operationalDate(c.refund_at)),operationalField('Débito na conta da loja',operationalDate(c.seller_debit_at)),operationalField('Devolução recebida',operationalDate(c.physical_received_at)),operationalField('Última verificação',operationalDate(c.last_read_back?.occurred_at)),operationalField('Próxima providência',nextDate?`${date(nextDate)} · ${daysUntil(nextDate)}`:null),operationalField('Prazo para recurso',c.appeal_deadline_at&&!['APPEAL_SUBMITTED','APPEAL_APPROVED'].includes(String(c.state||''))?`${date(c.appeal_deadline_at)} · ${daysUntil(c.appeal_deadline_at)}`:null));if(dates.children.length>1)root.append(dates);
-  const finance=sectionBlock('Valores','case-financial');appendAvailable(finance,operationalField('Valor reembolsado ao cliente',Number(c.refund_amount)>0?brl(c.refund_amount):null),operationalField('Valor já recuperado',brl(c.reconciled_credit_amount)),operationalField('Saldo ainda a recuperar',brl(c.outstanding_amount),'emphasis'));root.append(finance);
+  const financialSummary=operatorFinancialSummary(c);const financialLabel=financialSummary.label.charAt(0).toUpperCase()+financialSummary.label.slice(1);
+  const finance=sectionBlock('Valores','case-financial');appendAvailable(finance,operationalField('Valor reembolsado ao cliente',Number(c.refund_amount)>0?brl(c.refund_amount):null),operationalField('Valor já recuperado',Number(c.reconciled_credit_amount)>0?brl(c.reconciled_credit_amount):null),operationalField(financialLabel,financialSummary.value,'emphasis'));root.append(finance);
   const product=sectionBlock('Produto e documentos');appendAvailable(product,operationalField('SKU',c.sku||null),operationalField('ASIN',c.asin||null),operationalField('Quantidade do pedido',c.quantity_ordered?String(c.quantity_ordered):null),operationalField('Quantidade reembolsada',c.quantity_refunded?String(c.quantity_refunded):null),operationalField('SAFE-T',c.safe_t_id||null),operationalField('NF de venda',c.sales_invoice_number||null),operationalField('Tipo de logística',programLabel(c.program)),operationalField('Ocorrências relacionadas',relatedCount&&relatedCount>1?String(relatedCount):null));root.append(product);
   root.append(renderOperationalEvidence(c,timeline));
   const decisionReason=c.current_reason?reasonLabel(c.current_reason):'A decisão foi tomada com base nos dados atuais do pedido, do reembolso, da devolução e do financeiro.';const reason=sectionBlock('Por que o sistema tomou esta decisão?');reason.append(text('p',decisionReason));root.append(reason);
