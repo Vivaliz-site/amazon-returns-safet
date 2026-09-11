@@ -15,6 +15,8 @@ foreach(['Qual decisão precisa ser tomada?','O que aconteceu','O que já foi ve
 foreach(['humanReviewQuestion','renderReviewFinancialImpact','renderReviewLearningImpact'] as $helper)ruAssert(str_contains($js,$helper),'Review presentation helper missing '.$helper);
 ruAssert(!str_contains($js,"text('div',r.reason)"),'Raw review reason cannot be rendered.');
 ruAssert(!str_contains($js,'JSON.stringify(ctx.facts)'),'Raw review facts cannot be rendered.');
+ruAssert(str_contains($js,"item.category==='EXTERNAL_WRITE'"),'Review message direction must come from the audited timeline category.');
+ruAssert(str_contains($js,'O conteúdo histórico dessa mensagem não foi armazenado.'),'Review must label unavailable historical outbound text honestly.');
 foreach(['canonical_signature','signature_hash','effect_json'] as $token)ruAssert(!str_contains($js,$token),'Internal learning signature cannot reach normal review UI.');
 ruAssert(str_contains($api,'SvAmazonReturnProjector::project'),'Review detail must use the same projected case facts as cockpit detail.');
 ruAssert(str_contains($api,"'outstanding_amount'"),'Review detail must expose current financial exposure.');
