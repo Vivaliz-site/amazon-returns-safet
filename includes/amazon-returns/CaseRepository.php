@@ -175,6 +175,26 @@ final class SvAmazonReturnCaseRepository
         return ['items'=>array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array')),'page'=>$page,'per_page'=>$perPage,'total'=>$total];
     }
 
+    /** @return list<int> */
+    public function caseIdsForReference(string $term,bool $exact): array
+    {
+        $term=$this->requiredText($term,'case reference',96);
+        $pattern=$exact?$term:'%'.strtr($term,['\\'=>'\\\\','%'=>'\\%','_'=>'\\_']).'%';
+        $stmt=$this->prepare(
+            'SELECT id FROM amazon_return_cases WHERE tenant_id=:tenant_id '
+            .'AND amazon_connection_id=:amazon_connection_id AND ('
+            .'amazon_order_id LIKE :ref_order OR safe_t_id LIKE :ref_safe_t '
+            .'OR sku LIKE :ref_sku OR asin LIKE :ref_asin) ORDER BY id LIMIT 1000'
+        );
+        $stmt->execute($this->scopeParams([
+            ':ref_order'=>$pattern,':ref_safe_t'=>$pattern,':ref_sku'=>$pattern,':ref_asin'=>$pattern,
+        ]));
+        return array_values(array_unique(array_filter(
+            array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),
+            static fn(int $id):bool=>$id>0
+        )));
+    }
+
     /** @return list<array<string,mixed>> */
     public function openCases(int $limit = 250): array
     {

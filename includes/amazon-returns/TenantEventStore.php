@@ -89,6 +89,32 @@ final class SvAmazonTenantReturnEventStore
         unset($row);
         return $rows;
     }
+
+    /** @return list<int> */
+    public function caseIdsForReference(string $term,bool $exact): array
+    {
+        $term=trim($term);
+        if($term===''||strlen($term)>96)throw new InvalidArgumentException('Event reference must contain 1-96 bytes.');
+        $escaped=strtr($term,['\\'=>'\\\\','%'=>'\\%','_'=>'\\_']);
+        $pattern=$exact?$term:'%'.$escaped.'%';$arrayPattern=$exact?$term:'%'.$escaped.'%';
+        $arrayMatch=static fn(string $path,string $placeholder):string=>$exact
+            ? "JSON_CONTAINS(JSON_EXTRACT(payload_json,'$.{$path}'),JSON_QUOTE({$placeholder}))"
+            : "JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.{$path}')) LIKE {$placeholder}";
+        $stmt=$this->prepare(
+            "SELECT DISTINCT case_id FROM amazon_return_events WHERE tenant_id=:tenant_id "
+            ."AND amazon_connection_id=:amazon_connection_id AND ("
+            ."JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.return_tracking_id')) LIKE :event_return_tracking_id "
+            ."OR ".$arrayMatch('return_tracking_ids',':event_return_tracking_ids')." OR ".$arrayMatch('customer_tracking_ids',':event_customer_tracking_ids')." "
+            ."OR JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.tracking_id')) LIKE :event_tracking_id OR ".$arrayMatch('tracking_ids',':event_tracking_ids')." "
+            ."OR JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.invoice_number')) LIKE :event_invoice_number OR JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.sales_invoice_number')) LIKE :event_sales_invoice_number) ORDER BY case_id LIMIT 1000"
+        );
+        $stmt->execute($this->scopeParams([
+            ':event_return_tracking_id'=>$pattern,':event_return_tracking_ids'=>$arrayPattern,':event_customer_tracking_ids'=>$arrayPattern,
+            ':event_tracking_id'=>$pattern,':event_tracking_ids'=>$arrayPattern,':event_invoice_number'=>$pattern,':event_sales_invoice_number'=>$pattern,
+        ]));
+        return array_values(array_unique(array_filter(array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),static fn(int $id):bool=>$id>0)));
+    }
+
     public static function deterministicKey(string ...$parts): string
     {
         if ($parts === [] || in_array('', $parts, true)) {

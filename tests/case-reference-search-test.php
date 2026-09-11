@@ -54,9 +54,15 @@ $invoiceExecution=null;
 foreach($invoiceDb->executed as $execution){if(array_key_exists(':q_invoice',$execution['params'])){$invoiceExecution=$execution;break;}}
 crsSame('123456',$invoiceExecution['params'][':q_invoice']??null,'Structured NF lookup must be exact.');
 $source=(string)file_get_contents($root.'/includes/amazon-returns/CaseReferenceSearch.php');
+$caseRepository=(string)file_get_contents($root.'/includes/amazon-returns/CaseRepository.php');
+$eventStore=(string)file_get_contents($root.'/includes/amazon-returns/TenantEventStore.php');
 foreach(['return_tracking_id','return_tracking_ids','customer_tracking_ids','tracking_id','tracking_ids','invoice_number','sales_invoice_number'] as $field){
-    crsAssert(str_contains($source,$field),'Known evidence reference missing: '.$field);
+    crsAssert(str_contains($source.$eventStore,$field),'Known evidence reference missing: '.$field);
 }
-crsAssert(!str_contains($source,"JSON_SEARCH(payload_json, 'all'"),'Resolver must never search arbitrary event payload text.');
+crsAssert(!str_contains($source.$eventStore,"JSON_SEARCH(payload_json, 'all'"),'Resolver must never search arbitrary event payload text.');
+crsAssert(!str_contains($source,'FROM amazon_return_cases'),'Resolver orchestration must use the tenant-scoped case repository instead of raw SQL.');
+crsAssert(!str_contains($source,'FROM amazon_return_events'),'Resolver orchestration must use the tenant-scoped event store instead of raw SQL.');
+crsAssert(str_contains($caseRepository,'function caseIdsForReference('),'Case repository must own direct reference SQL.');
+crsAssert(str_contains($eventStore,'function caseIdsForReference('),'Event store must own evidence reference SQL.');
 
 echo "case-reference-search-test: OK\n";
