@@ -18,5 +18,8 @@ csuAssert(!str_contains($bootstrap,'while(all.length<total'),'Browser must not s
 csuAssert(!str_contains($summary,'innerHTML'),'Summary renderer cannot use innerHTML.');
 csuAssert(str_contains($page,'Pedido, NF, TBR, SAFE-T, rastreio, SKU ou ASIN'),'Search hint must include TBR.');
 csuAssert(str_contains($page,'cockpit-summary.js?v='),'Summary asset must be versioned.');
+foreach(['Prazo para recurso','Próxima providência automática','Data de elegibilidade'] as $label){
+    csuAssert(str_contains($summary,$label),'Deadline rows must explain the business meaning: '.$label);
+}
 
 echo "cockpit-summary-ui-test: OK\n";

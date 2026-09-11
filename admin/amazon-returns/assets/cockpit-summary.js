@@ -7,6 +7,7 @@
   const connectorNames={amazon:'Amazon / financeiro',gmail:'E-mail Amazon',seller_central:'Seller Central'};
   const problemCopy={unclassified:'Casos ainda sem situação definida',eligible_without_action:'Casos prontos para tratamento automático',expired_without_treatment:'Prazo vencido sem providência concluída',credit_without_reconciliation:'Crédito identificado e ainda não conciliado',dead_letters:'Ações automáticas que esgotaram as tentativas',connector_amazon:'Conexão com a Amazon requer atenção',connector_gmail:'Conexão de e-mail requer atenção',connector_seller_central:'Seller Central requer atenção'};
   const breakdownCopy={at_risk:'Em risco',eligible_now:'Já elegível',safe_t_submitted:'SAFE-T em análise',denied:'Negado',appeal:'Em recurso',support:'Em atendimento',approved_awaiting_credit:'Aguardando crédito',recovered:'Recuperado',loss:'Encerrado como perda'};
+  const deadlineKindCopy={APPEAL_DEADLINE:'Prazo para recurso',NEXT_ACTION:'Próxima providência automática',ELIGIBILITY:'Data de elegibilidade'};
   const stateCopy={SAFE_T_ELIGIBLE:'Pode solicitar ressarcimento',SAFE_T_READY:'Pronto para solicitar ressarcimento',SAFE_T_SUBMITTED:'Ressarcimento solicitado',SAFE_T_APPROVED:'Ressarcimento aprovado',SAFE_T_DENIED:'Ressarcimento negado',APPEAL_REQUIRED:'Recurso necessário',APPEAL_SUBMITTED:'Recurso enviado',APPEAL_APPROVED:'Recurso aprovado',CREDIT_PENDING:'Aguardando crédito',SUPPORT_ESCALATION:'Em atendimento com a Amazon',AWAITING_RETURN:'Aguardando devolução',IN_TRANSIT:'Devolução em transporte',POLICY_REVIEW_REQUIRED:'Situação em análise'};
   const brl=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v||0));
   function node(tag,value,className=''){const n=document.createElement(tag);if(value!==undefined)n.textContent=String(value);if(className)n.className=className;return n;}
@@ -81,7 +82,7 @@
   function renderDeadlines(data){
     const section=node('div');section.append(node('h2','Prazos importantes'));
     let shown=0;
-    for(const item of data.deadlines||[]){const bucket=deadlineBucket(item.due_at);if(!bucket)continue;shown++;const row=node('article',undefined,`deadline-row ${bucket==='Atrasado'?'problem-overdue':''}`);row.append(node('strong',bucket),node('span',String(item.amazon_order_id||'Pedido')),node('span',brl(item.outstanding_amount),'summary-amount'),node('small',formatDate(item.due_at)));section.append(row);}
+    for(const item of data.deadlines||[]){const bucket=deadlineBucket(item.due_at);if(!bucket)continue;shown++;const row=node('article',undefined,`deadline-row ${bucket==='Atrasado'?'problem-overdue':''}`);const meaning=deadlineKindCopy[String(item.due_kind||'')]||'Prazo do caso';row.append(node('strong',bucket),node('span',String(item.amazon_order_id||'Pedido')),node('span',meaning,'deadline-meaning'),node('span',brl(item.outstanding_amount),'summary-amount'),node('small',formatDate(item.due_at)));section.append(row);}
     if(!shown)section.append(node('p','Nenhum prazo crítico nos próximos 7 dias.','healthy-zero'));
     replace('deadline-list',section);
   }
