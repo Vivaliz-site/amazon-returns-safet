@@ -146,6 +146,21 @@ function renderCaseMessages(items){
   for(const message of messages){const card=text('article','',`case-message ${message.kind}`);card.append(text('strong',message.kind==='sent'?'Enviado à Amazon':'Resposta da Amazon'),text('span',date(message.at),'muted'));if(message.subject)card.append(text('div',message.subject,'message-subject'));card.append(text('p',message.body));block.append(card);}
   return block;
 }
+function operatorUnresolvedFacts(c){
+  if(['RECOVERED','CLOSED_LOSS','RECEIVED_OK'].includes(String(c?.state||'')))return [];
+  const items=[],state=String(c?.state||''),action=String(c?.current_action||'');
+  const outstanding=Math.max(0,Number(c?.outstanding_amount||0));
+  if(outstanding>0)items.push(`Ainda há ${brl(outstanding)} a recuperar para a loja.`);
+  if(operatorResponsibility(c)==='Sua decisão é necessária')items.push('Existe uma decisão sua pendente antes da próxima providência automática.');
+  if(c?.physical_status==='NOT_RECEIVED')items.push('A devolução física ainda não foi registrada como recebida pela loja.');
+  else if(c?.physical_status==='IN_TRANSIT')items.push('A devolução física ainda está em transporte.');
+  else if(c?.physical_status==='CARRIER_DELIVERED_PENDING_PHYSICAL')items.push('A transportadora indica entrega da devolução, mas a conferência física da loja ainda está pendente.');
+  if(action==='CHECK_FINANCES'||['SAFE_T_APPROVED','APPEAL_APPROVED','CREDIT_PENDING'].includes(state))items.push('O crédito da Amazon ainda precisa ser confirmado no financeiro.');
+  if(['APPEAL_SUBMITTED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SAFE_T_SUBMITTED','SUPPORT_ESCALATION'].includes(state))items.push('A resposta da Amazon ainda está pendente.');
+  const next=c?.next_action_at||(!c?.next_action_at?c?.eligibility_at:null);
+  if(next)items.push(`A próxima referência de acompanhamento é ${date(next)}.`);
+  return [...new Set(items.length?items:['O sistema continuará verificando as condições externas necessárias para concluir o caso.'])];
+}
 function renderDecisionExplanation(c){
   const details=document.createElement('details');details.className='decision-explanation';details.append(text('summary','Por que o sistema decidiu isso?'));
   const facts=[];const returnTracks=Array.isArray(c.return_tracking_ids)?c.return_tracking_ids:[];const customerTracks=Array.isArray(c.customer_tracking_ids)?c.customer_tracking_ids:[];
@@ -159,7 +174,8 @@ function renderDecisionExplanation(c){
   if(facts.length){const list=document.createElement('ul');for(const fact of facts)list.append(text('li',fact));factBlock.append(list);}else factBlock.append(text('p','O sistema está usando os dados confirmados disponíveis para este caso.','muted'));details.append(factBlock);
   const ruleBlock=text('section','', 'decision-part');ruleBlock.append(text('h4','Regra aplicada'));const reason=c.current_reason?reasonLabel(c.current_reason):null;const learned=c.applied_rule?.rule_id>0?'Uma decisão aprendida anteriormente foi aplicada a este caso.':null;ruleBlock.append(text('p',reason&&reason!=='Informação não disponível'?reason:(learned||'As regras operacionais atuais foram aplicadas aos fatos disponíveis.')));details.append(ruleBlock);
   const conclusion=text('section','', 'decision-part');conclusion.append(text('h4','Conclusão'),text('p',operatorNextStep(c)));details.append(conclusion);
-  if(!['RECOVERED','CLOSED_LOSS','RECEIVED_OK'].includes(String(c.state||''))){const pending=text('section','', 'decision-part');pending.append(text('h4','Ainda em acompanhamento'),text('p',reason&&reason!=='Informação não disponível'?reason:'O sistema continuará verificando as condições externas necessárias para concluir o caso.'));details.append(pending);}
+  const unresolved=operatorUnresolvedFacts(c);
+  if(unresolved.length){const pending=text('section','', 'decision-part');pending.append(text('h4','Ainda em acompanhamento'));const list=document.createElement('ul');for(const item of unresolved)list.append(text('li',item));pending.append(list);details.append(pending);}
   return details;
 }
 
