@@ -310,26 +310,76 @@ final class SvAmazonReturnCaseRepository
     /** @return array<string,mixed> */
     public function summary(): array
     {
-        $exposure='(CASE WHEN expected_reimbursement_amount>0 THEN expected_reimbursement_amount ELSE refund_amount END-reconciled_credit_amount)';
+        $exposure='(CASE WHEN c.expected_reimbursement_amount>0 THEN c.expected_reimbursement_amount ELSE c.refund_amount END-c.reconciled_credit_amount)';
+        $unclassified="c.program='UNKNOWN' OR (c.program IN ('STANDARD','FBA_ONSITE','DELIVERY_BY_AMAZON') AND (c.refund_initiator='UNKNOWN' OR c.seller_debit_at IS NULL))";
+        $eligible="c.state IN ('SAFE_T_ELIGIBLE','SAFE_T_READY') AND c.safe_t_id IS NULL";
+        $expired="c.appeal_deadline_at IS NOT NULL AND c.appeal_deadline_at<UTC_TIMESTAMP() AND c.state IN ('SAFE_T_DENIED','SAFE_T_INFO_REQUESTED','APPEAL_REQUIRED')";
+        $creditMismatch="c.reconciled_credit_amount>0 AND c.state NOT IN ('RECOVERED','CREDIT_PENDING')";
+        $concluded="c.closed_at IS NOT NULL OR c.state IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK')";
         $stmt=$this->prepare("SELECT COUNT(*) total_cases,"
             ."COALESCE(SUM(GREATEST($exposure,0)),0) at_risk,"
-            ."COALESCE(SUM(CASE WHEN state IN ('SAFE_T_ELIGIBLE','SAFE_T_READY') THEN GREATEST($exposure,0) ELSE 0 END),0) eligible_now,"
-            ."COALESCE(SUM(CASE WHEN state='SAFE_T_SUBMITTED' THEN GREATEST($exposure,0) ELSE 0 END),0) safe_t_submitted,"
-            ."COALESCE(SUM(CASE WHEN state='SAFE_T_DENIED' THEN GREATEST($exposure,0) ELSE 0 END),0) denied,"
-            ."COALESCE(SUM(CASE WHEN state IN ('APPEAL_REQUIRED','APPEAL_SUBMITTED') THEN GREATEST($exposure,0) ELSE 0 END),0) appeal,"
-            ."COALESCE(SUM(CASE WHEN state='SUPPORT_ESCALATION' THEN GREATEST($exposure,0) ELSE 0 END),0) support,"
-            ."COALESCE(SUM(CASE WHEN state IN ('SAFE_T_APPROVED','APPEAL_APPROVED','CREDIT_PENDING') THEN GREATEST($exposure,0) ELSE 0 END),0) approved_awaiting_credit,"
-            ."COALESCE(SUM(CASE WHEN state='RECOVERED' THEN reconciled_credit_amount ELSE 0 END),0) recovered,"
-            ."COALESCE(SUM(CASE WHEN state='CLOSED_LOSS' THEN GREATEST($exposure,0) ELSE 0 END),0) loss,"
-            ."SUM(CASE WHEN program='UNKNOWN' THEN 1 WHEN program IN ('STANDARD','FBA_ONSITE','DELIVERY_BY_AMAZON') AND (refund_initiator='UNKNOWN' OR seller_debit_at IS NULL) THEN 1 ELSE 0 END) unclassified,"
-            ."SUM(CASE WHEN state IN ('SAFE_T_ELIGIBLE','SAFE_T_READY') AND safe_t_id IS NULL THEN 1 ELSE 0 END) eligible_without_action,"
-            ."SUM(CASE WHEN appeal_deadline_at IS NOT NULL AND appeal_deadline_at<UTC_TIMESTAMP() AND state IN ('SAFE_T_DENIED','SAFE_T_INFO_REQUESTED','APPEAL_REQUIRED') THEN 1 ELSE 0 END) expired_without_treatment,"
-            ."SUM(CASE WHEN reconciled_credit_amount>0 AND state NOT IN ('RECOVERED','CREDIT_PENDING') THEN 1 ELSE 0 END) credit_without_reconciliation "
-            ."FROM amazon_return_cases WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id"
+            ."COALESCE(SUM(CASE WHEN c.state IN ('SAFE_T_ELIGIBLE','SAFE_T_READY') THEN GREATEST($exposure,0) ELSE 0 END),0) eligible_now,"
+            ."COALESCE(SUM(CASE WHEN c.state='SAFE_T_SUBMITTED' THEN GREATEST($exposure,0) ELSE 0 END),0) safe_t_submitted,"
+            ."COALESCE(SUM(CASE WHEN c.state='SAFE_T_DENIED' THEN GREATEST($exposure,0) ELSE 0 END),0) denied,"
+            ."COALESCE(SUM(CASE WHEN c.state IN ('APPEAL_REQUIRED','APPEAL_SUBMITTED') THEN GREATEST($exposure,0) ELSE 0 END),0) appeal,"
+            ."COALESCE(SUM(CASE WHEN c.state='SUPPORT_ESCALATION' THEN GREATEST($exposure,0) ELSE 0 END),0) support,"
+            ."COALESCE(SUM(CASE WHEN c.state IN ('SAFE_T_APPROVED','APPEAL_APPROVED','CREDIT_PENDING') THEN GREATEST($exposure,0) ELSE 0 END),0) approved_awaiting_credit,"
+            ."COALESCE(SUM(CASE WHEN c.state='RECOVERED' THEN c.reconciled_credit_amount ELSE 0 END),0) recovered,"
+            ."COALESCE(SUM(CASE WHEN c.state='CLOSED_LOSS' THEN GREATEST($exposure,0) ELSE 0 END),0) loss,"
+            ."SUM(CASE WHEN $concluded THEN 1 ELSE 0 END) concluded_cases,"
+            ."SUM(CASE WHEN NOT ($concluded) AND NOT EXISTS (SELECT 1 FROM amazon_return_reviews ar WHERE ar.tenant_id=c.tenant_id AND ar.amazon_connection_id=c.amazon_connection_id AND ar.case_id=c.id AND ar.status='OPEN') THEN 1 ELSE 0 END) automatic_work_cases,"
+            ."SUM(CASE WHEN $unclassified THEN 1 ELSE 0 END) unclassified,"
+            ."COALESCE(SUM(CASE WHEN $unclassified THEN GREATEST($exposure,0) ELSE 0 END),0) unclassified_amount,"
+            ."SUM(CASE WHEN $eligible THEN 1 ELSE 0 END) eligible_without_action,"
+            ."COALESCE(SUM(CASE WHEN $eligible THEN GREATEST($exposure,0) ELSE 0 END),0) eligible_without_action_amount,"
+            ."SUM(CASE WHEN $expired THEN 1 ELSE 0 END) expired_without_treatment,"
+            ."COALESCE(SUM(CASE WHEN $expired THEN GREATEST($exposure,0) ELSE 0 END),0) expired_without_treatment_amount,"
+            ."SUM(CASE WHEN $creditMismatch THEN 1 ELSE 0 END) credit_without_reconciliation,"
+            ."COALESCE(SUM(CASE WHEN $creditMismatch THEN GREATEST($exposure,0) ELSE 0 END),0) credit_without_reconciliation_amount "
+            ."FROM amazon_return_cases c WHERE c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id"
         );
         $stmt->execute($this->scopeParams());
         $row=$stmt->fetch(PDO::FETCH_ASSOC);
         return is_array($row)?$row:[];
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function automationPreview(int $limit=6): array
+    {
+        $limit=max(1,min(25,$limit));
+        $exposure='GREATEST((CASE WHEN c.expected_reimbursement_amount>0 THEN c.expected_reimbursement_amount ELSE c.refund_amount END)-c.reconciled_credit_amount,0)';
+        $due='COALESCE(c.next_action_at,c.appeal_deadline_at,c.eligibility_at)';
+        $stmt=$this->prepare(
+            'SELECT c.id,c.amazon_order_id,c.state,c.physical_status,c.safe_t_id,c.next_action_at,c.appeal_deadline_at,c.eligibility_at,'
+            ."$exposure outstanding_amount,c.updated_at FROM amazon_return_cases c "
+            ."WHERE c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id "
+            ."AND c.closed_at IS NULL AND c.state NOT IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK') "
+            ."AND NOT EXISTS (SELECT 1 FROM amazon_return_reviews r WHERE r.tenant_id=c.tenant_id AND r.amazon_connection_id=c.amazon_connection_id AND r.case_id=c.id AND r.status='OPEN') "
+            ."ORDER BY CASE WHEN $due IS NOT NULL AND $due<UTC_TIMESTAMP() THEN 0 ELSE 1 END,$due IS NULL,$due,$exposure DESC,c.updated_at DESC LIMIT ".$limit
+        );
+        $stmt->execute($this->scopeParams());
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function upcomingDeadlines(int $limit=8): array
+    {
+        $limit=max(1,min(50,$limit));
+        $exposure='GREATEST((CASE WHEN c.expected_reimbursement_amount>0 THEN c.expected_reimbursement_amount ELSE c.refund_amount END)-c.reconciled_credit_amount,0)';
+        $sentinel="'9999-12-31 23:59:59'";
+        $due="LEAST(COALESCE(c.appeal_deadline_at,$sentinel),COALESCE(c.next_action_at,$sentinel),COALESCE(c.eligibility_at,$sentinel))";
+        $kind="CASE WHEN c.appeal_deadline_at IS NOT NULL AND c.appeal_deadline_at=$due THEN 'APPEAL_DEADLINE' WHEN c.next_action_at IS NOT NULL AND c.next_action_at=$due THEN 'NEXT_ACTION' ELSE 'ELIGIBILITY' END";
+        $stmt=$this->prepare(
+            'SELECT c.id,c.amazon_order_id,c.state,c.safe_t_id,'
+            ."$kind due_kind,$due due_at,$exposure outstanding_amount "
+            .'FROM amazon_return_cases c '
+            .'WHERE c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id '
+            ."AND c.closed_at IS NULL AND c.state NOT IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK') "
+            .'AND (c.appeal_deadline_at IS NOT NULL OR c.next_action_at IS NOT NULL OR c.eligibility_at IS NOT NULL) '
+            ."ORDER BY CASE WHEN $due<UTC_TIMESTAMP() THEN 0 ELSE 1 END,$due,$exposure DESC,c.id DESC LIMIT ".$limit
+        );
+        $stmt->execute($this->scopeParams());
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
     }
 
     /** @return list<array<string,mixed>> */

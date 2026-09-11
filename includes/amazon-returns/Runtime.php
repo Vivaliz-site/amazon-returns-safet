@@ -252,8 +252,10 @@ final class SvAmazonReturnsRuntime
     /** @return array<string,mixed> */
     public static function health(
         SvAmazonTenantPersistence $p,
-        SvAmazonReturnsConfig $config
+        SvAmazonReturnsConfig $config,
+        ?DateTimeImmutable $now=null
     ): array {
+        $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
         $db=$p->db();
         $tables=(int)$db->query(
             "SELECT COUNT(*) FROM information_schema.tables "
@@ -268,7 +270,7 @@ final class SvAmazonReturnsRuntime
         ));
         $browserLiveness=SvAmazonBridgeLiveness::evaluate(
             $p->cursors->load('SELLER_CENTRAL','browser_auth'),
-            new DateTimeImmutable('now',new DateTimeZone('UTC')),
+            $now,
             $bridgeRequired,
             $p->cursors->load('SELLER_CENTRAL','read_process_heartbeat'),
             $primaryStatusWorker
