@@ -13,6 +13,7 @@ final class SvAmazonCockpitTimeline
         'decision_fingerprint','financial_status','refund_amount','reimbursement_amount','outcome',
         'review_outcome','review_suggested_action','review_excerpt','promised_date','deadline_at',
         'appeal_deadline_at','state','physical_status','resume_scope','gmail_message_id','gmail_thread_id',
+        'return_tracking_id','return_tracking_ids','invoice_number','return_reason','tracking_id','carrier',
     ];
     private const SECRET_KEYS=[
         'access_token','refresh_token','client_secret','password','cookie','authorization','mfa','otp',

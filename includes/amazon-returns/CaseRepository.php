@@ -129,12 +129,31 @@ final class SvAmazonReturnCaseRepository
         $page=max(1,$page);$perPage=max(1,min(1000,$perPage));
         $where=['c.tenant_id=:tenant_id','c.amazon_connection_id=:amazon_connection_id'];
         $params=$this->scopeParams();
-        $allowed=['q','safe_t_id','state','review_status','program','physical_status','deadline','learned_rule','min_outstanding','max_outstanding'];
+        $allowed=['q','case_ids','safe_t_id','state','review_status','program','physical_status','deadline','learned_rule','min_outstanding','max_outstanding'];
         foreach(array_keys($filters) as $key)if(!in_array($key,$allowed,true))throw new InvalidArgumentException('Unsupported case search filter: '.$key);
         if(isset($filters['q'])){
             $q='%'.$this->requiredText((string)$filters['q'],'search query',96).'%';
             $where[]='(c.amazon_order_id LIKE :q_order OR c.safe_t_id LIKE :q_safe_t OR c.sku LIKE :q_sku OR c.asin LIKE :q_asin)';
             foreach([':q_order',':q_safe_t',':q_sku',':q_asin'] as $placeholder)$params[$placeholder]=$q;
+        }
+        if(array_key_exists('case_ids',$filters)){
+            if(!is_array($filters['case_ids']))throw new InvalidArgumentException('case_ids must be an internal array filter.');
+            $caseIds=[];
+            foreach($filters['case_ids'] as $rawId){
+                $parsed=filter_var($rawId,FILTER_VALIDATE_INT);
+                if($parsed===false || $parsed<1)throw new InvalidArgumentException('case_ids contains an invalid ID.');
+                $caseIds[]=(int)$parsed;
+            }
+            $caseIds=array_values(array_unique($caseIds));
+            if($caseIds===[]){
+                $where[]='1=0';
+            }else{
+                $placeholders=[];
+                foreach($caseIds as $index=>$caseId){
+                    $name=':case_id_'.$index;$placeholders[]=$name;$params[$name]=$caseId;
+                }
+                $where[]='c.id IN ('.implode(',',$placeholders).')';
+            }
         }
         foreach(['safe_t_id','state','program','physical_status'] as $field){if(!isset($filters[$field]))continue;$where[]='c.'.$field.'=:'.$field;$params[':'.$field]=$filters[$field];}
         if(isset($filters['review_status'])){$where[]='EXISTS (SELECT 1 FROM amazon_return_reviews r WHERE r.tenant_id=c.tenant_id AND r.amazon_connection_id=c.amazon_connection_id AND r.case_id=c.id AND r.status=:review_status)';$params[':review_status']=$filters['review_status'];}
@@ -151,7 +170,7 @@ final class SvAmazonReturnCaseRepository
         $whereSql=implode(' AND ',$where);
         $count=$this->prepare('SELECT COUNT(*) FROM amazon_return_cases c WHERE '.$whereSql);$count->execute($params);$total=max(0,(int)$count->fetchColumn());
         $offset=($page-1)*$perPage;
-        $order="ORDER BY CASE WHEN EXISTS (SELECT 1 FROM amazon_return_reviews rr WHERE rr.tenant_id=c.tenant_id AND rr.amazon_connection_id=c.amazon_connection_id AND rr.case_id=c.id AND rr.status='OPEN') THEN 0 ELSE 1 END, CASE WHEN $deadline<UTC_TIMESTAMP() THEN 0 ELSE 1 END, $deadline IS NULL, $deadline, c.updated_at DESC,c.id DESC";
+        $order="ORDER BY CASE WHEN EXISTS (SELECT 1 FROM amazon_return_reviews rr WHERE rr.tenant_id=c.tenant_id AND rr.amazon_connection_id=c.amazon_connection_id AND rr.case_id=c.id AND rr.status='OPEN') THEN 0 ELSE 1 END, CASE WHEN $deadline<UTC_TIMESTAMP() THEN 0 ELSE 1 END, $deadline IS NULL, $deadline, $outstanding DESC, c.updated_at DESC,c.id DESC";
         $stmt=$this->prepare('SELECT c.* FROM amazon_return_cases c WHERE '.$whereSql.' '.$order.' LIMIT '.$perPage.' OFFSET '.$offset);$stmt->execute($params);
         return ['items'=>array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array')),'page'=>$page,'per_page'=>$perPage,'total'=>$total];
     }

@@ -8,7 +8,9 @@ require_once __DIR__.'/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitFilters.php';
-require_once __DIR__.'/../../../includes/amazon-returns/InvoiceSearch.php';
+require_once __DIR__.'/../../../includes/amazon-returns/CaseReferenceSearch.php';
+require_once __DIR__.'/../../../includes/amazon-returns/GmailApi.php';
+require_once __DIR__.'/../../../includes/amazon-returns/GmailReturnReferenceLookup.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 require_once __DIR__.'/../../../includes/amazon-returns/PolicyEngine.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SafeTDecisionEngine.php';
@@ -24,30 +26,25 @@ try{
     $filters=SvAmazonCockpitFilters::fromQuery($_GET);$now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
     $coordinator=new SvAmazonDecisionCoordinator(new SvAmazonSafeTDecisionEngine(),$p,$config);
     $sqlFilters=$filters->sqlFilters();$searchTerm=trim((string)($sqlFilters['q']??''));
-    if($searchTerm!=='')unset($sqlFilters['q']);
-    $requiresPostFilter=$filters->requiresDecisionFilter() || $searchTerm!=='';
+    if($searchTerm!==''){
+        unset($sqlFilters['q']);
+        $caseIds=SvAmazonCaseReferenceSearch::caseIds($db,$context,$searchTerm);
+        if($caseIds===[] && SvAmazonCaseReferenceSearch::kind($searchTerm)===SvAmazonCaseReferenceSearch::RETURN_TRACKING
+            && (($config->readiness()['gmail']['ready']??false)===true)){
+            $resolved=(new SvAmazonGmailReturnReferenceLookup(new SvAmazonGmailApiClient($config)))->find($searchTerm);
+            if(is_array($resolved) && trim((string)($resolved['order_id']??''))!==''){
+                $caseIds=SvAmazonCaseReferenceSearch::caseIds($db,$context,(string)$resolved['order_id']);
+            }
+        }
+        $sqlFilters['case_ids']=$caseIds;
+    }
+    $requiresPostFilter=$filters->requiresDecisionFilter();
     $queryPage=$requiresPostFilter?1:$filters->page();$queryPerPage=$requiresPostFilter?1000:$filters->perPage();
     $found=$p->cases->search($sqlFilters,$queryPage,$queryPerPage);
-    $invoiceCaseIds=$searchTerm!==''?SvAmazonInvoiceSearch::caseIds($db,$context,$searchTerm):[];
-    $needle=$searchTerm!==''?mb_strtolower($searchTerm,'UTF-8'):'';
     $items=[];$policies=$p->policies->allActive();
     foreach($found['items'] as $row){
         $caseId=(int)($row['id']??0);if($caseId<1)continue;
         $case=SvAmazonReturnProjector::project($p->cases,$p->events,$caseId);$case['policies']=$policies;
-        if($needle!==''){
-            $matches=in_array($caseId,$invoiceCaseIds,true);
-            foreach(['amazon_order_id','safe_t_id','sku','asin'] as $field){
-                $value=mb_strtolower(trim((string)($case[$field]??'')),'UTF-8');
-                if($value!==''&&str_contains($value,$needle)){$matches=true;break;}
-            }
-            if(!$matches&&is_array($case['customer_tracking_ids']??null)){
-                foreach($case['customer_tracking_ids'] as $trackingId){
-                    $value=mb_strtolower(trim((string)$trackingId),'UTF-8');
-                    if($value!==''&&str_contains($value,$needle)){$matches=true;break;}
-                }
-            }
-            if(!$matches)continue;
-        }
         $timeline=$p->events->eventsForCase($caseId);$policy=SvAmazonReturnPolicyEngine::evaluate($case,$now);
         $decision=$coordinator->previewAction($case,$timeline,$policy,$now);
         if($filters->action()!==null && strtoupper((string)($decision['action']??''))!==$filters->action())continue;
@@ -69,6 +66,8 @@ try{
             'customer_delivery_confirmed'=>(bool)($case['customer_delivery_confirmed']??false),
             'customer_tracking_ids'=>array_values(is_array($case['customer_tracking_ids']??null)?$case['customer_tracking_ids']:[]),
             'customer_delivery_carriers'=>array_values(is_array($case['customer_delivery_carriers']??null)?$case['customer_delivery_carriers']:[]),
+            'return_tracking_ids'=>array_values(is_array($case['return_tracking_ids']??null)?$case['return_tracking_ids']:[]),
+            'return_tracking_id'=>(is_array($case['return_tracking_ids']??null)&&$case['return_tracking_ids']!==[])?$case['return_tracking_ids'][0]:null,
             'eligibility_at'=>$policy['eligibility_at']??($case['eligibility_at']??null),'next_action_at'=>$case['next_action_at']??null,'appeal_deadline_at'=>$case['appeal_deadline_at']??null,
             'current_action'=>$decision['action']??'WAIT','current_reason'=>$decision['reason']??null,
             'review_status'=>$currentReview['status']??null,'review_id'=>$currentReview['id']??null,

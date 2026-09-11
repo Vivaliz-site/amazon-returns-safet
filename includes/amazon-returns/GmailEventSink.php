@@ -280,12 +280,14 @@ final class SvAmazonGmailEventSink
     private static function payload(array $event, string $orderId): array
     {
         $tracking=trim((string)($event['tracking_id'] ?? ''));
+        $returnTracking=trim((string)($event['return_tracking_id'] ?? ''));
         $carrier=trim((string)($event['carrier'] ?? ''));
         $payload = [
             'order_id'=>$orderId,
             'safe_t_id'=>$event['safe_t_id'] ?? null,
             'amount'=>$event['amount'] ?? null,
             'currency'=>$event['currency'] ?? null,
+            'return_tracking_ids'=>$returnTracking!==''?[strtoupper($returnTracking)]:[],
             'customer_tracking_ids'=>$tracking!==''?[$tracking]:[],
             'customer_delivery_carriers'=>$carrier!==''?[$carrier]:[],
             'customer_delivery_confirmed'=>false,
