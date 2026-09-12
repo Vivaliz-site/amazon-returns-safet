@@ -104,9 +104,13 @@ final class SvAmazonReturnsRuntime
 
     public static function financialRefreshContinuationRequired(array $results): bool
     {
-        if((int)($results['scheduler']['financial_checks_requested']??0)<1)return false;
+        $requested=(int)($results['scheduler']['financial_checks_requested']??0);
+        $rotationIncomplete=($results['sp_api']['rotation_has_more']??false)===true;
+        $financialBlocked=($results['financial']['reason']??'')==='FINANCIAL_REFRESH_NOT_ACCEPTED';
+        if($rotationIncomplete && $financialBlocked)return true;
+        if($requested<1)return false;
         if(!isset($results['sp_api']))return true;
-        return ($results['sp_api']['rotation_has_more']??false)===true;
+        return $rotationIncomplete;
     }
 
     public static function gmailEvidenceRevision(): string
