@@ -180,7 +180,9 @@ final class SvAmazonReturnProjector
     {
         $ordered = max(0, (int) $facts['quantity_ordered']);
         $refunded = min($ordered, max(0, (int) $facts['quantity_refunded']));
-        $received = min($refunded, max(0, (int) $facts['quantity_received']));
+        $observedReceived = max(0, (int) $facts['quantity_received']);
+        $receiptCeiling = $ordered > 0 ? $ordered : max($refunded, $observedReceived);
+        $received = min($receiptCeiling, $observedReceived);
         $facts['quantity_refunded'] = $refunded;
         $facts['quantity_received'] = $received;
         $facts['exposed_quantity'] = max(0, $refunded - $received);
@@ -192,7 +194,11 @@ final class SvAmazonReturnProjector
             $facts['closed_at'] = null;
             return;
         }
-        if ($refunded > 0 && $facts['exposed_quantity'] === 0) {
+        $fullPhysicalReturn = $received > 0 && (
+            ($refunded > 0 && $received >= $refunded)
+            || ($refunded === 0 && $ordered > 0 && $received >= $ordered)
+        );
+        if ($fullPhysicalReturn) {
             $facts['physical_status'] = SvAmazonReturnPhysicalStatuses::RECEIVED_OK;
             $facts['state'] = SvAmazonReturnStates::RECEIVED_OK;
             $facts['terminal_reason'] = 'PHYSICAL_RETURN_RECEIVED';

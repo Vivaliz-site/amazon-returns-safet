@@ -25,6 +25,10 @@ $p=SvAmazonReturnProjector::projectFrom($stale,$base);sraSame('NOT_RECEIVED',$p[
 $verified=SvAmazonReturnProjector::projectFrom($case,[...$base,$receipt]);
 sraSame(2,$verified['quantity_received'],'verified warehouse intake records physical receipt');
 sraSame('RECEIVED_OK',$verified['physical_status'],'verified full warehouse intake closes physical exposure');
+$verifiedBeforeRefund=SvAmazonReturnProjector::projectFrom($case,[$base[0],$receipt]);
+sraSame(2,$verifiedBeforeRefund['quantity_received'],'verified intake before refund projection must retain received quantity');
+sraSame('RECEIVED_OK',$verifiedBeforeRefund['physical_status'],'full verified intake before refund projection must close physical exposure');
+sraSame('RECEIVED_OK',$verifiedBeforeRefund['state'],'full verified intake before refund projection must close the case');
 $policies=[];foreach(SvAmazonReturnPolicySeeder::definitions() as $i=>$row)$policies[]=['id'=>$i+1]+$row;
 $eligibleCase=array_replace($verified,['program'=>'STANDARD','marketplace_id'=>'A2Q3Y263D00KWC','policies'=>$policies,'expected_reimbursement_amount'=>'100.00','reconciled_credit_amount'=>'0.00']);
 $policy=SvAmazonReturnPolicyEngine::evaluate($eligibleCase,new DateTimeImmutable('2026-08-20T12:00:00Z'));
