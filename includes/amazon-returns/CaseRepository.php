@@ -350,10 +350,10 @@ final class SvAmazonReturnCaseRepository
     public function summary(): array
     {
         $exposure='(CASE WHEN c.expected_reimbursement_amount>0 THEN c.expected_reimbursement_amount ELSE c.refund_amount END-c.reconciled_credit_amount)';
-        $unclassified="c.program='UNKNOWN' OR (c.program IN ('STANDARD','FBA_ONSITE','DELIVERY_BY_AMAZON') AND (c.refund_initiator='UNKNOWN' OR c.seller_debit_at IS NULL))";
+        $unclassified="(c.program='UNKNOWN' OR (c.program IN ('STANDARD','FBA_ONSITE','DELIVERY_BY_AMAZON') AND (c.refund_initiator='UNKNOWN' OR c.seller_debit_at IS NULL))) AND c.closed_at IS NULL AND c.state IN ('REFUND_DETECTED','AWAITING_RETURN','NO_RETURN','IN_TRANSIT','RECEIVED_DISCREPANT','SAFE_T_ELIGIBLE','SAFE_T_READY','POLICY_REVIEW_REQUIRED','BLOCKED_REVIEW')";
         $eligible="c.state IN ('SAFE_T_ELIGIBLE','SAFE_T_READY') AND c.safe_t_id IS NULL";
-        $expired="c.appeal_deadline_at IS NOT NULL AND c.appeal_deadline_at<UTC_TIMESTAMP() AND c.state IN ('SAFE_T_DENIED','SAFE_T_INFO_REQUESTED','APPEAL_REQUIRED')";
-        $creditMismatch="c.reconciled_credit_amount>0 AND c.state NOT IN ('RECOVERED','CREDIT_PENDING')";
+        $expired="c.appeal_deadline_at IS NOT NULL AND c.appeal_deadline_at<UTC_TIMESTAMP() AND c.state IN ('SAFE_T_DENIED','SAFE_T_INFO_REQUESTED','APPEAL_REQUIRED') AND c.current_action='SAFE_T_APPEAL'";
+        $creditMismatch="c.closed_at IS NULL AND c.state<>'RECOVERED' AND $exposure<=0";
         $concluded="c.closed_at IS NOT NULL OR c.state IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK')";
         $stmt=$this->prepare("SELECT COUNT(*) total_cases,"
             ."COALESCE(SUM(GREATEST($exposure,0)),0) at_risk,"

@@ -31,6 +31,14 @@ foreach(['unclassified','eligible_without_action','expired_without_treatment','c
 adAssert(str_contains($summary,"pending_reviews"),"Summary must expose pending review count.");
 foreach(['at_risk','eligible_now','safe_t_submitted','denied','appeal','support','approved_awaiting_credit','recovered','loss'] as $bucket)adAssert(str_contains($summary,$bucket),'Summary bucket '.$bucket);
 
+$caseRepo=source('includes/amazon-returns/CaseRepository.php');
+adAssert(str_contains($caseRepo,'$unclassified="('),'Unclassified gate must explicitly group metadata gaps before operational filters.');
+adAssert(str_contains($caseRepo,'AND c.closed_at IS NULL'),'Unclassified gate must ignore concluded cases.');
+adAssert(str_contains($caseRepo,"c.state IN ('REFUND_DETECTED','AWAITING_RETURN','NO_RETURN','IN_TRANSIT','RECEIVED_DISCREPANT','SAFE_T_ELIGIBLE','SAFE_T_READY','POLICY_REVIEW_REQUIRED','BLOCKED_REVIEW')"),'Unclassified gate must only flag lifecycle states where missing classification can still block routing.');
+adAssert(str_contains($caseRepo,"c.current_action='SAFE_T_APPEAL'"),'Expired appeal gate must only flag cases whose current action is still an appeal.');
+adAssert(str_contains($caseRepo,'$creditMismatch="c.closed_at IS NULL'),'Credit mismatch gate must ignore concluded cases.');
+adAssert(str_contains($caseRepo,'$exposure<=0'),'Credit mismatch gate must only flag fully recovered exposure that remains operationally open.');
+
 $intakePage=source('admin/amazon-returns/intake.php');
 adAssert(str_contains($intakePage,'SvAmazonReturnsCsrf::token'),'Intake page must generate standalone CSRF token.');
 adAssert(str_contains($intakePage,'Registrar devolução recebida'),'Intake task title required.');
