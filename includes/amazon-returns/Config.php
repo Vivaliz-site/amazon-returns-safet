@@ -83,13 +83,20 @@ final class SvAmazonReturnsConfig
         if(!is_string($raw) || trim($raw)==='')return null;
         try{$profile=json_decode($raw,true,32,JSON_THROW_ON_ERROR);}catch(Throwable){return null;}
         if(!is_array($profile))return null;
-        $actions=['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE','ERP_SALES_RETURN_CREATE'];
-        $allowed=array_merge(['version'],$actions);
-        $keys=array_keys($profile);sort($keys);$expected=$allowed;sort($expected);
-        if($keys!==$expected)return null;
+        $requiredActions=['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'];
+        $optionalActions=['ERP_SALES_RETURN_CREATE'];
+        $allowed=array_merge(['version'],$requiredActions,$optionalActions);
+        $unknown=array_diff(array_keys($profile),$allowed);
+        if($unknown!==[])return null;
         $version=$profile['version']??null;
         if(!is_string($version) || preg_match('/^[a-z0-9][a-z0-9._-]{2,63}$/D',$version)!==1)return null;
-        foreach($actions as $action)if(!is_bool($profile[$action]??null))return null;
+        foreach($requiredActions as $action){
+            if(!array_key_exists($action,$profile) || !is_bool($profile[$action]))return null;
+        }
+        foreach($optionalActions as $action){
+            if(array_key_exists($action,$profile) && !is_bool($profile[$action]))return null;
+            if(!array_key_exists($action,$profile))$profile[$action]=false;
+        }
         return $profile;
     }
 
