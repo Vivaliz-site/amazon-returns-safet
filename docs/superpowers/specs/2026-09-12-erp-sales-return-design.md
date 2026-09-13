@@ -1,7 +1,7 @@
 # ERP sales return lifecycle design
 
-**Date:** 2026-09-12  
-**Scope:** `Vivaliz-site/amazon-returns-safet`  
+**Date:** 2026-09-12
+**Scope:** `Vivaliz-site/amazon-returns-safet`
 **Owner decision:** approved in the Amazon Returns project conversation on 2026-09-12.
 
 ## Goal
