@@ -3,7 +3,23 @@ declare(strict_types=1);
 
 require_once __DIR__.'/TenantContext.php';
 
-final class SvAmazonErpSalesReturnRepository
+interface SvAmazonErpSalesReturnStore
+{
+    /** @return array<string,mixed>|null */
+    public function findByOrder(string $orderId): ?array;
+    /** @param array<string,mixed> $data @return array<string,mixed> */
+    public function ensureWorkflow(array $data): array;
+    /** @return array<string,mixed> */
+    public function markReady(string $orderId): array;
+    /** @return array<string,mixed> */
+    public function markReturnCreated(string $orderId,string $erpSalesReturnId): array;
+    /** @param array<string,mixed> $invoice @return array<string,mixed> */
+    public function linkReturnInvoice(string $orderId,array $invoice): array;
+    /** @return array<string,mixed> */
+    public function markBlocked(string $orderId,string $code,string $message): array;
+}
+
+final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnStore
 {
     private const TABLE='amazon_return_erp_sales_returns';
 
