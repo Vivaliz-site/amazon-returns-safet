@@ -11,6 +11,7 @@ require_once __DIR__ . '/PolicyRepository.php';
 require_once __DIR__ . '/ReviewRepository.php';
 require_once __DIR__ . '/LearnedRuleRepository.php';
 require_once __DIR__ . '/RuleApplicationRepository.php';
+require_once __DIR__ . '/ErpSalesReturnRepository.php';
 
 final class SvAmazonTenantPersistence
 {
@@ -23,6 +24,7 @@ final class SvAmazonTenantPersistence
     public readonly SvAmazonReviewRepository $reviews;
     public readonly SvAmazonLearnedRuleRepository $learnedRules;
     public readonly SvAmazonRuleApplicationRepository $ruleApplications;
+    public readonly SvAmazonErpSalesReturnRepository $erpSalesReturns;
 
     private function __construct(
         private readonly PDO $db,
@@ -37,6 +39,7 @@ final class SvAmazonTenantPersistence
         $this->reviews = new SvAmazonReviewRepository($db, $context);
         $this->learnedRules = new SvAmazonLearnedRuleRepository($db, $context);
         $this->ruleApplications = new SvAmazonRuleApplicationRepository($db, $context);
+        $this->erpSalesReturns = new SvAmazonErpSalesReturnRepository($db, $context);
     }
 
     public static function create(PDO $db, SvAmazonTenantContext $context): self
