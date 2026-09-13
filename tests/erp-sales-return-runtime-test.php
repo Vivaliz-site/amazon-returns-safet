@@ -10,10 +10,12 @@ $cadences=SvAmazonReturnsRuntime::cadences();
 erpRuntimeSame(43200,$cadences['erp_sales_returns']??null,'ERP sales returns must use the approved 12-hour business cadence.');
 
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
+$task=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/ErpSalesReturnTask.php');
 erpRuntimeAssert(str_contains($daemon,"'erp_sales_returns'=>\$this->runErpSalesReturns()"),'Daemon must dispatch ERP sales return reconciliation.');
-erpRuntimeAssert(str_contains($daemon,'SvAmazonErpSalesReturnService'),'Daemon must use the guarded ERP sales return service.');
-erpRuntimeAssert(str_contains($daemon,'SvAmazonErpReturnInvoiceLookup'),'Daemon must check existing return NFs.');
-erpRuntimeAssert(str_contains($daemon,'erpSalesReturnCreateEnabled()'),'Daemon must use the dedicated write gate.');
-erpRuntimeAssert(str_contains($daemon,'quantity_refunded'),'Daemon must only consider refunded orders.');
+erpRuntimeAssert(str_contains($daemon,'SvAmazonErpSalesReturnTask::run'),'Daemon must delegate ERP return reconciliation to the dedicated task.');
+erpRuntimeAssert(str_contains($task,'SvAmazonErpSalesReturnService'),'ERP task must use the guarded ERP sales return service.');
+erpRuntimeAssert(str_contains($task,'SvAmazonErpReturnInvoiceLookup'),'ERP task must check existing return NFs.');
+erpRuntimeAssert(str_contains($task,'erpSalesReturnCreateEnabled()'),'ERP task must use the dedicated write gate.');
+erpRuntimeAssert(str_contains($task,'quantity_refunded'),'ERP task must only consider refunded orders.');
 
 echo "erp-sales-return-runtime-test: OK\n";
