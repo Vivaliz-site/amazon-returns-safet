@@ -7,11 +7,10 @@ $events=[['id'=>1,'case_id'=>91,'event_type'=>'ORDER_SYNCED','source'=>'SP_API_O
 $projected=SvAmazonReturnProjector::projectFrom($case,$events);
 ipdAssert(($projected['product_title']??null)==='Sabatina Madeira Completa para Porta 80 cm','Projected intake data must preserve the Amazon product title.');
 $root=dirname(__DIR__);
-$sink=file_get_contents($root.'/includes/amazon-returns/SpApiEventSink.php');
-ipdAssert(is_string($sink) && str_contains($sink,"'product_title'=>"),'Order ingestion must persist the normalized Amazon item title as event data.');
 $lookup=file_get_contents($root.'/admin/amazon-returns/api/intake-lookup.php');
 ipdAssert(is_string($lookup) && str_contains($lookup,'product_title'),'Intake lookup must expose product_title.');
 ipdAssert(str_contains($lookup,'syncOrder'),'Intake lookup must be able to enrich legacy local cases whose product title is still missing.');
+ipdAssert(str_contains($lookup,'PRODUCT_DETAILS_SYNCED'),'Manual enrichment must persist the product title as immutable event evidence.');
 $page=file_get_contents($root.'/admin/amazon-returns/intake.php');
 ipdAssert(is_string($page) && str_contains($page,'Descrição do produto') && str_contains($page,'c.product_title'),'Receipt confirmation must show the real product description.');
 ipdAssert(str_contains($page,'SKU / ASIN'),'SKU and ASIN must remain visible as secondary identifiers.');
