@@ -29,6 +29,13 @@ $verifiedBeforeRefund=SvAmazonReturnProjector::projectFrom($case,[$base[0],$rece
 sraSame(2,$verifiedBeforeRefund['quantity_received'],'verified intake before refund projection must retain received quantity');
 sraSame('RECEIVED_OK',$verifiedBeforeRefund['physical_status'],'full verified intake before refund projection must close physical exposure');
 sraSame('RECEIVED_OK',$verifiedBeforeRefund['state'],'full verified intake before refund projection must close the case');
+$recovered=array_replace($case,['state'=>'RECOVERED','closed_at'=>'2026-07-05 09:30:00','terminal_reason'=>'REIMBURSEMENT_CREDIT_CONFIRMED']);
+$recoveredAfterReceipt=SvAmazonReturnProjector::projectFrom($recovered,[...$base,$receipt]);
+sraSame(2,$recoveredAfterReceipt['quantity_received'],'late warehouse intake must still record receipt on a recovered case');
+sraSame('RECEIVED_OK',$recoveredAfterReceipt['physical_status'],'late warehouse intake must update recovered case physical status');
+sraSame('RECOVERED',$recoveredAfterReceipt['state'],'late warehouse intake must preserve recovered financial state');
+sraSame('REIMBURSEMENT_CREDIT_CONFIRMED',$recoveredAfterReceipt['terminal_reason'],'late warehouse intake must preserve recovered terminal reason');
+sraSame('2026-07-05 09:30:00',$recoveredAfterReceipt['closed_at'],'late warehouse intake must preserve recovered financial closure timestamp');
 $policies=[];foreach(SvAmazonReturnPolicySeeder::definitions() as $i=>$row)$policies[]=['id'=>$i+1]+$row;
 $eligibleCase=array_replace($verified,['program'=>'STANDARD','marketplace_id'=>'A2Q3Y263D00KWC','policies'=>$policies,'expected_reimbursement_amount'=>'100.00','reconciled_credit_amount'=>'0.00']);
 $policy=SvAmazonReturnPolicyEngine::evaluate($eligibleCase,new DateTimeImmutable('2026-08-20T12:00:00Z'));
