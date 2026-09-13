@@ -71,7 +71,7 @@ try{
             'customer_delivery_carriers'=>array_values(is_array($case['customer_delivery_carriers']??null)?$case['customer_delivery_carriers']:[]),
             'return_tracking_ids'=>array_values(is_array($case['return_tracking_ids']??null)?$case['return_tracking_ids']:[]),
             'return_tracking_id'=>(is_array($case['return_tracking_ids']??null)&&$case['return_tracking_ids']!==[])?$case['return_tracking_ids'][0]:null,
-            'eligibility_at'=>$policy['eligibility_at']??($case['eligibility_at']??null),'next_action_at'=>$case['next_action_at']??null,'appeal_deadline_at'=>$case['appeal_deadline_at']??null,
+            'eligibility_at'=>$policy['eligibility_at']??($case['eligibility_at']??null),'next_action_at'=>array_key_exists('next_action_at',$decision)?$decision['next_action_at']:($case['next_action_at']??null),'appeal_deadline_at'=>$case['appeal_deadline_at']??null,
             'current_action'=>$decision['action']??'WAIT','current_reason'=>$decision['reason']??null,
             'review_status'=>$currentReview['status']??null,'review_id'=>$currentReview['id']??null,
             'applied_rule'=>$app?['rule_id'=>(int)($app['rule_id']??0),'version'=>(int)($app['rule_version']??0),'result'=>$app['result']??null,'outcome'=>$app['outcome']??null]:null,
