@@ -18,8 +18,10 @@ foreach (['amazon_return_tenants','amazon_return_tenant_users','amazon_return_co
     tsAssert(str_contains($ddl, "CREATE TABLE IF NOT EXISTS `{$table}`"), "Missing control-plane table {$table}.");
 }
 
-$tenantOwned = ['amazon_return_cases','amazon_return_events','amazon_return_policies','amazon_return_evidence','amazon_return_outbox','amazon_return_dead_letters','amazon_return_source_cursors','amazon_return_overrides'];
-$connectionOwned = ['amazon_return_cases','amazon_return_events','amazon_return_evidence','amazon_return_outbox','amazon_return_dead_letters','amazon_return_source_cursors','amazon_return_overrides'];
+tsAssert(str_contains($ddl, 'CREATE TABLE IF NOT EXISTS `amazon_return_erp_sales_returns`'), 'Missing ERP sales return lifecycle table.');
+
+$tenantOwned = ['amazon_return_cases','amazon_return_events','amazon_return_policies','amazon_return_evidence','amazon_return_outbox','amazon_return_dead_letters','amazon_return_source_cursors','amazon_return_overrides','amazon_return_erp_sales_returns'];
+$connectionOwned = ['amazon_return_cases','amazon_return_events','amazon_return_evidence','amazon_return_outbox','amazon_return_dead_letters','amazon_return_source_cursors','amazon_return_overrides','amazon_return_erp_sales_returns'];
 $tenantOwned = array_merge($tenantOwned, $memoryTables);
 $connectionOwned = array_merge($connectionOwned, $memoryTables);
 foreach ($statements as $statement) {
@@ -40,7 +42,8 @@ tsAssert(str_contains($ddl, 'UNIQUE KEY `uq_amazon_return_events_idempotency` (`
 tsAssert(str_contains($ddl, 'UNIQUE KEY `uq_amazon_return_outbox_idempotency` (`tenant_id`, `amazon_connection_id`, `idempotency_key`)'), 'Outbox key is not tenant/connection scoped.');
 tsAssert(str_contains($ddl, 'UNIQUE KEY `uq_amazon_return_source_cursor` (`tenant_id`, `amazon_connection_id`, `source`, `cursor_key`)'), 'Cursor key is not tenant/connection scoped.');
 tsAssert(str_contains($ddl, 'UNIQUE KEY `uq_amazon_return_policy_version` (`tenant_id`, `policy_key`, `marketplace_id`, `program`, `effective_from`)'), 'Policy key is not tenant scoped.');
-tsAssert(count($statements) === 15, 'Schema must contain four control-plane and eleven data-plane tables.');
-tsAssert(substr_count($ddl, 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci') === 15, 'Every table must use InnoDB and utf8mb4.');
+tsAssert(str_contains($ddl, 'UNIQUE KEY `uq_amazon_return_erp_sales_return_order` (`tenant_id`, `amazon_connection_id`, `amazon_order_id`)'), 'ERP sales return key is not tenant/connection/order scoped.');
+tsAssert(count($statements) === 16, 'Schema must contain four control-plane and twelve data-plane tables.');
+tsAssert(substr_count($ddl, 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci') === 16, 'Every table must use InnoDB and utf8mb4.');
 
 echo "amazon-returns-tenant-schema-test: OK\n";
