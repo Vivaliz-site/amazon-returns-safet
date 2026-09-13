@@ -39,14 +39,21 @@ final class SvAmazonErpSalesReturnService
             throw new RuntimeException('Amazon order has no refunded quantity to reconcile with ERP.');
         }
 
+        // Persist the order identity before any ERP resolution. An already-issued
+        // return invoice is authoritative and must suppress creation even when the
+        // original sale lookup is temporarily unavailable.
+        $workflow=$this->store->ensureWorkflow(['amazon_order_id'=>$orderId]);
+        $existingInvoice=($this->returnInvoiceLookup)($orderId);
+        if(is_array($existingInvoice)){
+            return $this->store->linkReturnInvoice($orderId,$existingInvoice);
+        }
+
         $sale=($this->saleResolver)($orderId);
         if(!is_array($sale)){
-            $workflow=$this->store->ensureWorkflow(['amazon_order_id'=>$orderId]);
             return $this->store->markBlocked($orderId,'ERP_ORIGINAL_SALE_NOT_FOUND','Nao foi possivel localizar a venda original no Olist/Tiny.');
         }
         $saleOrderId=trim((string)($sale['order_id']??$orderId));
         if($saleOrderId!==$orderId){
-            $this->store->ensureWorkflow(['amazon_order_id'=>$orderId]);
             return $this->store->markBlocked($orderId,'ERP_ORIGINAL_SALE_ORDER_MISMATCH','A venda localizada no Olist/Tiny pertence a outro pedido Amazon.');
         }
 
@@ -56,11 +63,6 @@ final class SvAmazonErpSalesReturnService
             'original_invoice_number'=>self::nullable($sale['invoice_number']??null),
             'original_invoice_key'=>self::nullable($sale['access_key']??($sale['invoice_key']??null)),
         ]);
-
-        $existingInvoice=($this->returnInvoiceLookup)($orderId);
-        if(is_array($existingInvoice)){
-            return $this->store->linkReturnInvoice($orderId,$existingInvoice);
-        }
 
         $workflow=$this->store->findByOrder($orderId)??$workflow;
         $status=strtoupper(trim((string)($workflow['status']??'')));
