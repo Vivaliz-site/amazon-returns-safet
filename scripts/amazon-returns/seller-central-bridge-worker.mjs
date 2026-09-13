@@ -83,6 +83,14 @@ async function ensureBrowser() {
   throw new Error('Seller Central browser did not expose CDP');
 }
 
+async function closeCdpTarget(targetId) {
+  const id = String(targetId || '').trim();
+  if (!id) return;
+  await fetch(`${CDP_BASE}/json/close/${encodeURIComponent(id)}`, {
+    signal: AbortSignal.timeout(2500),
+  }).catch(() => null);
+}
+
 class Cdp {
   constructor(ws, targetId = null) {
     this.ws = ws;
@@ -103,13 +111,23 @@ class Cdp {
     const response = await fetch(`${CDP_BASE}/json/new?${encodeURIComponent('about:blank')}`, { method: 'PUT' });
     if (!response.ok) throw new Error(`could not create isolated CDP target (${response.status})`);
     const page = await response.json();
-    if (!page?.id || !page?.webSocketDebuggerUrl) throw new Error('isolated CDP page target unavailable');
-    const ws = new WebSocket(page.webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => {
-      ws.addEventListener('open', resolve, { once: true });
-      ws.addEventListener('error', reject, { once: true });
-    });
-    return new Cdp(ws, page.id);
+    if (!page?.id || !page?.webSocketDebuggerUrl) {
+      if (page?.id) await closeCdpTarget(page.id);
+      throw new Error('isolated CDP page target unavailable');
+    }
+    let ws;
+    try {
+      ws = new WebSocket(page.webSocketDebuggerUrl);
+      await new Promise((resolve, reject) => {
+        ws.addEventListener('open', resolve, { once: true });
+        ws.addEventListener('error', reject, { once: true });
+      });
+      return new Cdp(ws, page.id);
+    } catch (error) {
+      try { ws?.close(); } catch {}
+      await closeCdpTarget(page.id);
+      throw error;
+    }
   }
 
   send(method, params = {}) {
@@ -224,9 +242,11 @@ class Cdp {
     return JSON.parse(value || '""');
   }
 
-  close() {
+  async close() {
     try { this.ws.close(); } catch {}
-    if (this.targetId) fetch(`${CDP_BASE}/json/close/${encodeURIComponent(this.targetId)}`).catch(() => {});
+    const targetId = this.targetId;
+    this.targetId = null;
+    await closeCdpTarget(targetId);
   }
 }
 
@@ -578,7 +598,7 @@ async function findSupportCase(cdp, job, options = {}) {
     if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') throw error;
     throw new Error('SUPPORT_CASE_LOOKUP_UNAVAILABLE', { cause: error });
   } finally {
-    lookup.close();
+    await lookup.close();
   }
 }
 
@@ -1038,7 +1058,7 @@ async function executeJob(job) {
     if (job.action === 'SELLER_SUPPORT_UPDATE') return await supportUpdate(cdp, job);
     return bridgeResult('FAILED', { reason: 'UNSUPPORTED_JOB_ACTION' });
   } finally {
-    cdp.close();
+    await cdp.close();
   }
 }
 
