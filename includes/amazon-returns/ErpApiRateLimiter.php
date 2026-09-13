@@ -13,7 +13,7 @@ final class SvAmazonErpApiRateLimiter
     private $sleep;
     private ?float $lastRequestAt=null;
 
-    public function __construct(private int $minIntervalMs=1000,?callable $clock=null,?callable $sleep=null)
+    public function __construct(private int $minIntervalMs=1500,?callable $clock=null,?callable $sleep=null)
     {
         $this->minIntervalMs=max(250,min(5000,$this->minIntervalMs));
         $this->clock=$clock ?? static fn():float=>microtime(true);
@@ -22,7 +22,7 @@ final class SvAmazonErpApiRateLimiter
 
     public static function fromConfig(SvAmazonReturnsConfig $config,?callable $clock=null,?callable $sleep=null): self
     {
-        return new self((int)$config->get('AMAZON_RETURNS_ERP_READ_INTERVAL_MS','1000'),$clock,$sleep);
+        return new self((int)$config->get('AMAZON_RETURNS_ERP_READ_INTERVAL_MS','1500'),$clock,$sleep);
     }
 
     public function minIntervalMs(): int { return $this->minIntervalMs; }
