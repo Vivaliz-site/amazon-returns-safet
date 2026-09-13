@@ -25,6 +25,7 @@ final class SvAmazonReturnsRuntime
             'financial'=>43200,
             'sp_api'=>43200,
             'returns_report'=>43200,
+            'erp_sales_returns'=>43200,
             'health'=>900,
             'policy_monitor'=>43200,
         ];
@@ -209,6 +210,7 @@ final class SvAmazonReturnsRuntime
             'sp_api',
             'returns_report',
             'financial',
+            'erp_sales_returns',
         ];
         $hasEvidence=false;
         foreach($evidenceOrder as $task){
