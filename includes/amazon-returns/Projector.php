@@ -175,7 +175,9 @@ final class SvAmazonReturnProjector
                 } else {
                     $facts['quantity_received'] += self::nonNegativeInt($payload['quantity'] ?? 1, 'quantity');
                 }
-                $facts['closed_at'] = $occurredAt;
+                if (!self::preserveTerminalFinancialClosure((string)$facts['state']) || $facts['closed_at'] === null) {
+                    $facts['closed_at'] = $occurredAt;
+                }
                 break;
         }
     }
@@ -205,6 +207,9 @@ final class SvAmazonReturnProjector
         );
         if ($fullPhysicalReturn) {
             $facts['physical_status'] = SvAmazonReturnPhysicalStatuses::RECEIVED_OK;
+            if (self::preserveTerminalFinancialClosure((string)$facts['state'])) {
+                return;
+            }
             $facts['state'] = SvAmazonReturnStates::RECEIVED_OK;
             $facts['terminal_reason'] = 'PHYSICAL_RETURN_RECEIVED';
             return;
@@ -226,6 +231,14 @@ final class SvAmazonReturnProjector
                 SvAmazonReturnStates::CARRIER_DELIVERED_PENDING_PHYSICAL,
             default => SvAmazonReturnStates::AWAITING_RETURN,
         };
+    }
+
+    private static function preserveTerminalFinancialClosure(string $state): bool
+    {
+        return in_array($state, [
+            SvAmazonReturnStates::RECOVERED,
+            SvAmazonReturnStates::CLOSED_LOSS,
+        ], true);
     }
 
     private static function preserveOperationalState(string $state): bool
