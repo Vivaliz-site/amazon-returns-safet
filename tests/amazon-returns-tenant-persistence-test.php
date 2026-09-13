@@ -32,6 +32,8 @@ tpAssert($persistence->evidence instanceof SvAmazonReturnEvidenceStore, 'Evidenc
 tpAssert($persistence->outbox instanceof SvAmazonTenantReturnsOutbox, 'Outbox missing.');
 tpAssert($persistence->cursors instanceof SvAmazonSourceCursorStore, 'Cursor store missing.');
 tpAssert($persistence->policies instanceof SvAmazonReturnPolicyRepository, 'Policy repository missing.');
+tpAssert(property_exists($persistence,'erpSalesReturns'), 'ERP sales return repository binding missing.');
+tpAssert($persistence->erpSalesReturns instanceof SvAmazonErpSalesReturnRepository, 'ERP sales return repository missing.');
 
 $contracts = [
     [SvAmazonGmailEventSink::class, 'persist', 0, 'SvAmazonTenantPersistence'],
