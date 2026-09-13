@@ -40,6 +40,7 @@ final class SvAmazonReturnProjector
             'quantity_ordered' => max(0, (int) ($case['quantity_ordered'] ?? 0)),
             'quantity_refunded' => 0,
             'quantity_received' => 0,
+            'product_title' => null,
             'program' => SvAmazonReturnPrograms::UNKNOWN,
             'refund_initiator' => SvAmazonRefundInitiators::UNKNOWN,
             'refund_at' => null,
@@ -78,6 +79,10 @@ final class SvAmazonReturnProjector
         }
         if (array_key_exists('quantity_ordered', $payload)) {
             $facts['quantity_ordered'] = self::nonNegativeInt($payload['quantity_ordered'], 'quantity_ordered');
+        }
+        if (array_key_exists('product_title', $payload) && is_scalar($payload['product_title'])) {
+            $productTitle = trim((string)$payload['product_title']);
+            if ($productTitle !== '') $facts['product_title'] = $productTitle;
         }
 
         switch ($type) {
