@@ -7,6 +7,7 @@ require_once __DIR__.'/ErpInvoiceLookup.php';
 require_once __DIR__.'/ErpReturnInvoiceLookup.php';
 require_once __DIR__.'/ErpSalesReturnGateway.php';
 require_once __DIR__.'/ErpSalesReturnService.php';
+require_once __DIR__.'/ErpApiRateLimiter.php';
 
 final class SvAmazonErpSalesReturnTask
 {
@@ -14,7 +15,7 @@ final class SvAmazonErpSalesReturnTask
     public static function run(SvAmazonTenantPersistence $p,SvAmazonReturnsConfig $config): array
     {
         $orders=self::refundedOrders($p);
-        if($orders===[])return self::result([],false);
+        if($orders===[])return self::result([],false,false);
 
         $credentialPath=$config->get('AMAZON_RETURNS_ERP_ENV_FILE',SvAmazonErpInvoiceLookup::defaultCredentialPath());
         if($credentialPath==='' || !is_readable($credentialPath)){
@@ -37,17 +38,23 @@ final class SvAmazonErpSalesReturnTask
             static fn(string $orderId): ?array=>$returnLookup->findForOrder($orderId),
             $config->erpSalesReturnCreateEnabled()
         );
+        $limiter=SvAmazonErpApiRateLimiter::fromConfig($config);
 
-        $rows=[];
+        $rows=[];$rateLimited=false;
         foreach($orders as $orderId){
+            $limiter->beforeRequest();
             try{
                 $row=$service->reconcileOrder($orderId);
                 $rows[]=['order_id'=>$orderId,'status'=>(string)($row['status']??'UNKNOWN')];
             }catch(Throwable $e){
                 $rows[]=['order_id'=>$orderId,'status'=>'ERROR','error_class'=>$e::class];
+                if(str_contains($e->getMessage(),'HTTP 429')){
+                    $rateLimited=true;
+                    break;
+                }
             }
         }
-        return self::result($rows,$config->erpSalesReturnCreateEnabled());
+        return self::result($rows,$config->erpSalesReturnCreateEnabled(),$rateLimited);
     }
 
     /** @return list<string> */
@@ -64,11 +71,31 @@ final class SvAmazonErpSalesReturnTask
             }
             $total=(int)($found['total']??0);$page++;
         }while((($page-1)*$perPage)<$total && $page<=1000);
-        $ids=array_keys($orders);sort($ids,SORT_STRING);return $ids;
+        $ids=array_keys($orders);
+        usort($ids,static function(string $left,string $right) use ($p): int {
+            $lp=self::workflowPriority($p->erpSalesReturns->findByOrder($left));
+            $rp=self::workflowPriority($p->erpSalesReturns->findByOrder($right));
+            return [$lp,$left]<=>[$rp,$right];
+        });
+        return $ids;
+    }
+
+    /** @param array<string,mixed>|null $workflow */
+    public static function workflowPriority(?array $workflow): int
+    {
+        $status=strtoupper(trim((string)($workflow['status']??'PENDING')));
+        return match($status){
+            'PENDING'=>0,
+            'READY_TO_CREATE'=>1,
+            'RETURN_CREATED_WAITING_INVOICE'=>2,
+            'BLOCKED'=>3,
+            'RETURN_INVOICE_EXISTS'=>4,
+            default=>0,
+        };
     }
 
     /** @param list<array<string,mixed>> $rows @return array<string,mixed> */
-    private static function result(array $rows,bool $writeEnabled): array
+    private static function result(array $rows,bool $writeEnabled,bool $rateLimited): array
     {
         $counts=['READY_TO_CREATE'=>0,'RETURN_CREATED_WAITING_INVOICE'=>0,'RETURN_INVOICE_EXISTS'=>0,'BLOCKED'=>0,'ERROR'=>0,'OTHER'=>0];
         foreach($rows as $row){
@@ -84,6 +111,7 @@ final class SvAmazonErpSalesReturnTask
             'blocked'=>$counts['BLOCKED'],
             'errors'=>$counts['ERROR'],
             'other'=>$counts['OTHER'],
+            'rate_limited'=>$rateLimited,
             'write_enabled'=>$writeEnabled,
         ];
     }
