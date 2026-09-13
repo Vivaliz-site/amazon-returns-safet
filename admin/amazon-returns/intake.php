@@ -28,11 +28,12 @@ function setMsg(t,ok=false){msg.textContent=t;msg.className=ok?'ok':'err';}
 function expectedQuantity(c){return Number(c.quantity_refunded||0)>0?Number(c.quantity_refunded):Math.max(1,Number(c.quantity_ordered||0));}
 function previewField(label,value){if(value===null||value===undefined||value==='')return null;const el=document.createElement('div');el.className='preview-field';const k=document.createElement('span');k.textContent=label;const v=document.createElement('strong');v.textContent=String(value);el.append(k,v);return el;}
 function returnTracking(c){const values=Array.isArray(c.return_tracking_ids)?c.return_tracking_ids:[];return c.return_tracking_id||values[0]||null;}
+function productIdentifiers(c){return [['SKU',c.sku],['ASIN',c.asin]].filter(([,value])=>value).map(([label,value])=>`${label} ${value}`).join(' · ')||c.amazon_order_item_id;}
 function choose(c,el){
   caseId.value=String(c.id);document.querySelectorAll('.item').forEach(x=>x.classList.remove('active'));el.classList.add('active');
   const total=expectedQuantity(c);const pending=Math.max(0,total-Number(c.quantity_received||0));document.querySelector('#quantity').max=String(pending);document.querySelector('#quantity').value=String(Math.min(1,pending));
   preview.replaceChildren();
-  const fields=[['Pedido',c.amazon_order_id],['TBR / rastreio da devolução',returnTracking(c)],['Produto',c.sku||c.asin||c.amazon_order_item_id],['Situação',humanIntakeStatus(c.state)],['Reembolso ao cliente',Number(c.refund_amount||0)>0?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(c.refund_amount)):null],['Quantidade a conferir',pending]];
+  const fields=[['Pedido',c.amazon_order_id],['TBR / rastreio da devolução',returnTracking(c)],['Descrição do produto',c.product_title||null],['SKU / ASIN',productIdentifiers(c)],['Situação',humanIntakeStatus(c.state)],['Reembolso ao cliente',Number(c.refund_amount||0)>0?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(c.refund_amount)):null],['Quantidade a conferir',pending]];
   for(const [label,value] of fields){const field=previewField(label,value);if(field)preview.append(field);}
   form.classList.remove('hidden');form.scrollIntoView({behavior:'smooth',block:'start'});
 }
@@ -44,7 +45,7 @@ async function findReturn(){
     const r=await fetch('/admin/amazon-returns/api/intake-lookup.php',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'content-type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({query:query,csrf_token:csrf})});
     const j=await r.json().catch(()=>({}));const box=document.querySelector('#items');if(!r.ok||!j.success){setMsg(friendlyIntakeError(j.error));return;}
     if(!(j.cases||[]).length){setMsg('Nenhuma devolução encontrada. Confira o pedido, a NF ou o TBR e tente novamente.');return;}
-    for(const c of j.cases){const el=document.createElement('div');el.className='item';el.tabIndex=0;const total=expectedQuantity(c);const tbr=returnTracking(c);el.textContent=`Pedido ${c.amazon_order_id} · ${tbr?`TBR ${tbr} · `:''}${c.sku||c.asin||c.amazon_order_item_id} · ${humanIntakeStatus(c.state)} · recebido ${Number(c.quantity_received||0)}/${total}`;el.addEventListener('click',()=>choose(c,el));el.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();choose(c,el);}});box.append(el);}
+    for(const c of j.cases){const el=document.createElement('div');el.className='item';el.tabIndex=0;const total=expectedQuantity(c);const tbr=returnTracking(c);const product=c.product_title||productIdentifiers(c);const ids=c.product_title?` · ${productIdentifiers(c)}`:'';el.textContent=`Pedido ${c.amazon_order_id} · ${tbr?`TBR ${tbr} · `:''}${product}${ids} · ${humanIntakeStatus(c.state)} · recebido ${Number(c.quantity_received||0)}/${total}`;el.addEventListener('click',()=>choose(c,el));el.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();choose(c,el);}});box.append(el);}
     if(j.cases.length===1)box.firstElementChild.click();
     if(j.synced)setMsg('Devolução localizada nas fontes da Amazon e disponibilizada para conferência.',true);
     else if(j.cases.length>1)setMsg('Encontramos mais de um item. Selecione a devolução correta antes de confirmar.',true);
