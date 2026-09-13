@@ -30,24 +30,15 @@ final class SvAmazonErpInvoiceLookup
         if(preg_match('/^[0-9]{1,20}$/D',$invoiceNumber)!==1){
             throw new InvalidArgumentException('ERP invoice number is invalid.');
         }
-        $token=$this->accessToken();
         $query=http_build_query([
             'tipo'=>'S',
             'numero'=>$invoiceNumber,
             'limit'=>100,
             'offset'=>0,
         ],'','&',PHP_QUERY_RFC3986);
-        $response=($this->http)(
-            'GET',$this->apiBase.'/notas?'.$query,
-            ['Authorization'=>'Bearer '.$token,'Accept'=>'application/json'],null
-        );
-        $status=(int)($response['status'] ?? 0);
-        if($status!==200)throw new RuntimeException('ERP invoice lookup failed with HTTP '.$status.'.');
-        $json=is_array($response['json'] ?? null)?$response['json']:[];
-        $rows=is_array($json['itens'] ?? null)?$json['itens']:[];
+        $rows=$this->listInvoices($query,'ERP invoice lookup');
         $matches=[];
         foreach($rows as $row){
-            if(!is_array($row))continue;
             if(strtoupper(trim((string)($row['tipo'] ?? 'S')))!=='S')continue;
             $number=trim((string)($row['numero'] ?? ''));
             if(self::canonicalNumber($number)!==self::canonicalNumber($invoiceNumber))continue;
@@ -57,18 +48,64 @@ final class SvAmazonErpInvoiceLookup
             $matches[$orderId][]=$row;
         }
         if($matches===[])return null;
-        if(count($matches)!==1){
-            throw new UnexpectedValueException('ERP invoice maps to multiple Amazon orders.');
-        }
+        if(count($matches)!==1)throw new UnexpectedValueException('ERP invoice maps to multiple Amazon orders.');
         $orderId=(string)array_key_first($matches);
-        $row=$matches[$orderId][0];
+        return $this->saleProjection($matches[$orderId][0],$orderId,$invoiceNumber);
+    }
+
+    /** @return array<string,mixed>|null */
+    public function findSaleForOrder(string $amazonOrderId): ?array
+    {
+        $amazonOrderId=trim($amazonOrderId);
+        if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$amazonOrderId)!==1){
+            throw new InvalidArgumentException('Amazon order ID is invalid.');
+        }
+        $query=http_build_query([
+            'tipo'=>'S',
+            'numeroPedidoEcommerce'=>$amazonOrderId,
+            'limit'=>100,
+            'offset'=>0,
+        ],'','&',PHP_QUERY_RFC3986);
+        $rows=$this->listInvoices($query,'ERP sale lookup');
+        $matches=[];
+        foreach($rows as $row){
+            if(strtoupper(trim((string)($row['tipo'] ?? 'S')))!=='S')continue;
+            $ecommerce=is_array($row['ecommerce'] ?? null)?$row['ecommerce']:[];
+            if(trim((string)($ecommerce['numeroPedidoEcommerce'] ?? ''))!==$amazonOrderId)continue;
+            $id=trim((string)($row['id'] ?? ''));
+            if($id==='')continue;
+            $matches[$id]=$row;
+        }
+        if($matches===[])return null;
+        if(count($matches)!==1)throw new UnexpectedValueException('Amazon order maps to multiple ERP sale invoices.');
+        return $this->saleProjection(array_values($matches)[0],$amazonOrderId,null);
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function listInvoices(string $query,string $label): array
+    {
+        $response=($this->http)(
+            'GET',$this->apiBase.'/notas?'.$query,
+            ['Authorization'=>'Bearer '.$this->accessToken(),'Accept'=>'application/json'],null
+        );
+        $status=(int)($response['status'] ?? 0);
+        if($status!==200)throw new RuntimeException($label.' failed with HTTP '.$status.'.');
+        $json=is_array($response['json'] ?? null)?$response['json']:[];
+        $rows=is_array($json['itens'] ?? null)?$json['itens']:[];
+        return array_values(array_filter($rows,'is_array'));
+    }
+
+    /** @param array<string,mixed> $row @return array<string,mixed> */
+    private function saleProjection(array $row,string $orderId,?string $fallbackNumber): array
+    {
         $ecommerce=is_array($row['ecommerce'] ?? null)?$row['ecommerce']:[];
         return [
             'source'=>'ERP_OLIST_INVOICE',
             'request_id'=>null,
             'invoice_id'=>trim((string)($row['id'] ?? '')),
-            'invoice_number'=>trim((string)($row['numero'] ?? $invoiceNumber)),
+            'invoice_number'=>trim((string)($row['numero'] ?? ($fallbackNumber ?? ''))),
             'series'=>self::nullable($row['serie'] ?? null),
+            'access_key'=>self::nullable($row['chaveAcesso'] ?? $row['chave_acesso'] ?? null),
             'status'=>self::nullable($row['situacao'] ?? null),
             'invoice_type'=>self::nullable($row['tipo'] ?? null),
             'transaction_type'=>'ERP_SALE',
