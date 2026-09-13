@@ -5,10 +5,12 @@ $root=dirname(__DIR__);
 $page=(string)file_get_contents($root.'/admin/amazon-returns/index.php');
 $api=(string)file_get_contents($root.'/admin/amazon-returns/api/case.php');
 $listApi=(string)file_get_contents($root.'/admin/amazon-returns/api/cases.php');
+$baseUi=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit.js');
 $ui=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational.js');
 $bootstrap=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational-bootstrap.js');
 $css=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational.css');
 $referenceSearch=(string)file_get_contents($root.'/includes/amazon-returns/CaseReferenceSearch.php');
+$invoiceSearch=(string)file_get_contents($root.'/includes/amazon-returns/InvoiceSearch.php');
 $eventStore=(string)file_get_contents($root.'/includes/amazon-returns/TenantEventStore.php');
 
 // Same projected/current decision facts drive both list and detail.
@@ -28,11 +30,15 @@ coaAssert(str_contains($page,'TBR')&&str_contains($page,'rastreio'),'Search UI m
 coaAssert(str_contains($listApi,'SvAmazonCaseReferenceSearch::caseIds'),'List API must resolve references before pagination.');
 coaAssert(str_contains($eventStore,'customer_tracking_ids'),'Scoped evidence store must search customer tracking evidence.');
 coaAssert(str_contains($referenceSearch,'SvAmazonInvoiceSearch::caseIdsExact'),'Structured NF search must use exact invoice evidence.');
+coaAssert(str_contains($invoiceSearch,'$.return_invoice_number'),'Structured NF search must include linked return invoices.');
 
 // Human responsibility must win over automatic states and generic WAIT must never be the operator status.
 coaAssert(str_contains($ui,"review_status==='OPEN'"),'Open review must be shown as user responsibility.');
 coaAssert(str_contains($ui,"'Sua decisão é necessária'"),'User-decision state missing.');
 coaAssert(!str_contains($ui,"return 'Aguardar';"),'Generic Aguardar status is prohibited.');
+coaAssert(str_contains($ui,'Aguardar até ${date('),'Known wait dates must be explicit in the operator status.');
+coaAssert(str_contains($ui,"AMAZON_REQUESTED_WAIT"),'Amazon-promised wait must have dedicated operator copy.');
+coaAssert(str_contains($ui,"RECOVERY_WINDOW_EXPIRED"),'Expired recovery window must never be rendered as an unexplained wait.');
 coaAssert(!str_contains($page,'>Aguardar<'),'Standalone Aguardar labels are prohibited in operator-facing controls.');
 coaAssert(str_contains($bootstrap,"q.set('review_status','OPEN')"),'Attention quick filter must include every open review, including blocked reviews.');
 coaAssert(str_contains($bootstrap,"q.delete('action')"),'Attention quick filter must not retain a narrower action filter.');
@@ -50,7 +56,15 @@ coaAssert(str_contains($bootstrap,"field.querySelector('.muted')?.textContent===
 coaAssert(str_contains($ui,"value===null||value===undefined||value===''||value==='—'"),'Unavailable detail fields must be omitted.');
 coaAssert(str_contains($ui,"if(dates.children.length>1)root.append(dates)"),'Empty date block must be omitted.');
 coaAssert(str_contains($api,"'physical_received_at'"),'Detail API must expose the actual warehouse receipt timestamp when known.');
+coaAssert(str_contains($api,"'amazon_reimbursement_at'"),'Detail API must expose the date of an actually reconciled Amazon credit.');
+coaAssert(str_contains($api,"'return_invoice_numbers'"),'Detail API must expose linked Tiny/Olist return invoices.');
+coaAssert(str_contains($api,"'sales_invoice_source'"),'Detail API must expose the sales invoice origin.');
 coaAssert(str_contains($ui,'operationalDate(c.physical_received_at)'),'Receipt date must come from the physical receipt event, not case closure time.');
+coaAssert(str_contains($ui,'operationalDate(c.amazon_reimbursement_at)'),'Amazon reimbursement date must be visible when a real reconciled credit exists.');
+coaAssert(str_contains($ui,'operationalDate(c.safe_t_submitted_at)'),'Confirmed SAFE-T submission date must be visible.');
+coaAssert(str_contains($ui,'operationalDate(c.amazon_decision_at)'),'Observed Amazon decision date must be visible.');
+coaAssert(str_contains($ui,"'NF de devolução'"),'Return invoice must be shown in simple Portuguese.');
+coaAssert(str_contains($ui,'return_invoice_numbers'),'Return invoice rendering must support more than one invoice.');
 coaAssert(str_contains($ui,'function externalWriteSummary('),'Last automatic action must describe queued, successful, or failed execution truthfully.');
 coaAssert(str_contains($ui,"includes(String(c.state||''))?null:(c.next_action_at||c.eligibility_at)"),'Concluded cases must not display an obsolete next action date.');
 
@@ -61,6 +75,11 @@ coaAssert(str_contains($ui,'Ver histórico completo'),'Full history disclosure i
 coaAssert(str_contains($ui,"source!=='Informação não disponível'"),'Unknown timeline source labels must be omitted instead of displaying a meaningless fallback.');
 
 // Initial legacy rendering is replaced once the operational layer is loaded and case-only controls do not leak into other tabs.
+coaAssert(str_contains($baseUi,'casesRequestGeneration'),'Base list requests must be invalidated when the operational renderer starts later.');
+coaAssert(str_contains($ui,'++casesRequestGeneration'),'Operational list requests must advance the shared request generation.');
+coaAssert(str_contains($page,'cockpit.js?v=refund-consultation-2'),'Base cockpit asset must be cache-busted for this delivery.');
+coaAssert(str_contains($page,'cockpit-operational.js?v=refund-consultation-2'),'Operational cockpit asset must be cache-busted for this delivery.');
+coaAssert(str_contains($page,'cockpit-operational-bootstrap.js?v=refund-consultation-2'),'Operational bootstrap asset must be cache-busted for this delivery.');
 coaAssert(str_contains($bootstrap,"if(state.view==='cases')loadCases()"),'Operational list must rerender after deferred scripts load.');
 coaAssert(str_contains($bootstrap,'Dados podem estar desatualizados'),'Stale source data must be visibly identified.');
 coaAssert(str_contains($bootstrap,'function syncOperationalChrome('),'Operational chrome must follow the selected tab.');
