@@ -4,19 +4,19 @@
 
 Criar um mecanismo global de continuidade para impedir que trabalho de agentes fique órfão quando uma sessão ChatGPT/Codex/Claude/Gemini, processo remoto, terminal ou conexão é interrompida. A conclusão de uma tarefa deve deixar de depender da vida útil de uma conversa e passar a depender de estado persistente, verificável e retomável.
 
-O sistema deve também executar uma auditoria recorrente dos repositórios e hosts autorizados para localizar trabalho já abandonado: alterações locais sem commit, commits não enviados, branches à frente da `main`, branches sem PR, PRs sem merge, operações Git interrompidas, worktrees órfãs e tarefas sem heartbeat.
+O sistema deve também auditar repositórios e hosts autorizados para localizar trabalho já abandonado: alterações locais sem commit, commits não enviados, branches à frente da `main`, branches sem PR, PRs sem merge, operações Git interrompidas, worktrees órfãs e tarefas sem heartbeat.
 
 ## Princípio operacional
 
-Uma tarefa não termina quando o agente para. Ela termina somente quando atinge `MERGED + VERIFIED` ou quando existe um bloqueio externo explícito, persistido e acionável.
+Uma tarefa não termina quando o agente para. Ela termina somente quando atinge `MERGED + VERIFIED` ou quando existe bloqueio externo explícito, persistido e acionável.
 
-Nenhuma alteração pode existir somente na memória ou conversa de um agente. Todo trabalho de implementação deve possuir identidade, checkout isolado e estado persistente antes da primeira edição.
+Nenhuma alteração pode existir somente na memória ou conversa de um agente. Toda nova implementação deve possuir identidade, checkout isolado e estado persistente antes da primeira edição.
 
 ## Escopo
 
-O controlador é global e deve suportar múltiplos repositórios e múltiplos hosts, começando pelo `Vivaliz-site/amazon-returns-safet` e pelos hosts autorizados já usados pelo projeto. A arquitetura não deve depender de detalhes específicos do SAFE-T; os adaptadores de repositório e host devem ser genéricos.
+O controlador é global e suporta múltiplos repositórios e hosts, começando por `Vivaliz-site/amazon-returns-safet` e pelos hosts autorizados já usados pelo projeto. A arquitetura é genérica e não depende do domínio SAFE-T.
 
-O primeiro rollout deve incluir:
+O rollout inclui:
 
 1. ledger persistente de tarefas;
 2. worktree isolada por tarefa;
@@ -27,16 +27,14 @@ O primeiro rollout deve incluir:
 7. classificação automática de pendências;
 8. Resume Packet determinístico;
 9. fila `NEEDS_RESUME`;
-10. retomada automática por Codex quando permitido;
+10. retomada automática por Codex quando permitida;
 11. fallback para outros agentes sem sobrescrever trabalho existente;
-12. auditoria inicial de todas as pendências encontradas;
-13. relatório de conclusão somente quando `MERGED + VERIFIED`.
+12. auditoria inicial das pendências existentes;
+13. conclusão somente em `MERGED + VERIFIED`.
 
-## Componentes
+## 1. Task Ledger
 
-### 1. Task Ledger
-
-Fonte persistente de verdade sobre cada unidade de trabalho. Cada tarefa recebe um `TASK_ID` imutável, por exemplo `TASK-20260913-001`.
+Cada unidade de trabalho recebe `TASK_ID` imutável, por exemplo `TASK-20260913-001`.
 
 Campos mínimos:
 
@@ -46,10 +44,12 @@ Campos mínimos:
 - `worktree_path`;
 - `branch`;
 - `base_sha`;
+- `current_head`;
 - `agent_type`;
 - `agent_session_id` quando disponível;
 - `objective`;
 - `status`;
+- `classification`;
 - `last_heartbeat_at`;
 - `lease_expires_at`;
 - `last_checkpoint_sha`;
@@ -65,31 +65,13 @@ Campos mínimos:
 - `created_at`;
 - `updated_at`.
 
-O ledger deve usar armazenamento local simples e transacional. SQLite é o padrão recomendado para o controlador, com exportação JSON somente para diagnóstico e interoperabilidade.
+SQLite é o ledger inicial por ser local, transacional e não exigir infraestrutura adicional. Exportação JSON existe apenas para diagnóstico e interoperabilidade.
 
-### 2. Isolamento por worktree
+### Estado versus classificação
 
-Cada tarefa de implementação trabalha em uma `git worktree` dedicada. Dois agentes não devem editar o mesmo checkout de trabalho simultaneamente.
+`status` representa a etapa do ciclo de vida da tarefa. `classification` representa a interpretação operacional do achado atual. São campos distintos e nunca devem ser usados como sinônimos.
 
-Convenção:
-
-```text
-<controller-root>/worktrees/<repo>/<TASK_ID>/
-```
-
-Convenção de branch:
-
-```text
-agent/<TASK_ID>-<slug>
-```
-
-Checkouts exclusivos de deploy existentes não devem ser reutilizados por agentes. Checkouts compartilhados antigos continuam somente como fontes auditadas até migração completa.
-
-### 3. Heartbeat e lease
-
-Agentes ativos renovam um heartbeat periódico. O ledger associa um lease à tarefa.
-
-Estados principais:
+Estados do fluxo:
 
 ```text
 DISCOVERED
@@ -110,86 +92,118 @@ NEEDS_RESUME
 SUPERSEDED
 ```
 
-Quando `lease_expires_at` passa sem heartbeat, a tarefa não é encerrada. Ela muda para `AGENT_LOST`, recebe snapshot, é classificada e entra em `NEEDS_RESUME` se houver trabalho recuperável.
+Classificações operacionais:
 
-### 4. Checkpoint seguro
+```text
+ACTIVE
+NEEDS_RESUME
+READY_FOR_PR
+PR_BLOCKED
+BLOCKED_EXTERNAL
+SUPERSEDED
+MERGED_UNVERIFIED
+DONE
+ORPHAN_UNKNOWN
+```
 
-O sistema não deve executar auto-commit cego.
+Exemplo: uma tarefa pode ter `status=MERGED` e `classification=MERGED_UNVERIFIED` até passar pela validação pós-merge.
 
-Antes de criar checkpoint recuperável deve:
+## 2. Isolamento por worktree
+
+Cada nova tarefa de implementação trabalha em `git worktree` dedicada. Dois agentes não editam a mesma worktree simultaneamente.
+
+Convenção:
+
+```text
+<controller-root>/worktrees/<repo>/<TASK_ID>/
+```
+
+Branch:
+
+```text
+agent/<TASK_ID>-<slug>
+```
+
+Checkouts exclusivos de deploy não podem ser reutilizados por agentes. Checkouts compartilhados antigos permanecem somente como fontes auditadas até migração completa.
+
+## 3. Heartbeat e lease
+
+Agente ativo renova heartbeat e lease. Quando `lease_expires_at` passa sem heartbeat, a tarefa muda para `AGENT_LOST`, recebe snapshot seguro e é reclassificada. Se houver trabalho recuperável, passa para `NEEDS_RESUME`.
+
+Uma tarefa só pode possuir um lease ativo. Claim e renovação usam transação SQLite para impedir retomada concorrente.
+
+## 4. Checkpoint seguro
+
+Auto-commit cego é proibido.
+
+Antes de checkpoint recuperável:
 
 1. registrar `git status --porcelain=v2`;
 2. capturar branch, HEAD, upstream e worktree;
-3. verificar operação Git em andamento;
-4. executar secret scan sobre arquivos novos/modificados;
-5. excluir padrões de artefatos temporários configurados;
-6. preservar patch/diff mesmo quando commit automático não for seguro;
-7. somente criar commit de checkpoint quando a política da tarefa permitir e o secret scan estiver limpo.
+3. detectar operação Git em andamento;
+4. executar secret scan em arquivos novos/modificados;
+5. excluir somente artefatos temporários definidos em política explícita;
+6. preservar patch/diff quando commit não for seguro;
+7. criar commit de checkpoint apenas quando permitido e secret scan estiver limpo.
 
-Nunca executar `git reset --hard`, `git clean`, troca forçada de branch ou sobrescrita de worktree com alterações não classificadas.
+Nunca executar automaticamente `git reset --hard`, `git clean`, troca forçada de branch ou sobrescrita de worktree com alterações não classificadas.
 
-### 5. Repository Scanner
+## 5. Repository Scanner
 
-O scanner local deve detectar por repositório/worktree:
+Por repositório/worktree, detectar:
 
-- arquivos modified sem commit;
+- modified sem commit;
 - staged sem commit;
 - untracked;
 - stashes;
 - commits locais não enviados;
 - branch sem upstream;
-- branch à frente da branch base;
-- branch atrás/divergente;
+- ahead/behind/divergência contra branch base;
 - detached HEAD;
 - conflitos;
-- merge interrompido;
-- rebase interrompido;
-- cherry-pick interrompido;
-- revert interrompido;
+- merge/rebase/cherry-pick/revert interrompido;
 - bisect ativo;
 - worktrees bloqueadas ou órfãs;
-- arquivos de lock Git abandonados, sem removê-los automaticamente;
-- branch aparentemente incorporada à `main`;
-- branch não incorporada sem tarefa correspondente.
+- lock Git potencialmente abandonado sem removê-lo automaticamente;
+- branch já incorporada à base;
+- branch não incorporada sem `TASK_ID` correspondente.
 
-### 6. GitHub Reconciler
+## 6. GitHub Reconciler
 
-Para cada repositório configurado, reconciliar estado local com GitHub:
+Para cada repositório configurado, reconciliar:
 
 - branches remotas;
-- diferença contra `main` ou branch base;
+- diferenças contra `main` ou branch base;
 - PR aberto/fechado/merged;
-- checks/Actions;
-- branch com commits mas sem PR;
-- PR pronto mas não merged;
-- PR com merge bloqueado;
-- PR fechado sem merge e commits ainda exclusivos;
-- commit presente em `main` por squash/cherry-pick;
-- branches já totalmente incorporadas e candidatas a limpeza posterior.
+- checks e Actions;
+- branch com commits sem PR;
+- PR pronto sem merge;
+- PR bloqueado por check, conflito ou review;
+- PR fechado sem merge com commits ainda exclusivos;
+- commit incorporado à base por merge, squash ou cherry-pick;
+- branches totalmente incorporadas candidatas a limpeza posterior.
 
-O reconciliador não deve inferir que ausência de PR significa ausência de trabalho.
+Ausência de PR nunca significa ausência de trabalho.
 
-### 7. Classificador de pendências
+## 7. Classificador de pendências
 
-Cada achado recebe exatamente uma classificação operacional:
+Cada achado recebe exatamente uma classificação:
 
 - `ACTIVE`: agente saudável e lease válido;
-- `NEEDS_RESUME`: existe trabalho recuperável que ainda não atingiu conclusão;
-- `READY_FOR_PR`: código commitado/pushed e validações locais necessárias concluídas;
-- `PR_BLOCKED`: PR existe, mas há check/conflito/review impeditivo;
+- `NEEDS_RESUME`: trabalho recuperável ainda não concluído;
+- `READY_FOR_PR`: mudanças commitadas/pushed e validações locais obrigatórias concluídas;
+- `PR_BLOCKED`: PR existe e há impedimento corrigível;
 - `BLOCKED_EXTERNAL`: depende de credencial, autorização, serviço externo ou ação humana inevitável;
-- `SUPERSEDED`: substituído por trabalho posterior confirmado;
-- `MERGED_UNVERIFIED`: merge realizado, validação final pendente;
-- `DONE`: merged e verificado;
-- `ORPHAN_UNKNOWN`: há alteração, mas não há evidência suficiente para associá-la a uma tarefa; requer triagem antes de edição.
+- `SUPERSEDED`: substituído por trabalho posterior comprovado;
+- `MERGED_UNVERIFIED`: integrado à base, mas validação final pendente;
+- `DONE`: integrado e verificado;
+- `ORPHAN_UNKNOWN`: alteração sem evidência suficiente para associá-la a uma tarefa; triagem obrigatória antes de editar.
 
-A classificação deve ser idempotente e recalculável a partir de evidências.
+A classificação é idempotente e recalculável a partir de evidências.
 
-### 8. Resume Packet
+## 8. Resume Packet
 
-Toda tarefa `NEEDS_RESUME` deve produzir um pacote completo e determinístico para qualquer agente autorizado continuar sem reconstruir contexto pela conversa.
-
-Conteúdo obrigatório:
+Toda tarefa `NEEDS_RESUME` gera pacote determinístico contendo:
 
 ```text
 TASK_ID
@@ -201,6 +215,7 @@ base_sha
 current_head
 objective
 status
+classification
 last_agent
 last_heartbeat
 commits_since_base
@@ -219,58 +234,54 @@ safety_constraints
 completion_criteria
 ```
 
-O prompt final deve ordenar explicitamente:
+O prompt de retomada ordena explicitamente:
 
-- continuar exatamente da worktree existente;
-- não recriar a implementação do zero;
+- continuar da worktree existente;
+- não recriar do zero;
 - não descartar alterações;
-- não sobrescrever mudanças de outro agente;
+- não sobrescrever trabalho concorrente;
 - validar antes de commit/push;
 - finalizar commit -> push -> PR -> checks -> merge -> verificação;
-- registrar novo checkpoint antes de encerrar.
+- registrar checkpoint antes de encerrar.
 
-### 9. Resume Queue
+## 9. Resume Queue
 
-A fila é persistente e priorizada.
+Fila persistente e priorizada:
 
-Ordem padrão:
-
-1. alteração local não commitada com risco de perda;
+1. alteração local sem commit com risco de perda;
 2. operação Git interrompida;
-3. branch com trabalho completo sem push;
+3. branch completa sem push;
 4. branch pushed sem PR;
 5. PR bloqueado por falha corrigível;
-6. merge realizado sem verificação;
+6. merge sem verificação;
 7. tarefas antigas parcialmente implementadas.
 
-Uma tarefa só pode ser claimed por um agente por vez. O claim usa lease transacional para evitar dois agentes retomando o mesmo trabalho.
+Um único worker pode claimar cada `TASK_ID` por vez.
 
-### 10. Dispatcher de agentes
+## 10. Dispatcher de agentes
 
-Ordem preferencial inicial:
+Ordem preferencial:
 
-1. Codex autenticado pelo fluxo ChatGPT Business configurado no ambiente;
+1. Codex autenticado pelo fluxo ChatGPT Business já configurado;
 2. sessão ChatGPT com acesso ao host/repositório;
 3. Claude;
 4. Gemini.
 
-O dispatcher deve selecionar apenas agentes realmente disponíveis no host e nunca expor segredos no Resume Packet.
+O dispatcher seleciona apenas agente disponível e nunca expõe segredo no Resume Packet. Falha por limite, expiração de sessão ou indisponibilidade devolve a tarefa para `NEEDS_RESUME` e tenta o próximo agente permitido. O fallback mantém a mesma branch e worktree.
 
-Falha por limite, expiração de sessão ou indisponibilidade devolve a tarefa para `NEEDS_RESUME` e tenta o próximo agente permitido. O fallback não cria nova branch nem nova worktree: continua na mesma unidade de trabalho.
+## 11. Controlador persistente
 
-### 11. Controlador persistente
+O processo de continuidade executa fora da conversa. Em Linux, usar systemd. Em Windows autorizado, usar serviço/tarefa persistente equivalente apenas quando necessário.
 
-O processo de continuidade deve executar fora da conversa do agente. Em Linux, usar serviço systemd; em Windows autorizado, serviço/tarefa persistente equivalente apenas quando necessário.
+Cadência recorrente padrão: 30 minutos, somada a eventos de início, fim e checkpoint. Cadência de 5 minutos é proibida.
 
-Cadência padrão de reconciliação: 30 minutos, além de eventos explícitos de início/fim/checkpoint. Não usar cadência de 5 minutos.
+O controlador sobrevive a logout, encerramento de terminal e reinício do host.
 
-O controlador deve sobreviver a logout, encerramento de terminal e reinício do host.
+## 12. Auditoria inicial
 
-### 12. Auditoria inicial
+Antes de controlar preventivamente o ambiente, executar inventário somente leitura de todos os repositórios/worktrees configurados.
 
-Antes de assumir controle preventivo, executar inventário somente leitura de todos os repositórios e worktrees configurados.
-
-A auditoria inicial produz, para cada achado:
+Para cada achado registrar:
 
 - repositório;
 - host;
@@ -282,17 +293,17 @@ A auditoria inicial produz, para cada achado:
 - upstream;
 - PR relacionado;
 - CI;
-- idade aproximada da última atividade;
+- idade da última atividade;
 - provável agente/origem quando houver evidência;
 - classificação;
 - risco;
-- ação recomendada.
+- próxima ação.
 
-Nenhuma pendência encontrada nessa primeira varredura pode ser descartada automaticamente.
+Nenhuma pendência da primeira varredura pode ser descartada automaticamente.
 
 ## Relação com GitHub
 
-O GitHub é a fonte remota de commits, PRs e CI, mas não enxerga mudanças ainda locais. Portanto, a auditoria correta é sempre a união:
+O estado operacional real é:
 
 ```text
 estado local dos hosts
@@ -304,16 +315,16 @@ ledger de tarefas
 estado operacional real
 ```
 
-A ausência de PR aberto não é suficiente para marcar um repositório como limpo.
+GitHub sozinho não detecta alterações ainda não commitadas.
 
 ## Proteção contra concorrência
 
 - exatamente um lease ativo por `TASK_ID`;
 - worktree exclusiva por tarefa;
-- lock transacional no ledger durante claim/checkpoint;
-- comparação de `base_sha` e `HEAD` antes de qualquer escrita;
-- abortar e reclassificar quando outra alteração concorrente aparecer no mesmo trecho;
-- nunca aplicar patch destrutivo sobre checkout compartilhado;
+- lock transacional durante claim/checkpoint;
+- comparação de `base_sha` e `HEAD` antes de escrita;
+- se houver alteração concorrente no mesmo trecho, abortar e reclassificar;
+- nunca aplicar patch destrutivo em checkout compartilhado;
 - preservar branches e commits até confirmação de incorporação à base.
 
 ## Segurança
@@ -321,17 +332,17 @@ A ausência de PR aberto não é suficiente para marcar um repositório como lim
 - nenhum token, cookie, senha ou segredo no ledger, logs ou Resume Packets;
 - secret scan antes de checkpoint automatizado;
 - logs com redaction;
-- comandos destrutivos Git proibidos no modo automático;
-- limpeza de branch/worktree somente depois de `DONE`, confirmação de incorporação e período de retenção;
-- nenhum processo oculto de navegador é requisito do controlador;
-- controlador deve funcionar API/CLI-first.
+- comandos Git destrutivos proibidos no modo automático;
+- limpeza de branch/worktree somente depois de `DONE`, confirmação de incorporação e retenção configurada;
+- nenhum navegador oculto é necessário;
+- controlador API/CLI-first.
 
 ## Observabilidade
 
 Métricas mínimas:
 
-- tarefas por status;
-- tarefas `NEEDS_RESUME`;
+- tarefas por status e classificação;
+- total `NEEDS_RESUME`;
 - idade da pendência mais antiga;
 - worktrees sujas;
 - branches ahead sem PR;
@@ -343,20 +354,20 @@ Métricas mínimas:
 - tempo entre `AGENT_LOST` e novo claim;
 - tarefas concluídas `MERGED + VERIFIED`.
 
-Logs devem ser estruturados e conter `task_id`, `repo`, `host`, `agent` e `event`.
+Logs estruturados incluem `task_id`, `repo`, `host`, `agent` e `event`.
 
 ## Regras de conclusão
 
-Uma tarefa pode ser `DONE` apenas quando:
+`DONE` exige simultaneamente:
 
-1. não há operação Git interrompida;
-2. mudanças intencionais estão commitadas;
-3. commits necessários estão pushed;
-4. existe PR quando a política do repositório exigir;
-5. checks obrigatórios passam;
-6. mudança está integrada à branch base;
-7. validação pós-merge específica do projeto passou;
-8. ledger registra evidência de verificação.
+1. nenhuma operação Git interrompida;
+2. mudanças intencionais commitadas;
+3. commits necessários pushed;
+4. PR quando política do repositório exigir;
+5. checks obrigatórios verdes;
+6. mudança integrada à branch base;
+7. validação pós-merge específica do projeto aprovada;
+8. evidência persistida no ledger.
 
 `AGENT_LOST`, sessão encerrada, limite de uso ou conversa interrompida nunca são estados finais.
 
@@ -364,22 +375,23 @@ Uma tarefa pode ser `DONE` apenas quando:
 
 ### Unitários
 
-- transições válidas e inválidas do state machine;
+- transições válidas/inválidas do state machine;
+- separação `status` x `classification`;
 - expiração/renovação de lease;
 - claim concorrente;
 - parsing de status Git;
 - detecção de operações interrompidas;
-- classificação de ahead/behind;
-- geração determinística de Resume Packet;
+- ahead/behind;
+- Resume Packet determinístico;
 - redaction de segredos;
 - prioridade da fila;
 - idempotência do reconciliador.
 
 ### Integração
 
-Criar repositórios Git temporários representando:
+Usar repositórios Git temporários representando:
 
-- arquivo dirty sem commit;
+- dirty sem commit;
 - staged sem commit;
 - untracked;
 - commit local não pushed;
@@ -388,14 +400,14 @@ Criar repositórios Git temporários representando:
 - rebase interrompido;
 - detached HEAD;
 - branch totalmente merged;
-- tarefa com lease expirado;
-- retomada concorrente por dois workers.
+- lease expirado;
+- dois workers tentando claim simultâneo.
 
 ### Funcional
 
 No rollout piloto:
 
-1. iniciar uma tarefa real em worktree isolada;
+1. iniciar tarefa real em worktree isolada;
 2. registrar heartbeat;
 3. interromper deliberadamente o worker;
 4. confirmar `AGENT_LOST -> NEEDS_RESUME`;
@@ -410,45 +422,45 @@ No rollout piloto:
 
 ### Fase A - auditoria somente leitura
 
-Inventariar estado atual sem modificar branches/worktrees existentes. Criar ledger com achados `DISCOVERED` e classificações iniciais.
+Inventariar estado atual sem modificar branches/worktrees existentes e registrar achados `DISCOVERED`.
 
 ### Fase B - continuidade para novas tarefas
 
-Novas tarefas passam obrigatoriamente por `TASK_ID + worktree + lease + heartbeat`.
+Novas implementações exigem `TASK_ID + worktree + lease + heartbeat`.
 
 ### Fase C - retomada assistida
 
-Gerar Resume Packets e deixar agentes claimarem itens `NEEDS_RESUME` com controle de concorrência.
+Gerar Resume Packets e permitir claim de itens `NEEDS_RESUME` com controle transacional.
 
 ### Fase D - retomada automática
 
-Habilitar dispatcher Codex e fallbacks somente após os testes de isolamento, secret scanning e claim transacional passarem.
+Habilitar dispatcher Codex e fallbacks somente após testes de isolamento, secret scanning e claim transacional.
 
 ### Fase E - migração das pendências antigas
 
-Processar a fila inicial uma tarefa por vez até que todo achado esteja em `DONE`, `BLOCKED_EXTERNAL` ou `SUPERSEDED` com evidência explícita.
+Processar a fila inicial até cada achado ficar em `DONE`, `BLOCKED_EXTERNAL` ou `SUPERSEDED` com evidência explícita.
 
 ## Critérios de aceite
 
-O sistema é considerado implantado somente quando:
+O sistema está implantado somente quando:
 
-- o controlador persiste fora de qualquer conversa;
-- toda nova tarefa de implementação recebe `TASK_ID` e worktree isolada;
-- lease expirado gera `NEEDS_RESUME` sem perda de mudanças;
-- nenhuma retomada concorrente consegue adquirir a mesma tarefa;
-- a auditoria local + GitHub encontra as classes de pendências definidas;
-- Resume Packet contém informação suficiente para um novo agente continuar;
-- um teste funcional real prova interrupção e retomada até `MERGED + VERIFIED`;
-- a primeira auditoria dos repositórios/hosts cadastrados foi concluída e cada pendência recebeu classificação e próxima ação;
-- nenhuma alteração encontrada foi apagada ou sobrescrita para simplificar a reconciliação.
+- controlador persiste fora de qualquer conversa;
+- toda nova implementação recebe `TASK_ID` e worktree isolada;
+- lease expirado gera `NEEDS_RESUME` sem perda de mudança;
+- nenhum claim concorrente adquire a mesma tarefa;
+- auditoria local + GitHub encontra as classes definidas;
+- Resume Packet permite continuidade por novo agente;
+- teste funcional real comprova interrupção e retomada até `MERGED + VERIFIED`;
+- primeira auditoria dos repositórios/hosts cadastrados classifica cada pendência e define próxima ação;
+- nenhuma alteração encontrada é apagada ou sobrescrita para simplificar reconciliação.
 
 ## Decisões explícitas
 
-- SQLite como ledger inicial, sem banco de infraestrutura adicional.
+- SQLite como ledger inicial.
 - Git worktree como unidade de isolamento.
 - 30 minutos como cadência recorrente padrão, mais eventos de checkpoint.
 - Codex como primeiro worker automático; ChatGPT, Claude e Gemini como fallbacks configuráveis.
-- GitHub sozinho não é suficiente: estado local dos hosts é obrigatório para detectar trabalho ainda sem commit.
+- estado local dos hosts é obrigatório; GitHub sozinho não é suficiente.
 - auto-commit cego é proibido.
 - comandos Git destrutivos sobre checkouts de trabalho são proibidos.
-- retenção e limpeza são etapas posteriores a `DONE`, nunca mecanismo de resolução de pendências.
+- retenção/limpeza ocorrem somente após `DONE` e confirmação de incorporação.
