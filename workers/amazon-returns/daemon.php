@@ -16,6 +16,7 @@ require_once __DIR__ . '/../../includes/amazon-returns/GmailApi.php';
 require_once __DIR__ . '/../../includes/amazon-returns/GmailEventSink.php';
 require_once __DIR__ . '/../../includes/amazon-returns/SafeTEmailReview.php';
 require_once __DIR__ . '/../../includes/amazon-returns/ReviewOperations.php';
+require_once __DIR__ . '/../../includes/amazon-returns/ErpSalesReturnTask.php';
 require_once __DIR__ . '/gmail-ingest.php';
 require_once __DIR__ . '/scheduler.php';
 require_once __DIR__ . '/reconcile.php';
@@ -208,11 +209,18 @@ final class SvAmazonReturnsDaemon
             'financial'=>$this->runFinancial(),
             'sp_api'=>$this->runSpApiReconciliation(),
             'returns_report'=>$this->runReturnsReport($now),
+            'erp_sales_returns'=>$this->runErpSalesReturns(),
             'policy_monitor'=>$this->config->flag('policy_monitor')
                 ? ['status'=>'SKIPPED_NO_OBSERVATION_PROVIDER']
                 : ['status'=>'SKIPPED_DISABLED','reason'=>'AMAZON_RETURNS_POLICY_MONITOR=0'],
             default=>['status'=>'SKIPPED_UNKNOWN_TASK'],
         };
+    }
+
+    /** @return array<string,mixed> */
+    private function runErpSalesReturns(): array
+    {
+        return SvAmazonErpSalesReturnTask::run($this->persistence,$this->config);
     }
 
     /** @return array<string,mixed> */
