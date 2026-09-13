@@ -35,6 +35,9 @@ final class FakeErpSalesReturnStore implements SvAmazonErpSalesReturnStore
             'last_error_code'=>null,
             'last_error_message'=>null,
         ];
+        foreach(['original_invoice_id','original_invoice_number','original_invoice_key'] as $field){
+            if(($this->rows[$orderId][$field]??null)===null && array_key_exists($field,$data))$this->rows[$orderId][$field]=$data[$field];
+        }
         return $this->rows[$orderId];
     }
     public function markReady(string $orderId): array { $this->rows[$orderId]['status']='READY_TO_CREATE'; return $this->rows[$orderId]; }
@@ -82,6 +85,20 @@ $result=makeWorkflowService($store,$gateway,$queue,true,$lookupCalls)->reconcile
 erpWorkflowSame('RETURN_INVOICE_EXISTS',$result['status']??null,'Existing return NF must win immediately.');
 erpWorkflowSame(0,$gateway->createCalls,'Existing return NF must suppress ERP sales-return creation.');
 erpWorkflowSame(1,$lookupCalls,'Existing return NF should stop after the first preflight.');
+
+// Existing return NF must still win when the original ERP sale cannot be resolved.
+$store=new FakeErpSalesReturnStore();$gateway=new FakeErpSalesReturnGateway();$lookupCalls=0;
+$result=(new SvAmazonErpSalesReturnService(
+    $store,$gateway,
+    static fn(string $id): array=>workflowCases($id),
+    static fn(string $id): ?array=>null,
+    static function(string $id) use ($existingInvoice,&$lookupCalls): ?array {$lookupCalls++;return $existingInvoice;},
+    true
+))->reconcileOrder($order);
+erpWorkflowSame('RETURN_INVOICE_EXISTS',$result['status']??null,'Existing return NF must be linked even when original ERP sale lookup is unavailable.');
+erpWorkflowSame('901',$result['return_invoice_id']??null,'Existing return NF must remain linked to the workflow.');
+erpWorkflowSame(0,$gateway->createCalls,'Missing original sale must never cause a duplicate write when return NF already exists.');
+erpWorkflowSame(1,$lookupCalls,'Existing return NF must be checked before requiring the original sale.');
 
 // Gate-off mode must persist readiness without writing.
 $store=new FakeErpSalesReturnStore();$gateway=new FakeErpSalesReturnGateway();$queue=[null];$lookupCalls=0;
