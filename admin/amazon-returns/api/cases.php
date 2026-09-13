@@ -15,6 +15,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 require_once __DIR__.'/../../../includes/amazon-returns/PolicyEngine.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SafeTDecisionEngine.php';
 require_once __DIR__.'/../../../includes/amazon-returns/DecisionCoordinator.php';
+require_once __DIR__.'/../../../includes/amazon-returns/ErpSalesReturnPresentation.php';
 SvAmazonReturnsAdminAuth::requireLogin(true);
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 function sv_amz_cases_reply(array $payload,int $status=200):never{http_response_code($status);echo json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);exit;}
@@ -41,7 +42,7 @@ try{
     $requiresPostFilter=$filters->requiresDecisionFilter();
     $queryPage=$requiresPostFilter?1:$filters->page();$queryPerPage=$requiresPostFilter?1000:$filters->perPage();
     $found=$p->cases->search($sqlFilters,$queryPage,$queryPerPage);
-    $items=[];$policies=$p->policies->allActive();
+    $items=[];$policies=$p->policies->allActive();$erpReturns=[];
     foreach($found['items'] as $row){
         $caseId=(int)($row['id']??0);if($caseId<1)continue;
         $case=SvAmazonReturnProjector::project($p->cases,$p->events,$caseId);$case['policies']=$policies;
@@ -56,6 +57,8 @@ try{
         $lastRead=null;for($i=count($timeline)-1;$i>=0;$i--){if(in_array($timeline[$i]['event_type']??'',['SAFE_T_STATUS_OBSERVED','SELLER_CENTRAL_ACTION_RESULT','SAFE_T_EMAIL_REVIEW_RESPONSE','FINANCIAL_TRANSACTION_OBSERVED','SAFE_T_REIMBURSEMENT_OBSERVED'],true)){$lastRead=$timeline[$i];break;}}
         $expected=(float)($case['expected_reimbursement_amount']??0);$refund=(float)($case['refund_amount']??0);$credit=(float)($case['reconciled_credit_amount']??0);
         $outstanding=max(0,($expected>0?$expected:$refund)-$credit);
+        $orderId=trim((string)($case['amazon_order_id']??''));
+        if(!array_key_exists($orderId,$erpReturns))$erpReturns[$orderId]=SvAmazonErpSalesReturnPresentation::project($p->erpSalesReturns->findByOrder($orderId));
         $items[]=[
             'id'=>$caseId,'amazon_order_id'=>$case['amazon_order_id']??null,'amazon_order_item_id'=>$case['amazon_order_item_id']??null,
             'sku'=>$case['sku']??null,'asin'=>$case['asin']??null,'program'=>$case['program']??null,'safe_t_id'=>$case['safe_t_id']??null,'support_case_id'=>$case['support_case_id']??null,
@@ -74,6 +77,7 @@ try{
             'applied_rule'=>$app?['rule_id'=>(int)($app['rule_id']??0),'version'=>(int)($app['rule_version']??0),'result'=>$app['result']??null,'outcome'=>$app['outcome']??null]:null,
             'last_external_write'=>$lastWrite?['id'=>(int)$lastWrite['id'],'kind'=>$lastWrite['kind'],'status'=>$lastWrite['status'],'updated_at'=>$lastWrite['updated_at']??null,'created_at'=>$lastWrite['created_at']??null]:null,
             'last_read_back'=>$lastRead?['id'=>(int)$lastRead['id'],'event_type'=>$lastRead['event_type'],'occurred_at'=>$lastRead['occurred_at']??null,'source'=>$lastRead['source']??null]:null,
+            'erp_return'=>$erpReturns[$orderId],
             'closed_at'=>$case['closed_at']??null,'updated_at'=>$case['updated_at']??null,
         ];
     }

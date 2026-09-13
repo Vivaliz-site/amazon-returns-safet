@@ -343,6 +343,36 @@ CREATE TABLE IF NOT EXISTS `amazon_return_overrides` (
     KEY `idx_amazon_return_overrides_case_time` (`tenant_id`, `amazon_connection_id`, `case_id`, `created_at`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL,
+            <<<'SQL'
+CREATE TABLE IF NOT EXISTS `amazon_return_erp_sales_returns` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `amazon_connection_id` BIGINT UNSIGNED NOT NULL,
+    `amazon_order_id` VARCHAR(32) NOT NULL,
+    `original_invoice_id` VARCHAR(64) NULL,
+    `original_invoice_number` VARCHAR(64) NULL,
+    `original_invoice_key` VARCHAR(64) NULL,
+    `erp_sales_return_id` VARCHAR(64) NULL,
+    `status` VARCHAR(48) NOT NULL DEFAULT 'PENDING',
+    `return_invoice_id` VARCHAR(64) NULL,
+    `return_invoice_number` VARCHAR(64) NULL,
+    `return_invoice_key` VARCHAR(64) NULL,
+    `return_invoice_status` VARCHAR(64) NULL,
+    `return_invoice_issued_at` DATETIME NULL,
+    `idempotency_key` CHAR(64) NOT NULL,
+    `last_checked_at` DATETIME NULL,
+    `created_in_erp_at` DATETIME NULL,
+    `last_error_code` VARCHAR(96) NULL,
+    `last_error_message` VARCHAR(512) NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_amazon_return_erp_sales_return_order` (`tenant_id`, `amazon_connection_id`, `amazon_order_id`),
+    UNIQUE KEY `uq_amazon_return_erp_sales_return_idempotency` (`tenant_id`, `amazon_connection_id`, `idempotency_key`),
+    KEY `idx_amazon_return_erp_sales_return_status` (`tenant_id`, `amazon_connection_id`, `status`, `updated_at`),
+    KEY `idx_amazon_return_erp_sales_return_invoice` (`tenant_id`, `amazon_connection_id`, `return_invoice_number`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL,
         ];
     }
 }

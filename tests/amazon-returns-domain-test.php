@@ -189,6 +189,7 @@ $tables = [
     'amazon_return_dead_letters',
     'amazon_return_source_cursors',
     'amazon_return_overrides',
+    'amazon_return_erp_sales_returns',
 ];
 foreach ($tables as $table) {
     assertTrue(str_contains($ddl, "CREATE TABLE IF NOT EXISTS `{$table}`"), "DDL must define {$table}.");
@@ -228,6 +229,12 @@ $requiredColumns = [
     'amazon_return_overrides' => [
         'id', 'tenant_id', 'amazon_connection_id', 'case_id', 'actor_id', 'reason', 'before_json', 'after_json', 'created_at',
     ],
+    'amazon_return_erp_sales_returns' => [
+        'id', 'tenant_id', 'amazon_connection_id', 'amazon_order_id', 'original_invoice_id', 'original_invoice_number',
+        'original_invoice_key', 'erp_sales_return_id', 'status', 'return_invoice_id', 'return_invoice_number',
+        'return_invoice_key', 'return_invoice_status', 'return_invoice_issued_at', 'idempotency_key', 'last_checked_at',
+        'created_in_erp_at', 'last_error_code', 'last_error_message', 'created_at', 'updated_at',
+    ],
 ];
 foreach (SvAmazonReturnsSchema::statements() as $statement) {
     foreach ($requiredColumns as $table => $columns) {
@@ -254,18 +261,20 @@ foreach ([
     'UNIQUE KEY `uq_amazon_return_outbox_idempotency` (`tenant_id`, `amazon_connection_id`, `idempotency_key`)',
     'KEY `idx_amazon_return_outbox_available` (`tenant_id`, `amazon_connection_id`, `status`, `available_at`)',
     'KEY `idx_amazon_return_outbox_case_kind` (`tenant_id`, `amazon_connection_id`, `case_id`, `kind`)',
+    'UNIQUE KEY `uq_amazon_return_erp_sales_return_order` (`tenant_id`, `amazon_connection_id`, `amazon_order_id`)',
+    'UNIQUE KEY `uq_amazon_return_erp_sales_return_idempotency` (`tenant_id`, `amazon_connection_id`, `idempotency_key`)',
 ] as $requiredSql) {
     assertTrue(str_contains($ddl, $requiredSql), "DDL is missing required definition: {$requiredSql}");
 }
-assertSameValue(15, count(SvAmazonReturnsSchema::statements()), 'Schema generation must be deterministic: one statement per table.');
-assertTrue(substr_count($ddl, 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci') === 15, 'Every table must use InnoDB/utf8mb4.');
+assertSameValue(16, count(SvAmazonReturnsSchema::statements()), 'Schema generation must be deterministic: one statement per table.');
+assertTrue(substr_count($ddl, 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci') === 16, 'Every table must use InnoDB/utf8mb4.');
 $schemaDb = new AmazonReturnsMemoryPdo();
 SvAmazonReturnsSchema::ensure($schemaDb);
 SvAmazonReturnsSchema::ensure($schemaDb);
-assertSameValue(30, count($schemaDb->ddlExecutions), 'Calling ensure twice must safely replay all CREATE TABLE IF NOT EXISTS statements.');
+assertSameValue(32, count($schemaDb->ddlExecutions), 'Calling ensure twice must safely replay all CREATE TABLE IF NOT EXISTS statements.');
 assertSameValue(
     $schemaDb->ddlExecutions[0],
-    $schemaDb->ddlExecutions[15],
+    $schemaDb->ddlExecutions[16],
     'Repeated schema generation must be deterministic.'
 );
 

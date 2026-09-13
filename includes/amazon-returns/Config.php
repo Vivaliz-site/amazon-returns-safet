@@ -17,6 +17,11 @@ final class SvAmazonReturnsConfig
     public function reviewAiGeminiFallbackModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_GEMINI_FALLBACK_MODEL','gemini-3.1-flash-lite'); }
     public function reviewAiReady(): bool { return $this->openAiKey()!=='' || $this->anthropicKey()!=='' || $this->geminiKey()!==''; }
     public function learnedRuleExecutionEnabled(): bool { return $this->bool('AMAZON_RETURNS_LEARNED_RULE_EXECUTION', false); }
+    public function erpSalesReturnCreateEnabled(): bool
+    {
+        return $this->bool('AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED', false)
+            && $this->externalWriteAllowed('ERP_SALES_RETURN_CREATE');
+    }
 
     public function mode(): string
     {
@@ -78,13 +83,20 @@ final class SvAmazonReturnsConfig
         if(!is_string($raw) || trim($raw)==='')return null;
         try{$profile=json_decode($raw,true,32,JSON_THROW_ON_ERROR);}catch(Throwable){return null;}
         if(!is_array($profile))return null;
-        $actions=['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'];
-        $allowed=array_merge(['version'],$actions);
-        $keys=array_keys($profile);sort($keys);$expected=$allowed;sort($expected);
-        if($keys!==$expected)return null;
+        $requiredActions=['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'];
+        $optionalActions=['ERP_SALES_RETURN_CREATE'];
+        $allowed=array_merge(['version'],$requiredActions,$optionalActions);
+        $unknown=array_diff(array_keys($profile),$allowed);
+        if($unknown!==[])return null;
         $version=$profile['version']??null;
         if(!is_string($version) || preg_match('/^[a-z0-9][a-z0-9._-]{2,63}$/D',$version)!==1)return null;
-        foreach($actions as $action)if(!is_bool($profile[$action]??null))return null;
+        foreach($requiredActions as $action){
+            if(!array_key_exists($action,$profile) || !is_bool($profile[$action]))return null;
+        }
+        foreach($optionalActions as $action){
+            if(array_key_exists($action,$profile) && !is_bool($profile[$action]))return null;
+            if(!array_key_exists($action,$profile))$profile[$action]=false;
+        }
         return $profile;
     }
 
@@ -122,6 +134,7 @@ final class SvAmazonReturnsConfig
             'SAFE_T_EMAIL_REPLY' => $this->externalWriteAllowed('SAFE_T_EMAIL_REPLY'),
             'SELLER_SUPPORT_OPEN' => $this->externalWriteAllowed('SELLER_SUPPORT_OPEN'),
             'SELLER_SUPPORT_UPDATE' => $this->externalWriteAllowed('SELLER_SUPPORT_UPDATE'),
+            'ERP_SALES_RETURN_CREATE' => $this->externalWriteAllowed('ERP_SALES_RETURN_CREATE'),
         ];
     }
 

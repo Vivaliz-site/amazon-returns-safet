@@ -12,6 +12,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 require_once __DIR__.'/../../../includes/amazon-returns/PolicyEngine.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SafeTDecisionEngine.php';
 require_once __DIR__.'/../../../includes/amazon-returns/DecisionCoordinator.php';
+require_once __DIR__.'/../../../includes/amazon-returns/ErpSalesReturnPresentation.php';
 SvAmazonReturnsAdminAuth::requireLogin(true);
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 function sv_amz_case_reply(array $payload,int $status=200):never{http_response_code($status);echo json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);exit;}
@@ -54,8 +55,11 @@ try{
         $case['return_tracking_ids']=$returnTracks;$case['return_tracking_id']=$returnTracks[0]??null;$case['applied_rule']=$appliedRule;
         $case['current_action']=$decision['action']??'WAIT';$case['current_reason']=$decision['reason']??null;$case['eligibility_at']=$policy['eligibility_at']??($case['eligibility_at']??null);
         $case['outstanding_amount']=max(0,($expected>0?$expected:$refund)-$credit);
+        $case['erp_return']=SvAmazonErpSalesReturnPresentation::project($p->erpSalesReturns->findByOrder((string)($case['amazon_order_id']??'')));
         sv_amz_case_reply(['success'=>true,'case'=>$case,'timeline'=>$timeline,'current_review'=>$currentReview,'rule_applications'=>$apps,'last_external_write'=>$lastWrite,'last_read_back'=>$lastRead]);
     }
     if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/',$orderId)!==1)sv_amz_case_reply(['success'=>false,'error'=>'Informe um pedido Amazon válido.'],422);
-    sv_amz_case_reply(['success'=>true,'cases'=>$p->cases->forOrder($orderId)]);
+    $erpReturn=SvAmazonErpSalesReturnPresentation::project($p->erpSalesReturns->findByOrder($orderId));
+    $cases=$p->cases->forOrder($orderId);foreach($cases as &$row)$row['erp_return']=$erpReturn;unset($row);
+    sv_amz_case_reply(['success'=>true,'cases'=>$cases]);
 }catch(Throwable $e){error_log('[amazon-returns-case] '.get_class($e));sv_amz_case_reply(['success'=>false,'error'=>'Não foi possível consultar o caso.'],500);}
