@@ -21,6 +21,8 @@ previous_release="$(readlink -f "$root/current" 2>/dev/null || true)"
 worker_quiesced=0
 quiesce_started=0
 release_activated=0
+safet_service_was_running=0
+browser_timer_was_active=0
 browser_timer_was_enabled=0
 restore_previous_release_on_failure() {
     local rc=$?
@@ -33,13 +35,24 @@ restore_previous_release_on_failure() {
             mv -Tf "$root/current.rollback" "$root/current"
         fi
         systemctl daemon-reload >/dev/null 2>&1 || true
-        if [[ "$release_activated" -eq 1 ]]; then
-            systemctl restart amazon-returns-safet.service >/dev/null 2>&1 || true
+        if [[ "$safet_service_was_running" -eq 1 ]]; then
+            if [[ "$release_activated" -eq 1 ]]; then
+                systemctl restart amazon-returns-safet.service >/dev/null 2>&1 || true
+            else
+                systemctl start amazon-returns-safet.service >/dev/null 2>&1 || true
+            fi
         else
-            systemctl start amazon-returns-safet.service >/dev/null 2>&1 || true
+            systemctl stop amazon-returns-safet.service >/dev/null 2>&1 || true
         fi
         if [[ "$browser_timer_was_enabled" -eq 1 ]]; then
+            systemctl enable amazon-returns-seller-central-browser.timer >/dev/null 2>&1 || true
+        else
+            systemctl disable amazon-returns-seller-central-browser.timer >/dev/null 2>&1 || true
+        fi
+        if [[ "$browser_timer_was_active" -eq 1 ]]; then
             systemctl start amazon-returns-seller-central-browser.timer >/dev/null 2>&1 || true
+        else
+            systemctl stop amazon-returns-seller-central-browser.timer >/dev/null 2>&1 || true
         fi
     fi
     exit "$rc"
@@ -215,6 +228,8 @@ $result=SvAmazonReturnsRuntime::bootstrap($db,$context);
 if(($result["status"]??"")!=="OK")throw new RuntimeException("bootstrap failed");
 ' "$release"
 
+systemctl is-active --quiet amazon-returns-safet.service 2>/dev/null && safet_service_was_running=1 || true
+systemctl is-active --quiet amazon-returns-seller-central-browser.timer 2>/dev/null && browser_timer_was_active=1 || true
 systemctl is-enabled --quiet amazon-returns-seller-central-browser.timer 2>/dev/null && browser_timer_was_enabled=1 || true
 quiesce_started=1
 "$release/scripts/quiesce-production-workers.sh" "$target_db" "$tenant_slug" "$connection_key"
@@ -295,11 +310,11 @@ if [[ "$browser_runtime_ready" -eq 1 ]]; then
     fi
     [[ "$browser_token_ready" -eq 1 ]] || browser_runtime_ready=0
 fi
-browser_timer_was_enabled=0
-systemctl is-enabled --quiet amazon-returns-seller-central-browser.timer 2>/dev/null && browser_timer_was_enabled=1 || true
+browser_timer_enabled_now=0
+systemctl is-enabled --quiet amazon-returns-seller-central-browser.timer 2>/dev/null && browser_timer_enabled_now=1 || true
 if [[ "$browser_runtime_ready" -eq 1 ]]; then
     browser_auth_ready=1
-    if [[ "$browser_timer_was_enabled" -eq 0 ]]; then
+    if [[ "$browser_timer_enabled_now" -eq 0 ]]; then
         systemctl start amazon-returns-seller-central-auth-check.service || browser_auth_ready=0
     fi
     if [[ "$browser_auth_ready" -eq 1 ]]; then
