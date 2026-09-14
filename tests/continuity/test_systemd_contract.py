@@ -38,6 +38,7 @@ class SystemdContractTest(unittest.TestCase):
         self.assertIn("REPOSITORY_MOUNT_ROOT=", installer)
         self.assertIn("tools/continuity", installer)
         self.assertIn(".source-sha", installer)
+        self.assertIn("git -c safe.directory=\"$REPO_ROOT\" -C \"$REPO_ROOT\" rev-parse HEAD", installer)
         self.assertIn('chown root:"$SERVICE_USER" "$CONFIG_PATH"', installer)
         self.assertIn('install -d -m 0750 -o root -g "$SERVICE_USER" "$CONFIG_DIR"', installer)
 
