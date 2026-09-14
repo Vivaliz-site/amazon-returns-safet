@@ -7,8 +7,7 @@ final class SvAmazonRecoveryWindow
 
     public static function deadlineAt(array $case): ?DateTimeImmutable
     {
-        $basis = self::timestamp($case['seller_debit_at'] ?? null)
-            ?? self::timestamp($case['refund_at'] ?? null);
+        $basis = self::timestamp($case['refund_at'] ?? null);
         return $basis?->add(new DateInterval('P'.self::DAYS.'D'));
     }
 
@@ -26,7 +25,7 @@ final class SvAmazonRecoveryWindow
     {
         $deadline = self::deadlineAt($case);
         if (!$deadline instanceof DateTimeImmutable) return false;
-        return $now->setTimezone(new DateTimeZone('UTC')) > $deadline;
+        return $now->setTimezone(new DateTimeZone('UTC')) >= $deadline;
     }
 
     public static function nextDailyRetryAt(DateTimeImmutable $now, DateTimeImmutable $deadline): ?DateTimeImmutable
@@ -35,7 +34,7 @@ final class SvAmazonRecoveryWindow
         $deadline = $deadline->setTimezone(new DateTimeZone('UTC'));
         if ($now >= $deadline) return null;
         $next = $now->add(new DateInterval('P1D'));
-        return $next <= $deadline ? $next : $deadline;
+        return $next < $deadline ? $next : null;
     }
 
     private static function timestamp(mixed $value): ?DateTimeImmutable
