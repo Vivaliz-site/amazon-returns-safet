@@ -201,7 +201,6 @@ final class SvAmazonReturnCaseRepository
         $limit = max(1, min(1000, $limit));
         $stmt = $this->prepare(
             'SELECT * FROM amazon_return_cases WHERE closed_at IS NULL '
-            . 'AND (refund_at IS NULL OR refund_at > DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY)) '
             . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
             . 'ORDER BY COALESCE(next_action_at,updated_at),id LIMIT ' . $limit
         );
@@ -220,27 +219,163 @@ final class SvAmazonReturnCaseRepository
         $normalized = array_values(array_unique($normalized));
         sort($normalized, SORT_STRING);
         if ($normalized === []) return [];
-        $placeholders=[];$params=$this->scopeParams();
-        foreach($normalized as $i=>$orderId){$name=':order_'.$i;$placeholders[]=$name;$params[$name]=$orderId;}
-        $stmt=$this->prepare('SELECT amazon_order_id,id FROM amazon_return_cases WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND amazon_order_id IN ('.implode(',',$placeholders).') ORDER BY amazon_order_id,id');
+
+        $params = $this->scopeParams();
+        $placeholders = [];
+        foreach ($normalized as $index=>$orderId) {
+            $name = ':order_' . $index;
+            $placeholders[] = $name;
+            $params[$name] = $orderId;
+        }
+        $stmt = $this->prepare(
+            'SELECT amazon_order_id,id FROM amazon_return_cases WHERE tenant_id=:tenant_id '
+            . 'AND amazon_connection_id=:amazon_connection_id AND amazon_order_id IN ('
+            . implode(',', $placeholders) . ') ORDER BY amazon_order_id,id'
+        );
         $stmt->execute($params);
-        $out=[];
-        foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row){if(!is_array($row))continue;$out[(string)$row['amazon_order_id']][]=(int)$row['id'];}
-        return $out;
+        $result = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if (!is_array($row)) continue;
+            $orderId = trim((string)($row['amazon_order_id'] ?? ''));
+            $id = (int)($row['id'] ?? 0);
+            if ($orderId === '' || $id < 1) continue;
+            $result[$orderId] ??= [];
+            $result[$orderId][] = $id;
+        }
+        return $result;
+    }
+
+    public function countAll(): int
+    {
+        $stmt=$this->prepare(
+            'SELECT COUNT(*) FROM amazon_return_cases WHERE tenant_id=:tenant_id '
+            . 'AND amazon_connection_id=:amazon_connection_id'
+        );
+        $stmt->execute($this->scopeParams());
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
+    /** @return list<string> */
+    public function financialOrderIdsAfter(string $after = '', int $limit = 25): array
+    {
+        $limit = max(1, min(1000, $limit));
+        if ($after !== '') $after = $this->requiredText($after, 'Financial order cursor', 32);
+        $stmt = $this->prepare(
+            'SELECT DISTINCT amazon_order_id FROM amazon_return_cases '
+            . 'WHERE (closed_at IS NULL OR expected_reimbursement_amount>0) '
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'AND amazon_order_id>:after_order_id ORDER BY amazon_order_id LIMIT ' . $limit
+        );
+        $stmt->execute($this->scopeParams([':after_order_id'=>$after]));
+        $ids = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $id = trim((string)($row['amazon_order_id'] ?? ''));
+            if ($id !== '') $ids[] = $id;
+        }
+        return $ids;
+    }
+
+    /** @return list<string> */
+    public function openOrderIds(int $limit=25): array
+    {
+        $limit=max(1,min(1000,$limit));
+        $stmt=$this->prepare(
+            'SELECT DISTINCT amazon_order_id FROM amazon_return_cases WHERE closed_at IS NULL '
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'ORDER BY amazon_order_id LIMIT '.$limit
+        );
+        $stmt->execute($this->scopeParams());
+        $ids=[];
+        foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row){
+            $id=trim((string)($row['amazon_order_id'] ?? ''));
+            if($id!=='')$ids[]=$id;
+        }
+        return $ids;
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function financialCasesAfter(int $afterId=0, int $limit=250): array
+    {
+        $afterId=max(0,$afterId);
+        $limit=max(1,min(1000,$limit));
+        $stmt=$this->prepare(
+            'SELECT * FROM amazon_return_cases WHERE expected_reimbursement_amount>0 AND id>:after_id '
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'ORDER BY id LIMIT '.$limit
+        );
+        $stmt->execute($this->scopeParams([':after_id'=>$afterId]));
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function casesWithSafeTId(int $limit=250): array
+    {
+        $limit=max(1,min(1000,$limit));
+        $stmt=$this->prepare(
+            "SELECT * FROM amazon_return_cases WHERE closed_at IS NULL AND safe_t_id IS NOT NULL AND safe_t_id<>'' "
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'ORDER BY id LIMIT '.$limit
+        );
+        $stmt->execute($this->scopeParams());
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function casesWithSupportCaseId(int $limit=250): array
+    {
+        $limit=max(1,min(1000,$limit));
+        $stmt=$this->prepare(
+            "SELECT * FROM amazon_return_cases WHERE closed_at IS NULL AND support_case_id IS NOT NULL AND support_case_id<>'' "
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'ORDER BY id LIMIT '.$limit
+        );
+        $stmt->execute($this->scopeParams());
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function casesWithoutSafeTId(int $limit=250): array
+    {
+        $limit=max(1,min(1000,$limit));
+        $stmt=$this->prepare(
+            "SELECT * FROM amazon_return_cases WHERE closed_at IS NULL AND (safe_t_id IS NULL OR safe_t_id='') "
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'ORDER BY id LIMIT '.$limit
+        );
+        $stmt->execute($this->scopeParams());
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
     }
 
     /** @return array<string,mixed> */
-    public function operationalSummary(): array
+    public function summary(): array
     {
-        $exposure='GREATEST((CASE WHEN expected_reimbursement_amount>0 THEN expected_reimbursement_amount ELSE refund_amount END)-reconciled_credit_amount,0)';
-        $stmt=$this->prepare(
-            "SELECT COUNT(*) cases,SUM(CASE WHEN closed_at IS NULL THEN 1 ELSE 0 END) open_cases,"
-            ."COALESCE(SUM(CASE WHEN state='RECOVERED' THEN reconciled_credit_amount ELSE 0 END),0) recovered,"
-            ."COALESCE(SUM(CASE WHEN state='CLOSED_LOSS' THEN GREATEST($exposure,0) ELSE 0 END),0) loss,"
-            ."COALESCE(SUM(CASE WHEN closed_at IS NULL THEN GREATEST($exposure,0) ELSE 0 END),0) open_exposure,"
-            ."SUM(CASE WHEN state='RECOVERED' AND GREATEST($exposure,0)>0 THEN 1 ELSE 0 END) recovered_with_gap,"
-            ."SUM(CASE WHEN reconciled_credit_amount>0 AND state NOT IN ('RECOVERED','CREDIT_PENDING') THEN 1 ELSE 0 END) credit_without_reconciliation "
-            ."FROM amazon_return_cases WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id"
+        $exposure='(CASE WHEN c.expected_reimbursement_amount>0 THEN c.expected_reimbursement_amount ELSE c.refund_amount END-c.reconciled_credit_amount)';
+        $unclassified="(c.program='UNKNOWN' OR (c.program IN ('STANDARD','FBA_ONSITE','DELIVERY_BY_AMAZON') AND (c.refund_initiator='UNKNOWN' OR c.seller_debit_at IS NULL))) AND c.closed_at IS NULL AND c.state IN ('REFUND_DETECTED','AWAITING_RETURN','NO_RETURN','IN_TRANSIT','RECEIVED_DISCREPANT','SAFE_T_ELIGIBLE','SAFE_T_READY','POLICY_REVIEW_REQUIRED','BLOCKED_REVIEW')";
+        $eligible="c.state IN ('SAFE_T_ELIGIBLE','SAFE_T_READY') AND c.safe_t_id IS NULL";
+        $expired="c.appeal_deadline_at IS NOT NULL AND c.appeal_deadline_at<UTC_TIMESTAMP() AND c.state IN ('SAFE_T_DENIED','SAFE_T_INFO_REQUESTED','APPEAL_REQUIRED') AND c.current_action='SAFE_T_APPEAL'";
+        $creditMismatch="c.closed_at IS NULL AND c.state<>'RECOVERED' AND $exposure<=0";
+        $concluded="c.closed_at IS NOT NULL OR c.state IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK')";
+        $stmt=$this->prepare("SELECT COUNT(*) total_cases,"
+            ."COALESCE(SUM(GREATEST($exposure,0)),0) at_risk,"
+            ."COALESCE(SUM(CASE WHEN c.state IN ('SAFE_T_ELIGIBLE','SAFE_T_READY') THEN GREATEST($exposure,0) ELSE 0 END),0) eligible_now,"
+            ."COALESCE(SUM(CASE WHEN c.state='SAFE_T_SUBMITTED' THEN GREATEST($exposure,0) ELSE 0 END),0) safe_t_submitted,"
+            ."COALESCE(SUM(CASE WHEN c.state='SAFE_T_DENIED' THEN GREATEST($exposure,0) ELSE 0 END),0) denied,"
+            ."COALESCE(SUM(CASE WHEN c.state IN ('APPEAL_REQUIRED','APPEAL_SUBMITTED') THEN GREATEST($exposure,0) ELSE 0 END),0) appeal,"
+            ."COALESCE(SUM(CASE WHEN c.state='SUPPORT_ESCALATION' THEN GREATEST($exposure,0) ELSE 0 END),0) support,"
+            ."COALESCE(SUM(CASE WHEN c.state IN ('SAFE_T_APPROVED','APPEAL_APPROVED','CREDIT_PENDING') THEN GREATEST($exposure,0) ELSE 0 END),0) approved_awaiting_credit,"
+            ."COALESCE(SUM(CASE WHEN c.state='RECOVERED' THEN c.reconciled_credit_amount ELSE 0 END),0) recovered,"
+            ."COALESCE(SUM(CASE WHEN c.state='CLOSED_LOSS' THEN GREATEST($exposure,0) ELSE 0 END),0) loss,"
+            ."SUM(CASE WHEN $concluded THEN 1 ELSE 0 END) concluded_cases,"
+            ."SUM(CASE WHEN NOT ($concluded) AND NOT EXISTS (SELECT 1 FROM amazon_return_reviews ar WHERE ar.tenant_id=c.tenant_id AND ar.amazon_connection_id=c.amazon_connection_id AND ar.case_id=c.id AND ar.status='OPEN') THEN 1 ELSE 0 END) automatic_work_cases,"
+            ."SUM(CASE WHEN $unclassified THEN 1 ELSE 0 END) unclassified,"
+            ."COALESCE(SUM(CASE WHEN $unclassified THEN GREATEST($exposure,0) ELSE 0 END),0) unclassified_amount,"
+            ."SUM(CASE WHEN $eligible THEN 1 ELSE 0 END) eligible_without_action,"
+            ."COALESCE(SUM(CASE WHEN $eligible THEN GREATEST($exposure,0) ELSE 0 END),0) eligible_without_action_amount,"
+            ."SUM(CASE WHEN $expired THEN 1 ELSE 0 END) expired_without_treatment,"
+            ."COALESCE(SUM(CASE WHEN $expired THEN GREATEST($exposure,0) ELSE 0 END),0) expired_without_treatment_amount,"
+            ."SUM(CASE WHEN $creditMismatch THEN 1 ELSE 0 END) credit_without_reconciliation,"
+            ."COALESCE(SUM(CASE WHEN $creditMismatch THEN GREATEST($exposure,0) ELSE 0 END),0) credit_without_reconciliation_amount "
+            ."FROM amazon_return_cases c WHERE c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id"
         );
         $stmt->execute($this->scopeParams());
         $row=$stmt->fetch(PDO::FETCH_ASSOC);
@@ -248,152 +383,298 @@ final class SvAmazonReturnCaseRepository
     }
 
     /** @return list<array<string,mixed>> */
-    public function staleCasesForHealth(int $days=3,int $limit=100): array
+    public function automationPreview(int $limit=6): array
     {
-        $days=max(1,min(365,$days));$limit=max(1,min(1000,$limit));
+        $limit=max(1,min(25,$limit));
+        $exposure='GREATEST((CASE WHEN c.expected_reimbursement_amount>0 THEN c.expected_reimbursement_amount ELSE c.refund_amount END)-c.reconciled_credit_amount,0)';
+        $due='COALESCE(c.next_action_at,c.appeal_deadline_at,c.eligibility_at)';
         $stmt=$this->prepare(
-            'SELECT * FROM amazon_return_cases WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
-            . 'AND closed_at IS NULL AND updated_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL '.$days.' DAY) '
-            . 'ORDER BY updated_at,id LIMIT '.$limit
+            'SELECT c.id,c.amazon_order_id,c.state,c.physical_status,c.safe_t_id,c.next_action_at,c.appeal_deadline_at,c.eligibility_at,'
+            ."$exposure outstanding_amount,c.updated_at FROM amazon_return_cases c "
+            ."WHERE c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id "
+            ."AND c.closed_at IS NULL AND c.state NOT IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK') "
+            ."AND NOT EXISTS (SELECT 1 FROM amazon_return_reviews r WHERE r.tenant_id=c.tenant_id AND r.amazon_connection_id=c.amazon_connection_id AND r.case_id=c.id AND r.status='OPEN') "
+            ."ORDER BY CASE WHEN $due IS NOT NULL AND $due<UTC_TIMESTAMP() THEN 0 ELSE 1 END,$due IS NULL,$due,$exposure DESC,c.updated_at DESC LIMIT ".$limit
         );
         $stmt->execute($this->scopeParams());
         return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
     }
 
-    public function create(array $data): int
+    /** @return list<array<string,mixed>> */
+    public function upcomingDeadlines(int $limit=8): array
     {
-        $payload=$this->validatedInsert($data);
-        $payload['tenant_id']=$this->context->tenantId();
-        $payload['amazon_connection_id']=$this->context->amazonConnectionId();
-        $columns=array_keys($payload);
-        $stmt=$this->prepare('INSERT INTO amazon_return_cases ('.implode(',',$columns).') VALUES ('.implode(',',array_map(static fn(string $c):string=>':'.$c,$columns)).')');
-        $params=[];foreach($payload as $column=>$value)$params[':'.$column]=$value;
-        $stmt->execute($params);
-        $id=(int)$this->db->lastInsertId();
-        if($id<1)throw new RuntimeException('Failed to create Amazon return case.');
+        $limit=max(1,min(50,$limit));
+        $exposure='GREATEST((CASE WHEN c.expected_reimbursement_amount>0 THEN c.expected_reimbursement_amount ELSE c.refund_amount END)-c.reconciled_credit_amount,0)';
+        $sentinel="'9999-12-31 23:59:59'";
+        $due="LEAST(COALESCE(c.appeal_deadline_at,$sentinel),COALESCE(c.next_action_at,$sentinel),COALESCE(c.eligibility_at,$sentinel))";
+        $kind="CASE WHEN c.appeal_deadline_at IS NOT NULL AND c.appeal_deadline_at=$due THEN 'APPEAL_DEADLINE' WHEN c.next_action_at IS NOT NULL AND c.next_action_at=$due THEN 'NEXT_ACTION' ELSE 'ELIGIBILITY' END";
+        $stmt=$this->prepare(
+            'SELECT c.id,c.amazon_order_id,c.state,c.safe_t_id,'
+            ."$kind due_kind,$due due_at,$exposure outstanding_amount "
+            .'FROM amazon_return_cases c '
+            .'WHERE c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id '
+            ."AND c.closed_at IS NULL AND c.state NOT IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK') "
+            .'AND (c.appeal_deadline_at IS NOT NULL OR c.next_action_at IS NOT NULL OR c.eligibility_at IS NOT NULL) '
+            ."ORDER BY CASE WHEN $due<UTC_TIMESTAMP() THEN 0 ELSE 1 END,$due,$exposure DESC,c.id DESC LIMIT ".$limit
+        );
+        $stmt->execute($this->scopeParams());
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function recent(int $limit=50): array
+    {
+        $limit=max(1,min(250,$limit));
+        $stmt=$this->prepare(
+            'SELECT id,amazon_order_id,amazon_order_item_id,sku,state,physical_status,eligibility_at,'
+            . 'safe_t_id,support_case_id,refund_amount,expected_reimbursement_amount,'
+            . 'reconciled_credit_amount,updated_at FROM amazon_return_cases '
+            . 'WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'ORDER BY updated_at DESC,id DESC LIMIT '.$limit
+        );
+        $stmt->execute($this->scopeParams());
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+    }
+
+    public function countOpen(): int
+    {
+        $stmt = $this->prepare(
+            'SELECT COUNT(*) FROM amazon_return_cases WHERE closed_at IS NULL '
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
+        );
+        $stmt->execute($this->scopeParams());
+        return max(0, (int)$stmt->fetchColumn());
+    }
+    public function earliestObservedDate(): ?string
+    {
+        $stmt = $this->prepare(
+            'SELECT MIN(COALESCE(refund_at,seller_debit_at,created_at)) FROM amazon_return_cases '
+            . 'WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
+        );
+        $stmt->execute($this->scopeParams());
+        $value = $stmt->fetchColumn();
+        return is_scalar($value) && trim((string)$value) !== '' ? trim((string)$value) : null;
+    }
+
+    /** @param array<string,mixed> $values */
+    public function insert(array $values): int
+    {
+        $row = $this->normalizeInsert($values);
+        $stmt = $this->prepare($this->insertSql(false));
+        $stmt->execute($this->insertParams($row));
+        $id = (int)$this->db->lastInsertId();
+        if ($id < 1) throw new RuntimeException('Case insert did not return an ID.');
         return $id;
     }
 
-    public function update(int $caseId,array $patch): void
+    /** @param array<string,mixed> $values */
+    public function upsertOrderItem(array $values): int
     {
-        $caseId=$this->positiveId($caseId,'case ID');
-        if($patch===[])return;
-        $sets=[];$params=[':id'=>$caseId];
-        foreach($patch as $field=>$value){
-            if(!in_array($field,self::PATCHABLE,true))throw new InvalidArgumentException('Unsupported case patch field: '.$field);
-            $sets[]=$field.'=:'.$field;$params[':'.$field]=$this->validatedField($field,$value);
-        }
-        $sets[]='updated_at=UTC_TIMESTAMP()';
-        $stmt=$this->prepare('UPDATE amazon_return_cases SET '.implode(',',$sets).' WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id');
-        $stmt->execute($this->scopeParams($params));
-        if($stmt->rowCount()===0 && $this->find($caseId)===null)throw new RuntimeException('Amazon return case not found in tenant scope.');
+        $row = $this->normalizeInsert($values);
+        $stmt = $this->prepare($this->insertSql(true));
+        $stmt->execute($this->insertParams($row));
+        $saved = $this->findByOrderItem($row['amazon_order_id'], $row['amazon_order_item_id']);
+        $id = (int)($saved['id'] ?? 0);
+        if ($id < 1) throw new RuntimeException('Scoped case upsert could not be resolved.');
+        return $id;
     }
 
-    private function validatedInsert(array $data): array
+    /** @param array<string,mixed> $patch */
+    public function update(int $caseId, array $patch): void
     {
-        $unknown=array_diff(array_keys($data),self::INSERTABLE);
-        if($unknown!==[])throw new InvalidArgumentException('Unsupported case insert fields: '.implode(',',$unknown));
-        $required=['amazon_order_id','amazon_order_item_id','marketplace_id'];
-        foreach($required as $field)if(!isset($data[$field]))throw new InvalidArgumentException('Missing required case field: '.$field);
-        $defaults=[
-            'quantity_ordered'=>1,'quantity_refunded'=>0,'quantity_received'=>0,'program'=>'UNKNOWN',
-            'refund_initiator'=>'UNKNOWN','refund_at'=>null,'seller_debit_at'=>null,
+        $caseId = $this->positiveId($caseId, 'case ID');
+        if ($patch === []) throw new InvalidArgumentException('Case patch cannot be empty.');
+        foreach (array_keys($patch) as $field) {
+            if (!in_array($field, self::PATCHABLE, true)) {
+                throw new InvalidArgumentException('Case patch field is not allowed: ' . $field);
+            }
+        }
+        $this->assertOwned($caseId);
+
+        $sets = [];
+        $params = $this->scopeParams([':id'=>$caseId]);
+        foreach ($patch as $field=>$value) {
+            $parameter = ':patch_' . $field;
+            $sets[] = '`' . $field . '`=' . $parameter;
+            $params[$parameter] = $this->normalizeField($field, $value);
+        }
+        $stmt = $this->prepare(
+            'UPDATE amazon_return_cases SET ' . implode(',', $sets) . ',updated_at=UTC_TIMESTAMP() '
+            . 'WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
+        );
+        $stmt->execute($params);
+        if ($stmt->rowCount() === 0 && $this->find($caseId) === null) {
+            throw new RuntimeException('Owned case disappeared during update.');
+        }
+    }
+
+    public function assertOwned(int $caseId): void
+    {
+        $caseId = $this->positiveId($caseId, 'case ID');
+        $stmt = $this->prepare(
+            'SELECT id FROM amazon_return_cases WHERE id=:id AND tenant_id=:tenant_id '
+            . 'AND amazon_connection_id=:amazon_connection_id LIMIT 1 FOR UPDATE'
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId]));
+        if (!is_array($stmt->fetch(PDO::FETCH_ASSOC))) {
+            throw new RuntimeException('Amazon return case is not owned by the current tenant connection.');
+        }
+    }
+    /** @param array<string,mixed> $values @return array<string,mixed> */
+    private function normalizeInsert(array $values): array
+    {
+        foreach (array_keys($values) as $field) {
+            if (!in_array($field, self::INSERTABLE, true)) {
+                throw new InvalidArgumentException('Case insert field is not allowed: ' . $field);
+            }
+        }
+        foreach (['amazon_order_id','amazon_order_item_id','marketplace_id','state'] as $required) {
+            if (!array_key_exists($required, $values)) {
+                throw new InvalidArgumentException('Case insert requires ' . $required . '.');
+            }
+        }
+        $row = array_replace([
+            'sku'=>null,'asin'=>null,'quantity_ordered'=>1,'quantity_refunded'=>0,'quantity_received'=>0,
+            'program'=>'UNKNOWN','refund_initiator'=>'UNKNOWN','refund_at'=>null,'seller_debit_at'=>null,
             'refund_amount'=>'0.00','expected_reimbursement_amount'=>'0.00','reconciled_credit_amount'=>'0.00',
-            'physical_status'=>'NOT_RECEIVED','state'=>'AWAITING_RETURN','policy_version_id'=>null,'eligibility_at'=>null,'next_action_at'=>null,
+            'physical_status'=>'NOT_RECEIVED','policy_version_id'=>null,'eligibility_at'=>null,'next_action_at'=>null,
             'safe_t_id'=>null,'support_case_id'=>null,'repeated_denial_count'=>0,'last_denial_fingerprint'=>null,
             'appeal_deadline_at'=>null,'terminal_reason'=>null,'closed_at'=>null,
-        ];
-        $payload=[];
-        foreach($defaults as $field=>$default)$payload[$field]=$this->validatedField($field,$data[$field]??$default);
-        foreach(['amazon_order_id','amazon_order_item_id','marketplace_id','sku','asin'] as $field){
-            if(array_key_exists($field,$data))$payload[$field]=$this->validatedField($field,$data[$field]);
-        }
-        return $payload;
+        ], $values);
+        foreach ($row as $field=>$value) $row[$field] = $this->normalizeField($field, $value);
+        return $row;
     }
 
-    private function validatedField(string $field,mixed $value): mixed
+    /** @param array<string,mixed> $row @return array<string,mixed> */
+    private function insertParams(array $row): array
     {
-        return match($field){
-            'amazon_order_id'=>$this->requiredText($value,'Amazon order ID',32),
-            'amazon_order_item_id'=>$this->requiredText($value,'Amazon order item ID',64),
-            'marketplace_id'=>$this->requiredText($value,'Marketplace ID',32),
-            'sku','asin','safe_t_id','support_case_id','last_denial_fingerprint','terminal_reason'=>$this->nullableText($value,$field,191),
-            'quantity_ordered'=>$this->nonNegativeInt($value,$field),
-            'quantity_refunded','quantity_received','repeated_denial_count'=>$this->nonNegativeInt($value,$field),
-            'refund_amount','expected_reimbursement_amount','reconciled_credit_amount'=>$this->decimal($value,$field),
-            'program'=>$this->enum($value,['UNKNOWN','FBA','DELIVERY_BY_AMAZON','FBA_ONSITE'],$field),
-            'refund_initiator'=>$this->enum($value,['UNKNOWN','AMAZON_AUTOMATIC','AMAZON_CUSTOMER_SERVICE','AMAZON_INITIATED','SELLER_INITIATED','A_TO_Z'],$field),
-            'physical_status'=>$this->enum($value,['NOT_RECEIVED','IN_TRANSIT','CARRIER_DELIVERED_PENDING_PHYSICAL','RECEIVED_OK','RECEIVED_DISCREPANT'],$field),
-            'state'=>$this->enum($value,['AWAITING_RETURN','IN_TRANSIT','CARRIER_DELIVERED_PENDING_PHYSICAL','RECEIVED_OK','RECEIVED_DISCREPANT','POLICY_REVIEW_REQUIRED','SAFE_T_ELIGIBLE','SAFE_T_READY','SAFE_T_SUBMITTED','SAFE_T_APPROVED','SAFE_T_DENIED','SAFE_T_INFO_REQUESTED','APPEAL_REQUIRED','APPEAL_SUBMITTED','APPEAL_APPROVED','APPEAL_DENIED_FINAL','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','CREDIT_PENDING','RECOVERED','SUPPORT_ESCALATION','CLOSED_LOSS'],$field),
-            'policy_version_id'=>$value===null?null:$this->positiveId($value,$field),
-            'refund_at','seller_debit_at','eligibility_at','next_action_at','appeal_deadline_at','closed_at'=>$this->nullableDate($value,$field),
-            default=>throw new InvalidArgumentException('Unsupported case field: '.$field),
+        $params = $this->scopeParams();
+        foreach (self::INSERTABLE as $field) $params[':' . $field] = $row[$field];
+        return $params;
+    }
+
+    private function insertSql(bool $upsert): string
+    {
+        $columns = array_merge(['tenant_id','amazon_connection_id'], self::INSERTABLE);
+        $quoted = array_map(static fn(string $field): string=>'`' . $field . '`', $columns);
+        $parameters = array_map(static fn(string $field): string=>':' . $field, $columns);
+        $sql = 'INSERT INTO amazon_return_cases (' . implode(',', $quoted) . ',created_at,updated_at) '
+            . 'VALUES (' . implode(',', $parameters) . ',UTC_TIMESTAMP(),UTC_TIMESTAMP())';
+        if (!$upsert) return $sql;
+        return $sql . ' ON DUPLICATE KEY UPDATE '
+            . 'marketplace_id=VALUES(marketplace_id),'
+            . 'sku=COALESCE(VALUES(sku),sku),asin=COALESCE(VALUES(asin),asin),'
+            . 'quantity_ordered=VALUES(quantity_ordered),'
+            . "program=CASE WHEN VALUES(program)<>'UNKNOWN' THEN VALUES(program) ELSE program END,"
+            . 'updated_at=UTC_TIMESTAMP()';
+    }
+
+    private function normalizeField(string $field, mixed $value): mixed
+    {
+        return match ($field) {
+            'amazon_order_id' => $this->requiredText($value, 'Amazon order ID', 32),
+            'amazon_order_item_id' => $this->requiredText($value, 'Amazon order item ID', 64),
+            'marketplace_id' => $this->requiredText($value, 'Marketplace ID', 32),
+            'sku' => $this->nullableText($value, 'SKU', 128),
+            'asin' => $this->nullableText($value, 'ASIN', 32),
+            'quantity_ordered' => $this->nonNegativeInt($value, $field, true),
+            'quantity_refunded','quantity_received','repeated_denial_count' => $this->nonNegativeInt($value, $field),
+            'policy_version_id' => $this->nullablePositiveInt($value, $field),
+            'refund_amount','expected_reimbursement_amount','reconciled_credit_amount' => $this->money($value, $field),
+            'refund_at','seller_debit_at','eligibility_at','next_action_at','appeal_deadline_at','closed_at' => $this->nullableDate($value, $field),
+            'program' => $this->requiredText($value, 'Program', 64),
+            'refund_initiator' => $this->requiredText($value, 'Refund initiator', 40),
+            'physical_status' => $this->requiredText($value, 'Physical status', 48),
+            'state' => $this->requiredText($value, 'State', 64),
+            'safe_t_id','support_case_id' => $this->nullableText($value, $field, 64),
+            'last_denial_fingerprint' => $this->nullableSha256($value, $field),
+            'terminal_reason' => $this->nullableText($value, 'Terminal reason', 128),
+            default => throw new InvalidArgumentException('Unsupported case field: ' . $field),
         };
+    }
+    /** @param array<string,mixed> $extra @return array<string,mixed> */
+    private function scopeParams(array $extra = []): array
+    {
+        return $extra + [
+            ':tenant_id'=>$this->context->tenantId(),
+            ':amazon_connection_id'=>$this->context->amazonConnectionId(),
+        ];
     }
 
     private function prepare(string $sql): PDOStatement
     {
-        $stmt=$this->db->prepare($sql);
-        if(!$stmt)throw new RuntimeException('Failed to prepare Amazon return case query.');
+        $stmt = $this->db->prepare($sql);
+        if (!$stmt instanceof PDOStatement) throw new RuntimeException('Could not prepare scoped case statement.');
         return $stmt;
     }
 
-    private function scopeParams(array $params=[]): array
+    private function positiveId(int $value, string $label): int
     {
-        $params[':tenant_id']=$this->context->tenantId();
-        $params[':amazon_connection_id']=$this->context->amazonConnectionId();
-        return $params;
+        if ($value < 1) throw new InvalidArgumentException($label . ' must be positive.');
+        return $value;
     }
 
-    private function positiveId(mixed $value,string $name): int
+    private function requiredText(mixed $value, string $label, int $maxLength): string
     {
-        $parsed=filter_var($value,FILTER_VALIDATE_INT);
-        if($parsed===false || $parsed<1)throw new InvalidArgumentException("Invalid {$name}.");
-        return (int)$parsed;
-    }
-
-    private function requiredText(mixed $value,string $name,int $max): string
-    {
-        if(!is_string($value) && !is_int($value))throw new InvalidArgumentException("Invalid {$name}.");
-        $text=trim((string)$value);
-        if($text==='' || strlen($text)>$max)throw new InvalidArgumentException("Invalid {$name}.");
+        if (!is_scalar($value)) throw new InvalidArgumentException($label . ' must be text.');
+        $text = trim((string)$value);
+        if ($text === '' || strlen($text) > $maxLength) {
+            throw new InvalidArgumentException($label . ' must contain 1-' . $maxLength . ' bytes.');
+        }
         return $text;
     }
 
-    private function nullableText(mixed $value,string $name,int $max): ?string
+    private function nullableText(mixed $value, string $label, int $maxLength): ?string
     {
-        if($value===null || $value==='')return null;
-        return $this->requiredText($value,$name,$max);
+        if ($value === null || $value === '') return null;
+        return $this->requiredText($value, $label, $maxLength);
+    }
+    private function nonNegativeInt(mixed $value, string $label, bool $positive = false): int
+    {
+        $parsed = filter_var($value, FILTER_VALIDATE_INT);
+        $minimum = $positive ? 1 : 0;
+        if ($parsed === false || $parsed < $minimum) {
+            throw new InvalidArgumentException($label . ' must be an integer >= ' . $minimum . '.');
+        }
+        return $parsed;
     }
 
-    private function nonNegativeInt(mixed $value,string $name): int
+    private function nullablePositiveInt(mixed $value, string $label): ?int
     {
-        $parsed=filter_var($value,FILTER_VALIDATE_INT);
-        if($parsed===false || $parsed<0)throw new InvalidArgumentException("Invalid {$name}.");
-        return (int)$parsed;
+        if ($value === null || $value === '') return null;
+        $parsed = filter_var($value, FILTER_VALIDATE_INT);
+        if ($parsed === false || $parsed < 1) throw new InvalidArgumentException($label . ' must be positive or null.');
+        return $parsed;
     }
 
-    private function decimal(mixed $value,string $name): string
+    private function money(mixed $value, string $label): string
     {
-        if(!is_numeric($value))throw new InvalidArgumentException("Invalid {$name}.");
-        $number=(float)$value;
-        if($number<0)throw new InvalidArgumentException("Invalid {$name}.");
-        return number_format($number,2,'.','');
+        if (!is_numeric($value) || (float)$value < 0) {
+            throw new InvalidArgumentException($label . ' must be a non-negative amount.');
+        }
+        return number_format((float)$value, 2, '.', '');
     }
 
-    private function nullableDate(mixed $value,string $name): ?string
+    private function nullableDate(mixed $value, string $label): ?string
     {
-        if($value===null || $value==='')return null;
-        if(!is_string($value))throw new InvalidArgumentException("Invalid {$name}.");
-        $date=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$value,new DateTimeZone('UTC'));
-        $errors=DateTimeImmutable::getLastErrors();
-        if(!$date || ($errors!==false && ($errors['warning_count']>0 || $errors['error_count']>0)) || $date->format('Y-m-d H:i:s')!==$value)throw new InvalidArgumentException("Invalid {$name}.");
+        if ($value === null || $value === '') return null;
+        if ($value instanceof DateTimeInterface) {
+            return DateTimeImmutable::createFromInterface($value)
+                ->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+        }
+        if (!is_string($value)) throw new InvalidArgumentException($label . ' must be a UTC date or null.');
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
+        if (!$date instanceof DateTimeImmutable || $date->format('Y-m-d H:i:s') !== $value) {
+            throw new InvalidArgumentException($label . ' must use Y-m-d H:i:s UTC format.');
+        }
         return $value;
     }
-
-    private function enum(mixed $value,array $allowed,string $name): string
+    private function nullableSha256(mixed $value, string $label): ?string
     {
-        if(!is_string($value) || !in_array($value,$allowed,true))throw new InvalidArgumentException("Invalid {$name}.");
-        return $value;
+        if ($value === null || $value === '') return null;
+        if (!is_string($value) || preg_match('/^[a-f0-9]{64}$/i', $value) !== 1) {
+            throw new InvalidArgumentException($label . ' must be a SHA-256 digest or null.');
+        }
+        return strtolower($value);
     }
 }
