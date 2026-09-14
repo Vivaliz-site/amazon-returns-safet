@@ -66,8 +66,16 @@ final class SvAmazonErpSalesReturnService
 
         $workflow=$this->store->findByOrder($orderId)??$workflow;
         $status=strtoupper(trim((string)($workflow['status']??'')));
-        if(in_array($status,['RETURN_INVOICE_EXISTS','RETURN_CREATED_WAITING_INVOICE','BLOCKED'],true)){
+        if(in_array($status,['RETURN_INVOICE_EXISTS','RETURN_CREATED_WAITING_INVOICE'],true)){
             return $workflow;
+        }
+        if($status==='BLOCKED' && !$this->retryablePreWriteBlock((string)($workflow['last_error_code']??''))){
+            return $workflow;
+        }
+
+        $refundAt=$this->refundAt($cases);
+        if($refundAt===null){
+            return $this->store->markBlocked($orderId,'ERP_REFUND_DATE_NOT_FOUND','Nao foi possivel confirmar a data do reembolso para criar a devolucao no ERP.');
         }
 
         if(!$this->writeEnabled){
@@ -88,6 +96,7 @@ final class SvAmazonErpSalesReturnService
                 'access_key'=>self::nullable($sale['access_key']??($sale['invoice_key']??null)),
             ],
             'items'=>$items,
+            'refund_at'=>$refundAt,
         ]);
         if(!is_array($result)){
             return $this->store->markBlocked($orderId,'ERP_SALES_RETURN_INVALID_RESPONSE','O Olist/Tiny retornou uma resposta invalida ao criar a devolucao.');
@@ -114,6 +123,30 @@ final class SvAmazonErpSalesReturnService
         $code=self::safeCode($result['error_code']??null,'ERP_SALES_RETURN_CREATE_FAILED');
         $message=self::safeMessage($result['error_message']??null,'Nao foi possivel criar a devolucao automaticamente no Olist/Tiny.');
         return $this->store->markBlocked($orderId,$code,$message);
+    }
+
+    /** @param list<array<string,mixed>> $cases */
+    private function refundAt(array $cases): ?string
+    {
+        $dates=[];
+        foreach($cases as $case){
+            if(!is_array($case))continue;
+            $value=trim((string)($case['refund_at']??''));
+            if($value!=='')$dates[]=$value;
+        }
+        if($dates===[])return null;
+        sort($dates,SORT_STRING);
+        return $dates[0];
+    }
+
+    private function retryablePreWriteBlock(string $code): bool
+    {
+        return in_array(strtoupper(trim($code)),[
+            'ERP_SALES_RETURN_WRITE_NOT_VERIFIED',
+            'ERP_SALES_RETURN_AUTH_REQUIRED',
+            'ERP_SALES_RETURN_BROWSER_UNAVAILABLE',
+            'ERP_SALES_RETURN_UI_DRIFT',
+        ],true);
     }
 
     /** @param list<array<string,mixed>> $cases @return list<array<string,mixed>> */

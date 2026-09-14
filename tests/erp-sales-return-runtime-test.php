@@ -16,6 +16,7 @@ erpRuntimeAssert(str_contains($daemon,'SvAmazonErpSalesReturnTask::run'),'Daemon
 erpRuntimeAssert(str_contains($task,'SvAmazonErpSalesReturnService'),'ERP task must use the guarded ERP sales return service.');
 erpRuntimeAssert(str_contains($task,'SvAmazonErpReturnInvoiceLookup'),'ERP task must check existing return NFs.');
 erpRuntimeAssert(str_contains($task,'erpSalesReturnCreateEnabled()'),'ERP task must use the dedicated write gate.');
+erpRuntimeAssert(str_contains($task,'SvAmazonOlistBrowserErpSalesReturnGateway'),'ERP task must route verified sales-return writes through the dedicated Olist browser gateway.');
 erpRuntimeAssert(str_contains($task,'quantity_refunded'),'ERP task must only consider refunded orders.');
 
 echo "erp-sales-return-runtime-test: OK\n";
