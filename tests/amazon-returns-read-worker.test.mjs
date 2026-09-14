@@ -25,7 +25,7 @@ test('reader worker is host-neutral and uses shared authentication recovery', ()
   assert.match(source, /ensureSellerCentralAuthenticated/);
   assert.doesNotMatch(source, /C:\\Users\\FRED\\/);
 });
-const Cdp = vm.runInNewContext(`${cdpSource}\nCdp`, { Error });
+const Cdp = vm.runInNewContext(`${cdpSource}\nCdp`, { Error, setTimeout, clearTimeout });
 class FakeSocket extends EventTarget { send() {} close() { this.dispatchEvent(new Event('close')); } }
 for (const event of ['close', 'error']) {
   test(`CDP ${event} rejects every pending command and clears the queue`, async () => {

@@ -92,9 +92,10 @@ async function closeCdpTarget(targetId) {
 }
 
 class Cdp {
-  constructor(ws, targetId = null) {
+  constructor(ws, targetId = null, commandTimeoutMs = 15000) {
     this.ws = ws;
     this.targetId = targetId;
+    this.commandTimeoutMs = Math.max(10, Number(commandTimeoutMs) || 15000);
     this.id = 0;
     this.pending = new Map();
     ws.addEventListener('message', event => {
@@ -102,6 +103,7 @@ class Cdp {
       if (!message.id || !this.pending.has(message.id)) return;
       const waiter = this.pending.get(message.id);
       this.pending.delete(message.id);
+      clearTimeout(waiter.timer);
       message.error ? waiter.reject(new Error(message.error.message || 'CDP error')) : waiter.resolve(message.result);
     });
   }
@@ -133,8 +135,18 @@ class Cdp {
   send(method, params = {}) {
     return new Promise((resolve, reject) => {
       const id = ++this.id;
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
+      const timer = setTimeout(() => {
+        if (!this.pending.delete(id)) return;
+        reject(new Error(`CDP command timed out: ${method}`));
+      }, this.commandTimeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        this.ws.send(JSON.stringify({ id, method, params }));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(error);
+      }
     });
   }
 
