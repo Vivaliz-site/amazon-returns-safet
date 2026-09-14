@@ -1,0 +1,30 @@
+[Unit]
+Description=ShopVivaliz Global Agent Continuity Controller
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/agent-continuity/config.json
+
+[Service]
+Type=oneshot
+User=agent-continuity
+Group=agent-continuity
+WorkingDirectory=/home/ubuntu/amazon-returns-deploy/current
+Environment=CONTINUITY_CONFIG=/etc/agent-continuity/config.json
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m tools.continuity.cli reconcile --audit-only
+ExecStart=/usr/bin/python3 -m tools.continuity.cli dispatch
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/var/lib/agent-continuity /srv/continuity
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
