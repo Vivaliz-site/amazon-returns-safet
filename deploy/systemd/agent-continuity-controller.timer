@@ -1,0 +1,12 @@
+[Unit]
+Description=Run agent continuity reconciliation every 30 minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1800
+AccuracySec=1min
+Persistent=true
+Unit=agent-continuity-controller.service
+
+[Install]
+WantedBy=timers.target

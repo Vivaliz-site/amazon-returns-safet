@@ -37,6 +37,12 @@ jobs:
           set -e
           python3 tests/totp-current.test.py
           python3 -m py_compile scripts/amazon-returns/totp-current.py
+      - name: Continuity controller tests
+        run: |
+          set -e
+          python3 -m unittest discover -s tests/continuity -p 'test_*.py' -v
+          python3 -m py_compile tools/continuity/*.py
+          bash -n scripts/install-continuity-controller.sh
       - name: Syntax and security contracts
         run: |
           set -e
