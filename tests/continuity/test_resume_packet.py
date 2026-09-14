@@ -52,6 +52,15 @@ class ResumePacketTest(unittest.TestCase):
             self.assertNotIn(secret, redacted)
         self.assertIn("[REDACTED]", redacted)
 
+    def test_redacts_classic_openai_key_without_second_dash(self):
+        # Synthetic fake key, classic "sk-<alphanumeric body>" shape with no
+        # further dash-delimited segment (unlike "sk-proj-...").
+        classic_key = "sk-" + "aZ3fQ7mN9pR1tV5xB2cD4eG6hJ8k"
+        text = f"OPENAI_API_KEY={classic_key} in env"
+        redacted = redact(text)
+        self.assertNotIn(classic_key, redacted)
+        self.assertIn("[REDACTED]", redacted)
+
     def test_render_is_deterministic_and_complete(self):
         first = render_resume_packet(self.task, self.finding, self.remote)
         second = render_resume_packet(self.task, self.finding, self.remote)
