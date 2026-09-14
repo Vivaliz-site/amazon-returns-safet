@@ -66,22 +66,23 @@ final class SvAmazonTenantReturnsOutbox
         }
 
         $existing = $this->prepare(
-            'SELECT id,status,attempt_count,kind,case_id FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
+            'SELECT id,status,attempt_count,kind,case_id,last_error FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
             . 'AND amazon_connection_id=:amazon_connection_id AND idempotency_key=:idempotency_key LIMIT 1'
         );
         $existing->execute($this->scopeParams([':idempotency_key'=>$idempotencyKey]));
         $row = $existing->fetch(PDO::FETCH_ASSOC);
         $id = is_array($row) ? (int)($row['id'] ?? 0) : 0;
         if ($id < 1) throw new RuntimeException('Scoped duplicate outbox action could not be resolved.');
+        $temporaryDecisionSupersede = str_starts_with((string)($row['last_error'] ?? ''), 'SUPERSEDED_BY_CURRENT_DECISION:');
         if ((string)($row['status'] ?? '') === 'SUPERSEDED'
-            && (int)($row['attempt_count'] ?? -1) === 0
+            && ((int)($row['attempt_count'] ?? -1) === 0 || $temporaryDecisionSupersede)
             && (string)($row['kind'] ?? '') === $kind
             && (int)($row['case_id'] ?? 0) === $caseId) {
             $reactivate = $this->prepare(
                 "UPDATE amazon_return_outbox SET status='PENDING',payload_json=:payload_json,available_at=UTC_TIMESTAMP(),"
                 . "locked_at=NULL,last_error=NULL,updated_at=UTC_TIMESTAMP() WHERE id=:id "
                 . "AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
-                . "AND status='SUPERSEDED' AND attempt_count=0 AND kind=:kind AND case_id=:case_id"
+                . "AND status='SUPERSEDED' AND (attempt_count=0 OR last_error LIKE 'SUPERSEDED_BY_CURRENT_DECISION:%') AND kind=:kind AND case_id=:case_id"
             );
             $reactivate->execute($this->scopeParams([
                 ':id'=>$id,

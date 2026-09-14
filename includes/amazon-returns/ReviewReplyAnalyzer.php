@@ -77,7 +77,8 @@ final class SvAmazonSafeTReviewReplyAnalyzer
     {
         $text = html_entity_decode(strip_tags($text),ENT_QUOTES|ENT_HTML5,'UTF-8');
         $text = mb_strtolower($text,'UTF-8');
-        $text = iconv('UTF-8','ASCII//TRANSLIT//IGNORE',$text) ?: $text;
+        $asciiSource=strtr($text,['á'=>'a','à'=>'a','â'=>'a','ã'=>'a','ä'=>'a','é'=>'e','è'=>'e','ê'=>'e','ë'=>'e','í'=>'i','ì'=>'i','î'=>'i','ï'=>'i','ó'=>'o','ò'=>'o','ô'=>'o','õ'=>'o','ö'=>'o','ú'=>'u','ù'=>'u','û'=>'u','ü'=>'u','ç'=>'c']);
+        $text = iconv('UTF-8','ASCII//TRANSLIT//IGNORE',$asciiSource) ?: $asciiSource;
         return preg_replace('/\s+/u',' ',trim($text)) ?? trim($text);
     }
 
