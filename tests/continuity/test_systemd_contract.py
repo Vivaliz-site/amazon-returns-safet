@@ -10,6 +10,7 @@ class SystemdContractTest(unittest.TestCase):
         self.assertIn("--audit-only", service)
         self.assertIn("python3 -m tools.continuity.cli dispatch", service)
         self.assertIn("User=agent-continuity", service)
+        self.assertIn("SupplementaryGroups=ubuntu www-data", service)
         self.assertIn("NoNewPrivileges=true", service)
         self.assertIn("PrivateTmp=true", service)
         self.assertIn("ProtectSystem=strict", service)

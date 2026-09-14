@@ -8,6 +8,7 @@ ConditionPathExists=/etc/agent-continuity/config.json
 Type=oneshot
 User=agent-continuity
 Group=agent-continuity
+SupplementaryGroups=ubuntu www-data
 WorkingDirectory=/home/ubuntu/amazon-returns-deploy/current
 Environment=CONTINUITY_CONFIG=/etc/agent-continuity/config.json
 Environment=PYTHONUNBUFFERED=1
