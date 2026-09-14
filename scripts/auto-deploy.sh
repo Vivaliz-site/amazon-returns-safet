@@ -16,15 +16,26 @@ fi
 bootstrap_continuity() {
     local template="$repo/deploy/continuity/config.production.json"
     local installer="$repo/scripts/install-continuity-controller.sh"
+    local migration="$repo/scripts/migrate-continuity-config.py"
     local installed_service='/etc/systemd/system/agent-continuity-controller.service'
     local installed_timer='/etc/systemd/system/agent-continuity-controller.timer'
+    local installed_source_sha='/opt/agent-continuity/.source-sha'
+    local current_source_sha
     local needs_install=0
-    [[ -r "$template" && -x "$installer" ]] || return 0
+    local rc=0
+    [[ -r "$template" && -x "$installer" && -r "$migration" ]] || return 0
     if [[ -e "$continuity_config" ]]; then
         [[ -f "$continuity_config" && ! -L "$continuity_config" ]] || {
             echo 'continuity_config_invalid_type=true' >&2
             return 2
         }
+        python3 "$migration" "$continuity_config" || rc=$?
+        if [[ "$rc" -eq 10 ]]; then
+            echo 'continuity_config_migrated=legacy_repo_path'
+            needs_install=1
+        elif [[ "$rc" -ne 0 ]]; then
+            return "$rc"
+        fi
     else
         install -d -o root -g root -m 0750 "$(dirname "$continuity_config")"
         install -o root -g root -m 0640 "$template" "$continuity_config"
@@ -32,6 +43,11 @@ bootstrap_continuity() {
     fi
     [[ -f "$installed_service" ]] || needs_install=1
     [[ -f "$installed_timer" ]] || needs_install=1
+    current_source_sha="$(runuser -u ubuntu -- git -C "$repo" rev-parse HEAD)"
+    [[ -r "$installed_source_sha" ]] || needs_install=1
+    if [[ "$needs_install" -eq 0 && "$(cat "$installed_source_sha")" != "$current_source_sha" ]]; then
+        needs_install=1
+    fi
     if [[ "$needs_install" -eq 0 ]] && ! cmp -s "$repo/deploy/systemd/agent-continuity-controller.service" "$installed_service"; then
         needs_install=1
     fi
