@@ -217,7 +217,8 @@ final class SvAmazonReturnActionRouter
     {
         $s=mb_strtolower(html_entity_decode(strip_tags($s),ENT_QUOTES|ENT_HTML5,'UTF-8'),'UTF-8');
         $s=preg_replace('/[\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]/u','',$s)??$s;
-        return trim(preg_replace('/\s+/',' ',iconv('UTF-8','ASCII//TRANSLIT//IGNORE',$s)?:$s)??$s);
+        $asciiSource=strtr($s,['á'=>'a','à'=>'a','â'=>'a','ã'=>'a','ä'=>'a','é'=>'e','è'=>'e','ê'=>'e','ë'=>'e','í'=>'i','ì'=>'i','î'=>'i','ï'=>'i','ó'=>'o','ò'=>'o','ô'=>'o','õ'=>'o','ö'=>'o','ú'=>'u','ù'=>'u','û'=>'u','ü'=>'u','ç'=>'c']);
+        return trim(preg_replace('/\s+/',' ',iconv('UTF-8','ASCII//TRANSLIT//IGNORE',$asciiSource)?:$asciiSource)??$asciiSource);
     }
     private static function date(mixed $value): ?DateTimeImmutable
     {

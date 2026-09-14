@@ -9,7 +9,8 @@ final class SvAmazonRequestedWait
         $text = preg_split('/(?m)^\s*(?:>|On .+wrote:|Em .+escreveu:|De: |From: |-----Original Message)/u', $text, 2)[0];
         $text = html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = preg_replace('/[\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]/u', '', $text) ?? $text;
-        $normalized = strtolower(iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text) ?: $text);
+        $asciiSource = strtr($text, ['á'=>'a','à'=>'a','â'=>'a','ã'=>'a','ä'=>'a','Á'=>'A','À'=>'A','Â'=>'A','Ã'=>'A','Ä'=>'A','é'=>'e','è'=>'e','ê'=>'e','ë'=>'e','É'=>'E','È'=>'E','Ê'=>'E','Ë'=>'E','í'=>'i','ì'=>'i','î'=>'i','ï'=>'i','Í'=>'I','Ì'=>'I','Î'=>'I','Ï'=>'I','ó'=>'o','ò'=>'o','ô'=>'o','õ'=>'o','ö'=>'o','Ó'=>'O','Ò'=>'O','Ô'=>'O','Õ'=>'O','Ö'=>'O','ú'=>'u','ù'=>'u','û'=>'u','ü'=>'u','Ú'=>'U','Ù'=>'U','Û'=>'U','Ü'=>'U','ç'=>'c','Ç'=>'C']);
+        $normalized = strtolower(iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $asciiSource) ?: $asciiSource);
         $normalized = preg_replace('/[ \t]+/', ' ', $normalized) ?? $normalized;
         $intent = preg_match('/\b(?:aguard(?:e|ar)|espere|retorne|volte|reabr(?:a|ir))\b|\b(?:reembolsad[oa]|ressarcid[oa]).{0,100}(?:proativ|automatic)|\b(?:reembolso|ressarcimento).{0,100}\bate\b/s', $normalized) === 1;
         if (!$intent || preg_match('/nao (?:precisa|deve|e necessario).{0,25}\b(?:aguardar|esperar)\b/', $normalized)) return null;
