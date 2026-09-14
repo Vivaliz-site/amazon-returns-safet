@@ -33,7 +33,7 @@ if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --home-dir "$STATE_ROOT" --create-home --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
 
-SOURCE_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+SOURCE_SHA="$(git -c "safe.directory=$REPO_ROOT" -C "$REPO_ROOT" rev-parse HEAD)"
 CONFIG_DIR="$(dirname "$CONFIG_PATH")"
 install -d -m 0750 -o root -g "$SERVICE_USER" "$CONFIG_DIR"
 chown root:"$SERVICE_USER" "$CONFIG_PATH"
