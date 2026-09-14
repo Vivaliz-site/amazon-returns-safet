@@ -40,6 +40,7 @@ class SystemdContractTest(unittest.TestCase):
         self.assertIn(".source-sha", installer)
         self.assertIn('chown root:"$SERVICE_USER" "$CONFIG_PATH"', installer)
         self.assertIn('install -d -m 0750 -o root -g "$SERVICE_USER" "$CONFIG_DIR"', installer)
+        self.assertIn('git -c "safe.directory=$REPO_ROOT" -C "$REPO_ROOT" rev-parse HEAD', installer)
 
     def test_production_config_is_audit_only_and_uses_accessible_mount(self):
         config = json.loads(Path("deploy/continuity/config.production.json").read_text(encoding="utf-8"))
