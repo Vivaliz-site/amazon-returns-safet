@@ -34,7 +34,7 @@ final class SvAmazonRecoveryWindow
         $deadline = $deadline->setTimezone(new DateTimeZone('UTC'));
         if ($now >= $deadline) return null;
         $next = $now->add(new DateInterval('P1D'));
-        return $next <= $deadline ? $next : $deadline;
+        return $next < $deadline ? $next : null;
     }
 
     private static function timestamp(mixed $value): ?DateTimeImmutable
