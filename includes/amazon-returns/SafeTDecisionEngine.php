@@ -71,6 +71,9 @@ final class SvAmazonSafeTDecisionEngine
         if($requestedWait!==null)return $requestedWait;
         if($safeTId==='' && $reimbursementBackedUnknownRefund && ($policy['eligible']??false)===true
             && $this->hasFreshConfirmedResidual($case,$timeline,$now)){
+            if((string)($case['physical_status']??'')===SvAmazonReturnPhysicalStatuses::RECEIVED_DISCREPANT){
+                return $this->decision('HUMAN_REVIEW','DAMAGED_RETURN_INITIAL_CLAIM_MANUAL_ONLY',$caseId);
+            }
             if($this->safeTSubmissionWindowExpired($case,$now)){
                 return [
                     'action'=>'SELLER_SUPPORT_OPEN',
