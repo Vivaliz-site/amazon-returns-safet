@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 
 [[ "$(id -u)" -eq 0 ]] || { echo 'run as root' >&2; exit 2; }
+exec 9>/run/lock/amazon-returns-provision.lock
+flock -n 9 || { echo 'production_provision_locked=1' >&2; exit 75; }
 repo="${AMAZON_RETURNS_REPO:-/home/ubuntu/amazon-returns-safet}"
 root="${AMAZON_RETURNS_DEPLOY_ROOT:-/home/ubuntu/amazon-returns-deploy}"
 source_env="${AMAZON_RETURNS_SOURCE_ENV:-}"
@@ -16,6 +18,33 @@ sha="$(runuser -u ubuntu -- git -C "$repo" rev-parse --short=12 HEAD)"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 release="$releases/$stamp-$sha"
 previous_release="$(readlink -f "$root/current" 2>/dev/null || true)"
+worker_quiesced=0
+quiesce_started=0
+release_activated=0
+browser_timer_was_enabled=0
+restore_previous_release_on_failure() {
+    local rc=$?
+    if [[ "$quiesce_started" -eq 1 ]]; then
+        systemctl thaw amazon-returns-safet.service >/dev/null 2>&1 || true
+        systemctl thaw amazon-returns-seller-central-browser.service >/dev/null 2>&1 || true
+        systemctl stop amazon-returns-seller-central-browser.timer >/dev/null 2>&1 || true
+        if [[ "$release_activated" -eq 1 && -n "$previous_release" && -d "$previous_release" ]]; then
+            ln -sfn "releases/$(basename "$previous_release")" "$root/current.rollback"
+            mv -Tf "$root/current.rollback" "$root/current"
+        fi
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        if [[ "$release_activated" -eq 1 ]]; then
+            systemctl restart amazon-returns-safet.service >/dev/null 2>&1 || true
+        else
+            systemctl start amazon-returns-safet.service >/dev/null 2>&1 || true
+        fi
+        if [[ "$browser_timer_was_enabled" -eq 1 ]]; then
+            systemctl start amazon-returns-seller-central-browser.timer >/dev/null 2>&1 || true
+        fi
+    fi
+    exit "$rc"
+}
+trap restore_previous_release_on_failure EXIT
 
 [[ -d "$repo/.git" ]] || { echo 'target repository missing' >&2; exit 2; }
 install -d -o ubuntu -g www-data -m 0750 "$root" "$releases"
@@ -118,6 +147,11 @@ ensure_env_key 'AMAZON_RETURNS_REVIEW_AI_MODEL' 'gpt-5.6-terra'
 set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '1'
 set_env_key 'AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL' 'fredmourao@gmail.com'
 
+tenant_slug="$(awk -F= '$1=="AMAZON_RETURNS_TENANT_SLUG"{sub(/^[^=]*=/,"");print;exit}' "$env_file")"
+connection_key="$(awk -F= '$1=="AMAZON_RETURNS_CONNECTION_KEY"{sub(/^[^=]*=/,"");print;exit}' "$env_file")"
+[[ "$tenant_slug" =~ ^[a-z0-9][a-z0-9-]{0,95}$ ]] || { echo 'invalid tenant slug before provisioning' >&2; exit 2; }
+[[ "$connection_key" =~ ^[a-z0-9][a-z0-9-]{0,95}$ ]] || { echo 'invalid connection key before provisioning' >&2; exit 2; }
+
 mysql --protocol=socket -uroot <<SQL
 CREATE DATABASE IF NOT EXISTS \`$target_db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '$target_user'@'localhost' IDENTIFIED BY '$db_pass';
@@ -181,6 +215,11 @@ $result=SvAmazonReturnsRuntime::bootstrap($db,$context);
 if(($result["status"]??"")!=="OK")throw new RuntimeException("bootstrap failed");
 ' "$release"
 
+systemctl is-enabled --quiet amazon-returns-seller-central-browser.timer 2>/dev/null && browser_timer_was_enabled=1 || true
+quiesce_started=1
+"$release/scripts/quiesce-production-workers.sh" "$target_db" "$tenant_slug" "$connection_key"
+worker_quiesced=1
+
 verification_file="$shared/private/live-tenant-verification-$stamp.txt"
 AMAZON_RETURNS_ENV_FILE="$env_file" \
 AMAZON_RETURNS_TARGET_DB="$target_db" \
@@ -194,6 +233,7 @@ chmod -R go-w "$release"
 
 ln -sfn "releases/$(basename "$release")" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
+release_activated=1
 
 a2enmod ssl rewrite >/dev/null
 a2ensite amazon-returns-safet.conf >/dev/null
@@ -280,6 +320,11 @@ install -m 0644 "$root/current/deploy/systemd/amazon-returns-deploy.service" /et
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-deploy.timer" /etc/systemd/system/amazon-returns-deploy.timer
 systemctl daemon-reload
 systemctl enable --now amazon-returns-deploy.timer >/dev/null
+
+worker_quiesced=0
+quiesce_started=0
+release_activated=0
+trap - EXIT
 
 find "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
     | sort -nr | tail -n +6 | cut -d' ' -f2- \
