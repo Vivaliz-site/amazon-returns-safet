@@ -29,7 +29,7 @@ final class SvAmazonErpSalesReturnTask
 
         $saleLookup=new SvAmazonErpInvoiceLookup(null,null,$config);
         $returnLookup=new SvAmazonErpReturnInvoiceLookup(null,null,$config);
-        $gateway=new SvAmazonUnverifiedErpSalesReturnGateway();
+        $gateway=new SvAmazonOlistBrowserErpSalesReturnGateway(null,$config->get('OLIST_ERP_CDP_URL','http://127.0.0.1:9226'));
         $service=new SvAmazonErpSalesReturnService(
             $p->erpSalesReturns,
             $gateway,

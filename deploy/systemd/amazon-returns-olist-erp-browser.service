@@ -1,0 +1,25 @@
+[Unit]
+Description=ShopVivaliz Amazon Returns Olist ERP persistent browser
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/amazon-returns-deploy/current
+EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/olist-erp-browser.env
+Environment=AMAZON_RETURNS_RELEASE_ROOT=/home/ubuntu/amazon-returns-deploy/current
+ExecStart=/home/ubuntu/amazon-returns-deploy/current/scripts/amazon-returns/run-olist-erp-browser.sh
+Restart=always
+RestartSec=5s
+TimeoutStopSec=15s
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/home/ubuntu/amazon-returns-deploy/shared/olist-erp-browser
+
+[Install]
+WantedBy=multi-user.target

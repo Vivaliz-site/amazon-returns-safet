@@ -50,9 +50,10 @@ final class FakeErpSalesReturnGateway implements SvAmazonErpSalesReturnGateway
 {
     public int $createCalls=0;
     public int $readBackCalls=0;
+    public ?array $lastCommand=null;
     /** @param array<string,mixed> $createResult @param array<string,mixed>|null $readBack */
     public function __construct(private array $createResult=['ok'=>true,'id'=>'RET-1'],private ?array $readBack=['id'=>'RET-1']) {}
-    public function create(array $command): array { $this->createCalls++;return $this->createResult; }
+    public function create(array $command): array { $this->createCalls++;$this->lastCommand=$command;return $this->createResult; }
     public function readBack(string $erpSalesReturnId,string $amazonOrderId): ?array { $this->readBackCalls++;return $this->readBack; }
 }
 
@@ -120,9 +121,19 @@ $result=$service->reconcileOrder($order);
 erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'Verified ERP readback must mark the sales return created.');
 erpWorkflowSame(1,$gateway->createCalls,'Exactly one ERP sales-return write is allowed.');
 erpWorkflowSame(1,$gateway->readBackCalls,'Successful create must be read back before persistence.');
+erpWorkflowSame('2026-09-12 12:00:00',$gateway->lastCommand['refund_at']??null,'ERP sales return must use the actual Amazon refund timestamp.');
 $result=$service->reconcileOrder($order);
 erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'Repeated reconciliation must keep the created state while NF is absent.');
 erpWorkflowSame(1,$gateway->createCalls,'Repeated reconciliation must not duplicate the ERP sales return.');
+
+
+// Safe pre-write blockers must resume after the browser writer becomes available.
+$store=new FakeErpSalesReturnStore();
+$store->rows[$order]=['amazon_order_id'=>$order,'status'=>'BLOCKED','original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001','erp_sales_return_id'=>null,'return_invoice_id'=>null,'last_error_code'=>'ERP_SALES_RETURN_WRITE_NOT_VERIFIED','last_error_message'=>'old writer unavailable'];
+$gateway=new FakeErpSalesReturnGateway(['ok'=>true,'id'=>'RET-88'],['id'=>'RET-88','order_id'=>$order]);$queue=[null,null];$lookupCalls=0;
+$result=makeWorkflowService($store,$gateway,$queue,true,$lookupCalls)->reconcileOrder($order);
+erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'A safe pre-write block must resume after the verified writer is installed.');
+erpWorkflowSame(1,$gateway->createCalls,'Resumed pre-write block must perform exactly one guarded write.');
 
 // Unverified production gateway must block rather than substitute another ERP write.
 $store=new FakeErpSalesReturnStore();
