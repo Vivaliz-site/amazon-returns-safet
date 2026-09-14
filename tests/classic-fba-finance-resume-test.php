@@ -27,6 +27,15 @@ $fresh=$engine->nextAction($base,[$finance],$policy,$now);
 cffrSame('SELLER_SUPPORT_OPEN',$fresh['action']??null,'Classic FBA with fresh verified unpaid balance must leave CHECK_FINANCES and open Seller Support');
 cffrSame('CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION',$fresh['reason']??null,'Classic FBA escalation reason must be auditable');
 
+$recent=$base;
+$recent['id']=1314;$recent['amazon_order_id']='702-9188918-3998665';
+$recent['refund_at']='2026-09-05 00:07:53';$recent['seller_debit_at']='2026-09-05 00:07:53';
+$recentFinance=$finance;$recentFinance['case_id']=1314;
+$recentDecision=$engine->nextAction($recent,[$recentFinance],$policy,$now);
+cffrSame('WAIT',$recentDecision['action']??null,'Classic FBA must not open Seller Support before the owner-approved D45 first action date');
+cffrSame('CLASSIC_FBA_D45_PENDING',$recentDecision['reason']??null,'Classic FBA pre-D45 wait must remain auditable');
+cffrSame('2026-10-20 00:07:53',$recentDecision['next_action_at']??null,'Classic FBA must wake exactly at D45 from the Amazon refund');
+
 $partial=$base;
 $partial['id']=508;$partial['amazon_order_id']='702-5835321-5101017';
 $partial['expected_reimbursement_amount']='71.31';$partial['reconciled_credit_amount']='64.42';

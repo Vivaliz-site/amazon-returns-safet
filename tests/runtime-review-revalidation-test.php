@@ -25,6 +25,23 @@ if (!in_array('scheduler', $due, true) || !in_array('seller_central', $due, true
 }
 $state['outbox_stack_revision'] = $outboxRevision;
 
+if (!method_exists(SvAmazonReturnsRuntime::class, 'sellerCentralCycleAcknowledgesOutboxRevision')) {
+    throw new RuntimeException('Runtime must define which Seller Central cycle outcomes acknowledge an outbox revision.');
+}
+if (!SvAmazonReturnsRuntime::sellerCentralCycleAcknowledgesOutboxRevision(['status'=>'REMOTE_POLLING'])) {
+    throw new RuntimeException('Remote polling owns the Seller Central outbox and must acknowledge the current outbox revision.');
+}
+if (!SvAmazonReturnsRuntime::sellerCentralCycleAcknowledgesOutboxRevision(['status'=>'OK'])) {
+    throw new RuntimeException('Local successful Seller Central execution must acknowledge the current outbox revision.');
+}
+if (SvAmazonReturnsRuntime::sellerCentralCycleAcknowledgesOutboxRevision(['status'=>'FAILED'])) {
+    throw new RuntimeException('Failed Seller Central execution must not acknowledge an outbox revision.');
+}
+$daemonSource=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
+if(!str_contains($daemonSource,'sellerCentralCycleAcknowledgesOutboxRevision')){
+    throw new RuntimeException('Daemon must use the Seller Central acknowledgement helper when persisting the outbox revision.');
+}
+
 $state['decision_stack_revision'] = $revision;
 $due = SvAmazonReturnsRuntime::dueTasks($state, $now, $revision);
 if (in_array('scheduler', $due, true)) {

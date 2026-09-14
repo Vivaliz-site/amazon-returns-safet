@@ -50,6 +50,7 @@ final class SvAmazonReturnsStatusBridgeService
     }
     public function ensureJobs(DateTimeImmutable $now): int
     {
+        $this->p->outbox->supersedeTerminalReadJobs('TERMINAL_CASE_NO_LONGER_REQUIRES_READ');
         $ensured=0;
         foreach($this->p->cases->casesWithSafeTId(250) as $case){
             $caseId=(int)($case['id'] ?? 0);
