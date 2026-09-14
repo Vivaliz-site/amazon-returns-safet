@@ -79,8 +79,14 @@ const ALLOWED_XAJAX_METHODS = new Set([
 export function buildXajaxExpression(method, args = []) {
   if (!ALLOWED_XAJAX_METHODS.has(method)) throw new Error(`Olist XAJAX method not allowed: ${method}`);
   if (!Array.isArray(args)) throw new TypeError('Olist XAJAX arguments must be an array.');
-  const encoded = args.map(value => JSON.stringify(value)).join(',');
-  return `(async()=>await window.xajax.venda.devolucaoVenda.${method}(${encoded}))()`;
+  const encodedArgs = JSON.stringify(args);
+  const xajaxName = `xajax_venda_devolucaoVenda_${method}`;
+  const dottedName = `venda.devolucaoVenda.${method}`;
+  return `(async()=>{const args=${encodedArgs};const nested=window.xajax?.venda?.devolucaoVenda?.${method};if(typeof nested==='function')return await nested(...args);const generated=window[${JSON.stringify(xajaxName)}];if(typeof generated==='function')return await generated(...args);const call=window.xajax?.call;if(typeof call==='function')return await call.call(window.xajax,${JSON.stringify(dottedName)},{parameters:args});throw new Error('Olist XAJAX method ${method} is unavailable.');})()`;
+}
+
+export function buildOlistReadinessExpression() {
+  return `({url:window.location?.href || location.href,ready:!!(window.xajax?.venda?.devolucaoVenda || window.xajax_venda_devolucaoVenda_salvar || window.xajax?.call)})`;
 }
 
 export function classifyOlistPageState(url, ready) {
@@ -274,7 +280,7 @@ async function createLiveOlistClient(cdpBase) {
     const states = [];
     for (const target of targets) {
       const session = new CdpPageSession(target.webSocketDebuggerUrl);
-      const state = await session.evaluate(`({url:location.href,ready:!!window.xajax?.venda?.devolucaoVenda})`).catch(() => null);
+      const state = await session.evaluate(buildOlistReadinessExpression()).catch(() => null);
       if (state?.url) {
         const classified = classifyOlistPageState(state.url, state.ready === true);
         states.push(classified);

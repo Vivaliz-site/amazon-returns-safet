@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildOpenReturnForm, buildXajaxExpression, classifyOlistPageState, createCdpRpc, createOlistXajaxClient, evaluateExistingReturn, decideOlistTargetState, fetchCdpJson, runAdapterCommand, withTimeout, verifyCreatedReturn } from '../scripts/amazon-returns/erp-sales-return-browser.mjs';
+import { buildOpenReturnForm, buildOlistReadinessExpression, buildXajaxExpression, classifyOlistPageState, createCdpRpc, createOlistXajaxClient, evaluateExistingReturn, decideOlistTargetState, fetchCdpJson, runAdapterCommand, withTimeout, verifyCreatedReturn } from '../scripts/amazon-returns/erp-sales-return-browser.mjs';
 
 const origin = {
   id: 0,
@@ -120,12 +120,32 @@ test('maps only the verified Olist sales-return XAJAX operations and never invok
 
 test('CDP expression whitelist permits only observed sales-return methods and rejects NF generation', () => {
   const expr = buildXajaxExpression('salvar', [0, { idFormaPagamento: 0 }]);
-  assert.match(expr, /devolucaoVenda\.salvar/);
+  assert.match(expr, /devolucaoVenda/);
   assert.match(expr, /idFormaPagamento/);
   assert.throws(() => buildXajaxExpression('gerarNotaDevolucao', [991]), /not allowed/i);
   assert.throws(() => buildXajaxExpression('excluir', [991]), /not allowed/i);
 });
 
+
+test('CDP expression supports the generated global XAJAX wrappers used by the Olist page', async () => {
+  const expr = buildXajaxExpression('obter', [991]);
+  const calls = [];
+  const window = {
+    xajax_venda_devolucaoVenda_obter(...args) {
+      calls.push(args);
+      return { id: args[0], idNotaFiscal: 202 };
+    },
+  };
+  const result = await Function('window', 'return ' + expr)(window);
+  assert.deepEqual(result, { id: 991, idNotaFiscal: 202 });
+  assert.deepEqual(calls, [[991]]);
+});
+
+test('readiness accepts generated Olist XAJAX wrappers without requiring a nested xajax object', async () => {
+  const window = { location: { href: 'https://erp.olist.com/devolucoes_vendas#list' }, xajax_venda_devolucaoVenda_salvar() {} };
+  const result = await Function('window', 'return ' + buildOlistReadinessExpression())(window);
+  assert.equal(result.ready, true);
+});
 
 test('CLI command contract creates through the guarded workflow and exposes read-back separately', async () => {
   let finds = 0;
@@ -155,7 +175,7 @@ test('CDP RPC executes the whitelisted XAJAX expression through the attached pag
   const session = { async evaluate(expression) { expressions.push(expression); return { id: 991 }; } };
   const rpc = createCdpRpc(session);
   assert.deepEqual(await rpc('obter', [991]), { id: 991 });
-  assert.match(expressions[0], /devolucaoVenda\.obter\(991\)/);
+  assert.match(expressions[0], /devolucaoVenda/);
   await assert.rejects(() => rpc('gerarNotaDevolucao', [991]), /not allowed/i);
 });
 
