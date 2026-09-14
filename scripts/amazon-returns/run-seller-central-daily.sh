@@ -69,6 +69,7 @@ for _ in $(seq 1 40); do
 done
 [[ "$ready" -eq 1 ]] || { echo "Seller Central CDP did not become ready" >&2; exit 75; }
 
+"$NODE_BIN" "$ROOT/scripts/amazon-returns/prune-seller-central-cdp-targets.mjs"
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check
 if [[ " ${*:-} " == *" --auth-check-only "* ]]; then
   exit 0
