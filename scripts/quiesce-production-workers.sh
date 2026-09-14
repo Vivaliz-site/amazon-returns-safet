@@ -11,6 +11,11 @@ qw_processing_count() {
     qw_scalar "$target_db" "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING'"
 }
 
+qw_release_stale_read_jobs() {
+    local target_db="$1" tenant_id="$2" connection_id="$3"
+    qw_scalar "$target_db" "UPDATE amazon_return_outbox SET status='PENDING',attempt_count=GREATEST(attempt_count-1,0),locked_at=NULL,last_error='LEASE_EXPIRED_DURING_QUIESCE',updated_at=UTC_TIMESTAMP() WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND (locked_at IS NULL OR locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND)) AND kind IN ('SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'); SELECT ROW_COUNT();"
+}
+
 qw_thaw_units() {
     local unit
     for unit in "$@"; do
@@ -33,7 +38,8 @@ quiesce_workers() {
     local timeout_seconds="${AMAZON_RETURNS_QUIESCE_TIMEOUT_SECONDS:-180}"
     local poll_seconds="${AMAZON_RETURNS_QUIESCE_POLL_SECONDS:-1}"
     local browser_timer='amazon-returns-seller-central-browser.timer'
-    local -a services=('amazon-returns-safet.service' 'amazon-returns-seller-central-browser.service')
+    local browser_service='amazon-returns-seller-central-browser.service'
+    local -a services=('amazon-returns-safet.service' "$browser_service")
     [[ "$target_db" =~ ^[A-Za-z0-9_]+$ ]] || { echo 'invalid target database name' >&2; return 2; }
     [[ "$tenant_slug" =~ ^[a-z0-9][a-z0-9-]{0,95}$ ]] || { echo 'invalid tenant slug' >&2; return 2; }
     [[ "$connection_key" =~ ^[a-z0-9][a-z0-9-]{0,95}$ ]] || { echo 'invalid connection key' >&2; return 2; }
@@ -57,6 +63,14 @@ quiesce_workers() {
         count="$(qw_processing_count "$target_db" "$tenant_id" "$connection_id")"
         [[ "$count" =~ ^[0-9]+$ ]] || { echo 'invalid processing job count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
         if (( count != 0 )); then
+            released=0
+            if ! qw_unit_running "$browser_service"; then
+                released="$(qw_release_stale_read_jobs "$target_db" "$tenant_id" "$connection_id")"
+                [[ "$released" =~ ^[0-9]+$ ]] || { echo 'invalid stale read release count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
+                if (( released > 0 )); then
+                    printf 'worker_quiesce_released_stale_reads=%s\n' "$released"
+                fi
+            fi
             sleep "$poll_seconds"
             continue
         fi
