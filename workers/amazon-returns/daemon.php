@@ -119,7 +119,8 @@ final class SvAmazonReturnsDaemon
         ){
             $state['decision_stack_revision']=$decisionStackRevision;
         }
-        if(isset($results['seller_central']) && ($results['seller_central']['status'] ?? null)==='OK'){
+        if(isset($results['seller_central'])
+            && SvAmazonReturnsRuntime::sellerCentralCycleAcknowledgesOutboxRevision($results['seller_central'])){
             $state['outbox_stack_revision']=$outboxStackRevision;
         }
         if(

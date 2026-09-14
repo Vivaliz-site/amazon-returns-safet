@@ -96,6 +96,8 @@ $timeline6=[[
     'payload'=>['refresh_complete'=>true,'ambiguous_reimbursement_transactions'=>0,'unsettled_financial_evidence'=>false,'outstanding_amount'=>'32.74'],
 ]];
 $decision6=$coordinator6->nextAction($case6,$timeline6,['eligible'=>false,'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED],new DateTimeImmutable('2026-09-09T22:00:00Z'));
-gateSame('SELLER_SUPPORT_OPEN',$decision6['action'],'fresh classic FBA residual must escalate automatically to Seller Support');
+gateSame('WAIT',$decision6['action'],'fresh classic FBA residual before D45 must remain automatic without opening Seller Support early');
+gateSame('CLASSIC_FBA_D45_PENDING',$decision6['reason']??null,'pre-D45 classic FBA must expose the exact wait reason');
+gateSame('2026-10-09 20:00:05',$decision6['next_action_at']??null,'pre-D45 classic FBA must wake exactly at D45 from refund');
 gateSame([['case_id'=>6,'patch'=>['state'=>SvAmazonReturnStates::CREDIT_PENDING]]],$p6->cases->updates,'automatic Seller Support escalation must clear the persisted human-review gate');
 echo "decision-coordinator-clears-review-gate-test: OK\n";

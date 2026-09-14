@@ -24,7 +24,10 @@ final class SvAmazonSafeTDecisionEngine
         $safeTId=trim((string)($case['safe_t_id'] ?? ''));
         $state=trim((string)($case['state'] ?? ''));
 
-        if($this->hasRecoveredCredit($case))return $this->decision('WAIT','ALREADY_REIMBURSED',$caseId);
+        if($this->hasRecoveredFinancialSettlement($case,$timeline))return $this->decision('WAIT','ALREADY_REIMBURSED',$caseId);
+        if($this->sellerAppConfirmedPhysicalReceipt($case,$timeline)){
+            return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
+        }
         $initiator=(string)($case['refund_initiator'] ?? SvAmazonRefundInitiators::UNKNOWN);
         $deliveryBackedUnknownRefund=$this->deliveryBackedUnknownRefund($case);
         $reimbursementBackedUnknownRefund=$this->partialReimbursementBackedUnknownRefund($case);
@@ -43,9 +46,6 @@ final class SvAmazonSafeTDecisionEngine
         ],true))return $supportResolution;
         if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($supportResolution!==null)return $supportResolution;
-        if($safeTId==='' && $this->sellerAppConfirmedPhysicalReceipt($case,$timeline)){
-            return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
-        }
         if($safeTId==='' && ($case['program']??'')==='FBA'){
             return $this->classicFbaRecovery($case,$timeline,$now);
         }
@@ -199,7 +199,8 @@ final class SvAmazonSafeTDecisionEngine
     public function guardLearnedEffect(array $effect,array $case,array $timeline,array $policy,DateTimeImmutable $now): array
     {
         $caseId=(int)($case['id']??0);$action=(string)($effect['action']??'');$safeTId=trim((string)($case['safe_t_id']??''));
-        if($this->hasRecoveredCredit($case))return $this->decision('WAIT','ALREADY_REIMBURSED',$caseId);
+        if($this->hasRecoveredFinancialSettlement($case,$timeline))return $this->decision('WAIT','ALREADY_REIMBURSED',$caseId);
+        if($this->sellerAppConfirmedPhysicalReceipt($case,$timeline))return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
         if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($action==='SAFE_T_SUBMIT'){
             if($safeTId!=='')return $this->decision('WAIT','SAFE_T_ALREADY_EXISTS',$caseId);
@@ -294,6 +295,9 @@ final class SvAmazonSafeTDecisionEngine
     private function classicFbaRecovery(array $case,array $timeline,DateTimeImmutable $now): array
     {
         $caseId=(int)($case['id']??0);
+        $refundAt=SvAmazonRequestedWait::timestamp($case['refund_at']??null);
+        if($refundAt===null)return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
+        $eligibilityAt=$refundAt->modify('+45 days');
         $latest=null;$rank=[0,0];
         foreach($timeline as $event){
             if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
@@ -301,6 +305,13 @@ final class SvAmazonSafeTDecisionEngine
             try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
             $r=[$at->getTimestamp(),(int)($event['id']??0)];
             if($r>$rank){$latest=$event;$rank=$r;}
+        }
+        if(($case['physical_status']??'')!==SvAmazonReturnPhysicalStatuses::RECEIVED_DISCREPANT && $now<$eligibilityAt){
+            if($latest===null)return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
+            return [
+                'action'=>'WAIT','reason'=>'CLASSIC_FBA_D45_PENDING','case_id'=>$caseId,
+                'next_action_at'=>$eligibilityAt->format('Y-m-d H:i:s'),
+            ];
         }
         if($latest===null)return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
         $at=(new DateTimeImmutable((string)$latest['occurred_at'],new DateTimeZone('UTC')));
@@ -399,6 +410,26 @@ final class SvAmazonSafeTDecisionEngine
         $expected=(float)($case['expected_reimbursement_amount'] ?? 0);
         $credited=(float)($case['reconciled_credit_amount'] ?? 0);
         return $expected>0.0 && $credited+0.00001 >= $expected;
+    }
+
+    private function hasRecoveredFinancialSettlement(array $case,array $timeline): bool
+    {
+        if($this->hasRecoveredCredit($case))return true;
+        if((string)($case['state']??'')!==SvAmazonReturnStates::RECOVERED
+            || (string)($case['terminal_reason']??'')!=='FINANCIAL_RECOVERED')return false;
+        $caseId=(int)($case['id']??0);$latest=null;$rank=[0,0];
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='FINANCIAL_RECONCILIATION_CONFIRMED' || ($event['source']??'')!=='SP_API_FINANCES')continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            $candidate=[$at->getTimestamp(),(int)($event['id']??0)];
+            if($candidate>$rank){$rank=$candidate;$latest=$event;}
+        }
+        if(!is_array($latest))return false;
+        $payload=is_array($latest['payload']??null)?$latest['payload']:[];
+        return ($payload['residual_tolerance_applied']??false)===true
+            && is_numeric($payload['outstanding_amount']??null)
+            && (float)$payload['outstanding_amount']<=0.00001;
     }
 
     private function latestSupportObservation(array $case,array $timeline): ?array

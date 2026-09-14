@@ -120,6 +120,16 @@ final class TenantOutboxMemoryStatement extends PDOStatement
 $db = new TenantOutboxMemoryPdo();
 $context = new SvAmazonTenantContext(1, 10);
 $outbox = new SvAmazonTenantReturnsOutbox($db, $context);
+$db->queue(['row_count'=>3]);
+toAssert(method_exists($outbox,'supersedeTerminalReadJobs'),'Outbox must be able to clear obsolete Seller Central read jobs after a case closes.');
+toSame(3,$outbox->supersedeTerminalReadJobs('TERMINAL_CASE_NO_LONGER_REQUIRES_READ'),'Closed-case read sweep must report the number of superseded jobs.');
+$terminalSweep=$db->executed[array_key_last($db->executed)]['sql']??'';
+toAssert(str_contains($terminalSweep,'closed_at IS NOT NULL'),'Terminal read sweep must only target concluded cases.');
+foreach(['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'] as $readKind){
+    toAssert(str_contains($terminalSweep,$readKind),'Terminal read sweep must include '.$readKind.'.');
+}
+toAssert(!str_contains($terminalSweep,'SAFE_T_SUBMIT'),'Terminal read sweep must never touch external write kinds.');
+toAssert(str_contains($terminalSweep, "o.status='PENDING' OR (o.status='PROCESSING' AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND))"), 'Terminal read sweep must keep a live PROCESSING lease and only supersede stale processing reads.');
 $key = $outbox->deterministicKey('SAFE_T_SUBMIT', 77, 'policy-12|2026-07-16');
 toSame(
     hash('sha256', 'tenant:1|connection:10|SAFE_T_SUBMIT|77|policy-12|2026-07-16'),
@@ -256,5 +266,7 @@ foreach (['FOR UPDATE SKIP LOCKED','tenant_id','amazon_connection_id','MAX_ATTEM
 }
 toAssert(!str_contains($source, 'AMAZON_RETURNS_TENANT_ID'), 'Outbox must not resolve tenant from environment.');
 toAssert(!str_contains($source, 'AMAZON_RETURNS_CONNECTION_ID'), 'Outbox must not resolve connection from environment.');
+$statusBridgeSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/StatusBridgeService.php');
+toAssert(str_contains($statusBridgeSource,'supersedeTerminalReadJobs'), 'Status bridge must sweep obsolete terminal read jobs before ensuring new jobs.');
 
 echo "amazon-returns-tenant-outbox-test: OK\n";

@@ -33,6 +33,12 @@ $decision=$engine->nextAction(
 );
 cfprSame('WAIT',$decision['action']??null,'Confirmed physical receipt must block FBA Seller Support opening.');
 cfprSame('SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$decision['reason']??null,'Receipt block must remain auditable.');
+$existingClaim=$case;
+$existingClaim['safe_t_id']='87992-58145-2490130';
+$existingClaim['state']='SAFE_T_DENIED';
+$existingClaimDecision=$engine->nextAction($existingClaim,$timeline,$policy,new DateTimeImmutable('2026-09-09 14:40:00',new DateTimeZone('UTC')));
+cfprSame('WAIT',$existingClaimDecision['action']??null,'Confirmed intact receipt must block recovery even when an older SAFE-T already exists.');
+cfprSame('SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$existingClaimDecision['reason']??null,'Existing claim must not bypass the seller physical-receipt terminal guard.');
 $discrepant=$case;
 $discrepant['state']='RECEIVED_DISCREPANT';
 $discrepant['physical_status']='RECEIVED_DISCREPANT';

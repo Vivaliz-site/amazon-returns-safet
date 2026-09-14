@@ -103,6 +103,13 @@ final class SvAmazonReturnsRuntime
         return $hash;
     }
 
+    /** @param array<string,mixed> $result */
+    public static function sellerCentralCycleAcknowledgesOutboxRevision(array $result): bool
+    {
+        $status=strtoupper(trim((string)($result['status']??'')));
+        return in_array($status,['OK','REMOTE_POLLING'],true);
+    }
+
     public static function financialRefreshContinuationRequired(array $results): bool
     {
         $requested=(int)($results['scheduler']['financial_checks_requested']??0);
