@@ -42,6 +42,7 @@ jobs:
           set -e
           python3 -m unittest discover -s tests/continuity -p 'test_*.py' -v
           python3 -m py_compile tools/continuity/*.py
+          python3 -m py_compile scripts/migrate-continuity-config.py
           bash -n scripts/install-continuity-controller.sh
       - name: Syntax and security contracts
         run: |
