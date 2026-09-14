@@ -6,7 +6,7 @@
     {
       "repository": "Vivaliz-site/amazon-returns-safet",
       "host": "shopvivaliz-free-a1",
-      "path": "/home/ubuntu/amazon-returns-deploy-source",
+      "path": "/srv/continuity/repositories/amazon-returns-safet",
       "base_ref": "origin/main",
       "base_branch": "main",
       "github_enabled": false
