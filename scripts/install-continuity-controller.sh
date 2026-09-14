@@ -45,6 +45,7 @@ install -d -m 0755 -o root -g root "$RUNTIME_ROOT" "$RUNTIME_ROOT/releases"
 RELEASE_DIR="$RUNTIME_ROOT/releases/$SOURCE_SHA"
 if [[ ! -d "$RELEASE_DIR" ]]; then
   STAGE_DIR="$(mktemp -d "$RUNTIME_ROOT/releases/.stage.XXXXXX")"
+  chmod 0755 "$STAGE_DIR"
   trap 'rm -rf "${STAGE_DIR:-}"' EXIT
   install -d -m 0755 -o root -g root "$STAGE_DIR/tools" "$STAGE_DIR/tools/continuity"
   if [[ -f "$REPO_ROOT/tools/__init__.py" ]]; then
