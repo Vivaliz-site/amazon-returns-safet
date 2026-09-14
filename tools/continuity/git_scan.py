@@ -33,9 +33,13 @@ class GitScanError(RuntimeError):
     pass
 
 
+def _git_command(repo: Path, args: Sequence[str]) -> list[str]:
+    return ["git", "-c", f"safe.directory={Path(repo).resolve()}", *args]
+
+
 def _run(repo: Path, args: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
     cp = subprocess.run(
-        ["git", *args],
+        _git_command(repo, args),
         cwd=repo,
         text=True,
         capture_output=True,
@@ -52,12 +56,7 @@ def _git_path(repo: Path, marker: str) -> Path:
 
 
 def _status(repo: Path) -> tuple[str | None, str, str | None, set[str], set[str], set[str], set[str]]:
-    cp = subprocess.run(
-        ["git", "status", "--porcelain=v2", "--branch", "-z"],
-        cwd=repo,
-        text=True,
-        capture_output=True,
-    )
+    cp = _run(repo, ["status", "--porcelain=v2", "--branch", "-z"], check=False)
     if cp.returncode != 0:
         raise GitScanError(f"git status failed: {cp.stderr.strip()}")
     branch: str | None = None

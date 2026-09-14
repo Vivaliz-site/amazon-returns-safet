@@ -1,0 +1,23 @@
+{
+  "ledger_path": "/var/lib/agent-continuity/ledger.sqlite3",
+  "worktree_root": "/srv/continuity",
+  "auto_dispatch": false,
+  "repositories": [
+    {
+      "repository": "Vivaliz-site/amazon-returns-safet",
+      "host": "shopvivaliz-free-a1",
+      "path": "/home/ubuntu/amazon-returns-deploy-source",
+      "base_ref": "origin/main",
+      "base_branch": "main",
+      "github_enabled": false
+    }
+  ],
+  "lease_seconds": 1800,
+  "retry_cooldown_seconds": 1800,
+  "agents": [
+    {"name": "codex", "command": ["codex"], "enabled": false},
+    {"name": "chatgpt", "command": ["chatgpt"], "enabled": false},
+    {"name": "claude", "command": ["claude"], "enabled": false},
+    {"name": "gemini", "command": ["gemini"], "enabled": false}
+  ]
+}

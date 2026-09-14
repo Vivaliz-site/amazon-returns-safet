@@ -1,7 +1,8 @@
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
-from tools.continuity.git_scan import scan_repository
+from tools.continuity.git_scan import _run, scan_repository
 from tests.continuity.git_fixture import GitFixture
 
 
@@ -9,6 +10,15 @@ class GitScanTest(unittest.TestCase):
     def setUp(self):
         self.fx = GitFixture()
         self.addCleanup(self.fx.close)
+
+
+    def test_git_commands_mark_explicit_repo_as_safe_directory(self):
+        completed = __import__("subprocess").CompletedProcess(["git"], 0, "", "")
+        with patch("tools.continuity.git_scan.subprocess.run", return_value=completed) as run:
+            _run(self.fx.repo, ["status", "--short"])
+        command = run.call_args.args[0]
+        self.assertEqual("git", command[0])
+        self.assertIn(f"safe.directory={self.fx.repo.resolve()}", command)
 
     def test_detects_dirty_staged_untracked_and_local_ahead(self):
         self.fx.write("tracked.txt", "changed\n")
