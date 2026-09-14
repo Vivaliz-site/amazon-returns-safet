@@ -72,7 +72,7 @@ class Controller:
     @staticmethod
     def _base_sha(config: RepoConfig) -> str:
         cp = subprocess.run(
-            ["git", "rev-parse", "--verify", config.base_ref], cwd=config.path,
+            ["git", "-c", f"safe.directory={config.path.resolve()}", "rev-parse", "--verify", config.base_ref], cwd=config.path,
             text=True, capture_output=True,
         )
         return cp.stdout.strip() if cp.returncode == 0 else ""
@@ -117,7 +117,7 @@ class Controller:
 
     @staticmethod
     def _git_lines(config: RepoConfig, args: list[str]) -> tuple[str, ...]:
-        cp = subprocess.run(["git", *args], cwd=config.path, text=True, capture_output=True)
+        cp = subprocess.run(["git", "-c", f"safe.directory={config.path.resolve()}", *args], cwd=config.path, text=True, capture_output=True)
         if cp.returncode != 0:
             return ()
         return tuple(line.strip() for line in cp.stdout.splitlines() if line.strip())

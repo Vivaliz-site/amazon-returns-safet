@@ -26,7 +26,7 @@ def _slug(value: str) -> str:
 
 
 def _run(repo: Path, args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    cp = subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True)
+    cp = subprocess.run(["git", "-c", f"safe.directory={repo.resolve()}", *args], cwd=repo, text=True, capture_output=True)
     if check and cp.returncode != 0:
         raise WorktreeSafetyError(f"git {' '.join(args)} failed: {cp.stderr.strip()}")
     return cp
@@ -51,6 +51,6 @@ def create_task_worktree(repo: Path, root: Path, task_id: str, slug: str, base_r
     target.parent.mkdir(parents=True, exist_ok=True)
     _run(repo, ["worktree", "add", "-b", branch, str(target), base_ref])
     head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=target, text=True, capture_output=True, check=True
+        ["git", "-c", f"safe.directory={target.resolve()}", "rev-parse", "HEAD"], cwd=target, text=True, capture_output=True, check=True
     ).stdout.strip()
     return WorktreeResult(path=target, branch=branch, base_ref=base_ref, head=head)
