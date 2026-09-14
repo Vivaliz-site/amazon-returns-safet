@@ -26,6 +26,9 @@ $restoreEnd=$restoreStart===false?false:strpos($provisionSource,"\n}\ntrap resto
 $restoreBody=($restoreStart!==false&&$restoreEnd!==false)?substr($provisionSource,$restoreStart,$restoreEnd-$restoreStart):'';
 qwAssert(str_contains($restoreBody,'systemctl thaw'),'Rollback must thaw units before restarting services.');
 qwAssert(str_contains($restoreBody,'systemctl restart amazon-returns-safet.service'),'Activated release rollback must restart the daemon against the restored symlink.');
+qwAssert(str_contains($restoreBody,'safet_service_was_running'),'Rollback must remember whether the main daemon was active before quiescence.');
+qwAssert(str_contains($restoreBody,'browser_timer_was_active'),'Rollback must remember whether the browser timer was active before quiescence.');
+qwAssert(!str_contains($restoreBody,'systemctl start --no-block amazon-returns-seller-central-browser.service'),'Rollback must not blindly restart an interrupted external-write browser oneshot.');
 qwAssert(str_contains($helperSource,'active|activating|reloading|deactivating'),'Quiescence must treat an activating oneshot browser worker as running.');
 qwAssert(str_contains($provisionSource,'flock -n'),'Provisioning must reject concurrent deploys with an exclusive lock.');
 $identityValidation=strpos($provisionSource,"invalid tenant slug before provisioning");

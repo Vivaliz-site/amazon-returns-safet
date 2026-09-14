@@ -18,6 +18,7 @@ exec($command,$output,$exitCode);
 qfAssert($exitCode!==0,'Post-stop processing race must fail closed.');
 $events=(string)file_get_contents($log);
 qfAssert(str_contains($events,'start amazon-returns-safet.service'),'Failed post-stop validation must restart the main worker.');
+qfAssert(!str_contains($events,'start amazon-returns-seller-central-browser.service'),'Failure recovery must not blindly restart an external-write browser oneshot.');
 qfAssert(str_contains($events,'start amazon-returns-seller-central-browser.timer'),'Failed post-stop validation must restore the browser timer.');
 @unlink($counts);@unlink($log);@rmdir($tmp);
 echo "production-worker-quiescence-failure-test: OK\n";
