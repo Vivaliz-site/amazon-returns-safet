@@ -211,7 +211,8 @@ if [[ "$tenant_slug" == shopvivaliz ]]; then
     emit "operational_opening_days=45"
     emit "operational_policy_count=$operational_policies"
 fi
-processing_jobs="$(mysql_scalar "$target_db" "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING'")"
+processing_jobs="$(mysql_scalar "$target_db" "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND locked_at>DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND)")"
+stale_processing_jobs="$(mysql_scalar "$target_db" "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND (locked_at IS NULL OR locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND))")"
 [[ "$processing_jobs" -eq 0 ]] || { echo "processing_jobs=$processing_jobs" >&2; exit 1; }
 
 env_value() {
@@ -245,6 +246,7 @@ emit "cross_tenant_children=$cross_tenant_children"
 emit "case_connection_mismatches=$case_connection_mismatches"
 emit "cross_tenant_mismatch_count=$cross_tenant_mismatch_count"
 emit "processing_jobs=$processing_jobs"
+emit "stale_processing_jobs=$stale_processing_jobs"
 emit "pre_migration_hash=$pre_migration_hash"
 emit "post_migration_hash=$post_migration_hash"
 emit "ownership_hash=$ownership_hash"

@@ -73,9 +73,9 @@ done
 if [[ " ${*:-} " == *" --auth-check-only "* ]]; then
   exit 0
 fi
-"$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --drain
 bridge_mode="--drain"
 if [[ " ${*:-} " == *" --bridge-once "* ]]; then
   bridge_mode="--once"
 fi
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" "$bridge_mode"
+"$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --drain

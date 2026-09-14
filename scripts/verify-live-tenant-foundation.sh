@@ -73,7 +73,8 @@ for relation in 'amazon_return_learned_rules source_review_id amazon_return_revi
     cross_tenant_children=$((cross_tenant_children + count))
 done
 cross_tenant_mismatch_count=$((cross_tenant_children + case_connection_mismatches))
-processing_jobs="$(scalar "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING'")"
+processing_jobs="$(scalar "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND locked_at>DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND)")"
+stale_processing_jobs="$(scalar "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND (locked_at IS NULL OR locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND))")"
 pending_outbox="$(scalar "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status IN ('PENDING','PROCESSING')")"
 dead_letters="$(scalar "SELECT COUNT(*) FROM amazon_return_dead_letters WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id")"
 
@@ -129,6 +130,7 @@ emit "cross_tenant_children=$cross_tenant_children"
 emit "case_connection_mismatches=$case_connection_mismatches"
 emit "cross_tenant_mismatch_count=$cross_tenant_mismatch_count"
 emit "processing_jobs=$processing_jobs"
+emit "stale_processing_jobs=$stale_processing_jobs"
 emit "pending_outbox=$pending_outbox"
 emit "dead_letters=$dead_letters"
 emit "learned_rule_execution_enabled=$learned_rule_execution_enabled"
