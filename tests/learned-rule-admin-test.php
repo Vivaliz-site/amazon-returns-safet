@@ -19,4 +19,7 @@ lraAssert(str_contains($page,'Decisões aprendidas'),'plain-language learned dec
 lraAssert(str_contains($js,'loadRules'),'learned decisions list interaction required');
 lraAssert(str_contains($js,'disableRule'),'disable interaction required');
 lraAssert(!str_contains($js,'innerHTML'),'learned decisions UI must use safe DOM rendering');
+lraAssert(str_contains($js,'Confirmar: parar de usar automaticamente'),'rule disable must require an explicit second confirmation');
+lraAssert(str_contains(lraSource('admin/amazon-returns/assets/cockpit.css'),'.rule-card'),'learned rules need card styling');
+lraAssert(str_contains(lraSource('admin/amazon-returns/assets/cockpit.css'),'.danger'),'learned rule disable needs destructive styling');
 echo "learned-rule-admin-test: OK\n";

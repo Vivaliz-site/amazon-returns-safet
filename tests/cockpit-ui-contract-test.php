@@ -95,4 +95,10 @@ cuAssert(str_contains($operationalJs,'return_tracking_ids'),'Case list must rend
 cuAssert(str_contains($operationalJs,"'Sistema'") && str_contains($operationalJs,"'Você'") && str_contains($operationalJs,"'Concluído'"),'Rows must expose compact explicit responsibility.');
 cuAssert(!str_contains($operationalJs,"finance.append(text('strong',brl(c.outstanding_amount)),text('span','saldo ainda a recuperar'"),'Zero balance copy cannot be unconditional.');
 
+$ux=(string)file_get_contents($root.'/admin/amazon-returns/assets/ux-polish.js');
+cuAssert(!str_contains($ux,'timeline-details'),'Timeline must have exactly one collapse owner; ux-polish may not wrap it again.');
+cuAssert(str_contains($page,'id="review-decision-summary"'),'Review UI must expose selected decision before final confirmation.');
+cuAssert(str_contains($page,'id="review-scope"'),'Review UI must separate decision scope from action.');
+cuAssert(!str_contains($page,'data-review-mode="APPROVED"'),'Ambiguous review-mode button set must be removed.');
+cuAssert(str_contains($operationalCss.$css,'.rule-card') && str_contains($operationalCss.$css,'.danger'),'Learned-rule cards and destructive actions require explicit styling.');
 echo "cockpit-ui-contract-test: OK\n";
