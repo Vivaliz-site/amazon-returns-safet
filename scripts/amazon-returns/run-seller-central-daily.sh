@@ -12,15 +12,15 @@ fi
 CDP_PORT="${SELLER_CENTRAL_CDP_PORT:-9225}"
 CDP_URL="${SELLER_CENTRAL_CDP_URL:-http://127.0.0.1:${CDP_PORT}}"
 BROWSER_BIN="$SELLER_CENTRAL_BROWSER"
-DIRECT_CHROMIUM="${SELLER_CENTRAL_CHROMIUM_DIRECT_BINARY:-/snap/chromium/current/usr/lib/chromium-browser/chrome}"
-case "$BROWSER_BIN" in
-  /usr/bin/chromium|/snap/bin/chromium)
-    if [[ -x "$DIRECT_CHROMIUM" ]]; then
-      BROWSER_BIN="$DIRECT_CHROMIUM"
-    fi
+[[ -x "$BROWSER_BIN" ]] || { echo "Seller Central browser binary is not executable" >&2; exit 69; }
+BROWSER_RESOLVED="$(readlink -f "$BROWSER_BIN" 2>/dev/null || true)"
+case "$BROWSER_BIN:$BROWSER_RESOLVED" in
+  /snap/*:*|/usr/bin/chromium:/usr/bin/snap|/usr/bin/chromium-browser:/usr/bin/snap|*:/snap/*)
+    echo "Seller Central browser must be a supported non-Snap Chromium binary" >&2
+    exit 69
     ;;
 esac
-[[ -x "$BROWSER_BIN" ]] || { echo "Seller Central browser binary is not executable" >&2; exit 69; }
+BROWSER_LOG="${SELLER_CENTRAL_BROWSER_LOG:-${SELLER_CENTRAL_PROFILE%/}/browser-startup.log}"
 
 NODE_BIN="${SELLER_CENTRAL_NODE_BINARY:-}"
 if [[ -z "$NODE_BIN" ]]; then
@@ -71,7 +71,7 @@ setsid "$BROWSER_BIN" \
   "--user-data-dir=$SELLER_CENTRAL_PROFILE" \
   --no-first-run \
   --no-default-browser-check \
-  about:blank >/dev/null 2>&1 &
+  about:blank >>"$BROWSER_LOG" 2>&1 &
 browser_pid="$!"
 ready=0
 for _ in $(seq 1 40); do
