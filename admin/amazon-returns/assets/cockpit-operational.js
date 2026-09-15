@@ -75,6 +75,7 @@ function operatorAlert(c){
 }
 function operationalDate(v){return v?date(v):null;}
 function daysUntil(v){if(!v)return null;const ms=new Date(String(v).replace(' ','T')+'Z').getTime()-Date.now();if(Number.isNaN(ms))return null;const d=Math.ceil(ms/86400000);return d===0?'vence hoje':d>0?`faltam ${d} dia${d===1?'':'s'}`:`atrasado há ${Math.abs(d)} dia${Math.abs(d)===1?'':'s'}`;}
+function operatorNextRelevantDate(c){const state=String(c?.state||'');if(['RECOVERED','CLOSED_LOSS','RECEIVED_OK'].includes(state))return null;const appealHandled=['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION'].includes(state);if(!appealHandled&&c?.appeal_deadline_at)return c.appeal_deadline_at;if(c?.next_action_at)return c.next_action_at;if(!appealHandled&&c?.eligibility_at)return c.eligibility_at;return null;}
 function operationalField(label,value,extra=''){
   if(value===null||value===undefined||value===''||value==='—')return null;
   const el=text('div','',`operational-field ${extra}`.trim());el.append(text('span',label,'muted'),text('strong',String(value)));return el;
@@ -209,7 +210,7 @@ function renderOperationalList(items){
     id.append(text('span',c.safe_t_id?`SAFE-T ${c.safe_t_id}`:'Sem SAFE-T','muted'));
     const status=text('div','', 'case-row-status');status.append(text('strong',operatorStatus(c)),text('span',physicalLabel(c.physical_status),'muted'));
     const financial=operatorFinancialSummary(c);const finance=text('div','', 'case-row-finance');finance.append(text('strong',financial.value),text('span',financial.label,'muted'));
-    const due=['RECOVERED','CLOSED_LOSS','RECEIVED_OK'].includes(String(c.state||''))?null:(c.appeal_deadline_at||c.next_action_at||c.eligibility_at);const deadline=text('div','', 'case-row-deadline');deadline.append(text('span',due?'Próximo prazo':'Sem prazo pendente','muted'),text('strong',due?`${date(due)} · ${daysUntil(due)}`:'—'));
+    const due=operatorNextRelevantDate(c);const deadline=text('div','', 'case-row-deadline');deadline.append(text('span',due?'Próximo prazo':'Sem prazo pendente','muted'),text('strong',due?`${date(due)} · ${daysUntil(due)}`:'—'));
     const responsibility=text('div',operatorCompactResponsibility(c),'case-row-responsibility');responsibility.setAttribute('aria-label',operatorResponsibility(c));
     if(operatorAlert(c))row.classList.add('case-overdue');
     row.append(id,status,finance,deadline,responsibility,button('Abrir',()=>openCase(c.id),'case-open'));list.append(row);
@@ -265,16 +266,17 @@ async function loadBucketCases(filters,bucket){
 }
 loadCases=async function operationalLoadCases(){
   const generation=++casesRequestGeneration;
-  try{clearError();state.filters=readFilters();syncUrl();const q=new URLSearchParams({...state.filters,page:String(state.page),per_page:'50'});const j=operationalBucket==='all'?await json(`/admin/amazon-returns/api/cases.php?${q}`):await loadBucketCases(q,operationalBucket);if(generation!==casesRequestGeneration)return;document.querySelector('#result-count').textContent=`${j.total} casos`;renderOperationalList(j.items||[]);if(operationalBucket==='all'||operationalBucket==='attention')renderPager(j.total,j.per_page);else document.querySelector('#pager').replaceChildren();}
+  try{clearError();state.filters=readFilters();syncUrl();const q=new URLSearchParams({...state.filters,page:String(state.page),per_page:'50'});const j=operationalBucket==='all'?await json(`/admin/amazon-returns/api/cases.php?${q}`):await loadBucketCases(q,operationalBucket);if(generation!==casesRequestGeneration)return;document.querySelector('#result-count').textContent=`${j.total} casos`;renderOperationalList(j.items||[]);renderPager(j.total,j.per_page);}
   catch(e){if(generation!==casesRequestGeneration)return;showError(e.message,loadCases);}
 };
 function markSelectedCase(caseId){for(const row of document.querySelectorAll('.operational-case-row'))row.classList.toggle('is-selected',row.dataset.caseId===String(caseId));}
 function showMobileCaseDetail(){const workspace=document.querySelector('.workspace');workspace?.classList.add('mobile-detail-open');if(matchMedia('(max-width:600px)').matches)document.querySelector('#case-detail')?.scrollIntoView({behavior:'smooth',block:'start'});}
-function closeMobileCaseDetail(){document.querySelector('.workspace')?.classList.remove('mobile-detail-open');document.querySelector('#case-list')?.scrollIntoView({behavior:'smooth',block:'start'});}
+function resetMobileCaseDetail(){document.querySelector('.workspace')?.classList.remove('mobile-detail-open');}
+function closeMobileCaseDetail(){resetMobileCaseDetail();document.querySelector('#case-list')?.scrollIntoView({behavior:'smooth',block:'start'});}
 openCase=async function operationalOpenCase(caseId){
   try{clearError();const j=await json(`/admin/amazon-returns/api/case.php?case_id=${encodeURIComponent(caseId)}`);state.selectedCase=caseId;let relatedCount=null;try{if(j.case?.amazon_order_id){const related=await json(`/admin/amazon-returns/api/case.php?order_id=${encodeURIComponent(j.case.amazon_order_id)}`);relatedCount=Array.isArray(related.cases)?related.cases.length:null;}}catch(_e){}renderOperationalCase(j,relatedCount);markSelectedCase(caseId);showMobileCaseDetail();}
   catch(e){showError(e.message,()=>openCase(caseId));}
 };
 for(const control of document.querySelectorAll('[data-quick-filter]'))control.addEventListener('click',()=>{operationalBucket=control.dataset.quickFilter||'all';for(const other of document.querySelectorAll('[data-quick-filter]'))other.setAttribute('aria-pressed',String(other===control));state.page=1;loadCases();});
 function syncOperationalChrome(){const hide=state.view!=='cases';document.querySelector('.quick-filters')?.classList.toggle('hidden',hide);document.querySelector('#advanced-filters')?.classList.toggle('hidden',hide);for(const id of ['autonomy-status','user-work','automation-work','money-headlines','money-breakdown','operational-problems','deadline-list','connector-health','operations-detail'])document.querySelector('#'+id)?.classList.toggle('hidden',hide);}
-const baseOperationalSelectView=selectView;selectView=function operationalSelectView(view){baseOperationalSelectView(view);syncOperationalChrome();};syncOperationalChrome();if(state.view==='cases')loadCases();
+const baseOperationalSelectView=selectView;selectView=function operationalSelectView(view){resetMobileCaseDetail();baseOperationalSelectView(view);syncOperationalChrome();};syncOperationalChrome();if(state.view==='cases')loadCases();

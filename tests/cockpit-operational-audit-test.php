@@ -117,4 +117,8 @@ coaAssert(str_contains($ui,'function collapsibleCaseBlock('),'Secondary case det
 foreach(['Produto e documentos','Mensagens com a Amazon','Evidências'] as $label)coaAssert(str_contains($ui,$label),'Missing collapsible secondary case section '.$label);
 coaAssert(!str_contains($ui,'while(collected.length<total'),'Quick filters must not scan all cases in the browser.');
 coaAssert(str_contains($ui,"set('bucket'"),'Quick filters must request a server-side bucket.');
+coaAssert(str_contains($ui,"renderOperationalList(j.items||[]);renderPager(j.total,j.per_page);"),'Every server-filtered bucket must retain pagination beyond the first 50 cases.');
+coaAssert(str_contains($ui,'resetMobileCaseDetail();baseOperationalSelectView(view)'),'Changing cockpit tabs must exit mobile case-detail mode before rendering the new tab.');
+coaAssert(str_contains($ui,'function operatorNextRelevantDate(c)'),'Case rows must centralize pending-deadline selection.');
+coaAssert(str_contains($ui,"APPEAL_SUBMITTED"),'Handled appeal states must be excluded from stale appeal deadlines in the list.');
 echo "cockpit-operational-audit-test: OK\n";

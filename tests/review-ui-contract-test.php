@@ -6,6 +6,7 @@ foreach(['review-impact','review-preview','review-confirm'] as $needle)ruAssert(
 foreach(['O que deseja fazer?','Usar qual data?','Aplicar esta decisão a','Ver impacto desta decisão','Confirmar decisão'] as $label)ruAssert(str_contains($page,$label),'Review decision control missing '.$label);
 ruAssert(!str_contains($page,'Aprovar sugestão'),'Ambiguous one-click suggestion approval must stay removed.');
 ruAssert(str_contains($page,'id="review-decision-summary"'),'Review must summarize action, date and scope before final confirmation.');
+ruAssert(preg_match('/<select id="review-final-action">.*value="SAFE_T_SUBMIT"/', $page)===1,'Every advisor-supported SAFE-T submission suggestion must remain selectable and confirmable.');
 foreach(['openReview','suggestReview','previewReview','confirmReview','expected_version'] as $needle)ruAssert(str_contains($js,$needle),'Review JS missing '.$needle);
 ruAssert(str_contains($js,'review-decision.php'),'Review submit endpoint missing in JS.');
 ruAssert(str_contains($js,'status===409'),'Stale review version must refresh rather than retry blindly.');
