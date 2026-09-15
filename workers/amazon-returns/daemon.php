@@ -55,6 +55,7 @@ final class SvAmazonReturnsDaemon
     /** @return array<string,mixed> */
     public function runOnce(?DateTimeImmutable $now=null): array
     {
+        $fixedNow=$now!==null;
         $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
         $bootstrap=SvAmazonReturnsRuntime::bootstrap($this->db,$this->context);
         $state=$this->loadState();
@@ -87,13 +88,14 @@ final class SvAmazonReturnsDaemon
         if(($plan['gate']['status'] ?? '')==='FAILED')$results['financial_refresh_gate']=$plan['gate'];
         foreach($due as $task){
             if($task==='bootstrap')continue;
+            $taskNow=$fixedNow ? $now : new DateTimeImmutable('now',new DateTimeZone('UTC'));
             try{
                 if($task==='financial' && $this->config->enabled() && !SvAmazonFinancialRefresh::canReconcile(
                     $results['sp_api'] ?? [], SvAmazonFinancialRefresh::initialScanComplete($this->persistence)
                 )){
                     $results[$task]=['status'=>'SKIPPED','reason'=>'FINANCIAL_REFRESH_NOT_ACCEPTED'];
                 }else{
-                    $results[$task]=$this->runTask($task,$now);
+                    $results[$task]=$this->runTask($task,$taskNow);
                 }
             }catch(Throwable $e){
                 $results[$task]=[
@@ -105,12 +107,12 @@ final class SvAmazonReturnsDaemon
             $taskStatus=strtoupper(trim((string)($results[$task]['status'] ?? 'UNKNOWN')));
             try{
                 $this->persistence->cursors->save(
-                    'OPERATIONAL_TASK',$task,$now->format(DATE_ATOM),['status'=>$taskStatus]
+                    'OPERATIONAL_TASK',$task,$taskNow->format(DATE_ATOM),['status'=>$taskStatus]
                 );
             }catch(Throwable $observabilityError){
                 error_log('[amazon-returns-operational-observability] '.$observabilityError::class);
             }
-            $state[$task]=$now->format(DATE_ATOM);
+            $state[$task]=$taskNow->format(DATE_ATOM);
         }
         if(
             $decisionStackChanged
