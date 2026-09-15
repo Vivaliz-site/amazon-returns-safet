@@ -11,6 +11,17 @@ fi
 
 CDP_PORT="${SELLER_CENTRAL_CDP_PORT:-9225}"
 CDP_URL="${SELLER_CENTRAL_CDP_URL:-http://127.0.0.1:${CDP_PORT}}"
+BROWSER_BIN="$SELLER_CENTRAL_BROWSER"
+DIRECT_CHROMIUM="${SELLER_CENTRAL_CHROMIUM_DIRECT_BINARY:-/snap/chromium/current/usr/lib/chromium-browser/chrome}"
+case "$BROWSER_BIN" in
+  /usr/bin/chromium|/snap/bin/chromium)
+    if [[ -x "$DIRECT_CHROMIUM" ]]; then
+      BROWSER_BIN="$DIRECT_CHROMIUM"
+    fi
+    ;;
+esac
+[[ -x "$BROWSER_BIN" ]] || { echo "Seller Central browser binary is not executable" >&2; exit 69; }
+
 NODE_BIN="${SELLER_CENTRAL_NODE_BINARY:-}"
 if [[ -z "$NODE_BIN" ]]; then
   for candidate in /usr/local/bin/node /usr/bin/node; do
@@ -51,7 +62,7 @@ if curl -fsS --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then
   exit 76
 fi
 
-setsid "$SELLER_CENTRAL_BROWSER" \
+setsid "$BROWSER_BIN" \
   --headless=new \
   --no-sandbox \
   --disable-gpu \
