@@ -13,7 +13,6 @@ cacSame('NORMAL',SvAmazonCockpitHealth::operatorStatus(0,0),'No human work and n
 $health=(string)file_get_contents($root.'/includes/amazon-returns/CockpitHealth.php');
 $summary=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-summary.js');
 $ui=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational.js');
-$bootstrap=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational-bootstrap.js');
 $cases=(string)file_get_contents($root.'/admin/amazon-returns/api/cases.php');
 $intake=(string)file_get_contents($root.'/admin/amazon-returns/api/intake-lookup.php');
 $search=(string)file_get_contents($root.'/includes/amazon-returns/CaseReferenceSearch.php');

@@ -7,7 +7,6 @@ $api=(string)file_get_contents($root.'/admin/amazon-returns/api/case.php');
 $listApi=(string)file_get_contents($root.'/admin/amazon-returns/api/cases.php');
 $baseUi=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit.js');
 $ui=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational.js');
-$bootstrap=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational-bootstrap.js');
 $css=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational.css');
 $referenceSearch=(string)file_get_contents($root.'/includes/amazon-returns/CaseReferenceSearch.php');
 $invoiceSearch=(string)file_get_contents($root.'/includes/amazon-returns/InvoiceSearch.php');
@@ -46,11 +45,11 @@ coaAssert(!str_contains($ui,"q.set('page','1')"),'Quick filters must preserve pa
 
 // A past appeal deadline must not create a false operational failure after an appeal/follow-up was already sent.
 foreach(['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','RECOVERED','CLOSED_LOSS'] as $state){
-    coaAssert(str_contains($bootstrap,$state),'Delayed-action guard missing completed state '.$state);
+    coaAssert(str_contains($ui,$state),'Delayed-action guard missing completed state '.$state);
 }
-coaAssert(str_contains($bootstrap,"if(action==='SAFE_T_APPEAL')due=c?.appeal_deadline_at"),'Appeal alerts must use appeal deadline rather than stale eligibility.');
-coaAssert(str_contains($bootstrap,"last_external_write?.kind===action"),'Completed/pending write must suppress false delayed-action alert.');
-coaAssert(str_contains($bootstrap,"field.querySelector('.muted')?.textContent==='Prazo para recurso'"),'Handled appeal states must suppress stale appeal deadline display.');
+coaAssert(str_contains($ui,"if(action==='SAFE_T_APPEAL')due=c?.appeal_deadline_at"),'Appeal alerts must use appeal deadline rather than stale eligibility.');
+coaAssert(str_contains($ui,"last_external_write?.kind===action"),'Completed/pending write must suppress false delayed-action alert.');
+coaAssert(str_contains($ui,"field.querySelector('.muted')?.textContent==='Prazo para recurso'"),'Handled appeal states must suppress stale appeal deadline display.');
 
 // Missing facts are omitted rather than rendered as meaningless dashes.
 coaAssert(str_contains($ui,"value===null||value===undefined||value===''||value==='—'"),'Unavailable detail fields must be omitted.');
@@ -79,24 +78,33 @@ coaAssert(str_contains($baseUi,'casesRequestGeneration'),'Base list requests mus
 coaAssert(str_contains($ui,'++casesRequestGeneration'),'Operational list requests must advance the shared request generation.');
 coaAssert(str_contains($page,'cockpit.js?v=refund-consultation-2'),'Base cockpit asset must be cache-busted for this delivery.');
 coaAssert(str_contains($page,'cockpit-operational.js?v=refund-consultation-2'),'Operational cockpit asset must be cache-busted for this delivery.');
-coaAssert(str_contains($page,'cockpit-operational-bootstrap.js?v=refund-consultation-2'),'Operational bootstrap asset must be cache-busted for this delivery.');
-coaAssert(str_contains($bootstrap,"if(state.view==='cases')loadCases()"),'Operational list must rerender after deferred scripts load.');
-coaAssert(str_contains($bootstrap,'Dados podem estar desatualizados'),'Stale source data must be visibly identified.');
-coaAssert(str_contains($bootstrap,'function syncOperationalChrome('),'Operational chrome must follow the selected tab.');
-coaAssert(str_contains($bootstrap,"classList.toggle('hidden',hide)"),'Case quick filters must be hidden outside the cases tab.');
+coaAssert(!str_contains($page,'cockpit-operational-bootstrap.js'),'Legacy operational bootstrap must not be loaded.');
+coaAssert(str_contains($ui,"if(state.view==='cases')loadCases()"),'Operational list must rerender after deferred scripts load.');
+coaAssert(str_contains($ui,'Dados podem estar desatualizados'),'Stale source data must be visibly identified.');
+coaAssert(str_contains($ui,'function syncOperationalChrome('),'Operational chrome must follow the selected tab.');
+coaAssert(str_contains($ui,"classList.toggle('hidden',hide)"),'Case quick filters must be hidden outside the cases tab.');
 
 // Responsive layout and usable touch targets.
 coaAssert(str_contains($css,'@media(max-width:980px)'),'Tablet responsive layout missing.');
 coaAssert(str_contains($css,'@media(max-width:600px)'),'Mobile responsive layout missing.');
 coaAssert(str_contains($css,'min-height:44px'),'Operational controls require touch-sized targets.');
-coaAssert(str_contains($css,'grid-template-areas:"id open" "status open" "finance open" "responsibility responsibility"'),'Desktop case rows must keep the Abrir control visible inside the narrow list pane.');
+coaAssert(str_contains($css,'grid-template-areas:"id open" "status open" "finance open" "deadline open" "responsibility responsibility"'),'Desktop case rows must keep the Abrir control visible beside all compact facts.');
 coaAssert(str_contains($css,'.operational-case-row .case-open{grid-area:open;align-self:center;justify-self:stretch}'),'Desktop Abrir control must stay touch-sized instead of stretching vertically across the whole case.');
 coaAssert(str_contains($css,'.case-flow{display:grid;grid-template-columns:1fr'),'Operational explanation cards must remain readable in the detail pane instead of being squeezed into three narrow columns.');
-coaAssert(str_contains($css,'grid-template-areas:"id" "status" "finance" "responsibility" "open"'),'Mobile case rows must collapse to a single readable column.');
+coaAssert(str_contains($css,'grid-template-areas:"id" "status" "finance" "deadline" "responsibility" "open"'),'Mobile case rows must collapse to a single readable column including deadline.');
 coaAssert(str_contains($css,'.result-head{align-items:flex-start;flex-direction:column;gap:4px}'),'Mobile result heading must stack instead of squeezing the case count beside its helper text.');
+coaAssert(str_contains($css,'.case-row-deadline{grid-area:deadline'),'Case deadline must have an explicit grid area.');
+coaAssert(str_contains($css,'grid-template-areas:"id open" "status open" "finance open" "deadline open" "responsibility responsibility"'),'Desktop rows must place the deadline before responsibility.');
+coaAssert(str_contains($css,'grid-template-areas:"id" "status" "finance" "deadline" "responsibility" "open"'),'Mobile rows must include the deadline in the single-column flow.');
+coaAssert(str_contains($ui,'case-detail-back'),'Case detail must expose a mobile back control.');
+coaAssert(str_contains($ui,'mobile-detail-open'),'Opening a case on mobile must switch the workspace to dedicated detail mode.');
+coaAssert(str_contains($ui,'is-selected'),'Desktop list must keep a visible selected-case state.');
+coaAssert(str_contains($css,'position:sticky'),'Desktop case detail must remain visible while the list scrolls.');
+coaAssert(str_contains($css,'.workspace.mobile-detail-open>section{display:none}'),'Mobile detail mode must hide the case list.');
+coaAssert(str_contains($css,'.workspace.mobile-detail-open>.case-detail{display:block}'),'Mobile detail mode must show only the selected case detail.');
 
 // User-provided/API content remains text-only; no HTML injection shortcut.
-coaAssert(!str_contains($ui,'innerHTML')&&!str_contains($bootstrap,'innerHTML'),'Operational cockpit must not use innerHTML.');
+coaAssert(!str_contains($ui,'innerHTML'),'Operational cockpit must not use innerHTML.');
 
 coaAssert(str_contains($ui,'operatorFinancialSummary(c)'),'Financial list copy must come from zero-safe helper.');
 coaAssert(str_contains($ui,"const returnTracks=Array.isArray(c.return_tracking_ids)"),'TBR display must stay separate from delivery tracking.');
@@ -108,5 +116,5 @@ coaAssert(!str_contains($ui,'case-row-next-step'),'Long next-step prose must not
 coaAssert(str_contains($ui,'function collapsibleCaseBlock('),'Secondary case details must use progressive disclosure.');
 foreach(['Produto e documentos','Mensagens com a Amazon','Evidências'] as $label)coaAssert(str_contains($ui,$label),'Missing collapsible secondary case section '.$label);
 coaAssert(!str_contains($ui,'while(collected.length<total'),'Quick filters must not scan all cases in the browser.');
-coaAssert(str_contains($ui.$bootstrap,"set('bucket'"),'Quick filters must request a server-side bucket.');
+coaAssert(str_contains($ui,"set('bucket'"),'Quick filters must request a server-side bucket.');
 echo "cockpit-operational-audit-test: OK\n";

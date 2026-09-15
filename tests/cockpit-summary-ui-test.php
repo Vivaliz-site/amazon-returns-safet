@@ -4,7 +4,7 @@ declare(strict_types=1);
 $root=dirname(__DIR__);
 $page=(string)file_get_contents($root.'/admin/amazon-returns/index.php');
 $summary=(string)@file_get_contents($root.'/admin/amazon-returns/assets/cockpit-summary.js');
-$bootstrap=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational-bootstrap.js');
+$operational=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit-operational.js');
 
 function csuAssert(bool $ok,string $why):void{if(!$ok)throw new RuntimeException($why);}
 
@@ -14,7 +14,7 @@ foreach(['autonomy-status','user-work','automation-work','money-headlines','mone
 foreach(['Operando normalmente','Sistema requer atenção','Sua intervenção é necessária','Nenhuma ação sua é necessária','Sistema tratando agora','Em risco','Aguardando crédito','Em disputa','Recuperado','Últimos dados disponíveis'] as $text){
     csuAssert(str_contains($summary,$text),'Missing operator copy '.$text);
 }
-csuAssert(!str_contains($bootstrap,'while(all.length<total'),'Browser must not scan every case to build the top summary.');
+csuAssert(!str_contains($operational,'while(all.length<total'),'Browser must not scan every case to build the top summary.');
 csuAssert(!str_contains($summary,'innerHTML'),'Summary renderer cannot use innerHTML.');
 csuAssert(str_contains($page,'Pedido, NF, TBR, SAFE-T, rastreio, SKU ou ASIN'),'Search hint must include TBR.');
 csuAssert(str_contains($page,'cockpit-summary.js?v='),'Summary asset must be versioned.');

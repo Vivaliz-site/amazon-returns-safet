@@ -3,7 +3,9 @@ declare(strict_types=1);
 function ruAssert(bool $c,string $m):void{if(!$c)throw new RuntimeException($m);}
 $root=dirname(__DIR__);$page=(string)file_get_contents($root.'/admin/amazon-returns/index.php');$js=(string)file_get_contents($root.'/admin/amazon-returns/assets/cockpit.js');$api=(string)file_get_contents($root.'/admin/amazon-returns/api/review.php');
 foreach(['review-impact','review-preview','review-confirm'] as $needle)ruAssert(str_contains($page,$needle),'Review UI missing '.$needle);
-foreach(['Aprovar sugestão','Alterar e aprovar','Escolher outra ação','Aguardar','Somente este caso'] as $label)ruAssert(str_contains($page,$label),'Review action missing '.$label);
+foreach(['O que deseja fazer?','Usar qual data?','Aplicar esta decisão a','Ver impacto desta decisão','Confirmar decisão'] as $label)ruAssert(str_contains($page,$label),'Review decision control missing '.$label);
+ruAssert(!str_contains($page,'Aprovar sugestão'),'Ambiguous one-click suggestion approval must stay removed.');
+ruAssert(str_contains($page,'id="review-decision-summary"'),'Review must summarize action, date and scope before final confirmation.');
 foreach(['openReview','suggestReview','previewReview','confirmReview','expected_version'] as $needle)ruAssert(str_contains($js,$needle),'Review JS missing '.$needle);
 ruAssert(str_contains($js,'review-decision.php'),'Review submit endpoint missing in JS.');
 ruAssert(str_contains($js,'status===409'),'Stale review version must refresh rather than retry blindly.');

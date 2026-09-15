@@ -64,9 +64,12 @@ function operatorNextStep(c){
 }
 function operatorAlert(c){
   if(operatorResponsibility(c)==='Sua decisão é necessária')return null;
-  const action=String(c?.current_action||''),due=c?.next_action_at||c?.eligibility_at||c?.appeal_deadline_at;
-  if(!due||!['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'].includes(action))return null;
-  const dueAt=new Date(String(due).replace(' ','T')+'Z');if(Number.isNaN(dueAt.getTime())||dueAt.getTime()>=Date.now())return null;
+  const action=String(c?.current_action||'');
+  if(!['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'].includes(action))return null;
+  const completedStates=new Set(['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SAFE_T_SUBMITTED','SAFE_T_APPROVED','SUPPORT_ESCALATION','RECOVERED','CLOSED_LOSS']);
+  if(completedStates.has(String(c?.state||'')))return null;
+  let due=null;if(action==='SAFE_T_APPEAL')due=c?.appeal_deadline_at||c?.next_action_at;else if(action==='SAFE_T_SUBMIT')due=c?.eligibility_at||c?.next_action_at;else due=c?.next_action_at;
+  if(!due)return null;const dueAt=new Date(String(due).replace(' ','T')+'Z');if(Number.isNaN(dueAt.getTime())||dueAt.getTime()>=Date.now())return null;
   if(c?.last_external_write?.kind===action&&['PENDING','PROCESSING','SUCCEEDED','SUCCESS'].includes(String(c.last_external_write.status||'')))return null;
   return 'Providência automática atrasada';
 }
@@ -199,7 +202,7 @@ function renderDecisionExplanation(c){
 function renderOperationalList(items){
   const list=document.querySelector('#case-list');list.replaceChildren();
   for(const c of items){
-    const row=text('article','', 'case-row operational-case-row');
+    const row=text('article','', 'case-row operational-case-row');row.dataset.caseId=String(c.id);
     const returnTracks=Array.isArray(c.return_tracking_ids)?c.return_tracking_ids:[];
     const id=text('div','', 'case-row-id');id.append(text('strong',c.amazon_order_id||'Pedido sem número'));
     if(returnTracks[0])id.append(text('span',`TBR / devolução ${returnTracks[0]}`,'muted'));
@@ -236,7 +239,7 @@ function renderOperationalEvidence(c,timeline){
   block.append(details);return block;
 }
 function renderOperationalCase(data,relatedCount=null){
-  const c=data.case||{},timeline=data.timeline||[],root=document.querySelector('#case-detail');root.replaceChildren();
+  const c=data.case||{},timeline=data.timeline||[],root=document.querySelector('#case-detail');root.replaceChildren();root.append(button('← Voltar aos casos',closeMobileCaseDetail,'case-detail-back'));
   const head=text('header','', 'case-summary');head.append(text('div',`Pedido ${c.amazon_order_id||'—'}`,'case-order'),text('h2',operatorStatus(c)));
   const responsibility=text('div',operatorResponsibility({...c,review_status:data.current_review?.status}),'responsibility-banner');if(operatorResponsibility({...c,review_status:data.current_review?.status})==='Sua decisão é necessária')responsibility.classList.add('needs-user');head.append(responsibility);
   const alert=operatorAlert({...c,review_status:data.current_review?.status});if(alert)head.append(text('div',alert,'operational-alert'));
@@ -252,6 +255,9 @@ function renderOperationalCase(data,relatedCount=null){
   root.append(renderOperationalEvidence(c,timeline));
   root.append(renderDecisionExplanation({...c,review_status:data.current_review?.status}));
   root.append(renderCondensedTimeline(timeline));
+  const stateName=String(c.state||''),appealAlreadyHandled=['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','RECOVERED','CLOSED_LOSS'].includes(stateName);
+  if(appealAlreadyHandled){for(const field of document.querySelectorAll('#case-detail .operational-field')){if(field.querySelector('.muted')?.textContent==='Prazo para recurso')field.remove();}if(['APPEAL_SUBMITTED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING'].includes(stateName)){const note=text('div','', 'flow-item');note.append(text('strong','Prazo do recurso'),text('p','O recurso já foi enviado; agora o sistema aguarda a resposta da Amazon.'));flow.append(note);}}
+  const checked=c.last_read_back?.occurred_at;if(checked){const checkedAt=new Date(String(checked).replace(' ','T')+'Z');if(!Number.isNaN(checkedAt.getTime())&&Date.now()-checkedAt.getTime()>36*60*60*1000)head.append(text('div','Dados podem estar desatualizados: a última verificação ocorreu há mais de 36 horas.','stale-data-note'));}
 }
 let operationalBucket='all';
 async function loadBucketCases(filters,bucket){
@@ -262,8 +268,13 @@ loadCases=async function operationalLoadCases(){
   try{clearError();state.filters=readFilters();syncUrl();const q=new URLSearchParams({...state.filters,page:String(state.page),per_page:'50'});const j=operationalBucket==='all'?await json(`/admin/amazon-returns/api/cases.php?${q}`):await loadBucketCases(q,operationalBucket);if(generation!==casesRequestGeneration)return;document.querySelector('#result-count').textContent=`${j.total} casos`;renderOperationalList(j.items||[]);if(operationalBucket==='all'||operationalBucket==='attention')renderPager(j.total,j.per_page);else document.querySelector('#pager').replaceChildren();}
   catch(e){if(generation!==casesRequestGeneration)return;showError(e.message,loadCases);}
 };
+function markSelectedCase(caseId){for(const row of document.querySelectorAll('.operational-case-row'))row.classList.toggle('is-selected',row.dataset.caseId===String(caseId));}
+function showMobileCaseDetail(){const workspace=document.querySelector('.workspace');workspace?.classList.add('mobile-detail-open');if(matchMedia('(max-width:600px)').matches)document.querySelector('#case-detail')?.scrollIntoView({behavior:'smooth',block:'start'});}
+function closeMobileCaseDetail(){document.querySelector('.workspace')?.classList.remove('mobile-detail-open');document.querySelector('#case-list')?.scrollIntoView({behavior:'smooth',block:'start'});}
 openCase=async function operationalOpenCase(caseId){
-  try{clearError();const j=await json(`/admin/amazon-returns/api/case.php?case_id=${encodeURIComponent(caseId)}`);state.selectedCase=caseId;let relatedCount=null;try{if(j.case?.amazon_order_id){const related=await json(`/admin/amazon-returns/api/case.php?order_id=${encodeURIComponent(j.case.amazon_order_id)}`);relatedCount=Array.isArray(related.cases)?related.cases.length:null;}}catch(_e){}renderOperationalCase(j,relatedCount);}
+  try{clearError();const j=await json(`/admin/amazon-returns/api/case.php?case_id=${encodeURIComponent(caseId)}`);state.selectedCase=caseId;let relatedCount=null;try{if(j.case?.amazon_order_id){const related=await json(`/admin/amazon-returns/api/case.php?order_id=${encodeURIComponent(j.case.amazon_order_id)}`);relatedCount=Array.isArray(related.cases)?related.cases.length:null;}}catch(_e){}renderOperationalCase(j,relatedCount);markSelectedCase(caseId);showMobileCaseDetail();}
   catch(e){showError(e.message,()=>openCase(caseId));}
 };
 for(const control of document.querySelectorAll('[data-quick-filter]'))control.addEventListener('click',()=>{operationalBucket=control.dataset.quickFilter||'all';for(const other of document.querySelectorAll('[data-quick-filter]'))other.setAttribute('aria-pressed',String(other===control));state.page=1;loadCases();});
+function syncOperationalChrome(){const hide=state.view!=='cases';document.querySelector('.quick-filters')?.classList.toggle('hidden',hide);document.querySelector('#advanced-filters')?.classList.toggle('hidden',hide);for(const id of ['autonomy-status','user-work','automation-work','money-headlines','money-breakdown','operational-problems','deadline-list','connector-health','operations-detail'])document.querySelector('#'+id)?.classList.toggle('hidden',hide);}
+const baseOperationalSelectView=selectView;selectView=function operationalSelectView(view){baseOperationalSelectView(view);syncOperationalChrome();};syncOperationalChrome();if(state.view==='cases')loadCases();
