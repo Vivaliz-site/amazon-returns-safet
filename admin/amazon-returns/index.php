@@ -17,13 +17,7 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 </head><body><main class="wrap">
 <div class="top"><div><h1>Devoluções Amazon</h1><div class="muted">Acompanhe valores, prazos, mensagens e ações necessárias para recuperar reembolsos.</div></div><a class="btn" href="/admin/amazon-returns/intake.php">Registrar devolução recebida</a></div>
 <section id="autonomy-status" class="autonomy-status" aria-live="polite"><span class="muted">Carregando situação do sistema…</span></section>
-<section id="user-work" class="operator-section" aria-label="Precisa de você?"></section>
-<section id="automation-work" class="operator-section" aria-label="Sistema tratando agora"></section>
-<section id="money-headlines" class="money-headlines" aria-label="Resumo financeiro"></section>
-<details id="money-breakdown" class="money-breakdown"><summary>Ver detalhes financeiros</summary><div id="money-breakdown-items"></div></details>
-<section id="operational-problems" class="operator-section" aria-label="Saúde operacional"></section>
-<section id="deadline-list" class="operator-section" aria-label="Prazos importantes"></section>
-<section id="connector-health" class="connector-health" aria-label="Conexões do sistema"></section>
+<div class="operator-glance"><section id="user-work" class="operator-section glance-action" aria-label="Precisa de você?"></section><section id="money-headlines" class="money-headlines" aria-label="Resumo financeiro"></section></div>
 <section class="panel cockpit">
 <nav class="cockpit-tabs" aria-label="Painel de devoluções"><button type="button" data-view="cases" aria-selected="true">Casos</button><button type="button" data-view="reviews" aria-selected="false">Revisões <span id="review-count" class="review-count">0</span></button><button type="button" data-view="rules" aria-selected="false">Decisões aprendidas</button></nav>
 <button type="button" id="review-alert" class="review-alert hidden" aria-live="polite"></button>
@@ -51,9 +45,11 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <div id="review-meta"></div><button type="button" id="review-suggest">Gerar recomendação</button><div id="review-suggestion" aria-live="polite"></div>
 <label>O que deseja fazer?<select id="review-final-action"><option value="CHECK_FINANCES">Verificar financeiro</option><option value="SAFE_T_APPEAL">Recorrer no SAFE-T</option><option value="SAFE_T_EMAIL_REVIEW">Pedir nova análise por e-mail</option><option value="SAFE_T_EMAIL_REPLY">Responder à Amazon por e-mail</option><option value="SELLER_SUPPORT_OPEN">Abrir atendimento com a Amazon</option><option value="SELLER_SUPPORT_UPDATE">Atualizar atendimento com a Amazon</option><option value="WAIT">Aguardar nova informação</option><option value="CLOSE_LOSS">Encerrar como perda</option></select></label>
 <label>Usar qual data?<select id="review-date-binding"><option value="NONE">Nenhuma data específica</option><option value="PROMISED_DATE">Data prometida pela Amazon</option><option value="APPEAL_DEADLINE">Prazo para recurso</option></select></label>
-<label>Aplicar esta decisão a<select id="review-scope"><option value="CASE_ONLY">Somente este caso</option><option value="SIMILAR">Casos realmente equivalentes</option></select></label>\n<div id="review-decision-summary" class="review-decision-summary" aria-live="polite">Confira a ação, o prazo e o alcance antes de confirmar.</div>
+<label>Aplicar esta decisão a<select id="review-scope"><option value="CASE_ONLY">Somente este caso</option><option value="SIMILAR">Casos realmente equivalentes</option></select></label>
+<div id="review-decision-summary" class="review-decision-summary" aria-live="polite">Confira a ação, o prazo e o alcance antes de confirmar.</div>
 <div id="review-impact" role="region" aria-label="Casos afetados por esta decisão"></div>
 <div class="review-submit"><button type="button" id="review-preview">Ver impacto desta decisão</button><button type="button" id="review-confirm" disabled>Confirmar decisão</button></div>
 </section>
 </section>
+<details id="operations-detail" class="operations-detail"><summary>Detalhes da operação</summary><div class="operations-detail-body"><section id="automation-work" class="operator-section" aria-label="Sistema tratando agora"></section><details id="money-breakdown" class="money-breakdown"><summary>Ver detalhes financeiros</summary><div id="money-breakdown-items"></div></details><section id="operational-problems" class="operator-section" aria-label="Saúde operacional"></section><section id="deadline-list" class="operator-section" aria-label="Prazos importantes"></section><section id="connector-health" class="connector-health" aria-label="Conexões do sistema"></section></div></details>
 </main><script src="/admin/amazon-returns/assets/cockpit-summary.js?v=autonomy-1" defer></script><script src="/admin/amazon-returns/assets/cockpit.js?v=refund-consultation-2" defer></script><script src="/admin/amazon-returns/assets/operator-language.js" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=review-open-2" defer></script><script src="/admin/amazon-returns/assets/ux-polish.js?v=1" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational.js?v=refund-consultation-2" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational-bootstrap.js?v=refund-consultation-2" defer></script></body></html>

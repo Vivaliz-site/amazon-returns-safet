@@ -103,4 +103,8 @@ coaAssert(str_contains($ui,"const returnTracks=Array.isArray(c.return_tracking_i
 coaAssert(str_contains($ui,'operatorCompactResponsibility'),'Compact responsibility labels are required.');
 coaAssert(!str_contains($ui,"text('span','saldo ainda a recuperar','muted')"),'List must not hard-code outstanding copy for zero balances.');
 
+coaAssert(str_contains($ui,'case-row-deadline'),'Case rows must expose the next relevant date compactly.');
+coaAssert(!str_contains($ui,'case-row-next-step'),'Long next-step prose must not clutter case rows.');
+coaAssert(str_contains($ui,'function collapsibleCaseBlock('),'Secondary case details must use progressive disclosure.');
+foreach(['Produto e documentos','Mensagens com a Amazon','Evidências'] as $label)coaAssert(str_contains($ui,$label),'Missing collapsible secondary case section '.$label);
 echo "cockpit-operational-audit-test: OK\n";

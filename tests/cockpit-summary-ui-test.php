@@ -22,4 +22,7 @@ foreach(['Prazo para recurso','Próxima providência automática','Data de elegi
     csuAssert(str_contains($summary,$label),'Deadline rows must explain the business meaning: '.$label);
 }
 
+csuAssert(str_contains($page,'id="operations-detail"'),'Secondary operational telemetry must be collapsible.');
+csuAssert(strpos($page,'class="panel cockpit"')<strpos($page,'id="automation-work"'),'Cases workspace must appear before background automation telemetry.');
+csuAssert(str_contains($page,'class="operator-glance"'),'Top operator glance summary required.');
 echo "cockpit-summary-ui-test: OK\n";

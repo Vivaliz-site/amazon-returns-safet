@@ -80,6 +80,9 @@ function appendAvailable(root,...nodes){for(const node of nodes)if(node)root.app
 function sectionBlock(title,className=''){
   const section=text('section','',`case-block ${className}`.trim());section.append(text('h3',title));return section;
 }
+function collapsibleCaseBlock(title,className=''){
+  const details=document.createElement('details');details.className=`case-block case-secondary ${className}`.trim();details.append(text('summary',title));return details;
+}
 function externalWriteSummary(c){
   const write=c?.last_external_write;if(!write)return null;
   const action=actionLabel(write.kind),status=String(write.status||'').toUpperCase(),at=write.updated_at||write.created_at;
@@ -155,7 +158,7 @@ function caseMessageItems(items){
   return messages;
 }
 function renderCaseMessages(items){
-  const block=sectionBlock('Mensagens com a Amazon','case-messages');const messages=caseMessageItems(items);
+  const block=collapsibleCaseBlock('Mensagens com a Amazon','case-messages');const messages=caseMessageItems(items);
   if(!messages.length){block.append(text('p','Nenhuma mensagem com conteúdo persistido está disponível para este caso.','muted'));return block;}
   for(const message of messages){const card=text('article','',`case-message ${message.kind}`);card.append(text('strong',message.kind==='sent'?'Enviado à Amazon':'Resposta da Amazon'),text('span',date(message.at),'muted'));if(message.subject)card.append(text('div',message.subject,'message-subject'));card.append(text('p',message.body));block.append(card);}
   return block;
@@ -201,11 +204,12 @@ function renderOperationalList(items){
     const id=text('div','', 'case-row-id');id.append(text('strong',c.amazon_order_id||'Pedido sem número'));
     if(returnTracks[0])id.append(text('span',`TBR / devolução ${returnTracks[0]}`,'muted'));
     id.append(text('span',c.safe_t_id?`SAFE-T ${c.safe_t_id}`:'Sem SAFE-T','muted'));
-    const status=text('div','', 'case-row-status');status.append(text('strong',operatorStatus(c)),text('span',physicalLabel(c.physical_status),'muted'),text('small',operatorNextStep(c),'muted case-row-next-step'));
+    const status=text('div','', 'case-row-status');status.append(text('strong',operatorStatus(c)),text('span',physicalLabel(c.physical_status),'muted'));
     const financial=operatorFinancialSummary(c);const finance=text('div','', 'case-row-finance');finance.append(text('strong',financial.value),text('span',financial.label,'muted'));
+    const due=['RECOVERED','CLOSED_LOSS','RECEIVED_OK'].includes(String(c.state||''))?null:(c.appeal_deadline_at||c.next_action_at||c.eligibility_at);const deadline=text('div','', 'case-row-deadline');deadline.append(text('span',due?'Próximo prazo':'Sem prazo pendente','muted'),text('strong',due?`${date(due)} · ${daysUntil(due)}`:'—'));
     const responsibility=text('div',operatorCompactResponsibility(c),'case-row-responsibility');responsibility.setAttribute('aria-label',operatorResponsibility(c));
     if(operatorAlert(c))row.classList.add('case-overdue');
-    row.append(id,status,finance,responsibility,button('Abrir',()=>openCase(c.id),'case-open'));list.append(row);
+    row.append(id,status,finance,deadline,responsibility,button('Abrir',()=>openCase(c.id),'case-open'));list.append(row);
   }
 }
 function salesInvoiceDisplay(c){
@@ -218,7 +222,7 @@ function returnInvoiceDisplay(c){
   return numbers.length?numbers.join(', '):null;
 }
 function renderOperationalEvidence(c,timeline){
-  const block=sectionBlock('Evidências','case-evidence');
+  const block=collapsibleCaseBlock('Evidências','case-evidence');
   const trackers=Array.isArray(c.customer_tracking_ids)?c.customer_tracking_ids:[];const returnTracks=Array.isArray(c.return_tracking_ids)?c.return_tracking_ids:[];const carriers=Array.isArray(c.customer_delivery_carriers)?c.customer_delivery_carriers:[];
   appendAvailable(block,operationalField('Rastreio da entrega ao cliente',trackers[0]||null),operationalField('TBR / rastreio da devolução',returnTracks[0]||null),operationalField('Transportadora',carriers[0]||null),operationalField('NF de venda',salesInvoiceDisplay(c)),operationalField('NF de devolução',returnInvoiceDisplay(c)));
   if(c.customer_delivery_confirmed&&c.physical_status==='NOT_RECEIVED')block.append(text('p','O rastreio informa entrega ao cliente, enquanto a devolução física ainda não foi recebida pela loja.','evidence-note'));
@@ -243,7 +247,7 @@ function renderOperationalCase(data,relatedCount=null){
   appendAvailable(dates,operationalField('Data do pedido',operationalDate(c.order_at)),operationalField('Reembolso concedido ao cliente',operationalDate(c.refund_at)),operationalField('SAFE-T enviado',operationalDate(c.safe_t_submitted_at)),operationalField('Decisão da Amazon registrada',operationalDate(c.amazon_decision_at)),operationalField('Crédito da Amazon recebido',operationalDate(c.amazon_reimbursement_at)),operationalField('Débito na conta da loja',operationalDate(c.seller_debit_at)),operationalField('Devolução recebida',operationalDate(c.physical_received_at)),operationalField('Última verificação',operationalDate(c.last_read_back?.occurred_at)),operationalField('Próxima providência',nextDate?`${date(nextDate)} · ${daysUntil(nextDate)}`:null),operationalField('Prazo para recurso',c.appeal_deadline_at&&!['APPEAL_SUBMITTED','APPEAL_APPROVED'].includes(String(c.state||''))?`${date(c.appeal_deadline_at)} · ${daysUntil(c.appeal_deadline_at)}`:null));if(dates.children.length>1)root.append(dates);
   const financialSummary=operatorFinancialSummary(c);const financialLabel=financialSummary.label.charAt(0).toUpperCase()+financialSummary.label.slice(1);
   const finance=sectionBlock('Valores','case-financial');appendAvailable(finance,operationalField('Valor reembolsado ao cliente',Number(c.refund_amount)>0?brl(c.refund_amount):null),operationalField('Valor reembolsado pela Amazon',Number(c.amazon_reimbursement_amount??c.reconciled_credit_amount)>0?brl(c.amazon_reimbursement_amount??c.reconciled_credit_amount):null),operationalField(financialLabel,financialSummary.value,'emphasis'));root.append(finance);
-  const product=sectionBlock('Produto e documentos');appendAvailable(product,operationalField('SKU',c.sku||null),operationalField('ASIN',c.asin||null),operationalField('Quantidade do pedido',c.quantity_ordered?String(c.quantity_ordered):null),operationalField('Quantidade reembolsada',c.quantity_refunded?String(c.quantity_refunded):null),operationalField('SAFE-T',c.safe_t_id||null),operationalField('NF de venda',salesInvoiceDisplay(c)),operationalField('Situação da devolução no ERP',c.erp_return?.label||null),operationalField('NF de devolução',returnInvoiceDisplay(c)),operationalField('Data da NF de devolução',operationalDate(c.erp_return?.issued_at)),operationalField('Tipo de logística',programLabel(c.program)),operationalField('Ocorrências relacionadas',relatedCount&&relatedCount>1?String(relatedCount):null));root.append(product);
+  const product=collapsibleCaseBlock('Produto e documentos');appendAvailable(product,operationalField('SKU',c.sku||null),operationalField('ASIN',c.asin||null),operationalField('Quantidade do pedido',c.quantity_ordered?String(c.quantity_ordered):null),operationalField('Quantidade reembolsada',c.quantity_refunded?String(c.quantity_refunded):null),operationalField('SAFE-T',c.safe_t_id||null),operationalField('NF de venda',salesInvoiceDisplay(c)),operationalField('Situação da devolução no ERP',c.erp_return?.label||null),operationalField('NF de devolução',returnInvoiceDisplay(c)),operationalField('Data da NF de devolução',operationalDate(c.erp_return?.issued_at)),operationalField('Tipo de logística',programLabel(c.program)),operationalField('Ocorrências relacionadas',relatedCount&&relatedCount>1?String(relatedCount):null));root.append(product);
   root.append(renderCaseMessages(timeline));
   root.append(renderOperationalEvidence(c,timeline));
   root.append(renderDecisionExplanation({...c,review_status:data.current_review?.status}));
