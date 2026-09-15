@@ -104,4 +104,7 @@ cuAssert(str_contains($operationalCss.$css,'.rule-card') && str_contains($operat
 cuAssert(str_contains($page,'id="advanced-filters"'),'Advanced filters disclosure required.');
 cuAssert(str_contains($page,'class="primary-search"'),'Primary search must be visually dominant.');
 cuAssert(str_contains($js,'matchMedia(') || str_contains($operationalJs,'matchMedia('),'Mobile filters must collapse based on viewport.');
+cuAssert(str_contains($js,'function handleSessionExpired('),'Cockpit must handle expired sessions explicitly.');
+cuAssert(str_contains($js,'r.status===401'),'API 401 must trigger session recovery.');
+cuAssert(!str_contains($js,'loadSummary();selectView(state.view)'),'Base cockpit must not trigger the legacy case load before operational bootstrap.');
 echo "cockpit-ui-contract-test: OK\n";

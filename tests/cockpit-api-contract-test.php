@@ -28,6 +28,8 @@ caSame(2,$filters->page(),'Page parsing.');
 caSame(100,$filters->perPage(),'Per-page must clamp to 100.');
 caSame('SAFE_T_APPEAL',$filters->action(),'Action filter normalized.');
 caSame(true,$filters->requiresDecisionFilter(),'Action requires pure decision preview filter.');
+$bucketFilters=SvAmazonCockpitFilters::fromQuery(['bucket'=>'closed']);
+caSame('closed',$bucketFilters->bucket(),'Operational bucket must be parsed server-side.');
 $thrown=false;
 try{SvAmazonCockpitFilters::fromQuery(['tenant_id'=>'999']);}catch(InvalidArgumentException){$thrown=true;}
 caAssert($thrown,'Request tenant_id must be rejected, never trusted.');

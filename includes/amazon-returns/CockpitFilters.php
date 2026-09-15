@@ -4,7 +4,7 @@ declare(strict_types=1);
 final class SvAmazonCockpitFilters
 {
     private const ALLOWED=[
-        'q','state','action','review_status','program','physical_status','deadline',
+        'q','state','action','review_status','program','physical_status','deadline','bucket',
         'learned_rule','min_outstanding','max_outstanding','page','per_page',
     ];
     private function __construct(
@@ -37,6 +37,11 @@ final class SvAmazonCockpitFilters
             if(!in_array($value,['overdue','today','7d'],true))throw new InvalidArgumentException('Invalid deadline filter.');
             $filters['deadline']=$value;
         }
+        if(array_key_exists('bucket',$query)){
+            $value=strtolower(self::text($query['bucket'],'bucket',16));
+            if(!in_array($value,['all','attention','system','closed'],true))throw new InvalidArgumentException('Invalid bucket filter.');
+            if($value!=='all')$filters['bucket']=$value;
+        }
         if(array_key_exists('learned_rule',$query)){
             $value=strtolower(self::text($query['learned_rule'],'learned_rule',16));
             if(!in_array($value,['applied','none','conflict'],true))throw new InvalidArgumentException('Invalid learned_rule filter.');
@@ -57,6 +62,7 @@ final class SvAmazonCockpitFilters
     public function filters():array{return $this->filters+($this->action!==null?['action'=>$this->action]:[]);}
     public function requiresDecisionFilter():bool{return $this->action!==null;}
     public function action():?string{return $this->action;}
+    public function bucket():?string{return isset($this->filters['bucket'])?(string)$this->filters['bucket']:null;}
     public function perPage():int{return $this->perPage;}
     public function page():int{return $this->page;}
 

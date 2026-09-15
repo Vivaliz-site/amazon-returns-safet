@@ -255,12 +255,7 @@ function renderOperationalCase(data,relatedCount=null){
 }
 let operationalBucket='all';
 async function loadBucketCases(filters,bucket){
-  if(bucket==='attention'){filters.set('action','HUMAN_REVIEW');return json(`/admin/amazon-returns/api/cases.php?${filters}`);}
-  const collected=[];let page=1,total=0;
-  do{const q=new URLSearchParams(filters);q.set('page',String(page));q.set('per_page','100');const part=await json(`/admin/amazon-returns/api/cases.php?${q}`);total=Number(part.total||0);collected.push(...(part.items||[]));page++;}while(collected.length<total&&page<=20);
-  const terminal=new Set(['RECOVERED','CLOSED_LOSS','RECEIVED_OK']);
-  const items=bucket==='closed'?collected.filter(c=>terminal.has(String(c.state||''))):collected.filter(c=>!terminal.has(String(c.state||''))&&operatorResponsibility(c)!=='Sua decisão é necessária');
-  return {items,total:items.length,page:1,per_page:Math.max(items.length,1)};
+  const q=new URLSearchParams(filters);q.delete('action');q.set('bucket',bucket);return json(`/admin/amazon-returns/api/cases.php?${q}`);
 }
 loadCases=async function operationalLoadCases(){
   const generation=++casesRequestGeneration;

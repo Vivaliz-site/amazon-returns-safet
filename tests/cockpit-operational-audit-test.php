@@ -40,9 +40,9 @@ coaAssert(str_contains($ui,'Aguardar até ${date('),'Known wait dates must be ex
 coaAssert(str_contains($ui,"AMAZON_REQUESTED_WAIT"),'Amazon-promised wait must have dedicated operator copy.');
 coaAssert(str_contains($ui,"RECOVERY_WINDOW_EXPIRED"),'Expired recovery window must never be rendered as an unexplained wait.');
 coaAssert(!str_contains($page,'>Aguardar<'),'Standalone Aguardar labels are prohibited in operator-facing controls.');
-coaAssert(str_contains($bootstrap,"q.set('review_status','OPEN')"),'Attention quick filter must include every open review, including blocked reviews.');
-coaAssert(str_contains($bootstrap,"q.delete('action')"),'Attention quick filter must not retain a narrower action filter.');
-coaAssert(!str_contains($bootstrap,"q.set('page','1')"),'Attention quick filter must preserve pagination.');
+coaAssert(str_contains($ui,"q.set('bucket',bucket)"),'Quick filters must delegate attention/system/closed filtering to the server.');
+coaAssert(str_contains($ui,"q.delete('action')"),'Quick filters must not retain a narrower action filter.');
+coaAssert(!str_contains($ui,"q.set('page','1')"),'Quick filters must preserve pagination.');
 
 // A past appeal deadline must not create a false operational failure after an appeal/follow-up was already sent.
 foreach(['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','RECOVERED','CLOSED_LOSS'] as $state){
@@ -107,4 +107,6 @@ coaAssert(str_contains($ui,'case-row-deadline'),'Case rows must expose the next 
 coaAssert(!str_contains($ui,'case-row-next-step'),'Long next-step prose must not clutter case rows.');
 coaAssert(str_contains($ui,'function collapsibleCaseBlock('),'Secondary case details must use progressive disclosure.');
 foreach(['Produto e documentos','Mensagens com a Amazon','Evidências'] as $label)coaAssert(str_contains($ui,$label),'Missing collapsible secondary case section '.$label);
+coaAssert(!str_contains($ui,'while(collected.length<total'),'Quick filters must not scan all cases in the browser.');
+coaAssert(str_contains($ui.$bootstrap,"set('bucket'"),'Quick filters must request a server-side bucket.');
 echo "cockpit-operational-audit-test: OK\n";

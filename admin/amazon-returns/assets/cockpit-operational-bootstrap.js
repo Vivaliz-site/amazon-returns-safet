@@ -30,14 +30,6 @@ renderOperationalCase=function auditedOperationalRenderCase(data,relatedCount=nu
   const checked=c.last_read_back?.occurred_at;
   if(checked){const checkedAt=new Date(String(checked).replace(' ','T')+'Z');if(!Number.isNaN(checkedAt.getTime())&&Date.now()-checkedAt.getTime()>36*60*60*1000){document.querySelector('#case-detail .case-summary')?.append(text('div','Dados podem estar desatualizados: a última verificação ocorreu há mais de 36 horas.','stale-data-note'));}}
 };
-const baseOperationalLoadBucketCases=loadBucketCases;
-loadBucketCases=async function auditedLoadBucketCases(filters,bucket){
-  if(bucket==='attention'){
-    const q=new URLSearchParams(filters);q.delete('action');q.set('review_status','OPEN');q.set('per_page','100');
-    return json(`/admin/amazon-returns/api/cases.php?${q}`);
-  }
-  return baseOperationalLoadBucketCases(filters,bucket);
-};
 function syncOperationalChrome(){
   const hide=state.view!=='cases';
   document.querySelector('.quick-filters')?.classList.toggle('hidden',hide);
