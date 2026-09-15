@@ -104,6 +104,7 @@ cuAssert(str_contains($page,'class="primary-search"'),'Primary search must be vi
 cuAssert(str_contains($js,'matchMedia(') || str_contains($operationalJs,'matchMedia('),'Mobile filters must collapse based on viewport.');
 cuAssert(str_contains($js,'function handleSessionExpired('),'Cockpit must handle expired sessions explicitly.');
 cuAssert(str_contains($js,'r.status===401'),'API 401 must trigger session recovery.');
+cuAssert(str_contains($js,"if(raw==='SESSION_EXPIRED')return raw;"),'Session-expired sentinel must survive friendly error normalization.');
 cuAssert(!str_contains($js,'loadSummary();selectView(state.view)'),'Base cockpit must not trigger the legacy case load before operational bootstrap.');
 cuAssert(!str_contains($page,'operator-language.js'),'Operator language must be owned by cockpit.js, not a runtime override.');
 cuAssert(!str_contains($page,'ux-polish.js'),'Review ordering must be deterministic without a DOM mutation patch.');

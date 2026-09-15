@@ -262,7 +262,7 @@ function renderOperationalCase(data,relatedCount=null){
 }
 let operationalBucket='all';
 async function loadBucketCases(filters,bucket){
-  const q=new URLSearchParams(filters);q.delete('action');q.set('bucket',bucket);return json(`/admin/amazon-returns/api/cases.php?${q}`);
+  const q=new URLSearchParams(filters);if(bucket==='attention')q.delete('action');q.set('bucket',bucket);return json(`/admin/amazon-returns/api/cases.php?${q}`);
 }
 loadCases=async function operationalLoadCases(){
   const generation=++casesRequestGeneration;

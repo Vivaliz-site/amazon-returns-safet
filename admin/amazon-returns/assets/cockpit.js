@@ -10,6 +10,7 @@ const sourceLabels={SELLER_CENTRAL:'Amazon',SP_API:'Amazon',SP_API_FINANCES:'Fin
 const miscLabels={NONE:'Nenhuma data específica',PROMISED_DATE:'Data prometida pela Amazon',APPEAL_DEADLINE:'Prazo para recurso',AMAZON_AUTOMATIC:'Amazon',AMAZON_CUSTOMER_SERVICE:'Atendimento da Amazon',SELLER:'Loja',A_TO_Z:'Garantia de A a Z'};
 const state={view:'cases',page:1,selectedCase:null,selectedReview:null,expected_version:null,suggestion:null,reviewDecision:null,filters:{}};
 let casesRequestGeneration=0;
+const autoSuggestionAttempted=new Set();
 const brl=v=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(v||0));
 const date=v=>v?new Date(String(v).replace(' ','T')+'Z').toLocaleString('pt-BR'):'—';
 function enumLabel(value,map){if(value==null||value==='')return '—';const key=String(value);if(map[key])return map[key];if(/^[A-Z0-9_]+$/.test(key))return 'Informação não disponível';return humanText(key);}
@@ -33,6 +34,7 @@ function humanText(value){
 }
 function friendlyError(message){
   const raw=String(message||'');
+  if(raw==='SESSION_EXPIRED')return raw;
   if(/STALE_REVIEW_VERSION|REVIEW_NOT_OPEN/i.test(raw))return 'Esta revisão foi atualizada. Os dados serão recarregados para você conferir novamente.';
   if(/RULE_ALREADY_RESOLVED/i.test(raw))return 'Este caso já foi resolvido automaticamente.';
   if(/CSRF/i.test(raw))return 'Sua sessão precisa ser atualizada. Recarregue a página e tente novamente.';
@@ -99,10 +101,10 @@ async function openReview(reviewId){
       renderMessageThread(j.timeline),
       renderReviewFinancialImpact(j.case)
     );
-    renderSuggestion(state.suggestion);applySuggestionToDecision();resetReviewPreview();if(!state.suggestion)suggestReview();
+    renderSuggestion(state.suggestion);applySuggestionToDecision();resetReviewPreview();const suggestionKey=String(reviewId);if(!state.suggestion&&!autoSuggestionAttempted.has(suggestionKey)){autoSuggestionAttempted.add(suggestionKey);suggestReview();}
   }catch(e){showError(e.message,()=>openReview(reviewId));}
 }
-async function suggestReview(){if(!state.selectedReview)return;const btn=document.querySelector('#review-suggest');btn.disabled=true;try{const r=await postJson('/admin/amazon-returns/api/review-suggest.php',{review_id:state.selectedReview,expected_version:state.expected_version,csrf_token:csrf('#review-ai-csrf')});if(r.status===409){await openReview(state.selectedReview);return;}if(!r.ok)throw new Error(friendlyError(r.data.error||'Não foi possível gerar a recomendação.'));state.expected_version=Number(r.data.version||state.expected_version);state.suggestion=r.data.suggestion_available?r.data.suggestion:null;renderSuggestion(state.suggestion);applySuggestionToDecision();resetReviewPreview();if(!r.data.suggestion_available)showError('A recomendação automática não está disponível agora. Você ainda pode escolher uma ação manualmente.');}catch(e){showError(e.message,()=>suggestReview())}finally{btn.disabled=false;}}
+async function suggestReview(){if(!state.selectedReview)return;const btn=document.querySelector('#review-suggest');btn.disabled=true;try{const r=await postJson('/admin/amazon-returns/api/review-suggest.php',{review_id:state.selectedReview,expected_version:state.expected_version,csrf_token:csrf('#review-ai-csrf')});if(r.status===409){if(r.data.error==='RULE_ALREADY_RESOLVED'){document.querySelector('#review-panel').classList.add('hidden');state.selectedReview=null;state.reviewDecision=null;state.suggestion=null;await loadReviews();await loadSummary();showError('Este caso já foi resolvido automaticamente.');return;}const reviewId=state.selectedReview;await openReview(reviewId);return;}if(!r.ok)throw new Error(friendlyError(r.data.error||'Não foi possível gerar a recomendação.'));state.expected_version=Number(r.data.version||state.expected_version);state.suggestion=r.data.suggestion_available?r.data.suggestion:null;renderSuggestion(state.suggestion);applySuggestionToDecision();resetReviewPreview();if(!r.data.suggestion_available)showError('A recomendação automática não está disponível agora. Você ainda pode escolher uma ação manualmente.');}catch(e){showError(e.message,()=>suggestReview())}finally{btn.disabled=false;}}
 function applySuggestionToDecision(){if(!state.suggestion)return;const action=state.suggestion.action;if(action)document.querySelector('#review-final-action').value=action;const binding=state.suggestion.parameters?.date_binding;if(binding)document.querySelector('#review-date-binding').value=binding;updateReviewDecisionSummary();}
 function decisionFor(){const action=document.querySelector('#review-final-action').value;const binding=document.querySelector('#review-date-binding').value;const scope=document.querySelector('#review-scope').value;const suggestedAction=state.suggestion?.action||null;const suggestedBinding=state.suggestion?.parameters?.date_binding||binding;const matchesSuggestion=Boolean(state.suggestion)&&action===suggestedAction&&binding===suggestedBinding;const mode=scope==='CASE_ONLY'?'EXCEPTION':(matchesSuggestion?'APPROVED':'EDITED_APPROVED');return {decision_mode:mode,final_action:action,parameters:{date_binding:binding},source_version:'cockpit-v1'};}
 function updateReviewDecisionSummary(){const root=document.querySelector('#review-decision-summary');if(!root)return;const action=actionLabel(document.querySelector('#review-final-action').value);const binding=document.querySelector('#review-date-binding').selectedOptions[0]?.textContent||'Nenhuma data específica';const scope=document.querySelector('#review-scope').value==='CASE_ONLY'?'somente este caso':'casos realmente equivalentes';root.textContent=`Ação: ${action}. Data: ${binding}. Alcance: ${scope}.`;}
