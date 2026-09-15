@@ -35,7 +35,9 @@ $caseRepo=source('includes/amazon-returns/CaseRepository.php');
 adAssert(str_contains($caseRepo,'$unclassified="('),'Unclassified gate must explicitly group metadata gaps before operational filters.');
 adAssert(str_contains($caseRepo,'AND c.closed_at IS NULL'),'Unclassified gate must ignore concluded cases.');
 adAssert(str_contains($caseRepo,"c.state IN ('REFUND_DETECTED','AWAITING_RETURN','NO_RETURN','IN_TRANSIT','RECEIVED_DISCREPANT','SAFE_T_ELIGIBLE','SAFE_T_READY','POLICY_REVIEW_REQUIRED','BLOCKED_REVIEW')"),'Unclassified gate must only flag lifecycle states where missing classification can still block routing.');
-adAssert(str_contains($caseRepo,"c.current_action='SAFE_T_APPEAL'"),'Expired appeal gate must only flag cases whose current action is still an appeal.');
+adAssert(!str_contains($caseRepo,"c.current_action='SAFE_T_APPEAL'"),'Summary SQL must not query derived current_action from the case table.');
+adAssert(str_contains($caseRepo,"c.refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY)"),'Expired appeal gate must ignore refunds older than 90 days.');
+adAssert(str_contains($caseRepo,"o.kind='SAFE_T_APPEAL'")&&str_contains($caseRepo,"o.status IN ('PENDING','PROCESSING','SUCCEEDED')"),'Expired appeal gate must ignore appeals already being processed or completed.');
 adAssert(str_contains($caseRepo,'$creditMismatch="c.closed_at IS NULL'),'Credit mismatch gate must ignore concluded cases.');
 adAssert(str_contains($caseRepo,'$exposure<=0'),'Credit mismatch gate must only flag fully recovered exposure that remains operationally open.');
 
