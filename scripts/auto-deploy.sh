@@ -82,4 +82,18 @@ AMAZON_RETURNS_IMPORT_SOURCE=0 \
     "$repo/scripts/provision-production.sh"
 
 bootstrap_continuity
+
+if systemctl is-enabled --quiet amazon-returns-seller-central-browser.timer 2>/dev/null; then
+    systemctl reset-failed amazon-returns-seller-central-browser.service >/dev/null 2>&1 || true
+    systemctl reset-failed amazon-returns-seller-central-auth-check.service >/dev/null 2>&1 || true
+    if systemctl start amazon-returns-seller-central-auth-check.service; then
+        systemctl start --no-block amazon-returns-seller-central-browser.service
+        echo 'seller_central_browser_deploy_kick=started'
+    else
+        echo 'seller_central_browser_deploy_kick=auth_check_failed' >&2
+    fi
+else
+    echo 'seller_central_browser_deploy_kick=timer_disabled'
+fi
+
 echo "auto_deploy_sha=$target_sha"
