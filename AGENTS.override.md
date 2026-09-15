@@ -8,3 +8,6 @@ Antes de qualquer alteração em código, configuração, documentação version
 Este `AGENTS.override.md` existe somente como ponto de entrada para garantir essa leitura; ele não substitui semanticamente a governança de `AGENTS.md`.
 
 Nenhuma alteração válida da tarefa pode ser abandonada sem merge validado na branch de destino.
+
+## Gate obrigatório de auditoria
+Leia `AUDIT_POLICY.md`. Quando um projeto, módulo ou release for declarado pronto/finalizado/apto para produção, quando houver solicitação de auditoria completa, ou quando ocorrer mudança material definida nessa política, execute integralmente `docs/quality/EXTREME_AUDIT_PROTOCOL.md` e `docs/quality/AUDIT_OVERLAY.md`. Não declare cobertura total com área crítica não validada. Ao concluir auditoria formal, atualize `docs/quality/AUDIT_STATUS.md` com o SHA/release efetivamente coberto e as evidências do Gate Final de Completude.
