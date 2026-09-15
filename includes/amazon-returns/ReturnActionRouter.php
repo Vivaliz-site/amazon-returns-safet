@@ -38,6 +38,14 @@ final class SvAmazonReturnActionRouter
             return self::decision('WAIT','EXISTING_EMAIL_REVIEW_AWAITING_RESPONSE',$case);
         }
         $message=self::latestSafeTMessage($events);
+        if($claim!=='' && ($message['event_type']??'')==='SAFE_T_STATUS_OBSERVED'
+            && strtoupper(trim((string)($message['payload']['claim_status']??'')))==='UNKNOWN'){
+            $read=self::decision('SAFE_T_READ','SAFE_T_STATUS_REFRESH_REQUIRED',$case);
+            $read['idempotency_key']=hash('sha256',implode('|',[
+                'safe-t-status-refresh-v1',$case['id']??0,$claim,$now->format('Y-m-d'),
+            ]));
+            return $read;
+        }
         $text=self::normalized((string)($message['payload']['decision_text']??$message['payload']['review_excerpt']??''));
         $promise=self::promiseDeadline($text);
         if($promise===null && preg_match('/(?:sera reembolsad[oa]|ressarcimento proativo|reembolsad[oa] proativamente|aguarde (?:ate|nossa)|aguardar nossa resposta)/',$text)===1)
