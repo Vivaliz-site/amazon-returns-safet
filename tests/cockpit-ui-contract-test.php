@@ -101,4 +101,7 @@ cuAssert(str_contains($page,'id="review-decision-summary"'),'Review UI must expo
 cuAssert(str_contains($page,'id="review-scope"'),'Review UI must separate decision scope from action.');
 cuAssert(!str_contains($page,'data-review-mode="APPROVED"'),'Ambiguous review-mode button set must be removed.');
 cuAssert(str_contains($operationalCss.$css,'.rule-card') && str_contains($operationalCss.$css,'.danger'),'Learned-rule cards and destructive actions require explicit styling.');
+cuAssert(str_contains($page,'id="advanced-filters"'),'Advanced filters disclosure required.');
+cuAssert(str_contains($page,'class="primary-search"'),'Primary search must be visually dominant.');
+cuAssert(str_contains($js,'matchMedia(') || str_contains($operationalJs,'matchMedia('),'Mobile filters must collapse based on viewport.');
 echo "cockpit-ui-contract-test: OK\n";

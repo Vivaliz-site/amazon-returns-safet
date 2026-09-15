@@ -29,12 +29,14 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 <button type="button" data-quick-filter="closed" aria-pressed="false">Concluídos</button>
 </div>
 <form id="filters" class="filters" onsubmit="return false">
-<label>Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, NF, TBR, SAFE-T, rastreio, SKU ou ASIN"></label>
+<label class="primary-search">Pesquisar<input id="search" data-filter="q" type="search" placeholder="Pedido, NF, TBR, SAFE-T, rastreio, SKU ou ASIN"></label>
+<details id="advanced-filters" class="advanced-filters" open><summary>Mais filtros <span id="active-filter-count">0</span></summary><div class="advanced-filter-grid">
 <label>Situação<select data-filter="state"><option value="">Todas</option><option value="SAFE_T_DENIED">SAFE-T negado</option><option value="APPEAL_REQUIRED">Recurso necessário</option><option value="APPEAL_SUBMITTED">Recurso enviado</option><option value="CREDIT_PENDING">Crédito pendente</option><option value="RECOVERED">Ressarcido</option></select></label>
 <label>Próxima ação<select data-filter="action"><option value="">Todas</option><option value="SAFE_T_SUBMIT">Solicitar ressarcimento SAFE-T</option><option value="SAFE_T_APPEAL">Recorrer no SAFE-T</option><option value="SAFE_T_EMAIL_REVIEW">Pedir nova análise por e-mail</option><option value="SELLER_SUPPORT_OPEN">Abrir atendimento com a Amazon</option><option value="WAIT">Acompanhamento automático</option><option value="HUMAN_REVIEW">Precisa da sua decisão</option></select></label>
 <label>Tipo de logística<select data-filter="program"><option value="">Todos</option><option value="STANDARD">Padrão</option><option value="FBA_ONSITE">FBA no local</option><option value="DELIVERY_BY_AMAZON">Entrega pela Amazon</option></select></label>
 <label>Recebimento<select data-filter="physical_status"><option value="">Todos</option><option value="NOT_RECEIVED">Não recebido</option><option value="RECEIVED_OK">Recebido sem divergência</option><option value="RECEIVED_DISCREPANT">Recebido com divergência</option></select></label>
 <label>Prazo<select data-filter="deadline"><option value="">Todos</option><option value="overdue">Vencido</option><option value="today">Hoje</option><option value="7d">Próximos 7 dias</option></select></label>
+</div></details>
 </form>
 <div class="workspace"><section><div class="result-head"><h2 id="result-count">Casos</h2><span class="muted">Clique em Abrir para ver a situação atual. O histórico fica fechado até você solicitar.</span></div><section id="case-list" class="case-list" aria-live="polite"></section><div id="pager" class="pager"></div></section><aside id="case-detail" class="case-detail" aria-label="Detalhes do caso"><h2>Detalhes do caso</h2><p class="muted">Selecione um caso para ver a situação atual, o que o sistema fez, o próximo passo e se você precisa tomar alguma decisão.</p></aside></div>
 <section id="review-panel" class="review-panel hidden" aria-label="Caso que precisa da sua decisão">
