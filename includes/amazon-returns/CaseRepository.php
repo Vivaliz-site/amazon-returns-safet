@@ -352,7 +352,7 @@ final class SvAmazonReturnCaseRepository
         $exposure='(CASE WHEN c.expected_reimbursement_amount>0 THEN c.expected_reimbursement_amount ELSE c.refund_amount END-c.reconciled_credit_amount)';
         $unclassified="(c.program='UNKNOWN' OR (c.program IN ('STANDARD','FBA_ONSITE','DELIVERY_BY_AMAZON') AND (c.refund_initiator='UNKNOWN' OR c.seller_debit_at IS NULL))) AND c.closed_at IS NULL AND c.state IN ('REFUND_DETECTED','AWAITING_RETURN','NO_RETURN','IN_TRANSIT','RECEIVED_DISCREPANT','SAFE_T_ELIGIBLE','SAFE_T_READY','POLICY_REVIEW_REQUIRED','BLOCKED_REVIEW')";
         $eligible="c.state IN ('SAFE_T_ELIGIBLE','SAFE_T_READY') AND c.safe_t_id IS NULL";
-        $expired="c.appeal_deadline_at IS NOT NULL AND c.appeal_deadline_at<UTC_TIMESTAMP() AND c.state IN ('SAFE_T_DENIED','SAFE_T_INFO_REQUESTED','APPEAL_REQUIRED') AND c.current_action='SAFE_T_APPEAL'";
+        $expired="c.refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY) AND c.appeal_deadline_at IS NOT NULL AND c.appeal_deadline_at<UTC_TIMESTAMP() AND c.state IN ('SAFE_T_DENIED','SAFE_T_INFO_REQUESTED','APPEAL_REQUIRED') AND NOT EXISTS (SELECT 1 FROM amazon_return_outbox o WHERE o.tenant_id=c.tenant_id AND o.amazon_connection_id=c.amazon_connection_id AND o.case_id=c.id AND o.kind='SAFE_T_APPEAL' AND o.status IN ('PENDING','PROCESSING','SUCCEEDED'))";
         $creditMismatch="c.closed_at IS NULL AND c.state<>'RECOVERED' AND $exposure<=0";
         $concluded="c.closed_at IS NOT NULL OR c.state IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK')";
         $stmt=$this->prepare("SELECT COUNT(*) total_cases,"
