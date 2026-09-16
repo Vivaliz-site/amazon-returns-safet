@@ -20,6 +20,10 @@ class PilotContractTest(unittest.TestCase):
         self.assertIn("https://github.com/Vivaliz-site/amazon-returns-safet.git", text)
         self.assertIn("/home/ubuntu/amazon-returns-deploy-source", text)
 
+    def test_worker_gemini_smoke_uses_worker_accessible_cwd(self):
+        text = Path("scripts/run-continuity-pilot.py").read_text(encoding="utf-8")
+        self.assertIn('cwd=Path(f"/var/lib/{WORKER_USER}")', text)
+
     def test_pilot_has_bounded_remote_polling_and_exact_sha_checks(self):
         text = Path("scripts/run-continuity-pilot.py").read_text(encoding="utf-8")
         self.assertIn("POLL_LIMIT", text)
