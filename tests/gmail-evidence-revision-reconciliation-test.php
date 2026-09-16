@@ -22,6 +22,25 @@ gerAssert(preg_match('/^[a-f0-9]{64}$/',$clientRevision)===1,'Gmail client revis
 $legacyClientRevision=hash_file('sha256',__DIR__.'/../includes/amazon-returns/GmailApi.php');
 gerAssert(is_string($legacyClientRevision) && $legacyClientRevision!==$clientRevision,
     'The history-probe contract must advance the legacy GmailApi-only revision exactly once.');
+$probeV1Revision=is_string($legacyClientRevision)?hash('sha256','history-probe-v1|'.$legacyClientRevision):'';
+gerAssert($clientRevision!==$probeV1Revision,
+    'The diagnostic history-probe v2 contract must advance the already persisted v1 revision exactly once.');
+gerAssert(method_exists(SvAmazonReturnsRuntime::class,'operationalTaskMetadata'),
+    'Runtime must expose safe operational task metadata.');
+$probeMeta=SvAmazonReturnsRuntime::operationalTaskMetadata('gmail_history_probe',[
+    'status'=>'FAILED','error_class'=>'RuntimeException',
+    'error'=>'Gmail API HTTP 403 reason=insufficientPermissions.',
+]);
+gerSame(['status'=>'FAILED','error_class'=>'RuntimeException','error'=>'Gmail API HTTP 403 reason=insufficientPermissions.'],$probeMeta,
+    'Gmail history probe metadata must retain only the already-sanitized failure cause.');
+gerSame(['status'=>'FAILED'],SvAmazonReturnsRuntime::operationalTaskMetadata('gmail',[
+    'status'=>'FAILED','error_class'=>'RuntimeException','error'=>'must not persist here',
+]),'Normal operational task metadata must remain status-only.');
+$utf8Meta=SvAmazonReturnsRuntime::operationalTaskMetadata('gmail_history_probe',[
+    'status'=>'FAILED','error'=>str_repeat('a',599).'á'.'z',
+]);
+gerAssert(isset($utf8Meta['error']) && strlen($utf8Meta['error'])<=600 && mb_check_encoding($utf8Meta['error'],'UTF-8'),
+    'Probe metadata truncation must preserve valid UTF-8 within the 600-byte bound.');
 
 $now=new DateTimeImmutable('2026-09-09T15:00:00Z');
 $recent=$now->modify('-60 seconds')->format(DATE_ATOM);

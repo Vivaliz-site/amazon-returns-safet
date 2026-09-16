@@ -162,7 +162,23 @@ final class SvAmazonReturnsRuntime
         $file=__DIR__.'/GmailApi.php';
         $hash=@hash_file('sha256',$file);
         if(!is_string($hash) || $hash==='')throw new RuntimeException('Unable to fingerprint Gmail API client.');
-        return hash('sha256','history-probe-v1|'.$hash);
+        return hash('sha256','history-probe-v2|'.$hash);
+    }
+
+    /** @param array<string,mixed> $result @return array<string,string> */
+    public static function operationalTaskMetadata(string $task,array $result): array
+    {
+        $status=strtoupper(trim((string)($result['status']??'UNKNOWN')));
+        $metadata=['status'=>$status!==''?$status:'UNKNOWN'];
+        if($task!=='gmail_history_probe')return $metadata;
+        foreach(['error_class','error'] as $key){
+            $value=$result[$key]??null;
+            if(!is_scalar($value))continue;
+            $value=trim((string)$value);
+            if($value==='')continue;
+            $metadata[$key]=strlen($value)>600?mb_strcut($value,0,600,'UTF-8'):$value;
+        }
+        return $metadata;
     }
 
     public static function gmailEvidenceRevision(): string
