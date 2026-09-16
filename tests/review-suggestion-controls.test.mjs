@@ -4,9 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source=fs.readFileSync(new URL('../admin/amazon-returns/assets/cockpit.js',import.meta.url),'utf8');
-const presentationSource=fs.readFileSync(new URL('../admin/amazon-returns/assets/review-presentation.js',import.meta.url),'utf8');
 const functionLine=name=>source.split('\n').find(line=>line.startsWith(`function ${name}(`));
-const presentationFunctionLine=name=>presentationSource.split('\n').find(line=>line.startsWith(`function ${name}(`));
 
 function harness(dirty){
   const controls={'#review-final-action':{value:'WAIT'},'#review-date-binding':{value:'NONE'}};
@@ -102,7 +100,7 @@ test('case-only changes prepare the exception and enable confirmation immediatel
   };
   vm.createContext(context);
   vm.runInContext(functionLine('decisionFor'),context);
-  vm.runInContext(presentationFunctionLine('prepareCaseOnlyReview'),context);
+  vm.runInContext(functionLine('prepareCaseOnlyReview'),context);
   assert.equal(context.prepareCaseOnlyReview(),true);
   assert.equal(state.reviewDecision?.decision_mode,'EXCEPTION');
   assert.equal(controls['#review-confirm'].disabled,false);
@@ -110,11 +108,11 @@ test('case-only changes prepare the exception and enable confirmation immediatel
 });
 
 test('review display text never exposes the reported English AI phrases',()=>{
-  const helper=presentationFunctionLine('reviewDisplayText');
+  const helper=functionLine('reviewDisplayText');
   assert.ok(helper,'reviewDisplayText helper is required');
   const context={humanText:value=>String(value||'').trim()};
   vm.createContext(context);
-  vm.runInContext(`${presentationSource.split('\n').find(line=>line.startsWith('const reviewPtBrExact='))}\n${presentationSource.split('\n').find(line=>line.startsWith('function reviewLooksEnglish('))}\n${helper}`,context);
+  vm.runInContext(`${source.split('\n').find(line=>line.startsWith('const reviewPtBrExact='))}\n${functionLine('reviewLooksEnglish')}\n${helper}`,context);
   const rationale='The state is Em atendimento no Suporte ao Vendedor with a promised date and an appeal deadline. Since there are active wait conditions with explicit dates and policy review is required, we must wait until the promised date before taking further action.';
   const uncertainty='Promised date has not yet been reached';
   const policy='Policy eligible is currently false';
