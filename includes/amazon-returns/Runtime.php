@@ -215,7 +215,7 @@ final class SvAmazonReturnsRuntime
             && $gmailClientRevision!==''
             && ($state['gmail_client_revision'] ?? null)!==$gmailClientRevision
         ){
-            $due[]='gmail_refund_reconciliation';
+            $due[]='gmail_history_probe';
         }
         return array_values(array_unique($due));
     }
