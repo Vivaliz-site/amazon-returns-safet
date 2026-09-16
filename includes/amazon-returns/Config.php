@@ -59,6 +59,12 @@ final class SvAmazonReturnsConfig
         return is_array($profile)?(string)$profile['version']:null;
     }
 
+    public function writeConfigurationRevision(): string
+    {
+        $payload=['profile_version'=>$this->writeProfileVersion(),'flags'=>$this->writeFlags()];
+        return hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES));
+    }
+
     public function writeCaseAllowed(int $caseId): bool
     {
         if ($caseId < 1) return false;

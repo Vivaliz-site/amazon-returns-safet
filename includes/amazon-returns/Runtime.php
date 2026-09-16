@@ -16,6 +16,11 @@ final class SvAmazonReturnsRuntime
     private static array $knownActionCases=[];
 
     /** @return array<string,int> */
+    public static function writeConfigurationChangeTasks(): array
+    {
+        return ['scheduler','erp_sales_returns'];
+    }
+
     public static function cadences(): array
     {
         return [
