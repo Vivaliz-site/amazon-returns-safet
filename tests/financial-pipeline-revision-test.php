@@ -47,9 +47,9 @@ fprAssert(!in_array('sp_api',$current,true) && !in_array('financial',$current,tr
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 fprAssert(str_contains($daemon,'financial_pipeline_revision'),
     'Daemon must persist the financial pipeline revision after a complete successful refresh.');
-fprAssert(str_contains($daemon,"($results['sp_api']['rotation_has_more'] ?? true)===false"),
+fprAssert(str_contains($daemon,'($results[\'sp_api\'][\'rotation_has_more\'] ?? true)===false'),
     'Daemon must not acknowledge the revision while the SP-API rotation is incomplete.');
-fprAssert(str_contains($daemon,"($results['financial']['rotation_has_more'] ?? true)===false"),
+fprAssert(str_contains($daemon,'($results[\'financial\'][\'rotation_has_more\'] ?? true)===false'),
     'Daemon must not acknowledge the revision while financial reconciliation rotation is incomplete.');
 
 echo "financial-pipeline-revision-test: OK\n";
