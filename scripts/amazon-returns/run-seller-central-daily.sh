@@ -82,6 +82,7 @@ done
 
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/prune-seller-central-cdp-targets.mjs"
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check
+"$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-support-lookup-probe.mjs" || true
 if [[ " ${*:-} " == *" --auth-check-only "* ]]; then
   exit 0
 fi
