@@ -202,4 +202,123 @@ $searchListUrl='';
 foreach($searchCalls as $call)if(str_contains($call[1],'/messages?')){$searchListUrl=$call[1];break;}
 gmAssert(str_contains(urldecode($searchListUrl),'reembolso iniciado'),'Daily reconciliation must issue the explicit Gmail phrase search requested by the owner.');
 
+// --- pullIncrementalBatch: bounded Gmail history batches ---
+
+function batchTransport(array $historyRecords, array $messageBodies, ?string $nextPageToken, string $mailboxHistoryId, array $messageFailures = []): callable {
+    return static function(string $method, string $url, array $headers, ?array $body = null) use ($historyRecords, $messageBodies, $nextPageToken, $mailboxHistoryId, $messageFailures): array {
+        if (str_contains($url, '/profile')) return ['status'=>200,'json'=>['historyId'=>$mailboxHistoryId]];
+        if (str_contains($url, '/history?')) {
+            $json = ['history'=>$historyRecords];
+            if ($nextPageToken !== null) $json['nextPageToken'] = $nextPageToken;
+            return ['status'=>200,'json'=>$json];
+        }
+        foreach ($messageFailures as $id => $status) {
+            if (str_contains($url, '/messages/' . $id . '?')) return ['status'=>$status,'json'=>[]];
+        }
+        foreach ($messageBodies as $id => $messageJson) {
+            if (str_contains($url, '/messages/' . $id . '?')) return ['status'=>200,'json'=>$messageJson];
+        }
+        throw new RuntimeException('Unexpected Gmail API URL in batch test: '.$url);
+    };
+}
+
+function batchMessage(string $id): array {
+    return [
+        'id'=>$id,'threadId'=>'thread-'.$id,'internalDate'=>'1788283827000',
+        'payload'=>['headers'=>[
+            ['name'=>'From','value'=>'Amazon <donotreply@amazon.com>'],
+            ['name'=>'Subject','value'=>'Reembolso de 10.50 BRL iniciado para o pedido 701-0000000-0000000'],
+        ],'mimeType'=>'text/plain','body'=>['data'=>rtrim(strtr(base64_encode('Pedido'), '+/', '-_'), '=')]],
+    ];
+}
+
+// Bounded page reports nextPageToken -> has_more true, checkpoint stops at last covered record.
+$pageApi = new SvAmazonGmailApiClient(
+    new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),
+    batchTransport(
+        [
+            ['id'=>'150','messagesAdded'=>[['message'=>['id'=>'m-h1']]]],
+            ['id'=>'160','messagesAdded'=>[['message'=>['id'=>'m-h2']]]],
+        ],
+        ['m-h1'=>batchMessage('m-h1'), 'm-h2'=>batchMessage('m-h2')],
+        'page-token-2',
+        '500'
+    )
+);
+$pageBatch = $pageApi->pullIncrementalBatch('100', 50, 50);
+gmSame(2, count($pageBatch['messages']), 'Bounded page must fetch every message added within the page.');
+gmSame('160', $pageBatch['checkpoint_cursor'], 'Checkpoint must stop at the last fully covered history record.');
+gmSame('500', $pageBatch['mailbox_history_id'], 'Batch must report the mailbox history id observed at call start.');
+gmSame(true, $pageBatch['has_more'], 'A Gmail nextPageToken means more history remains.');
+gmSame(false, $pageBatch['recovered_cursor'], 'Normal bounded page is not a cursor recovery.');
+
+// Message-limit truncation stops before a record that would exceed the hard bound.
+$truncApi = new SvAmazonGmailApiClient(
+    new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),
+    batchTransport(
+        [
+            ['id'=>'150','messagesAdded'=>[['message'=>['id'=>'m-t1']]]],
+            ['id'=>'160','messagesAdded'=>[['message'=>['id'=>'m-t2']]]],
+            ['id'=>'170','messagesAdded'=>[['message'=>['id'=>'m-t3']]]],
+        ],
+        ['m-t1'=>batchMessage('m-t1'), 'm-t2'=>batchMessage('m-t2'), 'm-t3'=>batchMessage('m-t3')],
+        null,
+        '500'
+    )
+);
+$truncBatch = $truncApi->pullIncrementalBatch('100', 50, 2);
+gmSame(2, count($truncBatch['messages']), 'Message-limit truncation must stop fetching once the hard bound is reached.');
+gmSame('160', $truncBatch['checkpoint_cursor'], 'Truncated batch must checkpoint only the fully covered records.');
+gmSame(true, $truncBatch['has_more'], 'Message-limit truncation always leaves more history to catch up.');
+
+// Final page drains all remaining history and advances to the current mailbox position.
+$finalApi = new SvAmazonGmailApiClient(
+    new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),
+    batchTransport(
+        [
+            ['id'=>'150','messagesAdded'=>[['message'=>['id'=>'m-f1']]]],
+        ],
+        ['m-f1'=>batchMessage('m-f1')],
+        null,
+        '150'
+    )
+);
+$finalBatch = $finalApi->pullIncrementalBatch('100', 50, 50);
+gmSame(1, count($finalBatch['messages']), 'Final page must fetch the remaining messages.');
+gmSame('150', $finalBatch['checkpoint_cursor'], 'Final page checkpoint must advance to the current mailbox history id.');
+gmSame(false, $finalBatch['has_more'], 'Draining the final page ends the catch-up pass.');
+
+// A hard message-fetch failure must not silently produce a checkpoint past uncovered work.
+$failApi = new SvAmazonGmailApiClient(
+    new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),
+    batchTransport(
+        [
+            ['id'=>'150','messagesAdded'=>[['message'=>['id'=>'m-e1']]]],
+        ],
+        [],
+        null,
+        '150',
+        ['m-e1'=>500]
+    )
+);
+$failError = '';
+try { $failApi->pullIncrementalBatch('100', 50, 50); } catch (RuntimeException $e) { $failError = $e->getMessage(); }
+gmAssert(str_contains($failError, 'HTTP 500'), 'A hard message-fetch failure must abort the batch instead of silently truncating it.');
+
+// A single oversized history record must fail closed rather than violate the message bound.
+$overflowApi = new SvAmazonGmailApiClient(
+    new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),
+    batchTransport(
+        [
+            ['id'=>'150','messagesAdded'=>[['message'=>['id'=>'m-o1']],['message'=>['id'=>'m-o2']],['message'=>['id'=>'m-o3']]]],
+        ],
+        ['m-o1'=>batchMessage('m-o1'), 'm-o2'=>batchMessage('m-o2'), 'm-o3'=>batchMessage('m-o3')],
+        null,
+        '150'
+    )
+);
+$overflowError = '';
+try { $overflowApi->pullIncrementalBatch('100', 50, 2); } catch (RuntimeException $e) { $overflowError = $e->getMessage(); }
+gmAssert($overflowError !== '', 'A single history record exceeding the hard message limit must fail closed rather than violate the bound.');
+
 echo "amazon-returns-gmail-test: OK\n";
