@@ -21,6 +21,7 @@
 - Autonomous routines require proof through their real scheduler/worker path.
 - Mandatory disabled gates, stale workers, unusable credentials, stuck queues, or missing readback must degrade project health.
 - Previously approved projects must be re-audited; prior green status does not grandfather missing real evidence.
+- Every subagent dispatch is actively monitored; stalled or non-productive subagents trigger automatic controller takeover without requiring user intervention.
 
 ---
 

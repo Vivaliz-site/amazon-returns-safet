@@ -57,3 +57,12 @@ Uma capacidade obrigatoria indisponivel deve degradar o health do projeto. Gate 
 ## Regra de regressao
 
 Todo defeito encontrado durante `auditoria extrema` deve gerar uma protecao duravel apropriada: teste automatizado, invariante de runtime, regra de health, alerta, reconciliacao ou probe de producao. Corrigir apenas o sintoma nao encerra a auditoria.
+## Supervisao obrigatoria de subagentes
+
+Delegar uma tarefa nao transfere a responsabilidade de conclusao. Ao iniciar qualquer subagente, o controlador deve registrar a identidade da sessao/processo, horario de inicio, estado/commit de base, artefatos esperados e qual evidencia concreta contara como progresso.
+
+Enquanto o subagente estiver ativo, o controlador deve monitorar seu progresso em checkpoints limitados, procurando mudancas verificaveis como arquivos alterados, commits, testes, relatorios ou efeitos da tarefa. Processo existente ou sessao aberta, isoladamente, nao contam como progresso.
+
+Se o subagente falhar, perder autenticacao/limite/ferramenta, encerrar sem os artefatos exigidos, ou permanecer sem progresso verificavel junto com evidencia de ociosidade, bloqueio, travamento ou estouro da janela limitada da tarefa, o controlador deve preservar qualquer trabalho util e assumir diretamente a tarefa ou substituir por uma sessao limpa.
+
+O usuario nao deve precisar enviar `siga`, `continue` ou mensagem equivalente para recuperar uma tarefa delegada. O takeover e automatico e a execucao continua ate conclusao validada ou bloqueio externo incontornavel.

@@ -55,3 +55,10 @@ Read `docs/REGRAS-DE-ENTREGA.md` and `docs/MEMORIA-DO-PROJETO.md` at the start o
 ## Isolamento obrigatorio de sessao CLI por chat
 
 Antes de qualquer operacao em terminal/CLI, leia e cumpra a secao `Isolamento obrigatorio de sessao CLI por chat` de `AI-TO-CLI-PROTOCOL.md`. Cada chat deve usar sessao/namespace CLI exclusivo; reutilizacao de sessao entre chats e proibida. Estado necessario para retomada deve ser persistido fora da memoria do shell.
+
+## Supervisao e takeover de subagentes
+- Delegacao nunca transfere a responsabilidade de conclusao do agente controlador.
+- Ao iniciar um subagente, registre sessao/PID ou identificador equivalente, horario de inicio, HEAD/estado de base, artefatos esperados e criterio objetivo de progresso.
+- Monitore a execucao ativamente com checkpoints limitados; sessao/processo vivo sem artefato, commit, teste, relatorio ou outro progresso verificavel nao prova execucao util.
+- Se houver erro, limite/autenticacao/ferramenta indisponivel, saida sem artefatos, ou ausencia de progresso combinada com evidencia de bloqueio/ociosidade/travamento/timeout, preserve o que for util e assuma a tarefa diretamente ou use uma sessao limpa.
+- Nunca espere o usuario enviar `siga`/`continue` para retomar uma tarefa delegada. O controlador deve fazer takeover automatico e continuar ate validacao real ou bloqueio externo incontornavel.

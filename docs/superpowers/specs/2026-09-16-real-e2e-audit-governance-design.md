@@ -127,3 +127,15 @@ For each routine:
 After approval of this specification, each active project repository must receive a repository-level audit instruction referencing this standard, plus project-specific routine inventory and validation commands/probes. Projects must not mark issues, releases, milestones, or "ready" audits complete until this gate passes.
 
 Existing projects previously labeled ready must be re-audited under this standard. Prior green results do not grandfather a feature that lacks real end-to-end evidence.
+
+## Subagent supervision and takeover
+
+Delegating work to a subagent never transfers completion ownership from the controlling agent. Every subagent dispatch must be actively supervised from the moment it starts.
+
+The controller must record the subagent/session identity, start time, baseline commit or workspace state, expected output artifacts, and the concrete evidence that will count as progress. While the subagent is running, the controller must perform bounded progress checks instead of waiting silently or requiring the user to ask for continuation.
+
+A progress check must look for verifiable movement such as changed files, commits, test output, report artifacts, completed tool actions, or other task-specific evidence. Process existence alone is not progress.
+
+If the subagent errors, loses authentication/quota/tool access, exits without required artifacts, or shows no verifiable progress together with evidence that it is idle, blocked, wedged, or past the task's bounded execution window, the controller must preserve useful work and assume the task directly or dispatch a clean replacement.
+
+The user must never need to send `continue`, `siga`, or an equivalent message to recover a delegated task. Subagent monitoring is part of execution and is itself a mandatory reliability requirement.
