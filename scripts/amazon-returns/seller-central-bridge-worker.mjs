@@ -542,9 +542,16 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
     const pageSize=50;
     const relevant=/reemb|refund|safe[- ]?t|pedido|order|fba|devolu|return|reimbursement|claim|reclama|review|revis/i;
     const viewCase=async caseId=>{
-      const response=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(caseId)+'&timeZone=UTC&pageSize=10',{credentials:'include'});
-      if(!response.ok)throw new Error('VIEW_CASE_HTTP_'+response.status);
-      return await response.json();
+      const maxAttempts=4;
+      for(let attempt=0;attempt<maxAttempts;attempt++){
+        const paceMs=1000*(2**attempt);
+        await new Promise(resolve=>setTimeout(resolve,paceMs));
+        const response=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(caseId)+'&timeZone=UTC&pageSize=10',{credentials:'include'});
+        if(response.status===429&&attempt+1<maxAttempts)continue;
+        if(!response.ok)throw new Error('VIEW_CASE_HTTP_'+response.status);
+        return await response.json();
+      }
+      throw new Error('VIEW_CASE_HTTP_429');
     };
     if(preferred){
       try{
