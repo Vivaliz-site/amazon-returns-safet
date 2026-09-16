@@ -62,10 +62,12 @@ final class SvAmazonReturnsDaemon
         $decisionStackRevision=SvAmazonReturnsRuntime::decisionStackRevision();
         $decisionStackChanged=($state['decision_stack_revision'] ?? null)!==$decisionStackRevision;
         $gmailEvidenceRevision=SvAmazonReturnsRuntime::gmailEvidenceRevision();
+        $gmailClientRevision=SvAmazonReturnsRuntime::gmailClientRevision();
         $outboxStackRevision=SvAmazonReturnsRuntime::outboxStackRevision();
         $gmailEvidenceChanged=($state['gmail_evidence_revision'] ?? null)!==$gmailEvidenceRevision;
+        $gmailClientChanged=($state['gmail_client_revision'] ?? null)!==$gmailClientRevision;
         $due=SvAmazonReturnsRuntime::dueTasks(
-            $state,$now,$decisionStackRevision,$gmailEvidenceRevision,$outboxStackRevision
+            $state,$now,$decisionStackRevision,$gmailEvidenceRevision,$outboxStackRevision,$gmailClientRevision
         );
         $openingRevision=$bootstrap['policy_audit']['policy_key']??null;
         if($openingRevision!==null && ($state['opening_policy_revision']??null)!==$openingRevision){
@@ -132,6 +134,9 @@ final class SvAmazonReturnsDaemon
             && ($results['scheduler']['status'] ?? null)==='OK'
         ){
             $state['gmail_evidence_revision']=$gmailEvidenceRevision;
+        }
+        if($gmailClientChanged && isset($results['gmail_refund_reconciliation'])){
+            $state['gmail_client_revision']=$gmailClientRevision;
         }
         try{$results['rule_outcomes']=$this->refreshRuleOutcomes();}
         catch(Throwable $e){$results['rule_outcomes']=['status'=>'FAILED','error_class'=>$e::class];}

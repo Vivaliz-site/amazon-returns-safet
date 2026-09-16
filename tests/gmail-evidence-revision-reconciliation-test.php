@@ -12,8 +12,13 @@ function gerSame(mixed $expected,mixed $actual,string $message):void{
 if(!method_exists(SvAmazonReturnsRuntime::class,'gmailEvidenceRevision')){
     throw new RuntimeException('Runtime must fingerprint Gmail parser/sink revisions.');
 }
+if(!method_exists(SvAmazonReturnsRuntime::class,'gmailClientRevision')){
+    throw new RuntimeException('Runtime must fingerprint the Gmail API client revision.');
+}
 $revision=SvAmazonReturnsRuntime::gmailEvidenceRevision();
 gerAssert(preg_match('/^[a-f0-9]{64}$/',$revision)===1,'Gmail evidence revision must be SHA-256.');
+$clientRevision=SvAmazonReturnsRuntime::gmailClientRevision();
+gerAssert(preg_match('/^[a-f0-9]{64}$/',$clientRevision)===1,'Gmail client revision must be SHA-256.');
 
 $now=new DateTimeImmutable('2026-09-09T15:00:00Z');
 $recent=$now->modify('-60 seconds')->format(DATE_ATOM);
@@ -28,8 +33,15 @@ gerAssert(in_array('gmail_refund_reconciliation',$due,true),
     'A Gmail evidence code revision must force one reconciliation immediately.');
 
 $state['gmail_evidence_revision']=$revision;
+$state['gmail_client_revision']='stale-client-revision';
+$dueClient=SvAmazonReturnsRuntime::dueTasks(
+    $state,$now,$state['decision_stack_revision'],$revision,null,$clientRevision
+);
+gerAssert(in_array('gmail_refund_reconciliation',$dueClient,true),
+    'A Gmail API client revision must force exactly one read-only reconciliation attempt.');
+$state['gmail_client_revision']=$clientRevision;
 $dueCurrent=SvAmazonReturnsRuntime::dueTasks(
-    $state,$now,$state['decision_stack_revision'],$revision
+    $state,$now,$state['decision_stack_revision'],$revision,null,$clientRevision
 );
 gerAssert(!in_array('gmail_refund_reconciliation',$dueCurrent,true),
     'A current Gmail evidence revision must respect the normal 12-hour cadence.');
@@ -43,4 +55,6 @@ gerAssert(is_int($gmailPos) && is_int($schedulerPos) && $gmailPos<$schedulerPos,
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 gerAssert(str_contains($daemon,"gmail_evidence_revision"),
     'Daemon must persist the successfully applied Gmail evidence revision.');
+gerAssert(str_contains($daemon,"gmail_client_revision"),
+    'Daemon must persist a Gmail client revision after one read attempt so failures respect normal cadence.');
 echo "gmail-evidence-revision-reconciliation-test: OK\n";
