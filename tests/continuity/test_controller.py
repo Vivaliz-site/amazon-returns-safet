@@ -64,7 +64,8 @@ class ControllerTest(unittest.TestCase):
         self.ledger.claim(task.task_id, "codex", "stale-session", old, 60)
         self.controller.reconcile_repository(self.config, audit_only=True)
         loaded = self.ledger.get_task(task.task_id)
-        self.assertNotEqual(Classification.ACTIVE, loaded.classification)
+        self.assertEqual(Classification.NEEDS_RESUME, loaded.classification)
+        self.assertEqual(TaskStatus.NEEDS_RESUME, loaded.status)
         self.assertIsNone(loaded.lease_expires_at)
 
     def test_clean_base_does_not_create_orphan_task(self):

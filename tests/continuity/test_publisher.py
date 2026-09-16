@@ -161,7 +161,10 @@ class PublisherTest(unittest.TestCase):
         self.assertEqual(head, result.head)
         push = next(call for call in runner.calls if call and call[0] == "push")
         self.assertNotIn("--force", push)
+        self.assertEqual("git@github.com:Vivaliz-site/amazon-returns-safet.git", push[1])
         self.assertIn(f"HEAD:refs/heads/{self.worktree.branch}", push)
+        lookup = next(call for call in runner.calls if call and call[0] == "ls-remote")
+        self.assertEqual("git@github.com:Vivaliz-site/amazon-returns-safet.git", lookup[2])
 
     def test_publisher_accepts_existing_remote_only_at_same_sha(self):
         head = self.committed_head()
@@ -170,22 +173,41 @@ class PublisherTest(unittest.TestCase):
         self.assertEqual("already_published", result.status)
         self.assertFalse(any(call and call[0] == "push" for call in runner.calls))
 
+    def test_publisher_rejects_automatic_workflow_modification(self):
+        target = self.worktree.path / ".github" / "workflows" / "untrusted.yml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("name: untrusted\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.worktree.path), "add", ".github/workflows/untrusted.yml"], check=True)
+        subprocess.run(["git", "-C", str(self.worktree.path), "commit", "-m", "test: forbidden workflow"], check=True, capture_output=True)
+        head = subprocess.run(["git", "-C", str(self.worktree.path), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
+        runner = FakeGitRunner()
+        with self.assertRaises(PublishSafetyError):
+            publish_receipt(self.receipt(head=head), self.config(), runner=runner)
+        self.assertEqual([], runner.calls)
+
     def test_publisher_rejects_dirty_worktree_after_commit(self):
         head = self.committed_head()
         (self.worktree.path / "unexpected.txt").write_text("dirty\n", encoding="utf-8")
         with self.assertRaises(PublishSafetyError):
             publish_receipt(self.receipt(head=head), self.config(), runner=FakeGitRunner())
 
-    def test_publisher_workflow_is_agent_only_and_merges_after_checks(self):
+    def test_publisher_workflow_is_privileged_default_branch_followup_not_branch_push(self):
+        signal = Path(".github/workflows/continuity-signal.yml").read_text(encoding="utf-8")
         workflow = Path(".github/workflows/continuity-publisher.yml").read_text(encoding="utf-8")
-        self.assertIn("agent/**", workflow)
+        self.assertIn("agent/**", signal)
+        self.assertIn("contents: read", signal)
+        self.assertNotIn("contents: write", signal)
+        self.assertIn("workflow_run:", workflow)
+        self.assertIn("Continuity Signal", workflow)
+        self.assertIn("github.event.workflow_run.head_branch", workflow)
+        self.assertIn("startsWith", workflow)
         self.assertIn("contents: write", workflow)
         self.assertIn("pull-requests: write", workflow)
+        self.assertNotIn("actions/checkout", workflow)
         self.assertIn("gh pr checks", workflow)
         self.assertIn("--watch", workflow)
         self.assertIn("gh pr merge", workflow)
         self.assertIn("--auto", workflow)
-        self.assertNotIn("GH_TOKEN:", workflow)
 
 
     def test_run_one_receipt_publishes_completed_and_marks_done(self):

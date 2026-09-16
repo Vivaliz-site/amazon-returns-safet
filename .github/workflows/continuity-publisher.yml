@@ -1,46 +1,52 @@
 name: Continuity Publisher
 
 on:
-  push:
-    branches:
-      - 'agent/**'
+  workflow_run:
+    workflows: ['Continuity Signal']
+    types: [completed]
 
 permissions:
   contents: write
   pull-requests: write
 
 concurrency:
-  group: continuity-publisher-${{ github.ref }}
+  group: continuity-publisher-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
   publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'agent/')
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha }}
+      REPOSITORY: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-      - name: Create or reuse pull request
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          BRANCH: ${{ github.ref_name }}
+      - name: Verify triggering branch head is unchanged
         run: |
           set -euo pipefail
-          pr_url="$(gh pr list --head "$BRANCH" --base main --state open --json url --jq '.[0].url // ""')"
+          current="$(gh api "repos/$REPOSITORY/git/ref/heads/$BRANCH" --jq '.object.sha')"
+          test "$current" = "$EXPECTED_HEAD"
+
+      - name: Create or reuse pull request
+        run: |
+          set -euo pipefail
+          pr_url="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --base main --state open --json url --jq '.[0].url // ""')"
           if [ -z "$pr_url" ]; then
-            pr_url="$(gh pr create --base main --head "$BRANCH" --fill)"
+            pr_url="$(gh pr create --repo "$REPOSITORY" --base main --head "$BRANCH" --fill)"
           fi
           test -n "$pr_url"
           printf 'PR_URL=%s\n' "$pr_url" >> "$GITHUB_ENV"
 
       - name: Wait for required checks to appear
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           for attempt in $(seq 1 30); do
-            checks="$(gh pr checks "$PR_URL" --json name,state,bucket 2>/dev/null || true)"
+            checks="$(gh pr checks "$PR_URL" --repo "$REPOSITORY" --json name,state,bucket 2>/dev/null || true)"
             if [ "$checks" != "[]" ] && [ -n "$checks" ]; then
               exit 0
             fi
@@ -50,15 +56,11 @@ jobs:
           exit 1
 
       - name: Require green pull-request checks
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh pr checks "$PR_URL" --watch --fail-fast
+          gh pr checks "$PR_URL" --repo "$REPOSITORY" --watch --fail-fast
 
       - name: Enable auto-merge after checks are green
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh pr merge "$PR_URL" --auto --squash --delete-branch
+          gh pr merge "$PR_URL" --repo "$REPOSITORY" --auto --squash --delete-branch

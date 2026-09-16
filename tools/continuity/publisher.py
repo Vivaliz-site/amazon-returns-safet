@@ -100,6 +100,15 @@ def _verify_publishable(receipt: WorkerReceipt, config: PublisherConfig):
         raise PublishSafetyError("worktree has an active git operation")
     if finding.modified or finding.staged or finding.untracked:
         raise PublishSafetyError("worktree is dirty after worker completion")
+    diff = subprocess.run(
+        ["git", "-c", f"safe.directory={worktree.resolve()}", "diff", "--name-only", f"{job.base_sha}..{receipt.resulting_head}"],
+        cwd=worktree, text=True, capture_output=True, check=False,
+    )
+    if diff.returncode != 0:
+        raise PublishSafetyError("unable to verify committed paths")
+    committed_paths = [line.strip() for line in diff.stdout.splitlines() if line.strip()]
+    if any(path == ".github/workflows" or path.startswith(".github/workflows/") for path in committed_paths):
+        raise PublishSafetyError("automatic branches may not modify GitHub workflow definitions")
     if not config.ssh_key_path.is_file() or not config.known_hosts_path.is_file():
         raise PublishSafetyError("publisher ssh material is unavailable")
     return job, worktree
@@ -121,7 +130,8 @@ def publish_receipt(
     git_runner = runner or _default_runner
     env = build_publisher_env(config)
     ref = f"refs/heads/{job.branch}"
-    remote = git_runner(worktree, ["ls-remote", "--heads", "origin", ref], env)
+    publish_remote = f"git@github.com:{job.repository}.git"
+    remote = git_runner(worktree, ["ls-remote", "--heads", publish_remote, ref], env)
     if remote.returncode != 0:
         raise PublishSafetyError("remote branch lookup failed")
     existing = _remote_head(remote.stdout)
@@ -131,7 +141,7 @@ def publish_receipt(
         return PublishReceipt(receipt.task_id, job.repository, job.branch, receipt.resulting_head, "already_published")
     pushed = git_runner(
         worktree,
-        ["push", "origin", f"HEAD:refs/heads/{job.branch}"],
+        ["push", publish_remote, f"HEAD:refs/heads/{job.branch}"],
         env,
     )
     if pushed.returncode != 0:
