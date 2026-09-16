@@ -135,7 +135,7 @@ final class SvAmazonReturnsDaemon
         ){
             $state['gmail_evidence_revision']=$gmailEvidenceRevision;
         }
-        if($gmailClientChanged && isset($results['gmail_refund_reconciliation'])){
+        if($gmailClientChanged && isset($results['gmail_history_probe'])){
             $state['gmail_client_revision']=$gmailClientRevision;
         }
         try{$results['rule_outcomes']=$this->refreshRuleOutcomes();}
@@ -220,6 +220,7 @@ final class SvAmazonReturnsDaemon
         }
         return match($task){
             'gmail'=>$this->runGmail(),
+            'gmail_history_probe'=>$this->runGmailHistoryProbe(),
             'gmail_refund_reconciliation'=>$this->runGmailRefundReconciliation(),
             'scheduler'=>$this->runScheduler($now),
             'review_operations'=>(new SvAmazonReviewOperations($this->persistence,$this->config))->run($now),
@@ -249,6 +250,24 @@ final class SvAmazonReturnsDaemon
         return ($readiness['ready'] ?? false)
             ? ['status'=>'READY_NO_RUNTIME_PROVIDER']
             : ['status'=>'BLOCKED_CREDENTIALS','missing'=>$readiness['missing'] ?? []];
+    }
+
+    /** @return array<string,mixed> */
+    private function runGmailHistoryProbe(): array
+    {
+        if(!$this->config->flag('gmail_ingest'))return ['status'=>'SKIPPED_DISABLED'];
+        $gate=$this->dependencyGate('gmail');
+        if(($gate['status'] ?? '')!=='READY_NO_RUNTIME_PROVIDER')return $gate;
+        $gmail=new SvAmazonGmailApiClient($this->config);
+        $cursor=SvAmazonGmailIngestor::loadCursor($this->persistence->cursors,'history_id');
+        $pulled=$gmail->pull($cursor,1);
+        return [
+            'status'=>'OK',
+            'messages'=>count($pulled['messages'] ?? []),
+            'recovered_cursor'=>($pulled['recovered_cursor'] ?? false)===true,
+            'cursor_advanced'=>false,
+            'external_write'=>false,
+        ];
     }
 
     /** @return array<string,mixed> */

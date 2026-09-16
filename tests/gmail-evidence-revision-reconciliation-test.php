@@ -37,14 +37,14 @@ $state['gmail_client_revision']='stale-client-revision';
 $dueClient=SvAmazonReturnsRuntime::dueTasks(
     $state,$now,$state['decision_stack_revision'],$revision,null,$clientRevision
 );
-gerAssert(in_array('gmail_refund_reconciliation',$dueClient,true),
-    'A Gmail API client revision must force exactly one read-only reconciliation attempt.');
+gerAssert(in_array('gmail_history_probe',$dueClient,true),
+    'A Gmail API client revision must force exactly one read-only incremental-history probe.');
 $state['gmail_client_revision']=$clientRevision;
 $dueCurrent=SvAmazonReturnsRuntime::dueTasks(
     $state,$now,$state['decision_stack_revision'],$revision,null,$clientRevision
 );
-gerAssert(!in_array('gmail_refund_reconciliation',$dueCurrent,true),
-    'A current Gmail evidence revision must respect the normal 12-hour cadence.');
+gerAssert(!in_array('gmail_history_probe',$dueCurrent,true),
+    'A current Gmail client revision must not repeat the probe.');
 
 $ordered=SvAmazonReturnsRuntime::decisionSafeOrder($due);
 $gmailPos=array_search('gmail_refund_reconciliation',$ordered,true);
@@ -52,9 +52,24 @@ $schedulerPos=array_search('scheduler',$ordered,true);
 gerAssert(is_int($gmailPos) && is_int($schedulerPos) && $gmailPos<$schedulerPos,
     'Forced Gmail reconciliation must run before scheduler reevaluation.');
 
+$orderedClient=SvAmazonReturnsRuntime::decisionSafeOrder($dueClient);
+gerAssert(in_array('gmail_history_probe',$orderedClient,true),
+    'The read-only Gmail history probe must survive task ordering.');
+gerAssert(!in_array('scheduler',$orderedClient,true),
+    'A diagnostic Gmail probe must not force scheduler reevaluation because it persists no new evidence.');
+
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 gerAssert(str_contains($daemon,"gmail_evidence_revision"),
     'Daemon must persist the successfully applied Gmail evidence revision.');
 gerAssert(str_contains($daemon,"gmail_client_revision"),
     'Daemon must persist a Gmail client revision after one read attempt so failures respect normal cadence.');
+
+gerAssert(str_contains($daemon,"'gmail_history_probe'=>\$this->runGmailHistoryProbe()"),
+    'Daemon must expose a dedicated Gmail history probe task.');
+$probeStart=strpos($daemon,'private function runGmailHistoryProbe');
+$probeEnd=$probeStart===false?false:strpos($daemon,'private function runGmail',$probeStart+10);
+gerAssert($probeStart!==false && $probeEnd!==false,'Gmail history probe must remain independently auditable.');
+$probeBody=substr($daemon,(int)$probeStart,(int)$probeEnd-(int)$probeStart);
+gerAssert(str_contains($probeBody,'->pull($cursor,1)'),'Probe must execute the same incremental Gmail pull path with a bounded bootstrap.');
+gerAssert(!str_contains($probeBody,'->send') && !str_contains($probeBody,'saveCursor'),'Probe must not send email or advance the production Gmail cursor.');
 echo "gmail-evidence-revision-reconciliation-test: OK\n";
