@@ -112,11 +112,9 @@ test('case-only changes prepare the exception and enable confirmation immediatel
 test('review display text never exposes the reported English AI phrases',()=>{
   const helper=presentationFunctionLine('reviewDisplayText');
   assert.ok(helper,'reviewDisplayText helper is required');
-  const mapsPrelude=source.split('\n').filter(line=>/^const (actionLabels|stateLabels|reasonLabels|physicalLabels|programLabels|statusLabels|sourceLabels|miscLabels)=/.test(line)).join('\n');
-  const human=functionLine('humanText');
-  const context={};
+  const context={humanText:value=>String(value||'').trim()};
   vm.createContext(context);
-  vm.runInContext(`${mapsPrelude}\n${human}\n${presentationSource.split('\n').find(line=>line.startsWith('const reviewPtBrExact='))}\n${presentationSource.split('\n').find(line=>line.startsWith('function reviewLooksEnglish('))}\n${helper}`,context);
+  vm.runInContext(`${presentationSource.split('\n').find(line=>line.startsWith('const reviewPtBrExact='))}\n${presentationSource.split('\n').find(line=>line.startsWith('function reviewLooksEnglish('))}\n${helper}`,context);
   const rationale='The state is Em atendimento no Suporte ao Vendedor with a promised date and an appeal deadline. Since there are active wait conditions with explicit dates and policy review is required, we must wait until the promised date before taking further action.';
   const uncertainty='Promised date has not yet been reached';
   const policy='Policy eligible is currently false';
