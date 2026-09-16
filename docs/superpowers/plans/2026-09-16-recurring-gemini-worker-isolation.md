@@ -26,7 +26,9 @@
 
 - `tools/continuity/job_queue.py` — immutable job/result dataclasses, atomic queue writes, safe-path checks, envelope validation and redaction.
 - `tools/continuity/worker.py` — worker-side lease/path/head verification, bounded Gemini execution, timeout/process-group cleanup, Git post-state receipt.
-- `tools/continuity/publisher.py` — non-AI branch push/PR/check/auto-merge orchestration with repository allowlist.
+- `tools/continuity/publisher.py` — non-AI exact-head branch push using only a repository-scoped deploy key.
+- `.github/workflows/continuity-publisher.yml` — PR/check/auto-merge orchestration using GitHub Actions' ephemeral repository token; no persistent GitHub API token is stored on the host.
+- `tools/continuity/github_state.py` — anonymous read-only public GitHub reconciliation when production has no host API token.
 - `tools/continuity/dispatcher.py` — convert automatic dispatch from direct process launch into queue emission; manual preview remains unchanged.
 - `tools/continuity/cli.py` — commands for worker/publisher execution and safe automation validation.
 - `tools/continuity/worktrees.py` — worker-owned mirror/worktree preparation and ownership assertions.
@@ -49,7 +51,7 @@
 - Create: `tests/continuity/test_job_queue.py`
 
 **Interfaces:**
-- Produces: `JobEnvelope`, `WorkerReceipt`, `QueuePaths`, `validate_job(job, *, root, now)`, `atomic_write_job(...)`, `atomic_write_receipt(...)`, `load_job(...)`.
+- Produces: `JobEnvelope`, `WorkerReceipt`, `QueuePaths`, `validate_job(job, *, root, now)`, `atomic_write_job(...)`, `claim_pending_job(...)`, `atomic_write_receipt(...)`, `load_job(...)`.
 - Consumes later: dispatcher, worker, publisher.
 - [ ] **Step 1: Write failing queue security tests**
 
@@ -94,7 +96,7 @@ class JobEnvelope:
 Use `Path.resolve(strict=True)`, `os.open(..., O_CREAT|O_EXCL, 0o600)`, `fsync`, and atomic `os.replace`. Reject symlink escapes, unknown keys, forbidden provider names, expired jobs, unsafe task IDs, and any path not strictly beneath the configured worker root.
 - [ ] **Step 4: Add negative-path coverage and verify GREEN**
 
-Add tests for traversal (`../../`), symlink escape, unknown JSON fields, deadline expiration, provider=`codex`, provider=`claude`, malformed SHA/session IDs, secret-like JSON keys, duplicate filename collision, and result receipt size limits.
+Add tests for traversal (`../../`), symlink escape, unknown JSON fields, deadline expiration, provider=`codex`, provider=`claude`, malformed SHA/session IDs, secret-like JSON keys, duplicate filename collision, result receipt size limits, and two concurrent `claim_pending_job()` calls proving exactly one atomic pending→running rename succeeds.
 
 Run: `python3 -m unittest tests.continuity.test_job_queue -v`
 Expected: PASS with all queue/security tests green.
@@ -213,9 +215,9 @@ if self.auto_dispatch:
     return DispatchDecision(..., claimed=True, launched=False, queued=True, job_id=job_id)
 ```
 
-- [ ] **Step 4: Add forbidden-agent regression assertions**
+- [ ] **Step 4: Add forbidden-agent and retry-budget regression assertions**
 
-Assert that automatic selection returns `None` when only Codex/ChatGPT/Claude are available and that a queued envelope can never contain one of those provider names.
+Assert that automatic selection returns `None` when only Codex/ChatGPT/Claude are available and that a queued envelope can never contain one of those provider names. Add `max_auto_attempts` (default `3`) to dispatcher config: when persisted recurring attempts for a task reach the limit, do not enqueue another job; update the task to `BLOCKED_EXTERNAL`, clear any expired lease, and persist `automatic retry budget exhausted` as the bounded reason. Verify the existing `retry_cooldown_seconds >= 1800` still suppresses immediate requeue after provider/worker failure.
 
 - [ ] **Step 5: Verify dispatcher/CLI tests GREEN**
 
@@ -320,10 +322,16 @@ git commit -m "feat(continuity): add isolated Gemini worker"
 **Files:**
 - Create: `tools/continuity/publisher.py`
 - Create: `tests/continuity/test_publisher.py`
+- Create: `.github/workflows/continuity-publisher.yml`
+- Modify: `tools/continuity/github_state.py`
+- Modify: `tools/continuity/controller.py`
+- Modify: `tests/continuity/test_github_state.py`
+- Modify: `tests/continuity/test_controller.py`
 
 **Interfaces:**
-- Consumes: successful `WorkerReceipt`, repository allowlist, repo-scoped push credential, separate publisher GitHub API credential.
-- Produces: `PublishReceipt` with branch push, PR number/URL, checks state and merge request state; never invokes an AI provider.
+- Consumes: successful `WorkerReceipt`, repository allowlist and repo-scoped SSH deploy key.
+- Produces: local `PublishReceipt` proving exact-head branch push; GitHub Actions creates/reuses the PR and enables auto-merge with its ephemeral repository token.
+- Production reconciliation reads the public repository/PR/check state without a host-side GitHub API credential.
 - [ ] **Step 1: Write failing publisher isolation tests**
 
 ```python
@@ -334,7 +342,8 @@ def test_publisher_rejects_repo_outside_allowlist(self):
 def test_publisher_environment_is_not_worker_environment(self):
     env = build_publisher_env(self.cfg)
     self.assertNotIn("GEMINI_API_KEY", env)
-    self.assertIn("GH_TOKEN", env)
+    self.assertNotIn("GH_TOKEN", env)
+    self.assertIn("GIT_SSH_COMMAND", env)
 ```
 
 - [ ] **Step 2: Write failing exact-head publication test**
@@ -350,34 +359,34 @@ def test_publisher_refuses_when_receipt_head_differs_from_worktree_head(self):
 
 Run: `python3 -m unittest tests.continuity.test_publisher -v`
 Expected: FAIL because publisher module does not exist.
-- [ ] **Step 4: Implement publisher safety checks and push/PR flow**
+- [ ] **Step 4: Implement publisher safety checks and exact-head deploy-key push**
 
-Publisher verifies repository allowlist, worker-owned worktree, exact receipt head, clean post-commit state, permitted branch prefix `agent/`, and receipt/job digest linkage. Push uses the dedicated repository-scoped SSH identity; GitHub API uses a separate environment file available only to the publisher service.
+Publisher verifies repository allowlist, worker-owned worktree, exact receipt head, clean post-commit state, permitted branch prefix `agent/`, and receipt/job digest linkage. Push uses only the dedicated repository-scoped SSH deploy key; no GitHub API token is present on the host.
 
 ```python
 def publish_receipt(receipt: WorkerReceipt, cfg: PublisherConfig) -> PublishReceipt:
     verify_publishable(receipt, cfg)
-    run_git(receipt.worktree_path, ["push", "origin", f"HEAD:refs/heads/{receipt.branch}"])
-    pr = ensure_pull_request(cfg.repository, receipt.branch, cfg.base_branch)
-    return PublishReceipt.from_pr(receipt, pr)
+    verify_remote_branch_absent_or_same_sha(receipt, cfg)
+    run_git(receipt.worktree_path, ["push", "origin", f"HEAD:refs/heads/{receipt.branch}"], env=build_publisher_env(cfg))
+    return PublishReceipt.pushed(receipt)
 ```
 
-Do not force-push. If the remote branch already exists at another SHA, fail closed. Auto-merge is requested only after required checks report success and config explicitly enables it.
+Do not force-push. If the remote branch exists at another SHA, fail closed.
 
-- [ ] **Step 5: Add tests for push conflict, PR reuse, CI failure and no-secret logs**
+- [ ] **Step 5: Add GitHub Actions publisher and public reconciliation tests**
 
-Use fake Git/GitHub runners. Assert a failed check never requests merge, an existing matching PR is reused, and stderr containing token-like values is redacted before receipt persistence.
+Create `.github/workflows/continuity-publisher.yml` triggered only by `agent/**` branch pushes with explicit `contents: write` and `pull-requests: write`. It creates/reuses the PR, waits for the normal CI contract, and requests auto-merge only after required checks succeed. Add `GitHubStateReader` public REST fallback using Python `urllib` when no host token exists; tests assert public reads require no credential and never perform writes.
 
-- [ ] **Step 6: Verify publisher tests GREEN**
+- [ ] **Step 6: Verify publisher/public-state tests GREEN**
 
-Run: `python3 -m unittest tests.continuity.test_publisher -v`
-Expected: PASS.
+Run: `python3 -m unittest tests.continuity.test_publisher tests.continuity.test_github_state -v`
+Expected: PASS. Also run a YAML parse/lint check used by repository CI for `.github/workflows/continuity-publisher.yml`.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add tools/continuity/publisher.py tests/continuity/test_publisher.py
-git commit -m "feat(continuity): add isolated non-AI publisher"
+git add tools/continuity/publisher.py tools/continuity/github_state.py tools/continuity/controller.py tests/continuity/test_publisher.py tests/continuity/test_github_state.py tests/continuity/test_controller.py .github/workflows/continuity-publisher.yml
+git commit -m "feat(continuity): add repo-scoped publication path"
 ```
 
 ---
@@ -390,11 +399,13 @@ git commit -m "feat(continuity): add isolated non-AI publisher"
 - Create: `deploy/systemd/agent-continuity-publisher.path`
 - Create: `deploy/systemd/agent-continuity-publisher.service`
 - Modify: `scripts/install-continuity-controller.sh`
+- Create: `scripts/provision-continuity-gemini-env.sh`
+- Create: `scripts/provision-continuity-publisher-key.sh`
 - Modify: `tests/continuity/test_systemd_contract.py`
 - Modify: `.github/workflows/ci.yml`
 **Interfaces:**
 - Worker identity: `agent-continuity-worker`; publisher identity: `agent-continuity-publisher`; controller remains `agent-continuity`.
-- Worker env file: `/etc/agent-continuity/gemini.env`; publisher env/SSH material lives under `/etc/agent-continuity/publisher/` and is never readable by worker.
+- Worker env file: `/etc/agent-continuity/gemini.env`; publisher receives only a repository-scoped SSH deploy key through systemd `LoadCredential=` from `/etc/agent-continuity/publisher/id_ed25519` and has no persistent GitHub API token.
 
 - [ ] **Step 1: Write failing systemd trust-boundary tests**
 
@@ -406,7 +417,9 @@ def test_worker_and_publisher_are_separate_hardened_users(self):
     self.assertIn("EnvironmentFile=-/etc/agent-continuity/gemini.env", worker)
     self.assertNotIn("publisher", worker.lower())
     self.assertIn("User=agent-continuity-publisher", publisher)
+    self.assertIn("LoadCredential=publisher_ssh_key:/etc/agent-continuity/publisher/id_ed25519", publisher)
     self.assertNotIn("GEMINI", publisher)
+    self.assertNotIn("GH_TOKEN", publisher)
 ```
 
 - [ ] **Step 2: Run systemd tests and verify RED**
@@ -421,7 +434,7 @@ Worker `ReadWritePaths` is limited to `/srv/continuity/sources`, `/srv/continuit
 
 - [ ] **Step 4: Extend installer without overwriting secrets**
 
-Create both system users if absent, create roots with explicit ownership/modes, install policy/runtime/unit files, and enable `.path` units only after files exist. Installer must fail if an existing credential file has unsafe ownership/mode; it never creates credential values.
+Create both system users if absent, create roots with explicit ownership/modes, install policy/runtime/unit files, and enable `.path` units only after files exist. Installer must fail if an existing credential file has unsafe ownership/mode; it never invents credential values. `provision-continuity-gemini-env.sh` runs as root, extracts only `GEMINI_API_KEY` plus the approved recurring model from the already protected AI secret source into `/etc/agent-continuity/gemini.env`, prints only `GEMINI_ENV_PROVISIONED=true`, and sets `0640 root:agent-continuity-worker`. `provision-continuity-publisher-key.sh` generates one Ed25519 key if absent, registers only its public half as a write-enabled deploy key on `Vivaliz-site/amazon-returns-safet`, verifies the returned key ID/repository, and stores the private half `0600 root:root` under `/etc/agent-continuity/publisher/`. The operator's broad GitHub login is used only during this one-time provisioning command and is never copied to recurring services.
 
 ```bash
 install -d -m 0750 -o agent-continuity-worker -g agent-continuity-worker /srv/continuity/sources /srv/continuity/worktrees
@@ -431,17 +444,17 @@ install -d -m 0750 -o agent-continuity-worker -g agent-continuity /var/lib/agent
 
 - [ ] **Step 5: Extend CI syntax/contract checks**
 
-Add `python3 -m py_compile tools/continuity/*.py`, `bash -n scripts/run-continuity-pilot.sh`, and systemd contract tests for both units/path files and secret separation.
+Add `python3 -m py_compile tools/continuity/*.py`, `bash -n scripts/run-continuity-pilot.sh`, `bash -n scripts/provision-continuity-publisher-key.sh`, and systemd contract tests for both units/path files and secret separation.
 
 - [ ] **Step 6: Verify systemd/installer suite GREEN**
 
-Run: `python3 -m unittest tests.continuity.test_systemd_contract -v && bash -n scripts/install-continuity-controller.sh`
+Run: `python3 -m unittest tests.continuity.test_systemd_contract -v && bash -n scripts/install-continuity-controller.sh && bash -n scripts/provision-continuity-publisher-key.sh`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add deploy/systemd scripts/install-continuity-controller.sh tests/continuity/test_systemd_contract.py .github/workflows/ci.yml
+git add deploy/systemd scripts/install-continuity-controller.sh scripts/provision-continuity-publisher-key.sh tests/continuity/test_systemd_contract.py .github/workflows/ci.yml
 git commit -m "feat(continuity): isolate worker and publisher services"
 ```
 
@@ -526,7 +539,7 @@ Expected: FAIL because pilot script is absent.
 
 - [ ] **Step 3: Implement pilot preflight**
 
-Before creating anything, verify `auto_dispatch=false`, worker/publisher credential separation, worker CLI smoke, exact deployed runtime SHA, clean source mirror, CI workflow available, and publisher capable of opening a PR. If publisher credentials are absent/narrow-scope cannot be proven, exit with `BLOCKED_EXTERNAL` before any AI job is launched.
+Before creating anything, verify `auto_dispatch=false`, worker/publisher credential separation, worker CLI smoke, exact deployed runtime SHA, clean source mirror, CI workflow available, repository deploy key write access, and the GitHub Actions publisher workflow permission contract. If the repo-scoped deploy key or workflow permissions cannot be proven, exit with `BLOCKED_EXTERNAL` before any AI job is launched.
 - [ ] **Step 4: Create isolated pilot task and first lost lease**
 
 Create worker-owned source/worktree, persist task/base/head, claim a short session A lease, add only a deterministic pilot fixture marker, then let/force the lease expiry through the normal ledger expiry API. Reconcile and assert persisted transition `AGENT_LOST -> NEEDS_RESUME`; do not reset/clean the fixture.
@@ -537,7 +550,7 @@ Claim session B, render the redacted resume packet, enqueue a real Gemini job th
 
 - [ ] **Step 6: Publish, CI, merge and reconcile**
 
-Publisher pushes the exact branch head, creates/reuses the PR, waits by bounded polling for the existing `Amazon Returns CI` checks, requests the configured merge path only after success, then records merged SHA. Reconcile exact merged SHA and verify the pilot fixture in `origin/main`.
+The host publisher pushes only the exact branch head through the repo-scoped deploy key. The `continuity-publisher.yml` workflow creates/reuses the PR and enables the configured auto-merge path with GitHub's ephemeral repository token; the controller/pilot polls the public PR/check state with bounded retries, records the merged SHA, reconciles that exact SHA, and verifies the pilot fixture in `origin/main`.
 
 - [ ] **Step 7: Emit signed-by-state pilot evidence and clean pilot artifacts**
 
