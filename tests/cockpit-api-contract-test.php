@@ -35,6 +35,10 @@ caSame(true,$systemFilters->requiresDecisionFilter(),'System bucket requires dec
 caSame(false,$systemFilters->acceptsDecision(['action'=>'HUMAN_REVIEW']),'System bucket must exclude HUMAN_REVIEW before persistence.');
 caSame(false,$systemFilters->acceptsDecision(['action'=>'BLOCKED_REVIEW']),'System bucket must exclude BLOCKED_REVIEW before persistence.');
 caSame(true,$systemFilters->acceptsDecision(['action'=>'WAIT']),'System bucket keeps automatic decisions.');
+caSame(5000,SvAmazonCockpitFilters::MAX_DECISION_POST_FILTER_CANDIDATES,'Decision post-filter scan must have an explicit safety bound.');
+SvAmazonCockpitFilters::assertDecisionCandidateCount(5000);
+$tooMany=false;try{SvAmazonCockpitFilters::assertDecisionCandidateCount(5001);}catch(OverflowException){$tooMany=true;}
+caAssert($tooMany,'Decision post-filter candidate overflow must fail closed.');
 $thrown=false;
 try{SvAmazonCockpitFilters::fromQuery(['tenant_id'=>'999']);}catch(InvalidArgumentException){$thrown=true;}
 caAssert($thrown,'Request tenant_id must be rejected, never trusted.');
@@ -93,6 +97,9 @@ caAssert(str_contains($casesSrc,'SvAmazonGmailReturnReferenceLookup'),'TBR searc
 caAssert(str_contains($casesSrc,'$requiresPostFilter=$filters->requiresDecisionFilter();'),'Decision-aware filters must use exact post-filter pagination.');
 caAssert(str_contains($casesSrc,'count($rawItems)<$rawTotal')&&str_contains($casesSrc,'$batchItems!==[]'),'Decision post-filtering must scan all server-side candidate pages with an empty-batch guard.');
 caAssert(str_contains($casesSrc,'if(!$filters->acceptsDecision($decision))continue;'),'Projected decisions must enforce action and system-bucket membership.');
+caAssert(str_contains($casesSrc,'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')&&str_contains($casesSrc,'beginTransaction()'),'Decision post-filter scan must use one repeatable-read snapshot.');
+caAssert(str_contains($casesSrc,'assertDecisionCandidateCount($rawTotal)'),'Decision post-filter scan must enforce its candidate bound before projection.');
+caAssert(str_contains($casesSrc,'commit()')&&str_contains($casesSrc,'rollBack()'),'Decision snapshot must be closed on success and failure.');
 caAssert(!str_contains($casesSrc,'$filters->requiresDecisionFilter() || $searchTerm'),'Text search must never trigger full-tenant post-filter pagination.');
 caAssert(!str_contains($casesSrc,'foreach($case[\'customer_tracking_ids\']'),'Cockpit search must not post-filter projected tracking in PHP.');
 $caseSrc=caSource('admin/amazon-returns/api/case.php');

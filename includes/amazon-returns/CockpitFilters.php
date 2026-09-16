@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 final class SvAmazonCockpitFilters
 {
+    public const MAX_DECISION_POST_FILTER_CANDIDATES=5000;
     private const ALLOWED=[
         'q','state','action','review_status','program','physical_status','deadline','bucket',
         'learned_rule','min_outstanding','max_outstanding','page','per_page',
@@ -61,6 +62,7 @@ final class SvAmazonCockpitFilters
     public function sqlFilters():array{return $this->filters;}
     public function filters():array{return $this->filters+($this->action!==null?['action'=>$this->action]:[]);}
     public function requiresDecisionFilter():bool{return $this->action!==null||$this->bucket()==='system';}
+    public static function assertDecisionCandidateCount(int $count):void{if($count>self::MAX_DECISION_POST_FILTER_CANDIDATES)throw new OverflowException('DECISION_FILTER_TOO_BROAD');}
     public function acceptsDecision(array $decision):bool{
         $action=strtoupper((string)($decision['action']??''));
         if($this->action!==null&&$action!==$this->action)return false;
