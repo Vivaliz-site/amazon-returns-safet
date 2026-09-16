@@ -444,17 +444,17 @@ install -d -m 0750 -o agent-continuity-worker -g agent-continuity /var/lib/agent
 
 - [ ] **Step 5: Extend CI syntax/contract checks**
 
-Add `python3 -m py_compile tools/continuity/*.py`, `bash -n scripts/run-continuity-pilot.sh`, `bash -n scripts/provision-continuity-publisher-key.sh`, and systemd contract tests for both units/path files and secret separation.
+Add `python3 -m py_compile tools/continuity/*.py`, `bash -n scripts/run-continuity-pilot.sh`, `bash -n scripts/provision-continuity-gemini-env.sh`, `bash -n scripts/provision-continuity-publisher-key.sh`, and systemd contract tests for both units/path files and secret separation.
 
 - [ ] **Step 6: Verify systemd/installer suite GREEN**
 
-Run: `python3 -m unittest tests.continuity.test_systemd_contract -v && bash -n scripts/install-continuity-controller.sh && bash -n scripts/provision-continuity-publisher-key.sh`
+Run: `python3 -m unittest tests.continuity.test_systemd_contract -v && bash -n scripts/install-continuity-controller.sh && bash -n scripts/provision-continuity-gemini-env.sh && bash -n scripts/provision-continuity-publisher-key.sh`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add deploy/systemd scripts/install-continuity-controller.sh scripts/provision-continuity-publisher-key.sh tests/continuity/test_systemd_contract.py .github/workflows/ci.yml
+git add deploy/systemd scripts/install-continuity-controller.sh scripts/provision-continuity-gemini-env.sh scripts/provision-continuity-publisher-key.sh tests/continuity/test_systemd_contract.py .github/workflows/ci.yml
 git commit -m "feat(continuity): isolate worker and publisher services"
 ```
 
