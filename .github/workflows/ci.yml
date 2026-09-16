@@ -49,7 +49,6 @@ jobs:
           set -e
           find includes api admin workers scripts -name '*.php' -print0 | xargs -0 -n1 php -l
           node --check admin/amazon-returns/assets/cockpit-operational.js
-          node --check admin/amazon-returns/assets/cockpit-operational-bootstrap.js
           node --check scripts/amazon-returns/safe-t-status-parser.mjs
           node --check scripts/amazon-returns/seller-central-auth.mjs
           node --check scripts/amazon-returns/seller-central-safe-t-read-worker.mjs

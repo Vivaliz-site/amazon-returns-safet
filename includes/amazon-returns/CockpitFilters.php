@@ -3,8 +3,9 @@ declare(strict_types=1);
 
 final class SvAmazonCockpitFilters
 {
+    public const MAX_DECISION_POST_FILTER_CANDIDATES=5000;
     private const ALLOWED=[
-        'q','state','action','review_status','program','physical_status','deadline',
+        'q','state','action','review_status','program','physical_status','deadline','bucket',
         'learned_rule','min_outstanding','max_outstanding','page','per_page',
     ];
     private function __construct(
@@ -37,6 +38,11 @@ final class SvAmazonCockpitFilters
             if(!in_array($value,['overdue','today','7d'],true))throw new InvalidArgumentException('Invalid deadline filter.');
             $filters['deadline']=$value;
         }
+        if(array_key_exists('bucket',$query)){
+            $value=strtolower(self::text($query['bucket'],'bucket',16));
+            if(!in_array($value,['all','attention','system','closed'],true))throw new InvalidArgumentException('Invalid bucket filter.');
+            if($value!=='all')$filters['bucket']=$value;
+        }
         if(array_key_exists('learned_rule',$query)){
             $value=strtolower(self::text($query['learned_rule'],'learned_rule',16));
             if(!in_array($value,['applied','none','conflict'],true))throw new InvalidArgumentException('Invalid learned_rule filter.');
@@ -55,8 +61,17 @@ final class SvAmazonCockpitFilters
     }
     public function sqlFilters():array{return $this->filters;}
     public function filters():array{return $this->filters+($this->action!==null?['action'=>$this->action]:[]);}
-    public function requiresDecisionFilter():bool{return $this->action!==null;}
+    public function requiresDecisionFilter():bool{return $this->action!==null||in_array($this->bucket(),['system','attention'],true);}
+    public static function assertDecisionCandidateCount(int $count):void{if($count>self::MAX_DECISION_POST_FILTER_CANDIDATES)throw new OverflowException('DECISION_FILTER_TOO_BROAD');}
+    public function acceptsDecision(array $decision,?string $reviewStatus=null):bool{
+        $action=strtoupper((string)($decision['action']??''));$human=in_array($action,['HUMAN_REVIEW','BLOCKED_REVIEW'],true);$openReview=strtoupper((string)$reviewStatus)==='OPEN';
+        if($this->action!==null&&$action!==$this->action)return false;
+        if($this->bucket()==='system'&&($human||$openReview))return false;
+        if($this->bucket()==='attention'&&!$human&&!$openReview)return false;
+        return true;
+    }
     public function action():?string{return $this->action;}
+    public function bucket():?string{return isset($this->filters['bucket'])?(string)$this->filters['bucket']:null;}
     public function perPage():int{return $this->perPage;}
     public function page():int{return $this->page;}
 

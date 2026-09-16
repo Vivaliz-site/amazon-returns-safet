@@ -129,7 +129,7 @@ final class SvAmazonReturnCaseRepository
         $page=max(1,$page);$perPage=max(1,min(1000,$perPage));
         $where=['c.tenant_id=:tenant_id','c.amazon_connection_id=:amazon_connection_id'];
         $params=$this->scopeParams();
-        $allowed=['q','case_ids','safe_t_id','state','review_status','program','physical_status','deadline','learned_rule','min_outstanding','max_outstanding'];
+        $allowed=['q','case_ids','safe_t_id','state','review_status','program','physical_status','deadline','bucket','learned_rule','min_outstanding','max_outstanding'];
         foreach(array_keys($filters) as $key)if(!in_array($key,$allowed,true))throw new InvalidArgumentException('Unsupported case search filter: '.$key);
         if(isset($filters['q'])){
             $q='%'.$this->requiredText((string)$filters['q'],'search query',96).'%';
@@ -157,6 +157,10 @@ final class SvAmazonReturnCaseRepository
         }
         foreach(['safe_t_id','state','program','physical_status'] as $field){if(!isset($filters[$field]))continue;$where[]='c.'.$field.'=:'.$field;$params[':'.$field]=$filters[$field];}
         if(isset($filters['review_status'])){$where[]='EXISTS (SELECT 1 FROM amazon_return_reviews r WHERE r.tenant_id=c.tenant_id AND r.amazon_connection_id=c.amazon_connection_id AND r.case_id=c.id AND r.status=:review_status)';$params[':review_status']=$filters['review_status'];}
+        $concluded="(c.closed_at IS NOT NULL OR c.state IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK'))";
+        if(($filters['bucket']??null)==='closed')$where[]=$concluded;
+        elseif(($filters['bucket']??null)==='system')$where[]="NOT $concluded AND NOT EXISTS (SELECT 1 FROM amazon_return_reviews br WHERE br.tenant_id=c.tenant_id AND br.amazon_connection_id=c.amazon_connection_id AND br.case_id=c.id AND br.status='OPEN')";
+        elseif(($filters['bucket']??null)==='attention')$where[]="(NOT $concluded OR EXISTS (SELECT 1 FROM amazon_return_reviews br WHERE br.tenant_id=c.tenant_id AND br.amazon_connection_id=c.amazon_connection_id AND br.case_id=c.id AND br.status='OPEN'))";
         $deadline='COALESCE(c.appeal_deadline_at,c.next_action_at,c.eligibility_at)';
         if(($filters['deadline']??null)==='overdue')$where[]="$deadline<UTC_TIMESTAMP()";
         elseif(($filters['deadline']??null)==='today')$where[]="DATE($deadline)=UTC_DATE()";

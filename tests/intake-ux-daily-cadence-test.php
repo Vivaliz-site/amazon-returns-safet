@@ -75,4 +75,8 @@ intakeUxAssert(str_contains($memory,'consulta manual') && str_contains($memory,'
 $delivery=intakeUxRead('docs/REGRAS-DE-ENTREGA.md');
 intakeUxAssert(str_contains($delivery,'teste funcional de ponta a ponta') && str_contains($delivery,'não pode ser considerada concluída'),'Delivery rules must require real end-to-end functional validation before completion.');
 
+intakeUxAssert(str_contains($intakePage,'function renderIntakeItem('),'Lookup results must use a structured card renderer instead of a concatenated sentence.');
+intakeUxAssert(str_contains($intakePage,'id="photo-preview"'),'Photo selection preview is required.');
+intakeUxAssert(str_contains($intakePage,'id="receipt-summary"'),'Receipt confirmation summary is required.');
+intakeUxAssert(str_contains($intakePage,'capture="environment"'),'Mobile camera capture hint is required for evidence photos.');
 echo "intake-ux-daily-cadence-test: OK\n";

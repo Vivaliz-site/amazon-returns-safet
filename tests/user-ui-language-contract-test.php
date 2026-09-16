@@ -9,8 +9,6 @@ function uiAssert(bool $condition, string $message): void
 $root = dirname(__DIR__);
 $page = (string) file_get_contents($root . '/admin/amazon-returns/index.php');
 $js = (string) file_get_contents($root . '/admin/amazon-returns/assets/cockpit.js');
-$operatorPath = $root . '/admin/amazon-returns/assets/operator-language.js';
-$operator = is_file($operatorPath) ? (string) file_get_contents($operatorPath) : '';
 $intake = (string) file_get_contents($root . '/admin/amazon-returns/intake.php');
 
 // The operator UI must speak plain Portuguese. Internal enums/codes may remain in payloads,
@@ -19,15 +17,15 @@ foreach (['Situação', 'Próxima ação', 'Tipo de logística', 'Recebimento'] 
     uiAssert(str_contains($page, $label), 'Missing plain-language UI label: ' . $label);
 }
 foreach (['Qual decisão precisa ser tomada?', 'O que aconteceu', 'O que já foi verificado', 'Mensagens com a Amazon', 'Impacto financeiro e prazo', 'Recomendação', 'O que o sistema aprenderá', 'Casos semelhantes afetados'] as $section) {
-    uiAssert(str_contains($js . $operator, $section), 'Review is missing plain-language section: ' . $section);
+    uiAssert(str_contains($js, $section), 'Review is missing plain-language section: ' . $section);
 }
 foreach (['function friendlyError(', 'function humanText(', 'function humanReviewSummary(', 'function renderMessageThread('] as $helper) {
     uiAssert(str_contains($js, $helper), 'Missing global UI humanization helper: ' . $helper);
 }
-uiAssert(str_contains($page, 'operator-language.js'), 'Operator language boundary script must be loaded after the cockpit.');
-uiAssert(str_contains($operator, 'function recommendationExplanation('), 'Missing recommendation explanation sanitizer.');
-uiAssert(str_contains($operator, 'function renderSuggestion('), 'Recommendation rendering must be overridden at the user-facing boundary.');
-uiAssert(str_contains($operator, "humanText(suggestion?.rationale||'')"), 'AI rationale must pass through the global humanizer before rendering.');
+uiAssert(!str_contains($page, 'operator-language.js'), 'Legacy operator language override must not be loaded.');
+uiAssert(str_contains($js, 'function recommendationExplanation('), 'Missing recommendation explanation sanitizer in cockpit.js.');
+uiAssert(str_contains($js, 'function renderSuggestion('), 'Recommendation rendering must be owned by cockpit.js.');
+uiAssert(str_contains($js, "humanText(suggestion?.rationale||'')"), 'AI rationale must pass through the global humanizer before rendering.');
 uiAssert(str_contains($js, "text('span',friendlyError(message))"), 'All global UI errors must pass through friendlyError before rendering.');
 
 $forbiddenPage = [

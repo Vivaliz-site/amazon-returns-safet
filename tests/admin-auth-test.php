@@ -24,4 +24,7 @@ aaAssert(preg_match('/^[a-f0-9]{64}$/',$token)===1,'CSRF token must be random 25
 aaAssert(SvAmazonReturnsCsrf::valid('intake',$token),'Issued CSRF token must validate.');
 aaAssert(!SvAmazonReturnsCsrf::valid('intake',str_repeat('0',64)),'Forged CSRF token must fail.');
 
+$loginSource=(string)file_get_contents(__DIR__.'/../login.php');
+aaAssert(str_contains($loginSource,'return_to'),'Login must preserve a safe return path after session expiry.');
+aaAssert(str_contains($loginSource,'for="username"') && str_contains($loginSource,'for="password"'),'Login labels must be bound to inputs.');
 echo "admin-auth-test: OK\n";
