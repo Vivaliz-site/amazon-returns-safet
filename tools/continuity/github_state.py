@@ -5,7 +5,9 @@ import json
 import re
 import subprocess
 from typing import Callable, Sequence
-from urllib.parse import quote
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
@@ -67,11 +69,91 @@ def _checks_state(checks: list[dict]) -> str | None:
     return "pending" if saw_pending else "success"
 
 
+PublicFetcher = Callable[[str], tuple[int, str]]
+
+
+def _default_public_fetcher(url: str) -> tuple[int, str]:
+    request = Request(url, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "shopvivaliz-agent-continuity/1",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }, method="GET")
+    try:
+        with urlopen(request, timeout=15) as response:
+            return int(response.status), response.read().decode("utf-8", errors="replace")
+    except HTTPError as exc:
+        return int(exc.code), exc.read().decode("utf-8", errors="replace")
+    except URLError as exc:
+        return 0, str(exc.reason)
+
+
 class GitHubStateReader:
-    def __init__(self, runner: Runner | None = None):
-        self.runner = runner or _default_runner
+    def __init__(self, runner: Runner | None = None, *, public_fetcher: PublicFetcher | None = None):
+        self.runner = runner
+        self.public_fetcher = public_fetcher if public_fetcher is not None else (_default_public_fetcher if runner is None else None)
 
     def branch_state(self, repository: str, branch: str, base: str) -> RemoteState:
+        if self.public_fetcher is not None:
+            return self._branch_state_public(repository, branch, base)
+        return self._branch_state_cli(repository, branch, base)
+
+    def _branch_state_public(self, repository: str, branch: str, base: str) -> RemoteState:
+        fetch = self.public_fetcher
+        assert fetch is not None
+        api = f"https://api.github.com/repos/{repository}"
+        status, body = fetch(f"{api}/git/ref/heads/{quote(branch, safe='')}")
+        branch_present = status == 200
+        head_sha = None
+        if branch_present:
+            try:
+                head_sha = json.loads(body or "{}").get("object", {}).get("sha")
+            except (json.JSONDecodeError, AttributeError):
+                return RemoteState(repository, branch, base, evidence_error="invalid GitHub branch JSON")
+        elif status != 404:
+            return RemoteState(repository, branch, base, evidence_error=_redact(body or f"GitHub HTTP {status}"))
+
+        owner = repository.split("/", 1)[0]
+        query = urlencode({"state": "all", "head": f"{owner}:{branch}", "base": base, "per_page": "10"})
+        pr_status, pr_body = fetch(f"{api}/pulls?{query}")
+        if pr_status != 200:
+            return RemoteState(repository, branch, base, branch_present=branch_present, head_sha=head_sha, evidence_error=_redact(pr_body or f"GitHub HTTP {pr_status}"))
+        try:
+            prs = json.loads(pr_body or "[]")
+        except json.JSONDecodeError:
+            return RemoteState(repository, branch, base, branch_present=branch_present, head_sha=head_sha, evidence_error="invalid GitHub PR JSON")
+        if not prs:
+            return RemoteState(repository, branch, base, branch_present=branch_present, head_sha=head_sha)
+
+        summary = prs[0]
+        number = int(summary.get("number"))
+        detail_status, detail_body = fetch(f"{api}/pulls/{number}")
+        if detail_status != 200:
+            return RemoteState(repository, branch, base, branch_present=branch_present, head_sha=head_sha, evidence_error=_redact(detail_body or f"GitHub HTTP {detail_status}"))
+        try:
+            item = json.loads(detail_body or "{}")
+        except json.JSONDecodeError:
+            return RemoteState(repository, branch, base, branch_present=branch_present, head_sha=head_sha, evidence_error="invalid GitHub PR detail JSON")
+        pr_head = (item.get("head") or {}).get("sha") or (summary.get("head") or {}).get("sha")
+        checks = []
+        check_sha = head_sha or pr_head
+        if check_sha:
+            check_status, check_body = fetch(f"{api}/commits/{quote(str(check_sha), safe='')}/check-runs")
+            if check_status == 200:
+                try:
+                    checks = json.loads(check_body or "{}").get("check_runs") or []
+                except (json.JSONDecodeError, AttributeError):
+                    checks = []
+        merged = bool(item.get("merged") or item.get("merged_at"))
+        state = "MERGED" if merged else str(item.get("state") or summary.get("state") or "").upper() or None
+        return RemoteState(
+            repository=repository, branch=branch, base=base, branch_present=branch_present,
+            head_sha=head_sha or pr_head, pr_number=number,
+            pr_url=item.get("html_url") or summary.get("html_url"), pr_state=state,
+            merged=merged, closed_unmerged=state == "CLOSED" and not merged,
+            checks_state=_checks_state(checks), mergeable=item.get("mergeable"),
+        )
+
+    def _branch_state_cli(self, repository: str, branch: str, base: str) -> RemoteState:
         ref_path = f"repos/{repository}/git/ref/heads/{quote(branch, safe='')}"
         branch_cp = self.runner(["gh", "api", ref_path])
         branch_present = branch_cp.returncode == 0

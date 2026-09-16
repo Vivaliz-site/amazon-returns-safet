@@ -11,4 +11,11 @@ for f in AGENTS.md AGENTS.override.md CLAUDE.md GEMINI.md .github/copilot-instru
   test -f "$f" || { echo "missing agent entrypoint: $f" >&2; exit 1; }
   grep -Fq 'AI-TO-CLI-PROTOCOL.md' "$f" || { echo "$f does not reference canonical protocol" >&2; exit 1; }
 done
+runbook=docs/runbooks/agent-continuity-controller.md
+test -f "$runbook"
+grep -Fq 'automatic recurring: Gemini -> certified rooter only' "$runbook" || { echo 'runbook missing recurring provider policy' >&2; exit 1; }
+if grep -Fq 'Preferred agent order is Codex, ChatGPT, Claude, then Gemini' "$runbook"; then
+  echo 'runbook contains obsolete automatic provider order' >&2
+  exit 1
+fi
 echo 'agent continuity contract: OK'

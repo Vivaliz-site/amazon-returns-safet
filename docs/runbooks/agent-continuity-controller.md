@@ -78,9 +78,23 @@ Continue in the existing worktree and branch. Validate before commit/push, follo
 
 ## Phase E - controlled automation and rollback
 
-Keep `auto_dispatch=false` until lease concurrency, audit non-mutation, redaction, worktree isolation, and a disposable interruption/recovery pilot are all green. Preferred agent order is Codex, ChatGPT, Claude, then Gemini. A fallback uses the same task, branch, and worktree.
+Keep `auto_dispatch=false` until lease concurrency, audit non-mutation, redaction, worker-owned worktree isolation, credential separation, and the disposable interruption/recovery pilot are all green. The automatic recurring policy is: `automatic recurring: Gemini -> certified rooter only`. Codex, ChatGPT, and Claude are interactive/manual agents only and are never eligible for recurring dispatch. `rooter` remains disabled until it has its own certified worker implementation and pilot evidence.
 
-The example configuration keeps every agent disabled. Enable an agent only after its command has been tested to accept the Resume Packet on stdin and to operate inside the controller-selected worktree. Automatic dispatch is intended for controller-owned, service-writable isolated worktrees; recovered legacy worktrees with incompatible ownership or paths remain manual until their permissions are deliberately reconciled. Do not add credentials or login arguments to agent command arrays.
+The controller remains read-only for repository content and runs as `agent-continuity`. It writes only ledger/queue state. The Gemini worker runs as `agent-continuity-worker`, receives only `/etc/agent-continuity/gemini.env`, and may write only controller-created worktrees under `/srv/continuity/worktrees`. The non-AI publisher runs as `agent-continuity-publisher`, receives only the repository-scoped deploy key, and never receives Gemini/OpenAI/Claude credentials. Legacy/shared worktrees remain manual.
+
+Provision credentials explicitly, run the real pilot with automation still disabled, then enable through the fail-closed gate:
+
+```bash
+sudo ./scripts/provision-continuity-gemini-env.sh
+sudo ./scripts/provision-continuity-publisher-key.sh
+sudo ./scripts/run-continuity-pilot.sh
+sudo python3 scripts/enable-continuity-auto-dispatch.py \
+  --config /etc/agent-continuity/config.json \
+  --pilot-evidence /var/lib/agent-continuity/pilot-evidence.json \
+  --source-sha "$(cat /opt/agent-continuity/.source-sha)"
+```
+
+The enablement gate must prove exact runtime SHA, green pilot evidence, safe credential modes, installed worker/publisher units, `gemini.enabled=true`, `rooter.enabled=false`, and no automatic Codex/ChatGPT/Claude candidate. Any failed gate leaves `auto_dispatch=false`. Every recurring invocation must be attributable by task ID, lease/session ID, provider/model, start/end status, token telemetry, and job/receipt digest.
 
 To disable scheduling without deleting recovery state:
 

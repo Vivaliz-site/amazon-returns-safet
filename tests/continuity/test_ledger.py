@@ -67,7 +67,7 @@ class LedgerTest(unittest.TestCase):
         expired = self.ledger.expire_leases(now + timedelta(seconds=61))
         self.assertEqual([task.task_id], [t.task_id for t in expired])
         loaded = self.ledger.get_task(task.task_id)
-        self.assertEqual(TaskStatus.NEEDS_RESUME, loaded.status)
+        self.assertEqual(TaskStatus.AGENT_LOST, loaded.status)
         self.assertEqual(Classification.NEEDS_RESUME, loaded.classification)
 
     def test_resume_queue_orders_by_priority_age_and_id(self):

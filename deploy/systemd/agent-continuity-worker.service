@@ -1,0 +1,41 @@
+[Unit]
+Description=ShopVivaliz isolated recurring Gemini worker
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/agent-continuity/config.json
+ConditionPathExists=/etc/agent-continuity/gemini.env
+ConditionPathExists=/etc/agent-continuity/gemini-admin-policy.toml
+
+[Service]
+Type=oneshot
+User=agent-continuity-worker
+Group=agent-continuity-worker
+SupplementaryGroups=agent-continuity agent-continuity-jobs
+WorkingDirectory=/opt/agent-continuity/current
+Environment=PYTHONUNBUFFERED=1
+Environment=CONTINUITY_CONFIG=/etc/agent-continuity/config.json
+Environment=HOME=/var/lib/agent-continuity-worker
+EnvironmentFile=-/etc/agent-continuity/gemini.env
+ExecStart=/usr/bin/python3 -m tools.continuity.worker --config /etc/agent-continuity/config.json --once
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/srv/continuity/sources /srv/continuity/worktrees /var/lib/agent-continuity/jobs /var/lib/agent-continuity-worker
+ReadOnlyPaths=/opt/agent-continuity /etc/agent-continuity/config.json /etc/agent-continuity/gemini-admin-policy.toml
+TasksMax=128
+MemoryMax=768M
+CPUQuota=100%
+TimeoutStartSec=20min

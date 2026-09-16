@@ -220,9 +220,9 @@ class Ledger:
                     """UPDATE tasks SET status=?, classification=?, agent_session_id=NULL,
                        lease_expires_at=NULL, next_action=?, updated_at=?, revision=revision+1 WHERE task_id=?""",
                     (
-                        TaskStatus.NEEDS_RESUME.value,
+                        TaskStatus.AGENT_LOST.value,
                         Classification.NEEDS_RESUME.value,
-                        "resume from existing worktree",
+                        "reconcile lost agent then resume from existing worktree",
                         self._iso(now),
                         task_id,
                     ),

@@ -15,6 +15,8 @@ class SystemdContractTest(unittest.TestCase):
         self.assertIn("ProtectSystem=strict", service)
         self.assertIn("ProtectHome=read-only", service)
         self.assertIn("ReadWritePaths=/var/lib/agent-continuity /srv/continuity", service)
+        self.assertIn("UMask=0027", service)
+        self.assertNotIn("UMask=0077", service)
         self.assertIn("WorkingDirectory=/opt/agent-continuity/current", service)
         self.assertIn(
             "BindReadOnlyPaths=/home/ubuntu/amazon-returns-deploy-source:"
@@ -67,8 +69,86 @@ class SystemdContractTest(unittest.TestCase):
         self.assertIn("python3 -m unittest discover -s tests/continuity", ci)
         self.assertIn("python3 -m py_compile tools/continuity/*.py", ci)
         self.assertIn("python3 -m py_compile scripts/migrate-continuity-config.py", ci)
+        self.assertIn("python3 -m py_compile scripts/enable-continuity-auto-dispatch.py", ci)
         self.assertIn("bash -n scripts/install-continuity-controller.sh", ci)
+        self.assertIn("bash -n scripts/provision-continuity-gemini-env.sh", ci)
+        self.assertIn("bash -n scripts/provision-continuity-publisher-key.sh", ci)
         self.assertIn("bash -n scripts/auto-deploy.sh", ci)
+
+    def test_worker_and_publisher_are_separate_hardened_users(self):
+        worker = Path("deploy/systemd/agent-continuity-worker.service").read_text(encoding="utf-8")
+        publisher = Path("deploy/systemd/agent-continuity-publisher.service").read_text(encoding="utf-8")
+        for directive in ("NoNewPrivileges=true", "PrivateTmp=true", "PrivateDevices=true",
+                          "ProtectSystem=strict", "ProtectHome=true", "RestrictSUIDSGID=true",
+                          "LockPersonality=true", "TasksMax=", "MemoryMax=", "CPUQuota=", "TimeoutStartSec="):
+            self.assertIn(directive, worker)
+            self.assertIn(directive, publisher)
+        self.assertIn("User=agent-continuity-worker", worker)
+        self.assertIn("Environment=HOME=/var/lib/agent-continuity-worker", worker)
+        self.assertIn("/var/lib/agent-continuity-worker", worker)
+        self.assertIn("EnvironmentFile=-/etc/agent-continuity/gemini.env", worker)
+        self.assertIn("python3 -m tools.continuity.worker", worker)
+        self.assertNotIn("publisher_ssh_key", worker)
+        self.assertIn("User=agent-continuity-publisher", publisher)
+        self.assertIn("Environment=HOME=/var/lib/agent-continuity-publisher", publisher)
+        self.assertIn("/var/lib/agent-continuity-publisher", publisher)
+        self.assertIn("LoadCredential=publisher_ssh_key:/etc/agent-continuity/publisher/id_ed25519", publisher)
+        self.assertIn("python3 -m tools.continuity.publisher", publisher)
+        self.assertNotIn("GEMINI_API_KEY", publisher)
+        self.assertNotIn("GH_TOKEN", publisher)
+
+    def test_worker_and_publisher_path_units_watch_only_owned_queues(self):
+        worker = Path("deploy/systemd/agent-continuity-worker.path").read_text(encoding="utf-8")
+        publisher = Path("deploy/systemd/agent-continuity-publisher.path").read_text(encoding="utf-8")
+        self.assertIn("/var/lib/agent-continuity/jobs/pending", worker)
+        self.assertIn("agent-continuity-worker.service", worker)
+        self.assertIn("/var/lib/agent-continuity/jobs/receipts", publisher)
+        self.assertIn("agent-continuity-publisher.service", publisher)
+
+    def test_installer_creates_trust_domains_and_installs_policy_without_secrets(self):
+        installer = Path("scripts/install-continuity-controller.sh").read_text(encoding="utf-8")
+        for user in ("agent-continuity-worker", "agent-continuity-publisher"):
+            self.assertIn(user, installer)
+        self.assertIn("/var/lib/$WORKER_USER", installer)
+        self.assertIn("/var/lib/$PUBLISHER_USER", installer)
+        self.assertIn("gemini-admin-policy.toml", installer)
+        self.assertIn("2770", installer)
+        self.assertIn("ledger.sqlite3", installer)
+        self.assertIn("chmod 0640", installer)
+        self.assertIn("agent-continuity-worker.path", installer)
+        self.assertIn("agent-continuity-publisher.path", installer)
+        self.assertNotIn("GEMINI_API_KEY=", installer)
+        self.assertNotIn("github_pat_", installer)
+
+    def test_installer_prepares_only_audit_only_runtime_config(self):
+        installer = Path("scripts/install-continuity-controller.sh").read_text(encoding="utf-8")
+        self.assertIn("prepare-continuity-runtime-config.py", installer)
+        self.assertIn('id -u "$WORKER_USER"', installer)
+        self.assertIn("CONTINUITY_GEMINI_BIN", installer)
+        self.assertIn("/opt/node-v", installer)
+        ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn("python3 -m py_compile scripts/prepare-continuity-runtime-config.py", ci)
+
+    def test_installer_does_not_run_audit_only_config_prep_after_enablement(self):
+        installer = Path("scripts/install-continuity-controller.sh").read_text(encoding="utf-8")
+        self.assertIn("CONTINUITY_AUTO_DISPATCH", installer)
+        self.assertIn("runtime_config_prep_skipped=auto_dispatch_enabled", installer)
+        self.assertIn('if [[ "$CONTINUITY_AUTO_DISPATCH" == "false" ]]', installer)
+
+    def test_provisioners_are_explicit_and_secret_minimal(self):
+        gemini = Path("scripts/provision-continuity-gemini-env.sh").read_text(encoding="utf-8")
+        publisher = Path("scripts/provision-continuity-publisher-key.sh").read_text(encoding="utf-8")
+        self.assertIn("GEMINI_ENV_PROVISIONED=true", gemini)
+        self.assertIn("0640", gemini)
+        self.assertIn("agent-continuity-worker", gemini)
+        self.assertNotIn("cat $", gemini)
+        self.assertIn("ssh-keygen", publisher)
+        self.assertIn("read_only=false", publisher)
+        self.assertIn("0600", publisher)
+        self.assertIn("api.github.com/meta", publisher)
+        self.assertIn("deploy-key.json", publisher)
+        self.assertIn("repository", publisher)
+
 
 
 if __name__ == "__main__":

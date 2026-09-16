@@ -2,6 +2,7 @@ from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from io import StringIO
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -9,8 +10,10 @@ import sys
 
 from tests.continuity.git_fixture import GitFixture
 from tools.continuity.cli import main
+from tools.continuity.job_queue import QueuePaths, load_job
 from tools.continuity.ledger import Ledger
 from tools.continuity.model import Classification, TaskRecord, TaskStatus
+from tools.continuity.worktrees import create_worker_task_worktree, prepare_worker_source
 
 UTC = timezone.utc
 
@@ -22,6 +25,7 @@ class CliTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
+        self.root = root
         self.ledger_path = root / "ledger.sqlite3"
         self.config_path = root / "config.json"
         self.config_path.write_text(json.dumps({
@@ -75,6 +79,36 @@ class CliTest(unittest.TestCase):
         self.assertFalse(decision["claimed"])
         self.assertFalse(decision["launched"])
         self.assertIsNone(Ledger(self.ledger_path).get_task("TASK-DISPATCH").lease_expires_at)
+
+    def test_auto_dispatch_cli_queues_worker_job(self):
+        source = prepare_worker_source(str(self.fx.remote), self.root / "sources", "Vivaliz-site/amazon-returns-safet")
+        worker_base = self.root / "worker"
+        result = create_worker_task_worktree(
+            source, worker_base, "TASK-AUTO-CLI", "pilot", "origin/main", os.getuid()
+        )
+        config = json.loads(self.config_path.read_text(encoding="utf-8"))
+        config.update({
+            "auto_dispatch": True,
+            "job_queue_root": str(self.root / "jobs"),
+            "worker_root": str(worker_base / "worktrees"),
+            "worker_uid": os.getuid(),
+            "agents": [{"name": "gemini", "command": [sys.executable, "-c", "pass"], "enabled": True}],
+        })
+        self.config_path.write_text(json.dumps(config), encoding="utf-8")
+        now = datetime.now(tz=UTC)
+        Ledger(self.ledger_path).create_task(TaskRecord(
+            task_id="TASK-AUTO-CLI", repository="Vivaliz-site/amazon-returns-safet", host="test-host",
+            worktree_path=str(result.path), branch=result.branch, base_sha=result.head, current_head=result.head,
+            objective="queue only", status=TaskStatus.NEEDS_RESUME, classification=Classification.NEEDS_RESUME,
+            priority=10, created_at=now, updated_at=now,
+        ))
+        rc, output = self.invoke("dispatch", "--json")
+        self.assertEqual(0, rc)
+        decision = json.loads(output)
+        self.assertTrue(decision["queued"])
+        self.assertFalse(decision["launched"])
+        job_path = QueuePaths.under(self.root / "jobs").pending / f"{decision['job_id']}.json"
+        self.assertEqual("gemini", load_job(job_path).provider)
 
     def test_associate_converts_orphan_without_moving_worktree(self):
         self.fx.write("orphan.txt", "pending\n")

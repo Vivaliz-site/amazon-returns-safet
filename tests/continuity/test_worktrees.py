@@ -1,9 +1,16 @@
+import os
 from pathlib import Path
 import tempfile
 import unittest
 
 from tests.continuity.git_fixture import GitFixture
-from tools.continuity.worktrees import WorktreeSafetyError, create_task_worktree
+from tools.continuity.worktrees import (
+    WorktreeSafetyError,
+    assert_worker_owned_worktree,
+    create_task_worktree,
+    create_worker_task_worktree,
+    prepare_worker_source,
+)
 
 
 class WorktreeTest(unittest.TestCase):
@@ -37,6 +44,31 @@ class WorktreeTest(unittest.TestCase):
         (self.fx.repo / ".release-sha").write_text("deadbeef\n", encoding="utf-8")
         with self.assertRaises(WorktreeSafetyError):
             create_task_worktree(self.fx.repo, self.root, "TASK-20260913-006", "continuity", "origin/main")
+
+    def test_worker_worktree_must_live_below_root_and_match_owner(self):
+        with self.assertRaises(WorktreeSafetyError):
+            assert_worker_owned_worktree(self.fx.repo, self.root / "worktrees", worker_uid=os.getuid())
+
+    def test_worker_source_is_bare_and_task_path_is_unique(self):
+        sources = self.root / "sources"
+        source = prepare_worker_source(str(self.fx.remote), sources, "Vivaliz-site/amazon-returns-safet")
+        self.assertTrue((source / "HEAD").exists())
+        self.assertEqual("true", self.fx.git("-C", str(source), "rev-parse", "--is-bare-repository").stdout.strip())
+        result = create_worker_task_worktree(
+            source, self.root, "TASK-20260916-002", "pilot", "origin/main", os.getuid()
+        )
+        self.assertTrue(result.path.is_relative_to(self.root / "worktrees"))
+        assert_worker_owned_worktree(result.path, self.root / "worktrees", os.getuid())
+        with self.assertRaises(WorktreeSafetyError):
+            create_worker_task_worktree(source, self.root, "TASK-20260916-002", "pilot", "origin/main", os.getuid())
+
+    def test_worker_root_symlink_is_rejected(self):
+        real = self.root / "real"
+        real.mkdir()
+        link = self.root / "linked"
+        link.symlink_to(real, target_is_directory=True)
+        with self.assertRaises(WorktreeSafetyError):
+            assert_worker_owned_worktree(self.fx.repo, link, worker_uid=os.getuid())
 
 
 if __name__ == "__main__":

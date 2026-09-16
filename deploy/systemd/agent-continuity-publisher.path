@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch ShopVivaliz continuity worker receipts for publication
+
+[Path]
+PathChanged=/var/lib/agent-continuity/jobs/receipts
+Unit=agent-continuity-publisher.service
+
+[Install]
+WantedBy=multi-user.target
