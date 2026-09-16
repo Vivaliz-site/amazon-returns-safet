@@ -53,9 +53,9 @@ try{
         $case=SvAmazonReturnProjector::project($p->cases,$p->events,$caseId);$case['policies']=$policies;
         $timeline=$p->events->eventsForCase($caseId);$policy=SvAmazonReturnPolicyEngine::evaluate($case,$now);
         $decision=$coordinator->previewAction($case,$timeline,$policy,$now);
-        if(!$filters->acceptsDecision($decision))continue;
         $reviews=$p->reviews->forCase($caseId);$currentReview=null;
         for($i=count($reviews)-1;$i>=0;$i--){if(($reviews[$i]['status']??'')==='OPEN'){$currentReview=$reviews[$i];break;}}
+        if(!$filters->acceptsDecision($decision,$currentReview['status']??null))continue;
         $apps=$p->ruleApplications->forCase($caseId);$app=$apps!==[]?$apps[array_key_last($apps)]:null;
         $history=$p->outbox->historyForCase($caseId);$lastWrite=null;
         for($i=count($history)-1;$i>=0;$i--){if(in_array($history[$i]['kind']??'',['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){$lastWrite=$history[$i];break;}}

@@ -61,12 +61,13 @@ final class SvAmazonCockpitFilters
     }
     public function sqlFilters():array{return $this->filters;}
     public function filters():array{return $this->filters+($this->action!==null?['action'=>$this->action]:[]);}
-    public function requiresDecisionFilter():bool{return $this->action!==null||$this->bucket()==='system';}
+    public function requiresDecisionFilter():bool{return $this->action!==null||in_array($this->bucket(),['system','attention'],true);}
     public static function assertDecisionCandidateCount(int $count):void{if($count>self::MAX_DECISION_POST_FILTER_CANDIDATES)throw new OverflowException('DECISION_FILTER_TOO_BROAD');}
-    public function acceptsDecision(array $decision):bool{
-        $action=strtoupper((string)($decision['action']??''));
+    public function acceptsDecision(array $decision,?string $reviewStatus=null):bool{
+        $action=strtoupper((string)($decision['action']??''));$human=in_array($action,['HUMAN_REVIEW','BLOCKED_REVIEW'],true);$openReview=strtoupper((string)$reviewStatus)==='OPEN';
         if($this->action!==null&&$action!==$this->action)return false;
-        if($this->bucket()==='system'&&in_array($action,['HUMAN_REVIEW','BLOCKED_REVIEW'],true))return false;
+        if($this->bucket()==='system'&&($human||$openReview))return false;
+        if($this->bucket()==='attention'&&!$human&&!$openReview)return false;
         return true;
     }
     public function action():?string{return $this->action;}

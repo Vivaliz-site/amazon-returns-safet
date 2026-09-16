@@ -160,7 +160,7 @@ final class SvAmazonReturnCaseRepository
         $concluded="(c.closed_at IS NOT NULL OR c.state IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK'))";
         if(($filters['bucket']??null)==='closed')$where[]=$concluded;
         elseif(($filters['bucket']??null)==='system')$where[]="NOT $concluded AND NOT EXISTS (SELECT 1 FROM amazon_return_reviews br WHERE br.tenant_id=c.tenant_id AND br.amazon_connection_id=c.amazon_connection_id AND br.case_id=c.id AND br.status='OPEN')";
-        elseif(($filters['bucket']??null)==='attention')$where[]="EXISTS (SELECT 1 FROM amazon_return_reviews br WHERE br.tenant_id=c.tenant_id AND br.amazon_connection_id=c.amazon_connection_id AND br.case_id=c.id AND br.status='OPEN')";
+        elseif(($filters['bucket']??null)==='attention')$where[]="(NOT $concluded OR EXISTS (SELECT 1 FROM amazon_return_reviews br WHERE br.tenant_id=c.tenant_id AND br.amazon_connection_id=c.amazon_connection_id AND br.case_id=c.id AND br.status='OPEN'))";
         $deadline='COALESCE(c.appeal_deadline_at,c.next_action_at,c.eligibility_at)';
         if(($filters['deadline']??null)==='overdue')$where[]="$deadline<UTC_TIMESTAMP()";
         elseif(($filters['deadline']??null)==='today')$where[]="DATE($deadline)=UTC_DATE()";
