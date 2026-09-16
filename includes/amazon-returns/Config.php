@@ -59,6 +59,12 @@ final class SvAmazonReturnsConfig
         return is_array($profile)?(string)$profile['version']:null;
     }
 
+    public function writeConfigurationRevision(): string
+    {
+        $payload=['profile_version'=>$this->writeProfileVersion(),'flags'=>$this->writeFlags()];
+        return hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES));
+    }
+
     public function writeCaseAllowed(int $caseId): bool
     {
         if ($caseId < 1) return false;
@@ -134,7 +140,7 @@ final class SvAmazonReturnsConfig
             'SAFE_T_EMAIL_REPLY' => $this->externalWriteAllowed('SAFE_T_EMAIL_REPLY'),
             'SELLER_SUPPORT_OPEN' => $this->externalWriteAllowed('SELLER_SUPPORT_OPEN'),
             'SELLER_SUPPORT_UPDATE' => $this->externalWriteAllowed('SELLER_SUPPORT_UPDATE'),
-            'ERP_SALES_RETURN_CREATE' => $this->externalWriteAllowed('ERP_SALES_RETURN_CREATE'),
+            'ERP_SALES_RETURN_CREATE' => $this->erpSalesReturnCreateEnabled(),
         ];
     }
 
