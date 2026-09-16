@@ -55,3 +55,16 @@ Read `docs/REGRAS-DE-ENTREGA.md` and `docs/MEMORIA-DO-PROJETO.md` at the start o
 ## Isolamento obrigatorio de sessao CLI por chat
 
 Antes de qualquer operacao em terminal/CLI, leia e cumpra a secao `Isolamento obrigatorio de sessao CLI por chat` de `AI-TO-CLI-PROTOCOL.md`. Cada chat deve usar sessao/namespace CLI exclusivo; reutilizacao de sessao entre chats e proibida. Estado necessario para retomada deve ser persistido fora da memoria do shell.
+
+## Supervisao e takeover de subagentes
+- Delegacao nunca transfere a responsabilidade de conclusao do agente controlador.
+- Ao iniciar um subagente, registre sessao/PID ou identificador equivalente, horario de inicio, HEAD/estado de base, artefatos esperados e criterio objetivo de progresso.
+- Monitore a execucao ativamente com checkpoints limitados; sessao/processo vivo sem artefato, commit, teste, relatorio ou outro progresso verificavel nao prova execucao util.
+- Se houver erro, limite/autenticacao/ferramenta indisponivel, saida sem artefatos, ou ausencia de progresso combinada com evidencia de bloqueio/ociosidade/travamento/timeout, preserve o que for util e assuma a tarefa diretamente ou use uma sessao limpa.
+- Nunca espere o usuario enviar `siga`/`continue` para retomar uma tarefa delegada. O controlador deve fazer takeover automatico e continuar ate validacao real ou bloqueio externo incontornavel.
+
+### Monitoramento independente do chat
+- Supervisao de subagentes deve persistir fora do estado transitorio da conversa.
+- Salve sessao/PID, inicio, HEAD/base, artefatos esperados e ultimo progresso verificavel em arquivo/ledger do projeto.
+- Mensagem de espera, spinner, reconexao ou `verificacoes adicionais` no ChatGPT nao prova progresso do executor.
+- Se a resposta do chat interromper, recupere o estado persistido e continue o monitoramento/takeover sem depender de novo comando do usuario.

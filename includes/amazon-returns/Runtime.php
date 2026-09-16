@@ -7,6 +7,8 @@ require_once __DIR__ . '/PolicySeeder.php';
 require_once __DIR__ . '/TenantContext.php';
 require_once __DIR__ . '/TenantPersistence.php';
 require_once __DIR__ . '/BridgeLiveness.php';
+require_once __DIR__ . '/BusinessHealth.php';
+require_once __DIR__ . '/OperationalHealth.php';
 
 final class SvAmazonReturnsRuntime
 {
@@ -14,6 +16,11 @@ final class SvAmazonReturnsRuntime
     private static array $knownActionCases=[];
 
     /** @return array<string,int> */
+    public static function writeConfigurationChangeTasks(): array
+    {
+        return ['scheduler','erp_sales_returns'];
+    }
+
     public static function cadences(): array
     {
         return [
@@ -368,7 +375,16 @@ final class SvAmazonReturnsRuntime
             $p->cursors->load('SELLER_CENTRAL','read_process_heartbeat'),
             $primaryStatusWorker
         );
-        $healthStatus=($browserLiveness['status'] ?? '')==='DEGRADED' ? 'DEGRADED' : 'OK';
+        $writeFlags=$config->writeFlags();
+        $operationalObservations=[];
+        foreach(self::cadences() as $task=>$seconds){
+            if(in_array($task,['health','policy_monitor'],true))continue;
+            $operationalObservations[$task]=$p->cursors->load('OPERATIONAL_TASK',$task);
+        }
+        $deadLetters=$p->outbox->countDeadLetters();
+        $operationalHealth=SvAmazonOperationalHealth::evaluate(self::cadences(),$operationalObservations,$now,$deadLetters);
+        $businessHealth=SvAmazonBusinessHealth::evaluate($config->enabled(),$config->mode(),$readiness,$writeFlags,$browserLiveness,$operationalHealth['blockers']);
+        $healthStatus=(string)$businessHealth['status'];
         return [
             'status'=>$healthStatus,
             'tenant_id'=>$p->context()->tenantId(),
@@ -376,7 +392,7 @@ final class SvAmazonReturnsRuntime
             'tables'=>$tables,
             'cases'=>$p->cases->countAll(),
             'pending_outbox'=>$p->outbox->countPendingProcessing(),
-            'dead_letters'=>$p->outbox->countDeadLetters(),
+            'dead_letters'=>$deadLetters,
             'pending_reviews'=>$p->reviews->countOpen(),
             'rule_conflicts'=>$p->reviews->countOpenByReason('LEARNED_RULE_CONFLICT'),
             'rule_applications'=>$p->ruleApplications->countAll(),
@@ -398,7 +414,8 @@ final class SvAmazonReturnsRuntime
             'enabled'=>$config->enabled(),
             'readiness'=>$readiness,
             'seller_central_browser'=>$browserLiveness,
-            'write_flags'=>$config->writeFlags(),
+            'write_flags'=>$writeFlags,
+            'health_blockers'=>$businessHealth['blockers'],
         ];
     }
 }

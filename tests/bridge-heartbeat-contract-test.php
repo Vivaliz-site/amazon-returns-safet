@@ -5,6 +5,7 @@ $root=dirname(__DIR__);
 $bridge=(string)file_get_contents($root.'/includes/amazon-returns/BridgeService.php');
 $status=(string)file_get_contents($root.'/includes/amazon-returns/StatusBridgeService.php');
 $runtime=(string)file_get_contents($root.'/includes/amazon-returns/Runtime.php');
+$businessHealth=(string)file_get_contents($root.'/includes/amazon-returns/BusinessHealth.php');
 $daemon=(string)file_get_contents($root.'/workers/amazon-returns/daemon.php');
 $bridgeApi=(string)file_get_contents($root.'/api/amazon-returns/bridge.php');
 $statusApi=(string)file_get_contents($root.'/api/amazon-returns/status-bridge.php');
@@ -35,6 +36,7 @@ bhAssert(str_contains($runner,'--auth-check'),'Daily browser cycle must authenti
 bhAssert(str_contains($runtime,'BridgeLiveness.php'),'Runtime health must load authenticated bridge liveness logic.');
 bhAssert(str_contains($runtime,"'seller_central_browser'"),'Health payload must expose Seller Central browser liveness.');
 bhAssert(str_contains($runtime,'SELLER_CENTRAL_PRIMARY_STATUS_WORKER_ID'),'Runtime health must validate the configured primary VM worker.');
-bhAssert(str_contains($runtime,"'DEGRADED'"),'Health must support a degraded state.');
+bhAssert(str_contains($runtime,'SvAmazonBusinessHealth::evaluate'),'Runtime health must delegate business readiness aggregation.');
+bhAssert(str_contains($businessHealth,"'DEGRADED'"),'Business health must support a degraded state.');
 bhAssert(str_contains($daemon,"in_array('DEGRADED',\$statuses,true)"),'Daemon aggregate status must preserve DEGRADED health.');
 echo "bridge-heartbeat-contract-test: OK\n";

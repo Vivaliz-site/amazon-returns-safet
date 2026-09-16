@@ -336,6 +336,10 @@ install -m 0644 "$root/current/deploy/systemd/amazon-returns-deploy.timer" /etc/
 systemctl daemon-reload
 systemctl enable --now amazon-returns-deploy.timer >/dev/null
 
+"$root/current/scripts/provision-olist-erp-browser-host.sh" --source-root "$root/current" --enable-service
+systemctl is-active --quiet amazon-returns-olist-erp-browser.service
+echo 'olist_erp_browser_service=enabled'
+
 worker_quiesced=0
 quiesce_started=0
 release_activated=0

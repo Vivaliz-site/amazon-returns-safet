@@ -79,9 +79,9 @@ final class SvAmazonReturnsDaemon
             $due=array_values(array_unique([...$due,'scheduler']));
             $state['learned_rule_revision']=$ruleRevision;
         }
-        $writeRevision=$this->config->writeProfileVersion();
-        if($writeRevision!==null && ($state['write_profile_revision']??null)!==$writeRevision){
-            $due=array_values(array_unique([...$due,'scheduler']));
+        $writeRevision=$this->config->writeConfigurationRevision();
+        if(($state['write_profile_revision']??null)!==$writeRevision){
+            $due=array_values(array_unique([...$due,...SvAmazonReturnsRuntime::writeConfigurationChangeTasks()]));
             $state['write_profile_revision']=$writeRevision;
         }
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
