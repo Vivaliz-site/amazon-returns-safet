@@ -160,3 +160,23 @@ Registro final mínimo: branch, SHA/base inicial, SHA/merge final, arquivos alte
 - Ao terminar a tarefa, feche ou marque a sessao interativa do chat como concluida. Sessao concluida nunca pode ser reatribuida a outro chat.
 
 Regra principal: **um chat = um namespace de sessao CLI isolado; nunca reutilizar sessao entre chats.**
+
+## PROTOCOLO OBRIGATORIO DE CONCLUSAO DE TAREFAS
+<!-- GLOBAL_COMPLETION_PROTOCOL_V2 -->
+- Trate toda solicitacao como trabalho que deve ser concluido de ponta a ponta.
+- Nao pare por duracao, complexidade, quantidade de etapas, arquivos, chamadas, limite de contexto ou resultado parcial.
+- REGRA PRINCIPAL: NAO CONFUNDA PROGRESSO COM CONCLUSAO. Diagnostico, plano, erro encontrado, alteracao, commit, push, PR, deploy iniciado ou mensagem de progresso nao sao estado final.
+- Depois de cada operacao, determine a proxima acao executavel necessaria e continue autonomamente enquanto houver trabalho seguro e necessario.
+- falha de ferramenta, comando, plugin, CLI, API, browser, sessao ou timeout nao e estado final. Leia o erro, diagnostique a causa, adapte sintaxe/versao/rota, use alternativa equivalente e retome a tarefa original.
+- Se uma abordagem falhar, investigue e tente alternativas razoaveis; nao repita cegamente a mesma tentativa sem nova evidencia.
+- Nao solicite novamente informacao ja disponivel na conversa, repositorio, arquivos, ambiente ou ferramentas autorizadas.
+- Cada chat deve usar uma sessao CLI propria; nao reutilize processo interativo ou sessao de outro chat.
+- Para trabalho tecnico, alteracao sem validacao nao e entrega. Execute testes, lint, build, integracao, smoke, seguranca e UI/funcional quando aplicavel; se falhar, corrija e repita.
+- Alteracao versionada valida deve seguir ate PR/checks/merge e validacao pos-merge. PR aberta, branch publicada ou Action em andamento nao autorizam encerrar.
+- Persista checkpoint recuperavel fora da memoria do chat para retomada exata apos interrupcao.
+- Preserve trabalho concorrente valido; nao sobrescreva branch/SHA alheio e nao abandone mudanca valida sem integracao.
+- Antes de finalizar, compare o pedido original com o estado real e procure PRs/Actions relacionados, processos orfaos e validacoes faltantes.
+- Estados finais permitidos: CONCLUIDO somente quando o objetivo foi realizado e validado; BLOQUEADO somente diante de impedimento externo real e incontornavel depois de esgotar alternativas seguras.
+- Em BLOQUEADO, registre concluido, restante, evidencia do bloqueio, acao externa minima e ponto exato de retomada.
+
+Regra final: enquanto houver acao executavel e necessaria para cumprir o pedido original, continue trabalhando.

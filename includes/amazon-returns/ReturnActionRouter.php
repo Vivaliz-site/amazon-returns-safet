@@ -37,7 +37,15 @@ final class SvAmazonReturnActionRouter
             }
             return self::decision('WAIT','EXISTING_EMAIL_REVIEW_AWAITING_RESPONSE',$case);
         }
-        $message=self::latest($events,['SAFE_T_STATUS_OBSERVED','SAFE_T_EMAIL_REVIEW_RESPONSE']);
+        $message=self::latestSafeTMessage($events);
+        if($claim!=='' && ($message['event_type']??'')==='SAFE_T_STATUS_OBSERVED'
+            && strtoupper(trim((string)($message['payload']['claim_status']??'')))==='UNKNOWN'){
+            $read=self::decision('SAFE_T_READ','SAFE_T_STATUS_REFRESH_REQUIRED',$case);
+            $read['idempotency_key']=hash('sha256',implode('|',[
+                'safe-t-status-refresh-v1',$case['id']??0,$claim,$now->format('Y-m-d'),
+            ]));
+            return $read;
+        }
         $text=self::normalized((string)($message['payload']['decision_text']??$message['payload']['review_excerpt']??''));
         $promise=self::promiseDeadline($text);
         if($promise===null && preg_match('/(?:sera reembolsad[oa]|ressarcimento proativo|reembolsad[oa] proativamente|aguarde (?:ate|nossa)|aguardar nossa resposta)/',$text)===1)
@@ -211,6 +219,20 @@ final class SvAmazonReturnActionRouter
     {
         for($i=count($events)-1;$i>=0;$i--)if(in_array($events[$i]['event_type']??'',$types,true))return $events[$i];
         return null;
+    }
+    private static function latestSafeTMessage(array $events): ?array
+    {
+        $fallback=null;
+        for($i=count($events)-1;$i>=0;$i--){
+            $event=$events[$i];
+            $type=(string)($event['event_type']??'');
+            if($type==='SAFE_T_EMAIL_REVIEW_RESPONSE')return $event;
+            if($type!=='SAFE_T_STATUS_OBSERVED')continue;
+            $fallback ??= $event;
+            $status=strtoupper(trim((string)($event['payload']['claim_status']??'')));
+            if($status!=='' && $status!=='UNKNOWN')return $event;
+        }
+        return $fallback;
     }
     private static function rank(array $e): array{return [self::date($e['occurred_at']??null)?->getTimestamp()??0,(int)($e['id']??0)];}
     private static function normalized(string $s): string

@@ -1,0 +1,6 @@
+---
+description: Mandatory end-to-end task completion and recovery
+globs: "**/*"
+alwaysApply: true
+---
+Read and obey `AI-TO-CLI-PROTOCOL.md`, especially `PROTOCOLO OBRIGATORIO DE CONCLUSAO DE TAREFAS`. Recover from tool/CLI/API failures with safe fallbacks and continue until CONCLUIDO or genuine external BLOQUEADO.
