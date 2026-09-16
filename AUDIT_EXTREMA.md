@@ -19,6 +19,7 @@ Uma rotina obrigatoria so pode ser classificada como `APTO` quando houver eviden
 Se qualquer estagio obrigatorio nao puder ser comprovado, a rotina e `NAO APTO`.
 
 Um projeto so pode ser `APTO` quando todas as suas rotinas obrigatorias estiverem `APTO` ou formalmente classificadas como `OUT_OF_SCOPE` com justificativa aprovada.
+
 ## Evidencias que nao bastam sozinhas
 
 Nenhum dos itens abaixo prova prontidao por si so:
@@ -38,6 +39,7 @@ Esses sinais podem compor a evidencia, mas nunca substituir a prova ponta a pont
 ## Auditoria contraditoria
 
 Depois do happy path, a auditoria deve tentar provar que a rotina nao esta pronta. Testar, quando aplicavel: gate de escrita desligado, credencial/sessao indisponivel, worker/scheduler parado ou atrasado, fila travada, dependencia externa indisponivel, duplicacao/retry, resposta incerta apos escrita, readback divergente, dado stale e erro de escopo/tenant/permissao.
+
 ## Readback obrigatorio
 
 Toda escrita externa precisa ser confirmada no sistema de destino. A ordem preferida e: API oficial, consulta suportada no destino, UI autenticada e, por ultimo, reconciliacao independente com fonte autoritativa.
@@ -57,6 +59,7 @@ Uma capacidade obrigatoria indisponivel deve degradar o health do projeto. Gate 
 ## Regra de regressao
 
 Todo defeito encontrado durante `auditoria extrema` deve gerar uma protecao duravel apropriada: teste automatizado, invariante de runtime, regra de health, alerta, reconciliacao ou probe de producao. Corrigir apenas o sintoma nao encerra a auditoria.
+
 ## Supervisao obrigatoria de subagentes
 
 Delegar uma tarefa nao transfere a responsabilidade de conclusao. Ao iniciar qualquer subagente, o controlador deve registrar a identidade da sessao/processo, horario de inicio, estado/commit de base, artefatos esperados e qual evidencia concreta contara como progresso.
