@@ -90,7 +90,7 @@ class JobQueueTest(unittest.TestCase):
         paths = QueuePaths.under(Path(self.tmp.name) / "queue")
         first = atomic_write_job(paths, self.job())
         self.assertTrue(first.is_file())
-        self.assertEqual(0o600, first.stat().st_mode & 0o777)
+        self.assertEqual(0o640, first.stat().st_mode & 0o777)
         with self.assertRaises(FileExistsError):
             atomic_write_job(paths, self.job())
 
@@ -120,6 +120,19 @@ class JobQueueTest(unittest.TestCase):
         self.assertEqual(1, len(claimed))
         self.assertEqual(paths.running.resolve(), claimed[0].parent.resolve())
         self.assertFalse(pending.exists())
+
+    def test_shared_queue_artifacts_are_group_readable_not_world_readable(self):
+        paths = QueuePaths.under(Path(self.tmp.name) / "shared-modes")
+        job_path = atomic_write_job(paths, self.job())
+        self.assertEqual(0o640, job_path.stat().st_mode & 0o777)
+        receipt = WorkerReceipt(
+            task_id="TASK-MODE-001", lease_session_id="continuity-mode-12345678",
+            provider="gemini", status="completed", resulting_head=SHA_B,
+            changed_paths=(), validations=(), diagnostics="ok",
+            started_at=NOW.isoformat(), ended_at=(NOW + timedelta(seconds=1)).isoformat(),
+        )
+        receipt_path = atomic_write_receipt(paths, receipt)
+        self.assertEqual(0o640, receipt_path.stat().st_mode & 0o777)
 
     def test_valid_job_round_trip(self):
         paths = QueuePaths.under(Path(self.tmp.name) / "queue")

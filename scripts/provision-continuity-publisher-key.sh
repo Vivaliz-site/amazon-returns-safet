@@ -6,6 +6,7 @@ KEY_DIR="${CONTINUITY_PUBLISHER_KEY_DIR:-/etc/agent-continuity/publisher}"
 KEY_PATH="$KEY_DIR/id_ed25519"
 KNOWN_HOSTS="${CONTINUITY_PUBLISHER_KNOWN_HOSTS:-/etc/agent-continuity/publisher-known-hosts}"
 TITLE="${CONTINUITY_PUBLISHER_KEY_TITLE:-shopvivaliz-continuity-publisher}"
+PROOF_PATH="$KEY_DIR/deploy-key.json"
 
 if [[ "$EUID" -ne 0 ]]; then
   echo "run as root" >&2
@@ -102,5 +103,24 @@ if norm(item.get("key", "")) != wanted:
 if item.get("read_only") is not False:
     raise SystemExit("deploy key is not write-enabled")
 PY
+
+PROOF_TMP="$(mktemp "$KEY_DIR/.deploy-key.json.XXXXXX")"
+python3 - "$RESP_TMP" "$KEY_PATH.pub" "$REPOSITORY" "$PROOF_TMP" <<'PY'
+from pathlib import Path
+import hashlib, json, sys
+item = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+parts = Path(sys.argv[2]).read_text(encoding="utf-8").strip().split()[:2]
+normalized = " ".join(parts)
+proof = {
+    "repository": sys.argv[3],
+    "key_id": item.get("id"),
+    "read_only": bool(item.get("read_only")),
+    "public_key_sha256": hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
+}
+Path(sys.argv[4]).write_text(json.dumps(proof, sort_keys=True) + "\n", encoding="utf-8")
+PY
+chmod 0600 "$PROOF_TMP"
+chown root:root "$PROOF_TMP"
+mv -f "$PROOF_TMP" "$PROOF_PATH"
 
 printf 'PUBLISHER_KEY_PROVISIONED=true key_id=%s\n' "$KEY_ID"

@@ -338,6 +338,7 @@ def run_one_job(
         "--output-format", "json",
         "--approval-mode", "yolo",
         "--admin-policy", str(config.policy_path),
+        "--skip-trust",
         "--prompt", "",
     ]
     process = runner(

@@ -21,6 +21,14 @@ priority = 800
 modes = ["yolo"]
 
 [[rule]]
+toolName = ["write_file", "replace"]
+argsPattern = '\.github/workflows/'
+decision = "deny"
+priority = 999
+modes = ["yolo"]
+denyMessage = "Recurring workers may not modify privileged GitHub workflow definitions."
+
+[[rule]]
 toolName = ["read_file", "read_many_files", "list_directory", "glob", "grep_search", "write_file", "replace"]
 argsPattern = '/(etc|root|home/ubuntu/amazon-returns-deploy|var/lib/agent-continuity)'
 decision = "deny"

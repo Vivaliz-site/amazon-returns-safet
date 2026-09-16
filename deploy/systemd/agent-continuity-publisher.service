@@ -14,6 +14,7 @@ SupplementaryGroups=agent-continuity agent-continuity-jobs
 WorkingDirectory=/opt/agent-continuity/current
 Environment=PYTHONUNBUFFERED=1
 Environment=CONTINUITY_CONFIG=/etc/agent-continuity/config.json
+Environment=HOME=/var/lib/agent-continuity-publisher
 LoadCredential=publisher_ssh_key:/etc/agent-continuity/publisher/id_ed25519
 Environment=CONTINUITY_PUBLISHER_SSH_KEY=%d/publisher_ssh_key
 ExecStart=/usr/bin/python3 -m tools.continuity.publisher --config /etc/agent-continuity/config.json --once
@@ -33,7 +34,7 @@ LockPersonality=true
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/srv/continuity/sources /var/lib/agent-continuity/publisher
+ReadWritePaths=/srv/continuity/sources /var/lib/agent-continuity/publisher /var/lib/agent-continuity-publisher
 ReadOnlyPaths=/srv/continuity/worktrees /var/lib/agent-continuity/jobs /opt/agent-continuity /etc/agent-continuity/config.json /etc/agent-continuity/publisher-known-hosts
 TasksMax=96
 MemoryMax=384M

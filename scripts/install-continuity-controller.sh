@@ -54,14 +54,37 @@ for user in "$SERVICE_USER" "$WORKER_USER" "$PUBLISHER_USER"; do
   usermod -a -G "$JOB_GROUP" "$user"
 done
 
+install -d -m 0700 -o "$WORKER_USER" -g "$WORKER_USER" "/var/lib/$WORKER_USER"
+install -d -m 0700 -o "$PUBLISHER_USER" -g "$PUBLISHER_USER" "/var/lib/$PUBLISHER_USER"
+
 SOURCE_SHA="$(git -c "safe.directory=$REPO_ROOT" -C "$REPO_ROOT" rev-parse HEAD)"
 CONFIG_DIR="$(dirname "$CONFIG_PATH")"
 install -d -m 0750 -o root -g "$SERVICE_USER" "$CONFIG_DIR"
 chown root:"$SERVICE_USER" "$CONFIG_PATH"
 chmod 0640 "$CONFIG_PATH"
 
+GEMINI_BIN="${CONTINUITY_GEMINI_BIN:-}"
+if [[ -z "$GEMINI_BIN" ]]; then
+  GEMINI_BIN="$(command -v gemini 2>/dev/null || true)"
+fi
+if [[ -z "$GEMINI_BIN" ]]; then
+  for candidate in /opt/node-v*/bin/gemini; do
+    [[ -x "$candidate" ]] && GEMINI_BIN="$candidate"
+  done
+fi
+PREP_ARGS=("$CONFIG_PATH" --worker-uid "$(id -u "$WORKER_USER")")
+if [[ -n "$GEMINI_BIN" ]]; then
+  PREP_ARGS+=(--gemini-bin "$GEMINI_BIN")
+fi
+python3 "$REPO_ROOT/scripts/prepare-continuity-runtime-config.py" "${PREP_ARGS[@]}"
+
 install -d -m 0750 -o "$SERVICE_USER" -g "$JOB_GROUP" "$STATE_ROOT"
-install -d -m 0770 -o "$SERVICE_USER" -g "$JOB_GROUP" \
+for ledger_file in "$STATE_ROOT"/ledger.sqlite3*; do
+  [[ -e "$ledger_file" ]] || continue
+  chown "$SERVICE_USER":"$SERVICE_USER" "$ledger_file"
+  chmod 0640 "$ledger_file"
+done
+install -d -m 2770 -o "$SERVICE_USER" -g "$JOB_GROUP" \
   "$STATE_ROOT/jobs" "$STATE_ROOT/jobs/pending" "$STATE_ROOT/jobs/running" \
   "$STATE_ROOT/jobs/receipts" "$STATE_ROOT/jobs/packets"
 install -d -m 0750 -o "$PUBLISHER_USER" -g "$PUBLISHER_USER" "$STATE_ROOT/publisher"
@@ -69,7 +92,7 @@ install -d -m 0750 -o "$PUBLISHER_USER" -g "$PUBLISHER_USER" "$STATE_ROOT/publis
 install -d -m 0755 -o root -g root "$WORKTREE_ROOT"
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" \
   "$WORKTREE_ROOT/repositories" "$REPOSITORY_MOUNT_ROOT"
-install -d -m 0770 -o "$WORKER_USER" -g "$JOB_GROUP" \
+install -d -m 2770 -o "$WORKER_USER" -g "$JOB_GROUP" \
   "$WORKTREE_ROOT/sources" "$WORKTREE_ROOT/worktrees"
 install -d -m 0755 -o root -g root "$RUNTIME_ROOT" "$RUNTIME_ROOT/releases"
 

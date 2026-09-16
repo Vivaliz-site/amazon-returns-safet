@@ -158,7 +158,8 @@ def _atomic_write(directory: Path, filename: str, data: bytes) -> Path:
     os.close(lock_fd)
     temp = directory / f".{filename}.{os.getpid()}.tmp"
     try:
-        fd = os.open(temp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        fd = os.open(temp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o640)
+        os.fchmod(fd, 0o640)
         try:
             with os.fdopen(fd, "wb", closefd=True) as handle:
                 handle.write(data)

@@ -70,7 +70,8 @@ def _atomic_write_packet(paths: QueuePaths, job_id: str, packet: str) -> Path:
     directory = paths.root / "packets"
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / f"{job_id}.txt"
-    fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o640)
+    os.fchmod(fd, 0o640)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(packet)
         handle.flush()

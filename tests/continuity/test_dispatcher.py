@@ -82,6 +82,7 @@ class DispatcherTest(unittest.TestCase):
         self.assertEqual("gemini", job.provider)
         packet_path = Path(job.resume_packet_path)
         self.assertTrue(packet_path.exists())
+        self.assertEqual(0o640, packet_path.stat().st_mode & 0o777)
         self.assertEqual(job.resume_packet_sha256, hashlib.sha256(packet_path.read_bytes()).hexdigest())
         loaded = self.ledger.get_task(task.task_id)
         self.assertEqual(Classification.ACTIVE, loaded.classification)

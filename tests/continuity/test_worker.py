@@ -169,6 +169,7 @@ class WorkerTest(unittest.TestCase):
         self.assertIn(str(self.policy), argv)
         self.assertIn("--model", argv)
         self.assertIn("gemini-test-model", argv)
+        self.assertIn("--skip-trust", argv)
         self.assertEqual("resume safely\n", call["input"])
         self.assertNotIn("GH_TOKEN", call["env"])
 
@@ -225,6 +226,8 @@ class WorkerTest(unittest.TestCase):
             allowed.update(names if isinstance(names, list) else [names])
         for name in ("read_file", "write_file", "replace", "glob", "grep_search", "list_directory"):
             self.assertIn(name, allowed)
+        policy_text = policy.read_text(encoding="utf-8")
+        self.assertIn(".github/workflows", policy_text)
 
 
 if __name__ == "__main__":
