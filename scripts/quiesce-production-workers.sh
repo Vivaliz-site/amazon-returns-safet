@@ -73,13 +73,14 @@ quiesce_workers() {
             if ! qw_unit_running "$browser_service"; then
                 released="$(qw_release_stale_read_jobs "$target_db" "$tenant_id" "$connection_id")"
                 [[ "$released" =~ ^[0-9]+$ ]] || { echo 'invalid stale read release count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
-                released_writes="$(qw_release_stale_write_jobs "$target_db" "$tenant_id" "$connection_id")"
-                [[ "$released_writes" =~ ^[0-9]+$ ]] || { echo 'invalid stale write release count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
                 if (( released > 0 )); then
                     printf 'worker_quiesce_released_stale_reads=%s\n' "$released"
-                fi
-                if (( released_writes > 0 )); then
-                    printf 'worker_quiesce_released_stale_writes_for_reconcile=%s\n' "$released_writes"
+                else
+                    released_writes="$(qw_release_stale_write_jobs "$target_db" "$tenant_id" "$connection_id")"
+                    [[ "$released_writes" =~ ^[0-9]+$ ]] || { echo 'invalid stale write release count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
+                    if (( released_writes > 0 )); then
+                        printf 'worker_quiesce_released_stale_writes_for_reconcile=%s\n' "$released_writes"
+                    fi
                 fi
             fi
             sleep "$poll_seconds"
