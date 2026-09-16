@@ -172,6 +172,7 @@ class WorkerTest(unittest.TestCase):
         self.assertIn("--skip-trust", argv)
         self.assertEqual("resume safely\n", call["input"])
         self.assertNotIn("GH_TOKEN", call["env"])
+        self.assertEqual(str(Path(self.config().gemini_bin).parent), call["env"]["PATH"].split(os.pathsep)[0])
 
     def test_worker_rejects_rooter_until_separately_certified(self):
         self.enqueue(self.job(provider="rooter"))

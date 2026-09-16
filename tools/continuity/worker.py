@@ -326,6 +326,10 @@ def run_one_job(
             reason="Gemini admin policy unavailable",
         )
     worker_env = build_worker_env(config.base_env)
+    gemini_dir = str(Path(config.gemini_bin).parent)
+    existing_path = worker_env.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+    path_parts = [part for part in existing_path.split(os.pathsep) if part and part != gemini_dir]
+    worker_env["PATH"] = os.pathsep.join([gemini_dir, *path_parts])
     if not (worker_env.get("GEMINI_API_KEY") or worker_env.get("GOOGLE_API_KEY")):
         return _emit_receipt(
             config, job, classification="rejected_credentials", status="rejected",

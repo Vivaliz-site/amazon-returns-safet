@@ -204,8 +204,9 @@ class PublisherTest(unittest.TestCase):
         self.assertIn("contents: write", workflow)
         self.assertIn("pull-requests: write", workflow)
         self.assertNotIn("actions/checkout", workflow)
-        self.assertIn("gh pr checks", workflow)
-        self.assertIn("--watch", workflow)
+        self.assertIn("actions/runs", workflow)
+        self.assertIn("Amazon Returns CI", workflow)
+        self.assertIn("conclusion", workflow)
         self.assertIn("gh pr merge", workflow)
         self.assertIn("--auto", workflow)
 

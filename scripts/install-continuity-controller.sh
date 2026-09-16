@@ -72,11 +72,21 @@ if [[ -z "$GEMINI_BIN" ]]; then
     [[ -x "$candidate" ]] && GEMINI_BIN="$candidate"
   done
 fi
-PREP_ARGS=("$CONFIG_PATH" --worker-uid "$(id -u "$WORKER_USER")")
-if [[ -n "$GEMINI_BIN" ]]; then
-  PREP_ARGS+=(--gemini-bin "$GEMINI_BIN")
+CONTINUITY_AUTO_DISPATCH="$(python3 - "$CONFIG_PATH" <<'PYCFG'
+import json, sys
+value = json.load(open(sys.argv[1], encoding="utf-8")).get("auto_dispatch")
+print("true" if value is True else "false")
+PYCFG
+)"
+if [[ "$CONTINUITY_AUTO_DISPATCH" == "false" ]]; then
+  PREP_ARGS=("$CONFIG_PATH" --worker-uid "$(id -u "$WORKER_USER")")
+  if [[ -n "$GEMINI_BIN" ]]; then
+    PREP_ARGS+=(--gemini-bin "$GEMINI_BIN")
+  fi
+  python3 "$REPO_ROOT/scripts/prepare-continuity-runtime-config.py" "${PREP_ARGS[@]}"
+else
+  echo 'runtime_config_prep_skipped=auto_dispatch_enabled'
 fi
-python3 "$REPO_ROOT/scripts/prepare-continuity-runtime-config.py" "${PREP_ARGS[@]}"
 
 install -d -m 0750 -o "$SERVICE_USER" -g "$JOB_GROUP" "$STATE_ROOT"
 for ledger_file in "$STATE_ROOT"/ledger.sqlite3*; do

@@ -42,7 +42,7 @@ PUBLISHER_KEY = Path("/etc/agent-continuity/publisher/id_ed25519")
 GEMINI_ENV = Path("/etc/agent-continuity/gemini.env")
 LEGACY_PATH = Path("/home/ubuntu/amazon-returns-deploy-source")
 POLL_SECONDS = 10
-POLL_LIMIT = 90
+POLL_LIMIT = 12
 
 
 class PilotError(RuntimeError):
@@ -195,6 +195,13 @@ def _preflight(config_path: Path) -> tuple[dict, str, dict]:
     if not legacy_rejected:
         raise PilotError("legacy path was not rejected by worker ownership boundary")
     queue_root = Path(str(config["job_queue_root"]))
+    queued_work = []
+    for subdir in ("pending", "running"):
+        directory = queue_root / subdir
+        if directory.exists():
+            queued_work.extend(path for path in directory.glob("*.json") if path.is_file())
+    if queued_work:
+        raise PilotError("pending/running continuity jobs exist before pilot")
     receipt_dir = queue_root / "receipts"
     marker_dir = queue_root.parent / "publisher"
     pending_receipts = [

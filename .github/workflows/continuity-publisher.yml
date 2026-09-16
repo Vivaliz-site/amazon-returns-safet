@@ -42,23 +42,37 @@ jobs:
           test -n "$pr_url"
           printf 'PR_URL=%s\n' "$pr_url" >> "$GITHUB_ENV"
 
-      - name: Wait for required checks to appear
+      - name: Wait for Amazon Returns CI run to appear
         run: |
           set -euo pipefail
+          ci_run_id=""
           for attempt in $(seq 1 30); do
-            checks="$(gh pr checks "$PR_URL" --repo "$REPOSITORY" --json name,state,bucket 2>/dev/null || true)"
-            if [ "$checks" != "[]" ] && [ -n "$checks" ]; then
+            runs="$(gh api -X GET "repos/$REPOSITORY/actions/runs" -f head_sha="$EXPECTED_HEAD" -f event=pull_request -F per_page=100)"
+            ci_run_id="$(jq -r '.workflow_runs[] | select(.name == "Amazon Returns CI") | .id' <<<"$runs" | head -n1)"
+            if [ -n "$ci_run_id" ] && [ "$ci_run_id" != "null" ]; then
+              printf 'CI_RUN_ID=%s\n' "$ci_run_id" >> "$GITHUB_ENV"
               exit 0
             fi
             sleep 10
           done
-          echo 'No pull-request checks appeared within the bounded wait.' >&2
+          echo 'Amazon Returns CI run did not appear within the bounded wait.' >&2
           exit 1
 
-      - name: Require green pull-request checks
+      - name: Require Amazon Returns CI success
         run: |
           set -euo pipefail
-          gh pr checks "$PR_URL" --repo "$REPOSITORY" --watch --fail-fast
+          for attempt in $(seq 1 60); do
+            run_json="$(gh api "repos/$REPOSITORY/actions/runs/$CI_RUN_ID")"
+            status="$(jq -r '.status' <<<"$run_json")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"$run_json")"
+            if [ "$status" = "completed" ]; then
+              test "$conclusion" = "success"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Amazon Returns CI did not complete within the bounded wait.' >&2
+          exit 1
 
       - name: Enable auto-merge after checks are green
         run: |
