@@ -252,11 +252,14 @@ final class SvAmazonGmailApiClient
             null
         );
         $status = (int)($response['status'] ?? 0);
+        $json = is_array($response['json'] ?? null) ? $response['json'] : [];
         if ($status < 200 || $status >= 300) {
-            throw new RuntimeException('Gmail API HTTP ' . $status . '.');
+            $reason = trim((string)($json['error']['errors'][0]['reason'] ?? $json['error']['status'] ?? ''));
+            $reason = preg_replace('/[^A-Za-z0-9_.-]/', '', $reason) ?? '';
+            $suffix = $reason !== '' ? ' reason=' . substr($reason, 0, 80) : '';
+            throw new RuntimeException('Gmail API HTTP ' . $status . $suffix . '.');
         }
-        $json = $response['json'] ?? [];
-        return is_array($json) ? $json : [];
+        return $json;
     }
 
     private function token(): string
