@@ -117,6 +117,7 @@ final class SvAmazonFinancialRefresh
     {
         return $initialScanComplete
             && ($refreshResult['status'] ?? '') === 'OK'
-            && ($refreshResult['rotation_has_more'] ?? false) !== true;
+            && ($refreshResult['rotation_has_more'] ?? false) !== true
+            && max(0,(int)($refreshResult['cycle_failures'] ?? 0)) === 0;
     }
 }

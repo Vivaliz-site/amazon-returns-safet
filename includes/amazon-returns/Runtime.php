@@ -114,11 +114,20 @@ final class SvAmazonReturnsRuntime
     {
         $requested=(int)($results['scheduler']['financial_checks_requested']??0);
         $rotationIncomplete=($results['sp_api']['rotation_has_more']??false)===true;
+        $cycleFailures=max(0,(int)($results['sp_api']['cycle_failures']??0));
         $financialBlocked=($results['financial']['reason']??'')==='FINANCIAL_REFRESH_NOT_ACCEPTED';
-        if($rotationIncomplete && $financialBlocked)return true;
+        if($financialBlocked && ($rotationIncomplete || $cycleFailures>0))return true;
         if($requested<1)return false;
         if(!isset($results['sp_api']))return true;
         return $rotationIncomplete;
+    }
+
+    public static function financialRefreshRetryDelaySeconds(array $results): ?int
+    {
+        $rotationIncomplete=($results['sp_api']['rotation_has_more']??false)===true;
+        $cycleFailures=max(0,(int)($results['sp_api']['cycle_failures']??0));
+        $financialBlocked=($results['financial']['reason']??'')==='FINANCIAL_REFRESH_NOT_ACCEPTED';
+        return $financialBlocked && !$rotationIncomplete && $cycleFailures>0 ? 1800 : null;
     }
 
     public static function gmailEvidenceRevision(): string
