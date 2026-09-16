@@ -12,7 +12,8 @@ from .model import Classification, TaskStatus, ensure_utc
 from .resume_packet import render_resume_packet
 
 UTC = timezone.utc
-PREFERRED_ORDER = ("codex", "chatgpt", "claude", "gemini")
+PREFERRED_ORDER = ("codex", "chatgpt", "claude", "gemini", "rooter")
+AUTOMATED_ALLOWED_AGENTS = frozenset(("gemini", "rooter"))
 
 
 @dataclass(frozen=True)
@@ -121,7 +122,10 @@ class Dispatcher:
         availability = dict(self.availability)
         for failed_agent in self._recent_failed_agents(task.task_id, now):
             availability[failed_agent] = False
-        agent = self.select_agent(self.candidates, availability)
+        candidates = self.candidates
+        if self.auto_dispatch:
+            candidates = [candidate for candidate in candidates if candidate.name.lower() in AUTOMATED_ALLOWED_AGENTS]
+        agent = self.select_agent(candidates, availability)
         if agent is None:
             return None
         finding = scan_repository(Path(task.worktree_path))

@@ -41,7 +41,20 @@ class DispatcherTest(unittest.TestCase):
             AgentCandidate("claude", ["claude", "--resume"], True),
             AgentCandidate("chatgpt", ["chatgpt", "work"], True),
             AgentCandidate("codex", ["codex", "exec"], True),
+            AgentCandidate("rooter", ["rooter", "resume"], True),
         ]
+
+    def test_auto_dispatch_routes_recurring_work_to_rooter_when_gemini_is_unavailable(self):
+        self.add_task()
+        launches = []
+        dispatcher = Dispatcher(
+            self.ledger, self.candidates(), auto_dispatch=True,
+            availability={"codex": True, "chatgpt": True, "claude": True, "gemini": False, "rooter": True},
+            launcher=lambda candidate, packet, cwd: launches.append(candidate.name) or True,
+        )
+        decision = dispatcher.claim_next(self.now)
+        self.assertEqual("rooter", decision.agent.name)
+        self.assertEqual(["rooter"], launches)
 
     def test_select_agent_uses_required_fallback_order(self):
         dispatcher = Dispatcher(self.ledger, self.candidates(), auto_dispatch=False)
@@ -70,8 +83,8 @@ class DispatcherTest(unittest.TestCase):
 
     def test_active_lease_prevents_second_dispatcher_claim(self):
         task = self.add_task()
-        self.ledger.claim(task.task_id, "codex", "session-a", self.now, 1800)
-        dispatcher = Dispatcher(self.ledger, self.candidates(), auto_dispatch=True, availability={"codex": True})
+        self.ledger.claim(task.task_id, "gemini", "session-a", self.now, 1800)
+        dispatcher = Dispatcher(self.ledger, self.candidates(), auto_dispatch=True, availability={"gemini": True})
         self.assertIsNone(dispatcher.claim_next(self.now))
 
     def test_launcher_receives_existing_task_worktree(self):
@@ -82,7 +95,7 @@ class DispatcherTest(unittest.TestCase):
             return True
         dispatcher = Dispatcher(
             self.ledger, self.candidates(), auto_dispatch=True,
-            availability={"codex": True}, launcher=launcher,
+            availability={"gemini": True}, launcher=launcher,
         )
         decision = dispatcher.claim_next(self.now)
         self.assertTrue(decision.launched)
@@ -105,24 +118,24 @@ class DispatcherTest(unittest.TestCase):
         launches = []
         def launcher(candidate, packet, cwd):
             launches.append(candidate.name)
-            return candidate.name == "chatgpt"
+            return candidate.name == "rooter"
         dispatcher = Dispatcher(
             self.ledger, self.candidates(), auto_dispatch=True,
-            availability={"codex": True, "chatgpt": True}, launcher=launcher,
+            availability={"gemini": True, "rooter": True}, launcher=launcher,
         )
         first = dispatcher.claim_next(self.now)
         second = dispatcher.claim_next(self.now)
-        self.assertEqual("codex", first.agent.name)
+        self.assertEqual("gemini", first.agent.name)
         self.assertFalse(first.launched)
-        self.assertEqual("chatgpt", second.agent.name)
+        self.assertEqual("rooter", second.agent.name)
         self.assertTrue(second.launched)
-        self.assertEqual(["codex", "chatgpt"], launches)
+        self.assertEqual(["gemini", "rooter"], launches)
 
     def test_launch_failure_persists_attempt_then_requeues_same_worktree_and_branch(self):
         task = self.add_task()
         dispatcher = Dispatcher(
             self.ledger, self.candidates(), auto_dispatch=True,
-            availability={"codex": True}, launcher=lambda candidate, packet, cwd: False,
+            availability={"gemini": True}, launcher=lambda candidate, packet, cwd: False,
         )
         decision = dispatcher.claim_next(self.now)
         self.assertTrue(decision.claimed)
@@ -135,7 +148,7 @@ class DispatcherTest(unittest.TestCase):
         self.assertIsNone(loaded.lease_expires_at)
         attempts = self.ledger.list_dispatch_attempts(task.task_id)
         self.assertEqual("launch_failed", attempts[-1]["outcome"])
-        self.assertEqual("codex", attempts[-1]["agent_type"])
+        self.assertEqual("gemini", attempts[-1]["agent_type"])
 
 
 if __name__ == "__main__":

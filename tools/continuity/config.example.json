@@ -16,30 +16,16 @@
   "retry_cooldown_seconds": 1800,
   "agents": [
     {
-      "name": "codex",
-      "command": [
-        "codex"
-      ],
-      "enabled": false
-    },
-    {
-      "name": "chatgpt",
-      "command": [
-        "chatgpt"
-      ],
-      "enabled": false
-    },
-    {
-      "name": "claude",
-      "command": [
-        "claude"
-      ],
-      "enabled": false
-    },
-    {
       "name": "gemini",
       "command": [
         "gemini"
+      ],
+      "enabled": false
+    },
+    {
+      "name": "rooter",
+      "command": [
+        "rooter"
       ],
       "enabled": false
     }
