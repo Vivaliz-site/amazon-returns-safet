@@ -69,3 +69,9 @@ Enquanto o subagente estiver ativo, o controlador deve monitorar seu progresso e
 Se o subagente falhar, perder autenticacao/limite/ferramenta, encerrar sem os artefatos exigidos, ou permanecer sem progresso verificavel junto com evidencia de ociosidade, bloqueio, travamento ou estouro da janela limitada da tarefa, o controlador deve preservar qualquer trabalho util e assumir diretamente a tarefa ou substituir por uma sessao limpa.
 
 O usuario nao deve precisar enviar `siga`, `continue` ou mensagem equivalente para recuperar uma tarefa delegada. O takeover e automatico e a execucao continua ate conclusao validada ou bloqueio externo incontornavel.
+
+### Independencia da resposta do chat
+
+O monitoramento de subagente nao pode depender da resposta do ChatGPT permanecer aberta, transmitindo ou sem bloqueios da interface. Estado de supervisao deve ser persistido fora da conversa: sessao/PID, inicio, HEAD/base, artefatos esperados e ultimo progresso comprovado.
+
+Spinner, mensagem de `verificacoes adicionais`, reconexao, limite ou resposta pendente nao contam como progresso do subagente. Nessas situacoes, o controlador deve recuperar o estado persistido, verificar a execucao real e aplicar takeover automatico quando houver falha ou estagnacao.

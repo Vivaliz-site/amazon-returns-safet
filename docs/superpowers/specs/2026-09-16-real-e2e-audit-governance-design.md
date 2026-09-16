@@ -139,3 +139,11 @@ A progress check must look for verifiable movement such as changed files, commit
 If the subagent errors, loses authentication/quota/tool access, exits without required artifacts, or shows no verifiable progress together with evidence that it is idle, blocked, wedged, or past the task's bounded execution window, the controller must preserve useful work and assume the task directly or dispatch a clean replacement.
 
 The user must never need to send `continue`, `siga`, or an equivalent message to recover a delegated task. Subagent monitoring is part of execution and is itself a mandatory reliability requirement.
+
+## Foreground-chat independence
+
+Subagent supervision must not depend on the foreground ChatGPT response remaining active. The controller must persist dispatch identity, start time, baseline state, expected artifacts and last verified progress outside transient chat state.
+
+If the chat UI is waiting, reconnecting, performing additional checks, rate-limited, interrupted or otherwise unable to emit progress, the delegated task still requires external monitoring. The controller must resume from persisted execution state and perform takeover when the same no-progress or failure criteria are met.
+
+A chat-side spinner, pending response, or platform status message is never evidence that a subagent is making useful progress.

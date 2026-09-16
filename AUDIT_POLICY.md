@@ -62,3 +62,8 @@ Toda delegacao para subagente e uma execucao supervisionada. O agente controlado
 Durante a execucao, devem existir checkpoints limitados de progresso. Estar `rodando`, ter PID ou manter uma sessao aberta nao basta: progresso precisa ser comprovado por arquivos, commits, testes, relatorios, acoes concluidas ou evidencia equivalente da tarefa.
 
 Falha, limite, autenticacao/tooling indisponivel, encerramento sem artefatos ou ausencia de progresso acompanhada de evidencia de bloqueio/ociosidade/travamento/timeout exigem takeover automatico: preserve trabalho util e assuma diretamente ou substitua por sessao limpa. O usuario nunca deve precisar enviar `siga`, `continue` ou mensagem equivalente para recuperar a execucao.
+
+### Persistencia de supervisao fora do chat
+O estado de monitoramento de subagentes deve ser persistido em arquivo/ledger do projeto e sobreviver a espera, reconexao, verificacoes adicionais, limite ou interrupcao da resposta do ChatGPT.
+
+Indicadores da interface do chat nao contam como evidencia de progresso do subagente. Ao retomar, o controlador deve ler o estado persistido, verificar artefatos/commits/testes/efeitos reais e executar takeover automatico quando os criterios de falha ou estagnacao forem satisfeitos.

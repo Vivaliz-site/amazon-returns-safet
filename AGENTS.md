@@ -62,3 +62,9 @@ Antes de qualquer operacao em terminal/CLI, leia e cumpra a secao `Isolamento ob
 - Monitore a execucao ativamente com checkpoints limitados; sessao/processo vivo sem artefato, commit, teste, relatorio ou outro progresso verificavel nao prova execucao util.
 - Se houver erro, limite/autenticacao/ferramenta indisponivel, saida sem artefatos, ou ausencia de progresso combinada com evidencia de bloqueio/ociosidade/travamento/timeout, preserve o que for util e assuma a tarefa diretamente ou use uma sessao limpa.
 - Nunca espere o usuario enviar `siga`/`continue` para retomar uma tarefa delegada. O controlador deve fazer takeover automatico e continuar ate validacao real ou bloqueio externo incontornavel.
+
+### Monitoramento independente do chat
+- Supervisao de subagentes deve persistir fora do estado transitorio da conversa.
+- Salve sessao/PID, inicio, HEAD/base, artefatos esperados e ultimo progresso verificavel em arquivo/ledger do projeto.
+- Mensagem de espera, spinner, reconexao ou `verificacoes adicionais` no ChatGPT nao prova progresso do executor.
+- Se a resposta do chat interromper, recupere o estado persistido e continue o monitoramento/takeover sem depender de novo comando do usuario.
