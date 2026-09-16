@@ -1,0 +1,19 @@
+name: Continuity Signal
+
+on:
+  push:
+    branches:
+      - 'agent/**'
+
+permissions:
+  contents: read
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Record isolated branch signal
+        run: |
+          printf 'continuity_signal_branch=%s\n' '${{ github.ref_name }}'
+          printf 'continuity_signal_sha=%s\n' '${{ github.sha }}'
