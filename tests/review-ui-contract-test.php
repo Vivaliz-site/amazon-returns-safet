@@ -12,6 +12,9 @@ ruAssert(str_contains($js,'review-decision.php'),'Review submit endpoint missing
 ruAssert(str_contains($js,'status===409'),'Stale review version must refresh rather than retry blindly.');
 ruAssert(str_contains($js,'autoSuggestionAttempted'),'Automatic AI suggestion must be attempted at most once per opened review.');
 ruAssert(str_contains($js,"r.data.error==='RULE_ALREADY_RESOLVED'"),'Learned-rule conflicts must be handled without reopening the same review loop.');
+ruAssert(str_contains($js,'resetReviewControls();'),'Opening another review must reset action, date and reusable scope.');
+ruAssert(str_contains($js,'state.selectedReview!==reviewId'),'Late AI responses must be discarded after the operator switches reviews.');
+ruAssert(str_contains($js,'reviewOpenGeneration'),'Stale review-detail responses must not replace a newer review.');
 ruAssert(str_contains($js,'disabled=true'),'Double-click submit protection required.');
 ruAssert(!str_contains($js,'innerHTML'),'Review UI cannot inject API HTML.');
 foreach(['Qual decisão precisa ser tomada?','O que aconteceu','O que já foi verificado','Mensagens com a Amazon','Impacto financeiro e prazo','Recomendação','O que o sistema aprenderá','Casos semelhantes afetados'] as $heading){

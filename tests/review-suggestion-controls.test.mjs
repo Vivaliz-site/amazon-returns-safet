@@ -28,3 +28,41 @@ test('automatic recommendation prefills untouched controls',()=>{
   assert.equal(controls['#review-final-action'].value,'SAFE_T_APPEAL');
   assert.equal(controls['#review-date-binding'].value,'APPEAL_DEADLINE');
 });
+test('a new review resets action date and scope to safe defaults',()=>{
+  const controls={
+    '#review-final-action':{value:'SAFE_T_APPEAL'},
+    '#review-date-binding':{value:'APPEAL_DEADLINE'},
+    '#review-scope':{value:'SIMILAR'},
+    '#review-suggest':{disabled:true},
+  };
+  const state={reviewControlsDirty:true};
+  const context={state,document:{querySelector:selector=>controls[selector]},updateReviewDecisionSummary:()=>{}};
+  vm.createContext(context);
+  const resetLine=functionLine('resetReviewControls');
+  assert.ok(resetLine,'resetReviewControls helper is required');
+  vm.runInContext(resetLine,context);
+  context.resetReviewControls();
+  assert.equal(controls['#review-final-action'].value,'CHECK_FINANCES');
+  assert.equal(controls['#review-date-binding'].value,'NONE');
+  assert.equal(controls['#review-scope'].value,'CASE_ONLY');
+  assert.equal(state.reviewControlsDirty,false);
+});
+test('late recommendation from review A cannot mutate review B',async()=>{
+  let resolvePost;
+  const button={disabled:false};
+  const state={selectedReview:1,expected_version:1,suggestion:null,reviewDecision:null};
+  const context={state,suggestionRequestGeneration:0,document:{querySelector:selector=>selector==='#review-suggest'?button:{classList:{add(){}}}},csrf:()=>'',postJson:()=>new Promise(resolve=>{resolvePost=resolve;}),renderSuggestion:()=>{},applySuggestionToDecision:()=>{},resetReviewPreview:()=>{},showError:()=>{},friendlyError:value=>value,openReview:async()=>{},loadReviews:async()=>{},loadSummary:async()=>{}};
+  vm.createContext(context);
+  const suggestLine=source.split('\n').find(line=>line.startsWith('async function suggestReview('));
+  assert.ok(suggestLine,'suggestReview function is required');
+  vm.runInContext(suggestLine,context);
+  const pending=context.suggestReview();
+  state.selectedReview=2;
+  state.expected_version=7;
+  state.suggestion={action:'WAIT',parameters:{date_binding:'NONE'}};
+  resolvePost({status:200,ok:true,data:{version:2,suggestion_available:true,suggestion:{action:'SAFE_T_APPEAL',parameters:{date_binding:'APPEAL_DEADLINE'}}}});
+  await pending;
+  assert.equal(state.selectedReview,2);
+  assert.equal(state.expected_version,7);
+  assert.equal(state.suggestion.action,'WAIT');
+});
