@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-16
 **Repository:** `Vivaliz-site/amazon-returns-safet`
-**Status:** Proposed design approved in chat; implementation gated on spec review
+**Status:** Approved for implementation on 2026-09-16
 
 ## Context
 
