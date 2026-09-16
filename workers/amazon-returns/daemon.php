@@ -109,7 +109,8 @@ final class SvAmazonReturnsDaemon
             $taskStatus=strtoupper(trim((string)($results[$task]['status'] ?? 'UNKNOWN')));
             try{
                 $this->persistence->cursors->save(
-                    'OPERATIONAL_TASK',$task,$taskNow->format(DATE_ATOM),['status'=>$taskStatus]
+                    'OPERATIONAL_TASK',$task,$taskNow->format(DATE_ATOM),
+                    SvAmazonReturnsRuntime::operationalTaskMetadata($task,$results[$task])
                 );
             }catch(Throwable $observabilityError){
                 error_log('[amazon-returns-operational-observability] '.$observabilityError::class);
