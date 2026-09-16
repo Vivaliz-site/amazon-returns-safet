@@ -5,9 +5,10 @@ const worker = fs.readFileSync(new URL('../scripts/amazon-returns/seller-central
 
 assert.match(worker, /const SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS\s*=/, 'Seller Support history lookup needs a dedicated bounded CDP command timeout.');
 assert.match(worker, /const SUPPORT_CASE_LOOKUP_SCAN_BUDGET_MS\s*=/, 'Seller Support history lookup needs an internal scan budget below the CDP timeout.');
-assert.match(worker, /static async connect\(commandTimeoutMs = 15000\)/, 'Cdp.connect must accept a scoped timeout without changing the global default.');
+assert.match(worker, /static async connect\(\) {/, 'Cdp.connect must preserve the existing audited default entrypoint.');
+assert.match(worker, /static async connectWithTimeout\(commandTimeoutMs = 15000\)/, 'Cdp.connectWithTimeout must accept a scoped timeout without changing the global default.');
 assert.match(worker, /return new Cdp\(ws, page\.id, commandTimeoutMs\)/, 'The scoped timeout must reach the Cdp instance.');
-assert.match(worker, /Cdp\.connect\(SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS\)/, 'Only the Seller Support lookup target should use the longer timeout.');
+assert.match(worker, /Cdp\.connectWithTimeout\(SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS\)/, 'Only the Seller Support lookup target should use the longer timeout.');
 assert.match(worker, /LOOKUP_SCAN_BUDGET_EXHAUSTED/, 'The browser-side history scan must fail closed before the CDP command timeout.');
 
 const timeoutMatch = worker.match(/const SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS\s*=.*?\|\|\s*(\d+)\)/s);

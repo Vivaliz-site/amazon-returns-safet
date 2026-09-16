@@ -116,7 +116,11 @@ class Cdp {
     });
   }
 
-  static async connect(commandTimeoutMs = 15000) {
+  static async connect() {
+    return this.connectWithTimeout(15000);
+  }
+
+  static async connectWithTimeout(commandTimeoutMs = 15000) {
     await ensureBrowser();
     const response = await fetch(`${CDP_BASE}/json/new?${encodeURIComponent('about:blank')}`, { method: 'PUT' });
     if (!response.ok) throw new Error(`could not create isolated CDP target (${response.status})`);
@@ -623,7 +627,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
 
 async function findSupportCase(cdp, job, options = {}) {
   const known = text(job.case?.support_case_id);
-  const lookup = await Cdp.connect(SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS);
+  const lookup = await Cdp.connectWithTimeout(SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS);
   try {
     await lookup.navigate(CASE_LOBBY, 4500);
     const auth = await authGate(lookup, 'help-v1', CASE_LOBBY, 4500);
