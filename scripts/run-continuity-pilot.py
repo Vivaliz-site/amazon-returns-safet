@@ -49,8 +49,8 @@ class PilotError(RuntimeError):
     pass
 
 
-def _run(args: list[str], *, check: bool = True, capture: bool = True) -> subprocess.CompletedProcess[str]:
-    cp = subprocess.run(args, text=True, capture_output=capture)
+def _run(args: list[str], *, check: bool = True, capture: bool = True, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    cp = subprocess.run(args, text=True, capture_output=capture, cwd=cwd)
     if check and cp.returncode != 0:
         detail = (cp.stderr or cp.stdout or "command failed").strip()[:1200]
         raise PilotError(f"command failed: {args[0]}: {detail}")
@@ -179,7 +179,7 @@ def _preflight(config_path: Path) -> tuple[dict, str, dict]:
     _run([
         "runuser", "-u", WORKER_USER, "--", "env",
         f"HOME=/var/lib/{WORKER_USER}", str(config["gemini_bin"]), "--version",
-    ])
+    ], cwd=Path(f"/var/lib/{WORKER_USER}"))
     signal = (ROOT / ".github/workflows/continuity-signal.yml").read_text(encoding="utf-8")
     publisher_workflow = (ROOT / ".github/workflows/continuity-publisher.yml").read_text(encoding="utf-8")
     if "contents: read" not in signal or "workflow_run:" not in publisher_workflow:
