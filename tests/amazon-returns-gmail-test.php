@@ -321,4 +321,55 @@ $overflowError = '';
 try { $overflowApi->pullIncrementalBatch('100', 50, 2); } catch (RuntimeException $e) { $overflowError = $e->getMessage(); }
 gmAssert($overflowError !== '', 'A single history record exceeding the hard message limit must fail closed rather than violate the bound.');
 
+function recoveryTransport(array $bootstrapIds, string $mailboxHistoryId): callable {
+    return static function(string $method, string $url, array $headers, ?array $body = null) use ($bootstrapIds, $mailboxHistoryId): array {
+        if (str_contains($url, '/profile')) return ['status'=>200,'json'=>['historyId'=>$mailboxHistoryId]];
+        if (str_contains($url, '/history?')) return ['status'=>404,'json'=>[]];
+        if (str_contains($url, '/messages?')) {
+            return ['status'=>200,'json'=>['messages'=>array_map(static fn($id) => ['id'=>$id], $bootstrapIds)]];
+        }
+        foreach ($bootstrapIds as $id) {
+            if (str_contains($url, '/messages/' . $id . '?')) return ['status'=>200,'json'=>batchMessage($id)];
+        }
+        throw new RuntimeException('Unexpected Gmail API URL in recovery test: '.$url);
+    };
+}
+
+// A stale cursor (404 on /history) that recovers more bootstrap messages than the hard limit
+// must fail closed instead of truncating the set and falsely advancing to mailbox_history_id.
+$recoveryOverflowApi = new SvAmazonGmailApiClient(
+    new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),
+    recoveryTransport(['m-r1', 'm-r2', 'm-r3'], '900')
+);
+$recoveryOverflowError = '';
+try { $recoveryOverflowApi->pullIncrementalBatch('100', 50, 2); } catch (RuntimeException $e) { $recoveryOverflowError = $e->getMessage(); }
+gmAssert($recoveryOverflowError !== '', '404 recovery with more bootstrap messages than the limit must fail closed instead of silently truncating and advancing the checkpoint.');
+
+// When the bootstrap recovery set fits within the limit, recovery must still fully succeed.
+$recoveryOkApi = new SvAmazonGmailApiClient(
+    new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),
+    recoveryTransport(['m-r1', 'm-r2'], '900')
+);
+$recoveryOkBatch = $recoveryOkApi->pullIncrementalBatch('100', 50, 5);
+gmSame(2, count($recoveryOkBatch['messages']), 'A recovery set within the message limit must fetch every bootstrap message.');
+gmSame('900', $recoveryOkBatch['checkpoint_cursor'], 'A fully covered recovery must checkpoint to the current mailbox history id.');
+gmSame(false, $recoveryOkBatch['has_more'], 'A fully covered recovery has no remaining work.');
+gmSame(true, $recoveryOkBatch['recovered_cursor'], 'A 404-triggered bootstrap must report recovered_cursor=true.');
+
+// Intra-record duplicate message IDs must count once toward the message limit, not twice.
+$dupApi = new SvAmazonGmailApiClient(
+    new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),
+    batchTransport(
+        [
+            ['id'=>'150','messagesAdded'=>[['message'=>['id'=>'m-d1']],['message'=>['id'=>'m-d1']]]],
+        ],
+        ['m-d1'=>batchMessage('m-d1')],
+        null,
+        '150'
+    )
+);
+$dupBatch = $dupApi->pullIncrementalBatch('100', 50, 1);
+gmSame(1, count($dupBatch['messages']), 'A duplicate message ID within one history record must count once toward the message limit.');
+gmSame(false, $dupBatch['has_more'], 'A record whose only duplicate does not exceed the true unique count must not appear truncated.');
+
 echo "amazon-returns-gmail-test: OK\n";

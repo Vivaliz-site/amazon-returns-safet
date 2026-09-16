@@ -141,8 +141,11 @@ final class SvAmazonGmailApiClient
             $data = $this->request('GET', '/history', ['startHistoryId'=>$cursor,'historyTypes'=>'messageAdded','maxResults'=>(string)$historyPageSize]);
         } catch (RuntimeException $e) {
             if (!str_contains($e->getMessage(), 'HTTP 404')) throw $e;
-            $ids = array_slice(array_values(array_unique($this->bootstrapMessageIds(7))), 0, $messageLimit);
-            $messages = $this->fetchMessagesByIds($ids);
+            $recoveryIds = array_values(array_unique($this->bootstrapMessageIds(7)));
+            if (count($recoveryIds) > $messageLimit) {
+                throw new RuntimeException('Gmail 404 recovery message set exceeds bounded message limit.');
+            }
+            $messages = $this->fetchMessagesByIds($recoveryIds);
             return ['messages'=>$messages,'checkpoint_cursor'=>$mailboxHistoryId,'mailbox_history_id'=>$mailboxHistoryId,'has_more'=>false,'recovered_cursor'=>true];
         }
 
@@ -157,10 +160,12 @@ final class SvAmazonGmailApiClient
         foreach ($records as $record) {
             $recordId = trim((string)($record['id'] ?? ''));
             $recordIds = [];
+            $recordSeen = [];
             foreach (($record['messagesAdded'] ?? []) as $added) {
                 if (!is_array($added)) continue;
                 $id = trim((string)($added['message']['id'] ?? ''));
-                if ($id === '' || isset($seen[$id])) continue;
+                if ($id === '' || isset($seen[$id]) || isset($recordSeen[$id])) continue;
+                $recordSeen[$id] = true;
                 $recordIds[] = $id;
             }
             if (count($coveredIds) + count($recordIds) > $messageLimit) {
