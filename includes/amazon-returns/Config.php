@@ -134,7 +134,7 @@ final class SvAmazonReturnsConfig
             'SAFE_T_EMAIL_REPLY' => $this->externalWriteAllowed('SAFE_T_EMAIL_REPLY'),
             'SELLER_SUPPORT_OPEN' => $this->externalWriteAllowed('SELLER_SUPPORT_OPEN'),
             'SELLER_SUPPORT_UPDATE' => $this->externalWriteAllowed('SELLER_SUPPORT_UPDATE'),
-            'ERP_SALES_RETURN_CREATE' => $this->externalWriteAllowed('ERP_SALES_RETURN_CREATE'),
+            'ERP_SALES_RETURN_CREATE' => $this->erpSalesReturnCreateEnabled(),
         ];
     }
 
