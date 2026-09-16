@@ -169,14 +169,28 @@ final class SvAmazonReturnsRuntime
         $file=__DIR__.'/GmailApi.php';
         $hash=@hash_file('sha256',$file);
         if(!is_string($hash) || $hash==='')throw new RuntimeException('Unable to fingerprint Gmail API client.');
-        return hash('sha256','history-probe-v3|'.$hash);
+        return hash('sha256','history-catchup-v1|'.$hash);
     }
 
-    /** @param array<string,mixed> $result @return array<string,string> */
+    /** @param array<string,mixed> $result @return array<string,mixed> */
     public static function operationalTaskMetadata(string $task,array $result): array
     {
         $status=strtoupper(trim((string)($result['status']??'UNKNOWN')));
         $metadata=['status'=>$status!==''?$status:'UNKNOWN'];
+        if($task==='gmail'){
+            if(array_key_exists('has_more',$result))$metadata['has_more']=($result['has_more']===true);
+            foreach(['messages','events'] as $key){
+                if(!array_key_exists($key,$result))continue;
+                $metadata[$key]=max(0,min(1000,(int)$result[$key]));
+            }
+            if(array_key_exists('checkpoint_advanced',$result)){
+                $metadata['checkpoint_advanced']=($result['checkpoint_advanced']===true);
+            }
+            if(self::gmailRateLimitRetryDelaySeconds('gmail',$result)!==null){
+                $metadata['quota_error']='RATE_LIMITED';
+            }
+            return $metadata;
+        }
         if($task!=='gmail_history_probe')return $metadata;
         foreach(['error_class','error'] as $key){
             $value=$result[$key]??null;
@@ -198,6 +212,39 @@ final class SvAmazonReturnsRuntime
         $rateLimited=str_contains($error,'ratelimitexceeded')
             || preg_match('/gmail api http\s+429\b/',$error)===1;
         return $rateLimited?300:null;
+    }
+
+    /** @param array<string,mixed> $result */
+    public static function gmailCatchupRetryDelaySeconds(string $task,array $result): ?int
+    {
+        if($task!=='gmail')return null;
+        return ($result['has_more'] ?? false)===true ? 300 : null;
+    }
+
+    public static function taskScheduleMarker(
+        string $task,DateTimeImmutable $at,?int $retryDelaySeconds=null
+    ): string {
+        $at=$at->setTimezone(new DateTimeZone('UTC'));
+        if($retryDelaySeconds===null)return $at->format(DATE_ATOM);
+        $cadence=max(1,(int)(self::cadences()[$task]??43200));
+        $age=max(0,$cadence-max(0,$retryDelaySeconds));
+        return $at->modify('-'.$age.' seconds')->format(DATE_ATOM);
+    }
+
+    /** @param array<string,mixed>|null $cursor */
+    public static function gmailCatchupPendingFromCursor(?array $cursor): bool
+    {
+        if(!is_array($cursor))return false;
+        $metadata=is_array($cursor['metadata'] ?? null)?$cursor['metadata']:[];
+        return ($metadata['has_more'] ?? false)===true;
+    }
+
+    /** @param array<string,mixed> $gmailResult */
+    public static function gmailCatchupSkipReason(string $task,array $gmailResult): ?string
+    {
+        if(($gmailResult['has_more'] ?? false)!==true)return null;
+        return in_array($task,['gmail','scheduler','seller_central','review_operations','erp_sales_returns'],true)
+            ? 'GMAIL_CATCHUP_INCOMPLETE' : null;
     }
 
     public static function gmailEvidenceRevision(): string

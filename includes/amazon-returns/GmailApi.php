@@ -114,6 +114,85 @@ final class SvAmazonGmailApiClient
         return ['messages'=>$messages,'cursor'=>$nextCursor,'recovered_cursor'=>$recovered];
     }
 
+    /**
+     * Bounded Gmail history batch: at most one /history page and at most
+     * $messageLimit unique messages.get calls per invocation. The returned
+     * checkpoint_cursor only ever advances through whole history records
+     * that were fully fetched, so a caller can safely persist it even when
+     * has_more is true.
+     *
+     * @return array{messages:list<array<string,mixed>>,checkpoint_cursor:string,mailbox_history_id:string,has_more:bool,recovered_cursor:bool}
+     */
+    public function pullIncrementalBatch(?string $cursor, int $historyPageSize, int $messageLimit): array
+    {
+        $historyPageSize = max(1, min(500, $historyPageSize));
+        $messageLimit = max(1, $messageLimit);
+        $cursor = $cursor !== null ? trim($cursor) : '';
+
+        $profile = $this->request('GET', '/profile');
+        $mailboxHistoryId = trim((string)($profile['historyId'] ?? ''));
+        if ($mailboxHistoryId === '') throw new RuntimeException('Gmail profile did not return historyId.');
+
+        if ($cursor === '') {
+            return ['messages'=>[],'checkpoint_cursor'=>$mailboxHistoryId,'mailbox_history_id'=>$mailboxHistoryId,'has_more'=>false,'recovered_cursor'=>false];
+        }
+
+        try {
+            $data = $this->request('GET', '/history', ['startHistoryId'=>$cursor,'historyTypes'=>'messageAdded','maxResults'=>(string)$historyPageSize]);
+        } catch (RuntimeException $e) {
+            if (!str_contains($e->getMessage(), 'HTTP 404')) throw $e;
+            $recoveryIds = array_values(array_unique($this->bootstrapMessageIds(7)));
+            if (count($recoveryIds) > $messageLimit) {
+                throw new RuntimeException('Gmail 404 recovery message set exceeds bounded message limit.');
+            }
+            $messages = $this->fetchMessagesByIds($recoveryIds);
+            return ['messages'=>$messages,'checkpoint_cursor'=>$mailboxHistoryId,'mailbox_history_id'=>$mailboxHistoryId,'has_more'=>false,'recovered_cursor'=>true];
+        }
+
+        $records = array_values(array_filter($data['history'] ?? [], 'is_array'));
+        $nextPageToken = isset($data['nextPageToken']) ? trim((string)$data['nextPageToken']) : '';
+
+        $checkpoint = $cursor;
+        $coveredIds = [];
+        $seen = [];
+        $truncated = false;
+
+        foreach ($records as $record) {
+            $recordId = trim((string)($record['id'] ?? ''));
+            $recordIds = [];
+            $recordSeen = [];
+            foreach (($record['messagesAdded'] ?? []) as $added) {
+                if (!is_array($added)) continue;
+                $id = trim((string)($added['message']['id'] ?? ''));
+                if ($id === '' || isset($seen[$id]) || isset($recordSeen[$id])) continue;
+                $recordSeen[$id] = true;
+                $recordIds[] = $id;
+            }
+            if (count($coveredIds) + count($recordIds) > $messageLimit) {
+                if (count($coveredIds) === 0) {
+                    throw new RuntimeException('Gmail history record exceeds bounded message limit.');
+                }
+                $truncated = true;
+                break;
+            }
+            foreach ($recordIds as $id) { $seen[$id] = true; $coveredIds[] = $id; }
+            if ($recordId !== '') $checkpoint = $recordId;
+        }
+
+        $hasMore = $truncated || $nextPageToken !== '';
+        if (!$hasMore) $checkpoint = $mailboxHistoryId;
+
+        $messages = $this->fetchMessagesByIds($coveredIds);
+
+        return [
+            'messages'=>$messages,
+            'checkpoint_cursor'=>$checkpoint,
+            'mailbox_history_id'=>$mailboxHistoryId,
+            'has_more'=>$hasMore,
+            'recovered_cursor'=>false,
+        ];
+    }
+
     /** @return list<array<string,mixed>> */
     public function searchMessages(string $queryText, int $maxMessages = 500): array
     {
@@ -150,6 +229,22 @@ final class SvAmazonGmailApiClient
         }
         return $messages;
     }
+    /** @param list<string> $ids @return list<array<string,mixed>> */
+    private function fetchMessagesByIds(array $ids): array
+    {
+        $messages = [];
+        foreach (array_values(array_unique($ids)) as $id) {
+            try {
+                $message = $this->request('GET', '/messages/' . rawurlencode($id), ['format'=>'full']);
+            } catch (RuntimeException $e) {
+                if (str_contains($e->getMessage(), 'HTTP 404')) continue;
+                throw $e;
+            }
+            $messages[] = $this->normalizeMessage($message);
+        }
+        return $messages;
+    }
+
     /** @return list<string> */
     private function historyMessageIds(string $cursor): array
     {

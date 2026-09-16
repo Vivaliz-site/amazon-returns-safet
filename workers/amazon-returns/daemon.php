@@ -27,8 +27,10 @@ require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
 require_once __DIR__ . '/../../includes/amazon-returns/LearnedRuleOutcome.php';
 require_once __DIR__ . '/seller-central-worker.php';
 
-final class SvAmazonReturnsDaemon
+class SvAmazonReturnsDaemon
 {
+    private const GMAIL_CATCHUP_HISTORY_PAGE_SIZE=25;
+    private const GMAIL_CATCHUP_MESSAGE_LIMIT=25;
     private SvAmazonReturnsConfig $config;
     private SvAmazonTenantPersistence $persistence;
     private string $stateFile;
@@ -86,13 +88,24 @@ final class SvAmazonReturnsDaemon
         }
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
         $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
+        $gmailCursorState=$this->persistence->cursors->load('GMAIL',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY);
+        if(SvAmazonReturnsRuntime::gmailCatchupPendingFromCursor($gmailCursorState)){
+            $state['gmail_catchup_pending']='1';
+        }
         $results=['bootstrap'=>$bootstrap];
         if(($plan['gate']['status'] ?? '')==='FAILED')$results['financial_refresh_gate']=$plan['gate'];
         foreach($due as $task){
             if($task==='bootstrap')continue;
+            // A known-date wake may contain Gmail twice. Keep the first incomplete
+            // batch and its retry marker authoritative for this entire cycle.
+            if($task==='gmail' && SvAmazonReturnsRuntime::gmailCatchupSkipReason($task,$results['gmail'] ?? [])!==null)continue;
             $taskNow=$fixedNow ? $now : new DateTimeImmutable('now',new DateTimeZone('UTC'));
             try{
-                if($task==='financial' && $this->config->enabled() && !SvAmazonFinancialRefresh::canReconcile(
+                $gmailEvidence=['has_more'=>$results['gmail']['has_more'] ?? (($state['gmail_catchup_pending'] ?? '')==='1')];
+                $skipReason=$task==='gmail' ? null : SvAmazonReturnsRuntime::gmailCatchupSkipReason($task,$gmailEvidence);
+                if($skipReason!==null){
+                    $results[$task]=['status'=>'SKIPPED','reason'=>$skipReason];
+                }elseif($task==='financial' && $this->config->enabled() && !SvAmazonFinancialRefresh::canReconcile(
                     $results['sp_api'] ?? [], SvAmazonFinancialRefresh::initialScanComplete($this->persistence)
                 )){
                     $results[$task]=['status'=>'SKIPPED','reason'=>'FINANCIAL_REFRESH_NOT_ACCEPTED'];
@@ -115,13 +128,16 @@ final class SvAmazonReturnsDaemon
             }catch(Throwable $observabilityError){
                 error_log('[amazon-returns-operational-observability] '.$observabilityError::class);
             }
-            $state[$task]=$taskNow->format(DATE_ATOM);
-            $gmailRetryDelay=SvAmazonReturnsRuntime::gmailRateLimitRetryDelaySeconds($task,$results[$task]);
-            if($gmailRetryDelay!==null){
-                $cadence=max(1,(int)(SvAmazonReturnsRuntime::cadences()[$task]??43200));
-                $age=max(0,$cadence-$gmailRetryDelay);
-                $state[$task]=$taskNow->modify('-'.$age.' seconds')->format(DATE_ATOM);
+            if(($results[$task]['reason'] ?? '')==='GMAIL_CATCHUP_INCOMPLETE' && $task!=='gmail'){
+                // Skipped work is still due after catch-up; it did not consume a deadline.
+                continue;
             }
+            if($task==='gmail' && array_key_exists('has_more',$results[$task])){
+                $state['gmail_catchup_pending']=$results[$task]['has_more']===true ? '1' : '0';
+            }
+            $gmailRetryDelay=SvAmazonReturnsRuntime::gmailRateLimitRetryDelaySeconds($task,$results[$task])
+                ?? SvAmazonReturnsRuntime::gmailCatchupRetryDelaySeconds($task,$results[$task]);
+            $state[$task]=SvAmazonReturnsRuntime::taskScheduleMarker($task,$taskNow,$gmailRetryDelay);
         }
         if(
             $decisionStackChanged
@@ -249,6 +265,11 @@ final class SvAmazonReturnsDaemon
         return SvAmazonErpSalesReturnTask::run($this->persistence,$this->config);
     }
 
+    protected function gmailClient(): SvAmazonGmailApiClient
+    {
+        return new SvAmazonGmailApiClient($this->config);
+    }
+
     /** @return array<string,mixed> */
     private function dependencyGate(string $dependency,bool $featureEnabled=true): array
     {
@@ -265,7 +286,7 @@ final class SvAmazonReturnsDaemon
         if(!$this->config->flag('gmail_ingest'))return ['status'=>'SKIPPED_DISABLED'];
         $gate=$this->dependencyGate('gmail');
         if(($gate['status'] ?? '')!=='READY_NO_RUNTIME_PROVIDER')return $gate;
-        $gmail=new SvAmazonGmailApiClient($this->config);
+        $gmail=$this->gmailClient();
         $cursor=SvAmazonGmailIngestor::loadCursor($this->persistence->cursors,'history_id');
         $pulled=$gmail->pull($cursor,1);
         return [
@@ -290,7 +311,7 @@ final class SvAmazonReturnsDaemon
         $gate=$this->dependencyGate('gmail');
         if(($gate['status'] ?? '')!=='READY_NO_RUNTIME_PROVIDER')return $gate;
 
-        $gmail=new SvAmazonGmailApiClient($this->config);
+        $gmail=$this->gmailClient();
         $result=[
             'status'=>'OK','messages'=>0,'events'=>0,'review_claimed'=>0,
             'review_sent'=>0,'reply_sent'=>0,'review_failed'=>0,
@@ -298,27 +319,53 @@ final class SvAmazonReturnsDaemon
         if($ingestEnabled){
             $ingestor=new SvAmazonGmailIngestor();
             $cursor=SvAmazonGmailIngestor::loadCursor($this->persistence->cursors,'history_id');
-            $pulled=$gmail->pull($cursor);
+            $catchup=trim((string)$cursor)!=='';
+            if($catchup){
+                $pulled=$gmail->pullIncrementalBatch(
+                    $cursor,self::GMAIL_CATCHUP_HISTORY_PAGE_SIZE,self::GMAIL_CATCHUP_MESSAGE_LIMIT
+                );
+                $newCursor=(string)$pulled['checkpoint_cursor'];
+                $hasMore=($pulled['has_more'] ?? false)===true;
+            }else{
+                $pulled=$gmail->pull($cursor);
+                $newCursor=(string)$pulled['cursor'];
+                $hasMore=false;
+            }
             $ingested=$ingestor->ingest(
                 $pulled['messages'],
                 fn(array $event):int=>SvAmazonGmailEventSink::persist($this->persistence,$event),
-                (string)$pulled['cursor']
+                $newCursor
             );
             SvAmazonGmailIngestor::saveCursor(
                 $this->persistence->cursors,
                 'history_id',
-                (string)$pulled['cursor'],
+                $newCursor,
                 [
                     'message_count'=>$ingested['messages'],
                     'event_count'=>$ingested['events'],
                     'recovered_cursor'=>$pulled['recovered_cursor'] ?? false,
+                    'has_more'=>$hasMore,
                 ]
             );
             $result['messages']=$ingested['messages'];
             $result['events']=$ingested['events'];
             $result['recovered_cursor']=$pulled['recovered_cursor'] ?? false;
+            $result['gmail_catchup']=$catchup;
+            $result['has_more']=$hasMore;
+            $result['checkpoint_advanced']=$newCursor!==trim((string)$cursor);
         }
 
+        if(!array_key_exists('has_more',$result)){
+            $persistedGmailCursor=$this->persistence->cursors->load('GMAIL',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY);
+            if(SvAmazonReturnsRuntime::gmailCatchupPendingFromCursor($persistedGmailCursor)){
+                $result['has_more']=true;
+            }
+        }
+        $skipReason=SvAmazonReturnsRuntime::gmailCatchupSkipReason('gmail',$result);
+        if($skipReason!==null){
+            $result['reason']=$skipReason;
+            return $result;
+        }
         if(!$emailWriteEnabled)return $result;
         $rows=$this->persistence->outbox->claimBatch(
             10,
@@ -398,7 +445,7 @@ final class SvAmazonReturnsDaemon
         if(!$this->config->flag('gmail_ingest'))return ['status'=>'SKIPPED_DISABLED'];
         $gate=$this->dependencyGate('gmail');
         if(($gate['status'] ?? '')!=='READY_NO_RUNTIME_PROVIDER')return $gate;
-        $gmail=new SvAmazonGmailApiClient($this->config);
+        $gmail=$this->gmailClient();
         $messages=$gmail->searchMessages('newer_than:90d reembolso iniciado',500);
         $ingestor=new SvAmazonGmailIngestor();
         $ingested=$ingestor->ingest(
