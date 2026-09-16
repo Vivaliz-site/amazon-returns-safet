@@ -65,4 +65,35 @@ grbSame(4,$exhaustCalls,'A single Gmail read must not block the daemon through a
 grbSame([1000000,2000000,4000000],$exhaustSleeps,'Per-request retry budget must stay short; task-level retry handles longer quota windows.');
 grbAssert(str_contains($exhaustError,'rateLimitExceeded'),'Exhausted quota failure must remain classifiable by the daemon.');
 
+$batchHistoryAttempts=0;$batchSleeps=[];
+$batchTransport=static function(string $method,string $url,array $headers,?array $body=null)use(&$batchHistoryAttempts):array{
+    if(str_contains($url,'/profile'))return ['status'=>200,'json'=>['historyId'=>'500']];
+    if(str_contains($url,'/history?')){
+        $batchHistoryAttempts++;
+        if($batchHistoryAttempts<3)return ['status'=>403,'json'=>['error'=>['errors'=>[['reason'=>'rateLimitExceeded']]]]];
+        return ['status'=>200,'json'=>['history'=>[['id'=>'450','messagesAdded'=>[['message'=>['id'=>'m-rl1']]]]]]];
+    }
+    if(str_contains($url,'/messages/m-rl1?'))return ['status'=>200,'json'=>[
+        'id'=>'m-rl1','threadId'=>'t-rl1','internalDate'=>'1788283827000',
+        'payload'=>['headers'=>[['name'=>'From','value'=>'Amazon <donotreply@amazon.com>'],['name'=>'Subject','value'=>'Assunto']],'mimeType'=>'text/plain','body'=>['data'=>'']],
+    ]];
+    throw new RuntimeException('Unexpected URL '.$url);
+};
+$batchApi=new SvAmazonGmailApiClient(new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),$batchTransport,static function(int $us)use(&$batchSleeps):void{$batchSleeps[]=$us;},$jitter);
+$batchResult=$batchApi->pullIncrementalBatch('400',50,50);
+grbSame(1,count($batchResult['messages']),'Bounded batch must recover from a transient history rate limit and still fetch the message.');
+grbSame([1000000,2000000],$batchSleeps,'Bounded batch history call must reuse the GET-only quota backoff.');
+grbSame('500',$batchResult['checkpoint_cursor'],'Fully drained batch checkpoints to the mailbox history id.');
+
+$permHistorySleeps=[];
+$permHistoryTransport=static function(string $method,string $url):array{
+    if(str_contains($url,'/profile'))return ['status'=>200,'json'=>['historyId'=>'500']];
+    return ['status'=>403,'json'=>['error'=>['errors'=>[['reason'=>'insufficientPermissions']]]]];
+};
+$permHistoryApi=new SvAmazonGmailApiClient(new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),$permHistoryTransport,static function(int $us)use(&$permHistorySleeps):void{$permHistorySleeps[]=$us;},$jitter);
+$permHistoryError='';
+try{$permHistoryApi->pullIncrementalBatch('400',50,50);}catch(RuntimeException $e){$permHistoryError=$e->getMessage();}
+grbSame([],$permHistorySleeps,'Permanent Gmail 403 on history must not consume backoff time.');
+grbAssert(str_contains($permHistoryError,'insufficientPermissions'),'Bounded batch failure reason must remain diagnosable.');
+
 echo "gmail-api-rate-limit-backoff-test: OK\n";

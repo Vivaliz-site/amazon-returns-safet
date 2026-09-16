@@ -8,7 +8,7 @@ $required=[
     '$fixedNow=$now!==null;',
     '$taskNow=$fixedNow ? $now : new DateTimeImmutable(\'now\',new DateTimeZone(\'UTC\'));',
     '$results[$task]=$this->runTask($task,$taskNow);',
-    '$state[$task]=$taskNow->format(DATE_ATOM);',
+    '$state[$task]=SvAmazonReturnsRuntime::taskScheduleMarker($task,$taskNow,$gmailRetryDelay);',
 ];
 foreach($required as $marker){
     if(!str_contains($daemon,$marker)){

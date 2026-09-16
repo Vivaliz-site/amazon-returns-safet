@@ -24,8 +24,11 @@ gerAssert(is_string($legacyClientRevision) && $legacyClientRevision!==$clientRev
     'The history-probe contract must advance the legacy GmailApi-only revision exactly once.');
 $probeV1Revision=is_string($legacyClientRevision)?hash('sha256','history-probe-v1|'.$legacyClientRevision):'';
 $probeV2Revision=is_string($legacyClientRevision)?hash('sha256','history-probe-v2|'.$legacyClientRevision):'';
+$probeV3Revision=is_string($legacyClientRevision)?hash('sha256','history-probe-v3|'.$legacyClientRevision):'';
 gerAssert($clientRevision!==$probeV2Revision,
     'The rate-limit backoff v3 contract must advance the already persisted v2 revision exactly once.');
+gerAssert($clientRevision!==$probeV3Revision,
+    'The bounded catch-up contract must advance the already persisted rate-limit v3 revision exactly once.');
 gerAssert($clientRevision!==$probeV1Revision,
     'The rate-limit backoff v3 contract must remain distinct from the persisted v1 revision.');
 gerAssert(method_exists(SvAmazonReturnsRuntime::class,'operationalTaskMetadata'),
@@ -36,9 +39,22 @@ $probeMeta=SvAmazonReturnsRuntime::operationalTaskMetadata('gmail_history_probe'
 ]);
 gerSame(['status'=>'FAILED','error_class'=>'RuntimeException','error'=>'Gmail API HTTP 403 reason=insufficientPermissions.'],$probeMeta,
     'Gmail history probe metadata must retain only the already-sanitized failure cause.');
-gerSame(['status'=>'FAILED'],SvAmazonReturnsRuntime::operationalTaskMetadata('gmail',[
-    'status'=>'FAILED','error_class'=>'RuntimeException','error'=>'must not persist here',
-]),'Normal operational task metadata must remain status-only.');
+$gmailMeta=SvAmazonReturnsRuntime::operationalTaskMetadata('gmail',[
+    'status'=>'OK','has_more'=>true,'messages'=>25,'events'=>7,'checkpoint_advanced'=>true,
+    'subject'=>'SECRET SUBJECT','body_text'=>'SECRET BODY','to'=>'secret@example.com','access_token'=>'secret',
+]);
+gerSame(['status'=>'OK','has_more'=>true,'messages'=>25,'events'=>7,'checkpoint_advanced'=>true],$gmailMeta,
+    'Gmail catch-up metadata must persist only bounded progress fields.');
+$gmailRateMeta=SvAmazonReturnsRuntime::operationalTaskMetadata('gmail',[
+    'status'=>'FAILED','error_class'=>'RuntimeException','error'=>'Gmail API HTTP 403 reason=rateLimitExceeded.',
+    'raw_response'=>'secret raw body','authorization'=>'Bearer secret',
+]);
+gerSame(['status'=>'FAILED','quota_error'=>'RATE_LIMITED'],$gmailRateMeta,
+    'Gmail quota failure metadata must retain only safe classification, never raw error content.');
+foreach(['subject','body_text','to','access_token','raw_response','authorization','error','error_class'] as $forbidden){
+    gerAssert(!array_key_exists($forbidden,$gmailMeta) && !array_key_exists($forbidden,$gmailRateMeta),
+        'Catch-up metadata must not persist sensitive field '.$forbidden);
+}
 $utf8Meta=SvAmazonReturnsRuntime::operationalTaskMetadata('gmail_history_probe',[
     'status'=>'FAILED','error'=>str_repeat('a',599).'á'.'z',
 ]);
