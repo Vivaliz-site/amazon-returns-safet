@@ -22,3 +22,10 @@ test('pending opening and appeal dates remain visible',()=>{
 test('explicit next action date wins after an external action',()=>{
   assert.equal(context.operatorNextRelevantDate({state:'SAFE_T_SUBMITTED',current_action:'WAIT',eligibility_at:'2026-09-01 00:00:00',next_action_at:'2026-09-19 00:00:00'}),'2026-09-19 00:00:00');
 });
+test('Amazon requested wait date outranks a historical appeal deadline',()=>{
+  const value=context.operatorNextRelevantDate({
+    state:'SAFE_T_DENIED',current_action:'WAIT',current_reason:'AMAZON_REQUESTED_WAIT',
+    appeal_deadline_at:'2026-09-10 00:00:00',next_action_at:'2026-09-20 00:00:00',
+  });
+  assert.equal(value,'2026-09-20 00:00:00');
+});
