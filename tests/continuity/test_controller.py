@@ -72,6 +72,12 @@ class ControllerTest(unittest.TestCase):
         self.assertIsNone(report.task_id)
         self.assertEqual([], self.ledger.list_tasks())
 
+    def test_default_controller_uses_public_read_only_github_reader(self):
+        reader = self.controller.github_reader
+        self.assertIsNone(reader.runner)
+        self.assertIsNotNone(reader.public_fetcher)
+
+
 
 if __name__ == "__main__":
     unittest.main()

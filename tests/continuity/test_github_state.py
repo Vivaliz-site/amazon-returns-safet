@@ -86,3 +86,39 @@ class GitHubStateReaderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakePublicFetcher:
+    def __init__(self):
+        self.urls = []
+
+    def __call__(self, url):
+        self.urls.append(url)
+        if "/git/ref/heads/" in url:
+            return 200, json.dumps({"object": {"sha": "b" * 40}})
+        if "/pulls?" in url:
+            return 200, json.dumps([{"number": 42, "html_url": "https://github.com/org/repo/pull/42", "state": "open", "head": {"sha": "b" * 40}}])
+        if url.endswith("/pulls/42"):
+            return 200, json.dumps({"number": 42, "html_url": "https://github.com/org/repo/pull/42", "state": "open", "merged": False, "mergeable": True, "head": {"sha": "b" * 40}})
+        if "/check-runs" in url:
+            return 200, json.dumps({"check_runs": [{"status": "completed", "conclusion": "success", "name": "test"}]})
+        raise AssertionError(f"unexpected public URL: {url}")
+
+
+class PublicGitHubStateReaderTest(unittest.TestCase):
+    def test_default_public_reader_uses_anonymous_get_only(self):
+        fetcher = FakePublicFetcher()
+        state = GitHubStateReader(public_fetcher=fetcher).branch_state("org/repo", "agent/task", "main")
+        self.assertTrue(state.branch_present)
+        self.assertEqual("OPEN", state.pr_state)
+        self.assertEqual("success", state.checks_state)
+        self.assertTrue(state.mergeable)
+        self.assertTrue(all(url.startswith("https://api.github.com/") for url in fetcher.urls))
+        self.assertTrue(all("token" not in url.lower() for url in fetcher.urls))
+
+    def test_public_reader_redacts_http_error_body(self):
+        secret = "ghp_" + "SYNTHETIC_NOT_REAL_1234567890"
+        reader = GitHubStateReader(public_fetcher=lambda url: (403, f"denied {secret}"))
+        state = reader.branch_state("org/repo", "agent/task", "main")
+        self.assertIn("[REDACTED]", state.evidence_error)
+        self.assertNotIn(secret, state.evidence_error)
