@@ -23,9 +23,13 @@ foreach (['function friendlyError(', 'function humanText(', 'function humanRevie
     uiAssert(str_contains($js, $helper), 'Missing global UI humanization helper: ' . $helper);
 }
 uiAssert(!str_contains($page, 'operator-language.js'), 'Legacy operator language override must not be loaded.');
+uiAssert(!str_contains($page, 'review-presentation.js'), 'Review language/confirmation behavior must not depend on a runtime presentation override.');
 uiAssert(str_contains($js, 'function recommendationExplanation('), 'Missing recommendation explanation sanitizer in cockpit.js.');
 uiAssert(str_contains($js, 'function renderSuggestion('), 'Recommendation rendering must be owned by cockpit.js.');
-uiAssert(str_contains($js, "humanText(suggestion?.rationale||'')"), 'AI rationale must pass through the global humanizer before rendering.');
+uiAssert(str_contains($js, 'function reviewDisplayText('), 'AI free-text localization must be owned natively by cockpit.js.');
+uiAssert(str_contains($js, 'function normalizeReviewSuggestion('), 'AI recommendation normalization must be owned natively by cockpit.js.');
+uiAssert(str_contains($js, 'function prepareCaseOnlyReview('), 'Case-only confirmation preparation must be owned natively by cockpit.js.');
+uiAssert(str_contains($js, "humanText(suggestion?.rationale||'')") || str_contains($js, 'reviewDisplayText(suggestion?.rationale'), 'AI rationale must pass through the global humanizer/localizer before rendering.');
 uiAssert(str_contains($js, "text('span',friendlyError(message))"), 'All global UI errors must pass through friendlyError before rendering.');
 
 $forbiddenPage = [
