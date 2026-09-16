@@ -44,7 +44,7 @@ test('a new review resets action date and scope to safe defaults',()=>{
   context.resetReviewControls();
   assert.equal(controls['#review-final-action'].value,'CHECK_FINANCES');
   assert.equal(controls['#review-date-binding'].value,'NONE');
-  assert.equal(controls['#review-scope'].value,'CASE_ONLY');
+  assert.equal(controls['#review-scope'].value,'SIMILAR');
   assert.equal(state.reviewControlsDirty,false);
 });
 test('late recommendation from review A cannot mutate review B',async()=>{
