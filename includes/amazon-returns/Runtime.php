@@ -162,7 +162,7 @@ final class SvAmazonReturnsRuntime
         $file=__DIR__.'/GmailApi.php';
         $hash=@hash_file('sha256',$file);
         if(!is_string($hash) || $hash==='')throw new RuntimeException('Unable to fingerprint Gmail API client.');
-        return $hash;
+        return hash('sha256','history-probe-v1|'.$hash);
     }
 
     public static function gmailEvidenceRevision(): string
