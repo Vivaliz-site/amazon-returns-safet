@@ -212,6 +212,26 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(killpg.called)
         self.assertEqual(43210, killpg.call_args.args[0])
 
+    def test_drain_mode_processes_until_idle(self):
+        completed = WorkerRunResult("completed", Path("/tmp/receipt-1"), "TASK-1", "session-1")
+        idle = WorkerRunResult("idle", Path(), "", "")
+        with patch("tools.continuity.worker._config_from_json", return_value=self.config()), \
+             patch("tools.continuity.worker.run_one_job", side_effect=[completed, completed, idle]) as run:
+            from tools.continuity.worker import main
+            rc = main(["--config", "/tmp/config.json", "--drain"])
+        self.assertEqual(0, rc)
+        self.assertEqual(3, run.call_count)
+
+    def test_drain_mode_finishes_queue_but_returns_failure_if_any_job_failed(self):
+        failed = WorkerRunResult("provider_failed", Path("/tmp/receipt-f"), "TASK-F", "session-f")
+        idle = WorkerRunResult("idle", Path(), "", "")
+        with patch("tools.continuity.worker._config_from_json", return_value=self.config()), \
+             patch("tools.continuity.worker.run_one_job", side_effect=[failed, idle]) as run:
+            from tools.continuity.worker import main
+            rc = main(["--config", "/tmp/config.json", "--drain"])
+        self.assertEqual(1, rc)
+        self.assertEqual(2, run.call_count)
+
     def test_admin_policy_is_valid_deny_by_default_toml(self):
         policy = Path("deploy/continuity/gemini-admin-policy.toml")
         data = tomllib.loads(policy.read_text(encoding="utf-8"))

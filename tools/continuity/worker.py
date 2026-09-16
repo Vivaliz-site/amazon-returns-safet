@@ -386,22 +386,42 @@ def _config_from_json(path: Path) -> WorkerConfig:
         base_env=dict(os.environ),
     )
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="agent-continuity-worker")
-    parser.add_argument("--config", required=True)
-    parser.add_argument("--once", action="store_true")
-    args = parser.parse_args(argv)
-    if not args.once:
-        parser.error("only --once mode is supported")
-    config = _config_from_json(Path(args.config))
-    result = run_one_job(config)
+def _print_run_result(result: WorkerRunResult) -> None:
     print(json.dumps({
         "classification": result.classification,
         "task_id": result.task_id,
         "lease_session_id": result.lease_session_id,
         "receipt_path": str(result.receipt_path) if result.receipt_path else "",
     }, sort_keys=True))
-    return 0 if result.classification in {"idle", "completed"} or result.classification.startswith("rejected_") else 1
+
+
+def _result_failed(result: WorkerRunResult) -> bool:
+    return not (
+        result.classification in {"idle", "completed"}
+        or result.classification.startswith("rejected_")
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="agent-continuity-worker")
+    parser.add_argument("--config", required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--once", action="store_true")
+    mode.add_argument("--drain", action="store_true")
+    args = parser.parse_args(argv)
+    config = _config_from_json(Path(args.config))
+    if args.once:
+        result = run_one_job(config)
+        _print_run_result(result)
+        return 1 if _result_failed(result) else 0
+
+    saw_failure = False
+    while True:
+        result = run_one_job(config)
+        _print_run_result(result)
+        if result.classification == "idle":
+            return 1 if saw_failure else 0
+        saw_failure = saw_failure or _result_failed(result)
 
 
 if __name__ == "__main__":

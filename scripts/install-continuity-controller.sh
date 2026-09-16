@@ -111,6 +111,22 @@ install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" \
   "$WORKTREE_ROOT/repositories" "$REPOSITORY_MOUNT_ROOT"
 install -d -m 2750 -o "$WORKER_USER" -g "$SERVICE_USER" \
   "$WORKTREE_ROOT/sources" "$WORKTREE_ROOT/worktrees"
+
+normalize_queue_files() {
+  local directory="$1" owner="$2" group="$3"
+  [[ -d "$directory" ]] || return 0
+  find "$directory" -type f -exec chown "$owner:$group" {} + -exec chmod 0640 {} +
+}
+normalize_queue_files "$STATE_ROOT/jobs/pending" "$SERVICE_USER" "$WORKER_USER"
+normalize_queue_files "$STATE_ROOT/jobs/packets" "$SERVICE_USER" "$WORKER_USER"
+normalize_queue_files "$STATE_ROOT/jobs/running" "$WORKER_USER" "$PUBLISHER_USER"
+normalize_queue_files "$STATE_ROOT/jobs/receipts" "$WORKER_USER" "$PUBLISHER_USER"
+for tree in "$WORKTREE_ROOT/sources" "$WORKTREE_ROOT/worktrees"; do
+  chown -R --no-dereference "$WORKER_USER:$SERVICE_USER" "$tree"
+  find "$tree" -type d -exec chmod u+rwx,g+rx,g-w,o-rwx,g+s {} +
+  find "$tree" -type f -exec chmod u+rw,g+rX,g-w,o-rwx {} +
+done
+
 install -d -m 0755 -o root -g root "$RUNTIME_ROOT" "$RUNTIME_ROOT/releases"
 
 install -m 0644 -o root -g root \

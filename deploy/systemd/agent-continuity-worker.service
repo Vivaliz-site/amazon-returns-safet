@@ -16,7 +16,9 @@ Environment=PYTHONUNBUFFERED=1
 Environment=CONTINUITY_CONFIG=/etc/agent-continuity/config.json
 Environment=HOME=/var/lib/agent-continuity-worker
 EnvironmentFile=-/etc/agent-continuity/gemini.env
-ExecStart=/usr/bin/python3 -m tools.continuity.worker --config /etc/agent-continuity/config.json --once
+ExecStart=/usr/bin/python3 -m tools.continuity.worker --config /etc/agent-continuity/config.json --drain
+Restart=on-failure
+RestartSec=5s
 UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true

@@ -203,6 +203,7 @@ class PublisherTest(unittest.TestCase):
         self.assertIn("startsWith", workflow)
         self.assertIn("compare/main...$EXPECTED_HEAD", workflow)
         self.assertIn(".github/workflows/", workflow)
+        self.assertIn("previous_filename", workflow)
         self.assertIn("length < 300", workflow)
         self.assertIn("contents: write", workflow)
         self.assertIn("pull-requests: write", workflow)

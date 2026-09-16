@@ -61,6 +61,31 @@ class StateLayoutMigrationTest(unittest.TestCase):
         self.assertEqual(str(self.controller / "ledger.sqlite3"), payload["ledger_path"])
         self.assertFalse((self.root / "ledger.sqlite3").exists())
 
+    def test_config_already_new_but_legacy_db_present_moves_legacy_when_disabled(self):
+        target = self.controller / "ledger.sqlite3"
+        self.write_config(ledger=target)
+        (self.root / "ledger.sqlite3").write_bytes(b"legacy")
+        self.assertTrue(migrate(self.config, state_root=self.root, controller_state=self.controller))
+        self.assertFalse((self.root / "ledger.sqlite3").exists())
+        self.assertEqual(b"legacy", target.read_bytes())
+
+    def test_config_already_new_refuses_legacy_db_when_enabled(self):
+        target = self.controller / "ledger.sqlite3"
+        self.write_config(auto_dispatch=True, ledger=target)
+        (self.root / "ledger.sqlite3").write_bytes(b"legacy")
+        with self.assertRaises(ValueError):
+            migrate(self.config, state_root=self.root, controller_state=self.controller)
+        self.assertTrue((self.root / "ledger.sqlite3").exists())
+        self.assertFalse(target.exists())
+
+    def test_refuses_when_legacy_and_target_ledgers_both_exist(self):
+        target = self.controller / "ledger.sqlite3"
+        target.write_bytes(b"target")
+        self.write_config(ledger=target)
+        (self.root / "ledger.sqlite3").write_bytes(b"legacy")
+        with self.assertRaises(ValueError):
+            migrate(self.config, state_root=self.root, controller_state=self.controller)
+
     def test_is_idempotent_when_config_already_uses_controller_ledger(self):
         target = self.controller / "ledger.sqlite3"
         target.write_bytes(b"db")
