@@ -74,7 +74,7 @@ class EnableAutoDispatchTest(unittest.TestCase):
 
     def pilot(self):
         return {
-            "status": "green", "source_sha": SHA, "repository": REPOSITORY,
+            "status": "green", "source_sha": SHA, "runtime_sha": SHA, "repository": REPOSITORY,
             "ci_green": True, "merged_sha": "b" * 40, "secret_boundary": True,
         }
 
@@ -98,6 +98,13 @@ class EnableAutoDispatchTest(unittest.TestCase):
     def test_refuses_forbidden_enabled_agents(self):
         self.write_config(agents=[{"name": "codex", "command": ["codex"], "enabled": True}])
         rc = enable(self.cfg, pilot=self.pilot(), source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True)
+        self.assertEqual(2, rc)
+        self.assertFalse(json.loads(self.cfg.read_text())["auto_dispatch"])
+
+    def test_refuses_pilot_runtime_sha_mismatch(self):
+        pilot = self.pilot()
+        pilot["runtime_sha"] = "c" * 40
+        rc = enable(self.cfg, pilot=pilot, source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True)
         self.assertEqual(2, rc)
         self.assertFalse(json.loads(self.cfg.read_text())["auto_dispatch"])
 

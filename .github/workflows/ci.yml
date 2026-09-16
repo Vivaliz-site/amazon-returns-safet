@@ -43,6 +43,7 @@ jobs:
           python3 -m unittest discover -s tests/continuity -p 'test_*.py' -v
           python3 -m py_compile tools/continuity/*.py
           python3 -m py_compile scripts/migrate-continuity-config.py
+          python3 -m py_compile scripts/migrate-continuity-state-layout.py
           python3 -m py_compile scripts/enable-continuity-auto-dispatch.py
           python3 -m py_compile scripts/prepare-continuity-runtime-config.py
           python3 -m py_compile scripts/run-continuity-pilot.py

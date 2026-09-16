@@ -6,7 +6,6 @@ CONFIG_PATH="${CONTINUITY_CONFIG:-/etc/agent-continuity/config.json}"
 SERVICE_USER="agent-continuity"
 WORKER_USER="agent-continuity-worker"
 PUBLISHER_USER="agent-continuity-publisher"
-JOB_GROUP="agent-continuity-jobs"
 STATE_ROOT="/var/lib/agent-continuity"
 WORKTREE_ROOT="/srv/continuity"
 RUNTIME_ROOT="/opt/agent-continuity"
@@ -49,11 +48,12 @@ ensure_user() {
 ensure_user "$SERVICE_USER" "$STATE_ROOT"
 ensure_user "$WORKER_USER" "/var/lib/$WORKER_USER"
 ensure_user "$PUBLISHER_USER" "/var/lib/$PUBLISHER_USER"
-ensure_group "$JOB_GROUP"
-for user in "$SERVICE_USER" "$WORKER_USER" "$PUBLISHER_USER"; do
-  usermod -a -G "$JOB_GROUP" "$user"
-done
-
+LEGACY_JOB_GROUP="agent-continuity-jobs"
+if getent group "$LEGACY_JOB_GROUP" >/dev/null; then
+  for user in "$SERVICE_USER" "$WORKER_USER" "$PUBLISHER_USER"; do
+    gpasswd -d "$user" "$LEGACY_JOB_GROUP" >/dev/null 2>&1 || true
+  done
+fi
 install -d -m 0700 -o "$WORKER_USER" -g "$WORKER_USER" "/var/lib/$WORKER_USER"
 install -d -m 0700 -o "$PUBLISHER_USER" -g "$PUBLISHER_USER" "/var/lib/$PUBLISHER_USER"
 
@@ -79,6 +79,9 @@ print("true" if value is True else "false")
 PYCFG
 )"
 if [[ "$CONTINUITY_AUTO_DISPATCH" == "false" ]]; then
+  systemctl stop agent-continuity-controller.timer agent-continuity-controller.service \
+    agent-continuity-worker.path agent-continuity-worker.service \
+    agent-continuity-publisher.path agent-continuity-publisher.service >/dev/null 2>&1 || true
   PREP_ARGS=("$CONFIG_PATH" --worker-uid "$(id -u "$WORKER_USER")")
   if [[ -n "$GEMINI_BIN" ]]; then
     PREP_ARGS+=(--gemini-bin "$GEMINI_BIN")
@@ -88,22 +91,42 @@ else
   echo 'runtime_config_prep_skipped=auto_dispatch_enabled'
 fi
 
-install -d -m 0750 -o "$SERVICE_USER" -g "$JOB_GROUP" "$STATE_ROOT"
-for ledger_file in "$STATE_ROOT"/ledger.sqlite3*; do
+install -d -m 0755 -o root -g root "$STATE_ROOT" "$STATE_ROOT/jobs"
+install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_ROOT/controller"
+python3 "$REPO_ROOT/scripts/migrate-continuity-state-layout.py" \
+  --config "$CONFIG_PATH" --state-root "$STATE_ROOT" --controller-state "$STATE_ROOT/controller"
+for ledger_file in "$STATE_ROOT/controller"/ledger.sqlite3*; do
   [[ -e "$ledger_file" ]] || continue
   chown "$SERVICE_USER":"$SERVICE_USER" "$ledger_file"
   chmod 0640 "$ledger_file"
 done
-install -d -m 2770 -o "$SERVICE_USER" -g "$JOB_GROUP" \
-  "$STATE_ROOT/jobs" "$STATE_ROOT/jobs/pending" "$STATE_ROOT/jobs/running" \
-  "$STATE_ROOT/jobs/receipts" "$STATE_ROOT/jobs/packets"
+install -d -m 2750 -o "$SERVICE_USER" -g "$WORKER_USER" \
+  "$STATE_ROOT/jobs/pending" "$STATE_ROOT/jobs/packets"
+install -d -m 2750 -o "$WORKER_USER" -g "$PUBLISHER_USER" \
+  "$STATE_ROOT/jobs/running" "$STATE_ROOT/jobs/receipts"
 install -d -m 0750 -o "$PUBLISHER_USER" -g "$PUBLISHER_USER" "$STATE_ROOT/publisher"
 
 install -d -m 0755 -o root -g root "$WORKTREE_ROOT"
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" \
   "$WORKTREE_ROOT/repositories" "$REPOSITORY_MOUNT_ROOT"
-install -d -m 2770 -o "$WORKER_USER" -g "$JOB_GROUP" \
+install -d -m 2750 -o "$WORKER_USER" -g "$SERVICE_USER" \
   "$WORKTREE_ROOT/sources" "$WORKTREE_ROOT/worktrees"
+
+normalize_queue_files() {
+  local directory="$1" owner="$2" group="$3"
+  [[ -d "$directory" ]] || return 0
+  find "$directory" -type f -exec chown "$owner:$group" {} + -exec chmod 0640 {} +
+}
+normalize_queue_files "$STATE_ROOT/jobs/pending" "$SERVICE_USER" "$WORKER_USER"
+normalize_queue_files "$STATE_ROOT/jobs/packets" "$SERVICE_USER" "$WORKER_USER"
+normalize_queue_files "$STATE_ROOT/jobs/running" "$WORKER_USER" "$PUBLISHER_USER"
+normalize_queue_files "$STATE_ROOT/jobs/receipts" "$WORKER_USER" "$PUBLISHER_USER"
+for tree in "$WORKTREE_ROOT/sources" "$WORKTREE_ROOT/worktrees"; do
+  chown -R --no-dereference "$WORKER_USER:$SERVICE_USER" "$tree"
+  find "$tree" -type d -exec chmod u+rwx,g+rx,g-w,o-rwx,g+s {} +
+  find "$tree" -type f -exec chmod u+rw,g+rX,g-w,o-rwx {} +
+done
+
 install -d -m 0755 -o root -g root "$RUNTIME_ROOT" "$RUNTIME_ROOT/releases"
 
 install -m 0644 -o root -g root \

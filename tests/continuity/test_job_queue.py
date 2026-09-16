@@ -14,6 +14,7 @@ from tools.continuity.job_queue import (
     atomic_write_job,
     atomic_write_receipt,
     claim_pending_job,
+    claim_next_pending,
     load_job,
     load_receipt,
     validate_job,
@@ -119,7 +120,23 @@ class JobQueueTest(unittest.TestCase):
         claimed = [path for path in results if path is not None]
         self.assertEqual(1, len(claimed))
         self.assertEqual(paths.running.resolve(), claimed[0].parent.resolve())
-        self.assertFalse(pending.exists())
+        self.assertTrue(pending.exists())
+        self.assertEqual(load_job(pending), load_job(claimed[0]))
+        self.assertEqual(0o640, claimed[0].stat().st_mode & 0o777)
+
+    def test_next_claim_skips_immutable_pending_job_already_claimed(self):
+        paths = QueuePaths.under(Path(self.tmp.name) / "claim-next")
+        first = atomic_write_job(paths, self.job())
+        second_job = self.job(task_id="TASK-20260916-002", lease_session_id="continuity-TASK-20260916-002-gemini-123456789")
+        second = atomic_write_job(paths, second_job)
+        os.utime(first, ns=(1, 1))
+        os.utime(second, ns=(2, 2))
+        self.assertIsNotNone(claim_pending_job(paths, first))
+        claimed = claim_next_pending(paths)
+        self.assertIsNotNone(claimed)
+        self.assertEqual(second.name, claimed.name)
+        self.assertTrue(first.exists())
+        self.assertTrue(second.exists())
 
     def test_shared_queue_artifacts_are_group_readable_not_world_readable(self):
         paths = QueuePaths.under(Path(self.tmp.name) / "shared-modes")

@@ -32,6 +32,15 @@ jobs:
           current="$(gh api "repos/$REPOSITORY/git/ref/heads/$BRANCH" --jq '.object.sha')"
           test "$current" = "$EXPECTED_HEAD"
 
+      - name: Reject privileged workflow changes independently
+        run: |
+          set -euo pipefail
+          compare="$(gh api "repos/$REPOSITORY/compare/main...$EXPECTED_HEAD")"
+          if ! jq -e '(.files | length < 300) and all(.files[]; ((.filename | startswith(".github/workflows/")) or ((.previous_filename // "") | startswith(".github/workflows/")) | not))' <<<"$compare" >/dev/null; then
+            echo 'Automatic continuity branches may not modify .github/workflows/ or exceed the bounded compare file set.' >&2
+            exit 1
+          fi
+
       - name: Create or reuse pull request
         run: |
           set -euo pipefail
