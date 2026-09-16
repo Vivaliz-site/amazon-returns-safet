@@ -24,7 +24,7 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
 BindReadOnlyPaths=/home/ubuntu/amazon-returns-deploy-source:/srv/continuity/repositories/amazon-returns-safet
-ReadWritePaths=/var/lib/agent-continuity /srv/continuity
+ReadWritePaths=/var/lib/agent-continuity/controller /var/lib/agent-continuity/jobs/pending /var/lib/agent-continuity/jobs/packets
 UMask=0027
 
 [Install]

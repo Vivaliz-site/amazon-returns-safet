@@ -199,20 +199,41 @@ def claim_pending_job(paths: QueuePaths, pending_path: Path) -> Path | None:
     source = Path(pending_path)
     if source.parent.resolve() != paths.pending.resolve():
         raise JobValidationError("pending job outside queue")
+    try:
+        data = source.read_bytes()
+    except FileNotFoundError:
+        return None
     target = paths.running / source.name
     try:
-        os.link(source, target)
-    except (FileExistsError, FileNotFoundError):
+        fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o640)
+    except FileExistsError:
         return None
     try:
-        source.unlink()
+        os.fchmod(fd, 0o640)
+        with os.fdopen(fd, "wb", closefd=True) as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
         return target
     except Exception:
         try:
-            target.unlink()
-        except FileNotFoundError:
+            os.close(fd)
+        except OSError:
             pass
+        target.unlink(missing_ok=True)
         raise
+
+
+def claim_next_pending(paths: QueuePaths) -> Path | None:
+    candidates = sorted(
+        (path for path in paths.pending.glob("*.json") if path.is_file()),
+        key=lambda path: (path.stat().st_mtime_ns, path.name),
+    )
+    for pending in candidates:
+        claimed = claim_pending_job(paths, pending)
+        if claimed is not None:
+            return claimed
+    return None
 
 
 def _validate_receipt(receipt: WorkerReceipt, max_diagnostics_bytes: int) -> None:

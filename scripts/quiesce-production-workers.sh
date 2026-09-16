@@ -16,6 +16,11 @@ qw_release_stale_read_jobs() {
     qw_scalar "$target_db" "UPDATE amazon_return_outbox SET status='PENDING',attempt_count=GREATEST(attempt_count-1,0),locked_at=NULL,last_error='LEASE_EXPIRED_DURING_QUIESCE',updated_at=UTC_TIMESTAMP() WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND (locked_at IS NULL OR locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND)) AND kind IN ('SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'); SELECT ROW_COUNT();"
 }
 
+qw_release_stale_write_jobs() {
+    local target_db="$1" tenant_id="$2" connection_id="$3"
+    qw_scalar "$target_db" "UPDATE amazon_return_outbox SET status='PENDING',locked_at=NULL,last_error='LEASE_EXPIRED_DURING_QUIESCE_RECONCILE',updated_at=UTC_TIMESTAMP() WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND locked_at IS NOT NULL AND locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND) AND kind IN ('SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'); SELECT ROW_COUNT();"
+}
+
 qw_thaw_units() {
     local unit
     for unit in "$@"; do
@@ -46,7 +51,7 @@ quiesce_workers() {
     [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid quiesce timeout' >&2; return 2; }
     [[ "$poll_seconds" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid quiesce poll interval' >&2; return 2; }
 
-    local tenant_id connection_id count deadline unit timer_was_active=0
+    local tenant_id connection_id count deadline unit timer_was_active=0 released=0 released_writes=0
     local -a frozen=()
     tenant_id="$(qw_scalar "$target_db" "SELECT id FROM amazon_return_tenants WHERE slug='$tenant_slug' AND status='ACTIVE' LIMIT 1")"
     [[ "$tenant_id" =~ ^[0-9]+$ ]] || { echo 'active tenant not found during quiesce' >&2; return 1; }
@@ -64,11 +69,18 @@ quiesce_workers() {
         [[ "$count" =~ ^[0-9]+$ ]] || { echo 'invalid processing job count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
         if (( count != 0 )); then
             released=0
+            released_writes=0
             if ! qw_unit_running "$browser_service"; then
                 released="$(qw_release_stale_read_jobs "$target_db" "$tenant_id" "$connection_id")"
                 [[ "$released" =~ ^[0-9]+$ ]] || { echo 'invalid stale read release count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
                 if (( released > 0 )); then
                     printf 'worker_quiesce_released_stale_reads=%s\n' "$released"
+                else
+                    released_writes="$(qw_release_stale_write_jobs "$target_db" "$tenant_id" "$connection_id")"
+                    [[ "$released_writes" =~ ^[0-9]+$ ]] || { echo 'invalid stale write release count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
+                    if (( released_writes > 0 )); then
+                        printf 'worker_quiesce_released_stale_writes_for_reconcile=%s\n' "$released_writes"
+                    fi
                 fi
             fi
             sleep "$poll_seconds"

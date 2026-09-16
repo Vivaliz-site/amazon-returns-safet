@@ -1,5 +1,5 @@
 {
-  "ledger_path": "/var/lib/agent-continuity/ledger.sqlite3",
+  "ledger_path": "/var/lib/agent-continuity/controller/ledger.sqlite3",
   "worktree_root": "/var/lib/agent-continuity",
   "auto_dispatch": false,
   "repositories": [
