@@ -136,7 +136,17 @@ final class SvAmazonReturnsDaemon
         try{$results['rule_outcomes']=$this->refreshRuleOutcomes();}
         catch(Throwable $e){$results['rule_outcomes']=['status'=>'FAILED','error_class'=>$e::class];}
         if(SvAmazonReturnsRuntime::financialRefreshContinuationRequired($results)){
-            unset($state['sp_api'],$state['financial']);
+            $retryDelay=SvAmazonReturnsRuntime::financialRefreshRetryDelaySeconds($results);
+            if($retryDelay===null){
+                unset($state['sp_api'],$state['financial']);
+            }else{
+                $retryNow=$fixedNow ? $now : new DateTimeImmutable('now',new DateTimeZone('UTC'));
+                $cadence=max(1,(int)(SvAmazonReturnsRuntime::cadences()['sp_api']??43200));
+                $age=max(0,$cadence-$retryDelay);
+                $marker=$retryNow->modify('-'.$age.' seconds')->format(DATE_ATOM);
+                $state['sp_api']=$marker;
+                $state['financial']=$marker;
+            }
         }
         $overallStatus=$this->overallStatus($results);
         try{

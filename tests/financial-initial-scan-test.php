@@ -17,6 +17,7 @@ fisSame(false,SvAmazonFinancialRefresh::canReconcile(['status'=>'PARTIAL'],true)
 fisSame(false,SvAmazonFinancialRefresh::canReconcile(['status'=>'OK'],false),'first incomplete page cannot authorize closure');
 fisSame(false,SvAmazonFinancialRefresh::canReconcile(['status'=>'OK','rotation_has_more'=>true],true),'partial SP-API rotation must not reconcile the same cases repeatedly');
 fisSame(true,SvAmazonFinancialRefresh::canReconcile(['status'=>'OK','rotation_has_more'=>false],true),'completed SP-API rotation permits projection');
+fisSame(false,SvAmazonFinancialRefresh::canReconcile(['status'=>'OK','rotation_has_more'=>false,'cycle_failures'=>1],true),'A completed rotation with any failed order must not authorize reconciliation.');
 fisSame(true,SvAmazonFinancialRefresh::canReconcile(['status'=>'OK'],true),'legacy complete successful scan permits projection');
 $db->push(['fetch'=>false]);$db->push(['rows'=>$rows(array_slice($ids,0,26))]);
 $first=SvAmazonFinancialRefresh::nextBatch($p,25);fisSame(true,$first['has_more'],'lookahead detects remaining pages');
