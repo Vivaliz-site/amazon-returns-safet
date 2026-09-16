@@ -15,7 +15,26 @@
   "lease_seconds": 1800,
   "retry_cooldown_seconds": 1800,
   "agents": [
-    {"name": "gemini", "command": ["gemini"], "enabled": false},
-    {"name": "rooter", "command": ["rooter"], "enabled": false}
-  ]
+    {
+      "name": "gemini",
+      "command": [
+        "gemini"
+      ],
+      "enabled": false
+    },
+    {
+      "name": "rooter",
+      "command": [
+        "rooter"
+      ],
+      "enabled": false
+    }
+  ],
+  "job_queue_root": "/var/lib/agent-continuity/jobs",
+  "worker_root": "/srv/continuity/worktrees",
+  "gemini_admin_policy": "/etc/agent-continuity/gemini-admin-policy.toml",
+  "gemini_model": "gemini-3.1-flash-lite",
+  "publisher_known_hosts": "/etc/agent-continuity/publisher-known-hosts",
+  "max_auto_attempts": 3,
+  "worker_timeout_seconds": 900
 }

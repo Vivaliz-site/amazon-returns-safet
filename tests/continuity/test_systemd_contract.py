@@ -67,6 +67,7 @@ class SystemdContractTest(unittest.TestCase):
         self.assertIn("python3 -m unittest discover -s tests/continuity", ci)
         self.assertIn("python3 -m py_compile tools/continuity/*.py", ci)
         self.assertIn("python3 -m py_compile scripts/migrate-continuity-config.py", ci)
+        self.assertIn("python3 -m py_compile scripts/enable-continuity-auto-dispatch.py", ci)
         self.assertIn("bash -n scripts/install-continuity-controller.sh", ci)
         self.assertIn("bash -n scripts/provision-continuity-gemini-env.sh", ci)
         self.assertIn("bash -n scripts/provision-continuity-publisher-key.sh", ci)
