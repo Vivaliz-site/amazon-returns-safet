@@ -23,8 +23,11 @@ $legacyClientRevision=hash_file('sha256',__DIR__.'/../includes/amazon-returns/Gm
 gerAssert(is_string($legacyClientRevision) && $legacyClientRevision!==$clientRevision,
     'The history-probe contract must advance the legacy GmailApi-only revision exactly once.');
 $probeV1Revision=is_string($legacyClientRevision)?hash('sha256','history-probe-v1|'.$legacyClientRevision):'';
+$probeV2Revision=is_string($legacyClientRevision)?hash('sha256','history-probe-v2|'.$legacyClientRevision):'';
+gerAssert($clientRevision!==$probeV2Revision,
+    'The rate-limit backoff v3 contract must advance the already persisted v2 revision exactly once.');
 gerAssert($clientRevision!==$probeV1Revision,
-    'The diagnostic history-probe v2 contract must advance the already persisted v1 revision exactly once.');
+    'The rate-limit backoff v3 contract must remain distinct from the persisted v1 revision.');
 gerAssert(method_exists(SvAmazonReturnsRuntime::class,'operationalTaskMetadata'),
     'Runtime must expose safe operational task metadata.');
 $probeMeta=SvAmazonReturnsRuntime::operationalTaskMetadata('gmail_history_probe',[

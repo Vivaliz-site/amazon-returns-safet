@@ -162,7 +162,7 @@ final class SvAmazonReturnsRuntime
         $file=__DIR__.'/GmailApi.php';
         $hash=@hash_file('sha256',$file);
         if(!is_string($hash) || $hash==='')throw new RuntimeException('Unable to fingerprint Gmail API client.');
-        return hash('sha256','history-probe-v2|'.$hash);
+        return hash('sha256','history-probe-v3|'.$hash);
     }
 
     /** @param array<string,mixed> $result @return array<string,string> */
@@ -179,6 +179,18 @@ final class SvAmazonReturnsRuntime
             $metadata[$key]=strlen($value)>600?mb_strcut($value,0,600,'UTF-8'):$value;
         }
         return $metadata;
+    }
+
+    /** @param array<string,mixed> $result */
+    public static function gmailRateLimitRetryDelaySeconds(string $task,array $result): ?int
+    {
+        if(!in_array($task,['gmail','gmail_refund_reconciliation'],true))return null;
+        if(strtoupper(trim((string)($result['status']??'')))!=='FAILED')return null;
+        $error=strtolower(trim((string)($result['error']??'')));
+        if($error==='')return null;
+        $rateLimited=str_contains($error,'ratelimitexceeded')
+            || preg_match('/gmail api http\s+429\b/',$error)===1;
+        return $rateLimited?300:null;
     }
 
     public static function gmailEvidenceRevision(): string
