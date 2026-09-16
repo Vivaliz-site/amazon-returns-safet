@@ -71,6 +71,30 @@ final class SvAmazonReturnsRuntime
         self::$knownActionCases=$p->cases->openCases(1000);
     }
 
+    public static function financialPipelineRevision(): string
+    {
+        $files=[
+            __DIR__.'/FinancialRefresh.php',
+            __DIR__.'/FinancialRevalidation.php',
+            __DIR__.'/FinancialCheckEvidence.php',
+            __DIR__.'/FinancialReconciler.php',
+            __DIR__.'/SpApi.php',
+            __DIR__.'/SpApiEventSink.php',
+            dirname(__DIR__,2).'/workers/amazon-returns/reconcile.php',
+            dirname(__DIR__,2).'/workers/amazon-returns/scheduler.php',
+            dirname(__DIR__,2).'/workers/amazon-returns/daemon.php',
+        ];
+        $parts=[];
+        foreach($files as $file){
+            $hash=@hash_file('sha256',$file);
+            if(!is_string($hash) || $hash===''){
+                throw new RuntimeException('Unable to fingerprint Amazon returns financial pipeline.');
+            }
+            $parts[]=basename($file).':'.$hash;
+        }
+        return hash('sha256',implode('|',$parts));
+    }
+
     public static function decisionStackRevision(): string
     {
         $files=[
@@ -92,6 +116,7 @@ final class SvAmazonReturnsRuntime
             }
             $parts[]=basename($file).':'.$hash;
         }
+        $parts[]='financial_pipeline:'.self::financialPipelineRevision();
         return hash('sha256',implode('|',$parts));
     }
 
@@ -114,12 +139,14 @@ final class SvAmazonReturnsRuntime
     {
         $requested=(int)($results['scheduler']['financial_checks_requested']??0);
         $rotationIncomplete=($results['sp_api']['rotation_has_more']??false)===true;
+        $financialRotationIncomplete=($results['financial']['rotation_has_more']??false)===true;
         $cycleFailures=max(0,(int)($results['sp_api']['cycle_failures']??0));
         $financialBlocked=($results['financial']['reason']??'')==='FINANCIAL_REFRESH_NOT_ACCEPTED';
         if($financialBlocked && ($rotationIncomplete || $cycleFailures>0))return true;
+        if($rotationIncomplete || $financialRotationIncomplete)return true;
         if($requested<1)return false;
         if(!isset($results['sp_api']))return true;
-        return $rotationIncomplete;
+        return false;
     }
 
     public static function financialRefreshRetryDelaySeconds(array $results): ?int
@@ -194,7 +221,7 @@ final class SvAmazonReturnsRuntime
             && $decisionStackRevision!==''
             && ($state['decision_stack_revision'] ?? null)!==$decisionStackRevision
         ){
-            $due[]='scheduler';
+            $due=[...$due,'sp_api','financial','scheduler'];
         }
         if(
             is_string($outboxStackRevision)
