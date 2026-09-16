@@ -524,6 +524,13 @@ final class SvAmazonSafeTDecisionEngine
                     'idempotency_key'=>hash('sha256','support-safe-t-appeal|'.$safeTId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
                 ];
             }
+            if($safeTId!=='' && $deadline instanceof DateTimeImmutable && $now>$deadline){
+                return [
+                    'action'=>'SELLER_SUPPORT_UPDATE','reason'=>'SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE','case_id'=>$caseId,
+                    'support_case_id'=>$support['case_id'],
+                    'idempotency_key'=>hash('sha256','support-expired-safe-t-appeal|'.$safeTId.'|'.$support['case_id'].'|'.$support['content_fingerprint'].'|'.$deadline->format(DATE_ATOM)),
+                ];
+            }
             return $this->decision('BLOCKED_REVIEW','SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE',$caseId);
         }
         return $this->decision('BLOCKED_REVIEW','SELLER_SUPPORT_RESOLUTION_AMBIGUOUS',$caseId);
