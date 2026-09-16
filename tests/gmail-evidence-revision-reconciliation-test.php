@@ -19,6 +19,9 @@ $revision=SvAmazonReturnsRuntime::gmailEvidenceRevision();
 gerAssert(preg_match('/^[a-f0-9]{64}$/',$revision)===1,'Gmail evidence revision must be SHA-256.');
 $clientRevision=SvAmazonReturnsRuntime::gmailClientRevision();
 gerAssert(preg_match('/^[a-f0-9]{64}$/',$clientRevision)===1,'Gmail client revision must be SHA-256.');
+$legacyClientRevision=hash_file('sha256',__DIR__.'/../includes/amazon-returns/GmailApi.php');
+gerAssert(is_string($legacyClientRevision) && $legacyClientRevision!==$clientRevision,
+    'The history-probe contract must advance the legacy GmailApi-only revision exactly once.');
 
 $now=new DateTimeImmutable('2026-09-09T15:00:00Z');
 $recent=$now->modify('-60 seconds')->format(DATE_ATOM);
