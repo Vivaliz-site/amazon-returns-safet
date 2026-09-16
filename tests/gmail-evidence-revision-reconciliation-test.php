@@ -78,12 +78,14 @@ $state['gmail_client_revision']='stale-client-revision';
 $dueClient=SvAmazonReturnsRuntime::dueTasks(
     $state,$now,$state['decision_stack_revision'],$revision,null,$clientRevision
 );
+gerAssert(in_array('gmail',$dueClient,true), 'A Gmail API client revision must force one real bounded Gmail ingest so a corrected client can replace stale FAILED operational state.');
 gerAssert(in_array('gmail_history_probe',$dueClient,true),
     'A Gmail API client revision must force exactly one read-only incremental-history probe.');
 $state['gmail_client_revision']=$clientRevision;
 $dueCurrent=SvAmazonReturnsRuntime::dueTasks(
     $state,$now,$state['decision_stack_revision'],$revision,null,$clientRevision
 );
+gerAssert(!in_array('gmail',$dueCurrent,true), 'A current Gmail client revision must not repeat the forced real ingest.');
 gerAssert(!in_array('gmail_history_probe',$dueCurrent,true),
     'A current Gmail client revision must not repeat the probe.');
 
@@ -96,8 +98,8 @@ gerAssert(is_int($gmailPos) && is_int($schedulerPos) && $gmailPos<$schedulerPos,
 $orderedClient=SvAmazonReturnsRuntime::decisionSafeOrder($dueClient);
 gerAssert(in_array('gmail_history_probe',$orderedClient,true),
     'The read-only Gmail history probe must survive task ordering.');
-gerAssert(!in_array('scheduler',$orderedClient,true),
-    'A diagnostic Gmail probe must not force scheduler reevaluation because it persists no new evidence.');
+gerAssert(in_array('scheduler',$orderedClient,true),
+    'The forced real Gmail ingest must trigger scheduler reevaluation after refreshed evidence; the diagnostic probe remains read-only.');
 
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 gerAssert(str_contains($daemon,"gmail_evidence_revision"),
