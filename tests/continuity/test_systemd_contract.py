@@ -50,6 +50,7 @@ class SystemdContractTest(unittest.TestCase):
         self.assertEqual("/srv/continuity/repositories/amazon-returns-safet", repo["path"])
         self.assertFalse(repo["github_enabled"])
         self.assertTrue(all(not agent["enabled"] for agent in config["agents"]))
+        self.assertEqual({"gemini", "rooter"}, {agent["name"] for agent in config["agents"]})
 
     def test_auto_deploy_migrates_legacy_config_and_tracks_runtime_sha(self):
         script = Path("scripts/auto-deploy.sh").read_text(encoding="utf-8")
