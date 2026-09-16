@@ -1,0 +1,44 @@
+# Recurring continuity worker: deny by default.
+# OS-level systemd restrictions remain the authoritative sandbox.
+
+[[rule]]
+toolName = "*"
+decision = "deny"
+priority = 100
+modes = ["yolo"]
+denyMessage = "Recurring worker only permits explicitly approved local repository tools."
+
+[[rule]]
+toolName = ["read_file", "read_many_files", "list_directory", "glob", "grep_search"]
+decision = "allow"
+priority = 800
+modes = ["yolo"]
+
+[[rule]]
+toolName = ["write_file", "replace"]
+decision = "allow"
+priority = 800
+modes = ["yolo"]
+
+[[rule]]
+toolName = ["read_file", "read_many_files", "list_directory", "glob", "grep_search", "write_file", "replace"]
+argsPattern = '/(etc|root|home/ubuntu/amazon-returns-deploy|var/lib/agent-continuity)'
+decision = "deny"
+priority = 999
+modes = ["yolo"]
+denyMessage = "Access outside the isolated worker worktree is forbidden."
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = '(sudo|su |systemctl|service |mount |umount |ssh |scp |curl |wget |git push|git reset|git clean|git checkout --|git restore --source|rm -rf|chmod |chown |kill |pkill |crontab|nohup|docker |kubectl )'
+decision = "deny"
+priority = 999
+modes = ["yolo"]
+denyMessage = "Privilege, publication, destructive Git, persistence and external shell operations are forbidden."
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = '(git (status|diff|add|commit|log|show|rev-parse|branch)|python3? -m (unittest|pytest|py_compile)|php |node |npm (test|run test)|bash -n )'
+decision = "allow"
+priority = 850
+modes = ["yolo"]

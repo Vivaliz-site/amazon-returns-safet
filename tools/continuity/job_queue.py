@@ -79,6 +79,10 @@ class WorkerReceipt:
     diagnostics: str
     started_at: str
     ended_at: str
+    model: str = ""
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cached_tokens: int | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
