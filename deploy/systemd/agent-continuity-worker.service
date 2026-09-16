@@ -10,14 +10,14 @@ ConditionPathExists=/etc/agent-continuity/gemini-admin-policy.toml
 Type=oneshot
 User=agent-continuity-worker
 Group=agent-continuity-worker
-SupplementaryGroups=agent-continuity agent-continuity-jobs
+SupplementaryGroups=agent-continuity
 WorkingDirectory=/opt/agent-continuity/current
 Environment=PYTHONUNBUFFERED=1
 Environment=CONTINUITY_CONFIG=/etc/agent-continuity/config.json
 Environment=HOME=/var/lib/agent-continuity-worker
 EnvironmentFile=-/etc/agent-continuity/gemini.env
 ExecStart=/usr/bin/python3 -m tools.continuity.worker --config /etc/agent-continuity/config.json --once
-UMask=0077
+UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
@@ -33,8 +33,8 @@ LockPersonality=true
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/srv/continuity/sources /srv/continuity/worktrees /var/lib/agent-continuity/jobs /var/lib/agent-continuity-worker
-ReadOnlyPaths=/opt/agent-continuity /etc/agent-continuity/config.json /etc/agent-continuity/gemini-admin-policy.toml
+ReadWritePaths=/srv/continuity/sources /srv/continuity/worktrees /var/lib/agent-continuity/jobs/running /var/lib/agent-continuity/jobs/receipts /var/lib/agent-continuity-worker
+ReadOnlyPaths=/var/lib/agent-continuity/controller /var/lib/agent-continuity/jobs/pending /var/lib/agent-continuity/jobs/packets /opt/agent-continuity /etc/agent-continuity/config.json /etc/agent-continuity/gemini-admin-policy.toml
 TasksMax=128
 MemoryMax=768M
 CPUQuota=100%

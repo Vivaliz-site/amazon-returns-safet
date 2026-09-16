@@ -91,6 +91,7 @@ def _pilot_ok(pilot: dict | None, source_sha: str, repositories: set[str]) -> bo
     return (
         pilot.get("status") == "green"
         and pilot.get("source_sha") == source_sha
+        and pilot.get("runtime_sha") == source_sha
         and pilot.get("repository") in repositories
         and pilot.get("ci_green") is True
         and bool(SHA40.fullmatch(str(pilot.get("merged_sha") or "")))

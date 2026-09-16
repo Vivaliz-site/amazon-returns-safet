@@ -19,7 +19,7 @@ from .job_queue import (
     QueuePaths,
     WorkerReceipt,
     atomic_write_receipt,
-    claim_pending_job,
+    claim_next_pending,
     load_job,
     validate_job,
 )
@@ -223,10 +223,7 @@ def run_one_job(
     runner: Runner = run_process,
 ) -> WorkerRunResult:
     current = (now or datetime.now(tz=UTC)).astimezone(UTC)
-    pending = _oldest_pending(config.queue_paths)
-    if pending is None:
-        return WorkerRunResult("idle", Path(), "", "")
-    running = claim_pending_job(config.queue_paths, pending)
+    running = claim_next_pending(config.queue_paths)
     if running is None:
         return WorkerRunResult("idle", Path(), "", "")
     started = current

@@ -10,7 +10,7 @@ ConditionPathExists=/etc/agent-continuity/publisher-known-hosts
 Type=oneshot
 User=agent-continuity-publisher
 Group=agent-continuity-publisher
-SupplementaryGroups=agent-continuity agent-continuity-jobs
+SupplementaryGroups=agent-continuity
 WorkingDirectory=/opt/agent-continuity/current
 Environment=PYTHONUNBUFFERED=1
 Environment=CONTINUITY_CONFIG=/etc/agent-continuity/config.json
@@ -34,8 +34,9 @@ LockPersonality=true
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/srv/continuity/sources /var/lib/agent-continuity/publisher /var/lib/agent-continuity-publisher
-ReadOnlyPaths=/srv/continuity/worktrees /var/lib/agent-continuity/jobs /opt/agent-continuity /etc/agent-continuity/config.json /etc/agent-continuity/publisher-known-hosts
+ReadWritePaths=/var/lib/agent-continuity/publisher /var/lib/agent-continuity-publisher
+ReadOnlyPaths=/srv/continuity/sources /srv/continuity/worktrees /var/lib/agent-continuity/jobs/running /var/lib/agent-continuity/jobs/receipts /opt/agent-continuity /etc/agent-continuity/config.json /etc/agent-continuity/publisher-known-hosts
+InaccessiblePaths=/var/lib/agent-continuity/controller /var/lib/agent-continuity/jobs/pending /var/lib/agent-continuity/jobs/packets
 TasksMax=96
 MemoryMax=384M
 CPUQuota=50%
