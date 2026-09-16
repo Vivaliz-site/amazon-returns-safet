@@ -193,6 +193,13 @@ final class SvAmazonReturnsRuntime
         return $rateLimited?300:null;
     }
 
+    /** @param array<string,mixed> $result */
+    public static function gmailCatchupRetryDelaySeconds(string $task,array $result): ?int
+    {
+        if($task!=='gmail')return null;
+        return ($result['has_more'] ?? false)===true ? 300 : null;
+    }
+
     public static function gmailEvidenceRevision(): string
     {
         $files=[
