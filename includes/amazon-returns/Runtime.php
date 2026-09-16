@@ -130,6 +130,14 @@ final class SvAmazonReturnsRuntime
         return $financialBlocked && !$rotationIncomplete && $cycleFailures>0 ? 1800 : null;
     }
 
+    public static function gmailClientRevision(): string
+    {
+        $file=__DIR__.'/GmailApi.php';
+        $hash=@hash_file('sha256',$file);
+        if(!is_string($hash) || $hash==='')throw new RuntimeException('Unable to fingerprint Gmail API client.');
+        return $hash;
+    }
+
     public static function gmailEvidenceRevision(): string
     {
         $files=[
@@ -153,7 +161,8 @@ final class SvAmazonReturnsRuntime
         DateTimeImmutable $now,
         ?string $decisionStackRevision=null,
         ?string $gmailEvidenceRevision=null,
-        ?string $outboxStackRevision=null
+        ?string $outboxStackRevision=null,
+        ?string $gmailClientRevision=null
     ): array {
         $now=$now->setTimezone(new DateTimeZone('UTC'));
         $due=['bootstrap'];
@@ -198,6 +207,13 @@ final class SvAmazonReturnsRuntime
             is_string($gmailEvidenceRevision)
             && $gmailEvidenceRevision!==''
             && ($state['gmail_evidence_revision'] ?? null)!==$gmailEvidenceRevision
+        ){
+            $due[]='gmail_refund_reconciliation';
+        }
+        if(
+            is_string($gmailClientRevision)
+            && $gmailClientRevision!==''
+            && ($state['gmail_client_revision'] ?? null)!==$gmailClientRevision
         ){
             $due[]='gmail_refund_reconciliation';
         }
