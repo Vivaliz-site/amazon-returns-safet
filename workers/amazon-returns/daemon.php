@@ -116,6 +116,12 @@ final class SvAmazonReturnsDaemon
                 error_log('[amazon-returns-operational-observability] '.$observabilityError::class);
             }
             $state[$task]=$taskNow->format(DATE_ATOM);
+            $gmailRetryDelay=SvAmazonReturnsRuntime::gmailRateLimitRetryDelaySeconds($task,$results[$task]);
+            if($gmailRetryDelay!==null){
+                $cadence=max(1,(int)(SvAmazonReturnsRuntime::cadences()[$task]??43200));
+                $age=max(0,$cadence-$gmailRetryDelay);
+                $state[$task]=$taskNow->modify('-'.$age.' seconds')->format(DATE_ATOM);
+            }
         }
         if(
             $decisionStackChanged

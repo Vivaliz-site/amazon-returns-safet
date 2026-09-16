@@ -6,17 +6,30 @@ require_once __DIR__ . '/Config.php';
 
 final class SvAmazonGmailApiClient
 {
+    private const READ_RATE_LIMIT_RETRIES = 3;
     /** @var callable(string,string,array<string,string>,?array):array<string,mixed> */
     private $transport;
+    /** @var callable(int):void */
+    private $sleep;
+    /** @var callable():int */
+    private $jitter;
     private ?string $accessToken = null;
 
-    /** @param callable(string,string,array<string,string>,?array):array<string,mixed>|null $transport */
+    /**
+     * @param callable(string,string,array<string,string>,?array):array<string,mixed>|null $transport
+     * @param callable(int):void|null $sleep
+     * @param callable():int|null $jitter
+     */
     public function __construct(
         private ?SvAmazonReturnsConfig $config = null,
-        ?callable $transport = null
+        ?callable $transport = null,
+        ?callable $sleep = null,
+        ?callable $jitter = null
     ) {
         $this->config ??= new SvAmazonReturnsConfig();
         $this->transport = $transport ?? [$this, 'httpJson'];
+        $this->sleep = $sleep ?? static function(int $microseconds): void { usleep($microseconds); };
+        $this->jitter = $jitter ?? static fn(): int => random_int(0, 999999);
     }
 
     /** @return array{message_id:string,thread_id:string} */
@@ -245,21 +258,36 @@ final class SvAmazonGmailApiClient
     {
         $url = 'https://gmail.googleapis.com/gmail/v1/users/me' . $path;
         if ($query !== []) $url .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
-        $response = ($this->transport)(
-            $method,
-            $url,
-            ['Authorization'=>'Bearer ' . $this->token(), 'Accept'=>'application/json'],
-            null
-        );
-        $status = (int)($response['status'] ?? 0);
-        $json = is_array($response['json'] ?? null) ? $response['json'] : [];
-        if ($status < 200 || $status >= 300) {
+        $attempt=0;
+        do {
+            $response = ($this->transport)(
+                $method,
+                $url,
+                ['Authorization'=>'Bearer ' . $this->token(), 'Accept'=>'application/json'],
+                null
+            );
+            $status = (int)($response['status'] ?? 0);
+            $json = is_array($response['json'] ?? null) ? $response['json'] : [];
+            if ($status >= 200 && $status < 300) return $json;
             $reason = trim((string)($json['error']['errors'][0]['reason'] ?? $json['error']['status'] ?? ''));
             $reason = preg_replace('/[^A-Za-z0-9_.-]/', '', $reason) ?? '';
+            if ($this->shouldRetryRead($method,$status,$reason) && $attempt < self::READ_RATE_LIMIT_RETRIES) {
+                $baseSeconds=1 << $attempt;
+                $jitter=max(0,min(999999,(int)($this->jitter)()));
+                ($this->sleep)($baseSeconds*1000000+$jitter);
+                $attempt++;
+                continue;
+            }
             $suffix = $reason !== '' ? ' reason=' . substr($reason, 0, 80) : '';
             throw new RuntimeException('Gmail API HTTP ' . $status . $suffix . '.');
-        }
-        return $json;
+        } while (true);
+    }
+
+    private function shouldRetryRead(string $method,int $status,string $reason): bool
+    {
+        if (strtoupper($method)!=='GET') return false;
+        if ($status===429) return true;
+        return $status===403 && in_array($reason,['rateLimitExceeded','userRateLimitExceeded'],true);
     }
 
     private function token(): string
