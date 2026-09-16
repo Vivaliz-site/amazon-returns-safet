@@ -3,6 +3,7 @@ import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './sel
 
 const CDP_BASE = process.env.SELLER_CENTRAL_CDP_URL || 'http://127.0.0.1:9225';
 const CASE_LOBBY = 'https://sellercentral.amazon.com.br/cu/case-lobby';
+const VIEW_ENDPOINT = '/hill/hillservice/mons-api/ViewCase?caseId=';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 160);
 
@@ -80,6 +81,10 @@ class ProbeCdp {
   }
 }
 
+function safeKeys(value) {
+  return Array.isArray(value) ? value.map(clean).filter(Boolean).slice(0, 30) : [];
+}
+
 function safeResult(data = {}) {
   return {
     at: new Date().toISOString(),
@@ -89,9 +94,13 @@ function safeResult(data = {}) {
     auth_state: clean(data.auth_state || 'UNKNOWN'),
     http_status: Number.isInteger(data.http_status) ? data.http_status : null,
     content_type: clean(data.content_type || ''),
-    response_keys: Array.isArray(data.response_keys) ? data.response_keys.map(clean).filter(Boolean).slice(0, 20) : [],
+    response_keys: safeKeys(data.response_keys),
     list_is_array: data.list_is_array === true,
     total_is_numeric: data.total_is_numeric === true,
+    row_keys: safeKeys(data.row_keys),
+    detail_http_status: Number.isInteger(data.detail_http_status) ? data.detail_http_status : null,
+    detail_content_type: clean(data.detail_content_type || ''),
+    detail_response_keys: safeKeys(data.detail_response_keys),
   };
 }
 
@@ -121,19 +130,45 @@ async function probeSupportCaseLookup() {
         });
         let parsed=null;
         try{parsed=await response.json()}catch{}
-        const keys=parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?Object.keys(parsed).slice(0,20):[];
+        const keys=parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?Object.keys(parsed).sort().slice(0,20):[];
+        const rows=Array.isArray(parsed?.caseSearchResultList)?parsed.caseSearchResultList:[];
         const listOk=Array.isArray(parsed?.caseSearchResultList);
         const totalOk=Number.isFinite(Number(parsed?.totalNumberOfResults));
+        const candidate=rows.find(row=>/^\\d{8,14}$/.test(String(row?.caseId||'')))||null;
+        const rowKeys=candidate&&typeof candidate==='object'&&!Array.isArray(candidate)?Object.keys(candidate).sort().slice(0,30):[];
+        let detailHttpStatus=null;
+        let detailContentType='';
+        let detailKeys=[];
+        if(candidate){
+          try{
+            const detailResponse=await fetch(${JSON.stringify(VIEW_ENDPOINT)}+encodeURIComponent(String(candidate.caseId))+'&timeZone=UTC&pageSize=10',{credentials:'include'});
+            detailHttpStatus=detailResponse.status;
+            detailContentType=String(detailResponse.headers.get('content-type')||'').slice(0,160);
+            let detail=null;
+            try{detail=await detailResponse.json()}catch{}
+            detailKeys=detail&&typeof detail==='object'&&!Array.isArray(detail)?Object.keys(detail).sort().slice(0,30):[];
+          }catch{
+            detailHttpStatus=null;
+            detailContentType='';
+            detailKeys=[];
+          }
+        }
+        const searchOk=response.ok&&listOk&&totalOk;
+        const detailOk=!candidate||(Number.isInteger(detailHttpStatus)&&detailHttpStatus>=200&&detailHttpStatus<300&&detailKeys.length>0);
         return JSON.stringify({
-          status:response.ok&&listOk&&totalOk?'OK':'UNAVAILABLE',
-          reason:!response.ok?'SEARCH_HTTP_'+response.status:(!listOk||!totalOk?'SEARCH_RESPONSE_INVALID':'SEARCH_CONTRACT_OK'),
+          status:searchOk&&detailOk?'OK':'UNAVAILABLE',
+          reason:!response.ok?'SEARCH_HTTP_'+response.status:(!listOk||!totalOk?'SEARCH_RESPONSE_INVALID':(!candidate?'SEARCH_CONTRACT_OK_NO_DETAIL_CANDIDATE':(!detailOk?'DETAIL_CONTRACT_UNAVAILABLE':'SEARCH_AND_DETAIL_CONTRACT_OK'))),
           http_status:response.status,
           content_type:String(response.headers.get('content-type')||'').slice(0,160),
           response_keys:keys,
           list_is_array:listOk,
-          total_is_numeric:totalOk
+          total_is_numeric:totalOk,
+          row_keys:rowKeys,
+          detail_http_status:detailHttpStatus,
+          detail_content_type:detailContentType,
+          detail_response_keys:detailKeys
         });
-      }catch{return JSON.stringify({status:'UNAVAILABLE',reason:'SEARCH_REQUEST_FAILED',http_status:null,content_type:'',response_keys:[],list_is_array:false,total_is_numeric:false})}
+      }catch{return JSON.stringify({status:'UNAVAILABLE',reason:'SEARCH_REQUEST_FAILED',http_status:null,content_type:'',response_keys:[],list_is_array:false,total_is_numeric:false,row_keys:[],detail_http_status:null,detail_content_type:'',detail_response_keys:[]})}
     })()`);
     let parsed = {};
     try { parsed = JSON.parse(raw || '{}'); } catch {}
