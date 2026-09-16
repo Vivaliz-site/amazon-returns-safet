@@ -287,4 +287,29 @@ try {
     }
 } finally { unlink($profile); }
 
+
+// Persisted cursor metadata is the cross-process authority: even with ingest disabled,
+// email writes must remain blocked while a prior catch-up says has_more=true.
+$pdo6 = new GmailCatchupPdo();
+$pdo6->cursorRows['GMAIL|history_id_v2'] = [
+    'cursor_value'=>'160',
+    'metadata_json'=>json_encode(['has_more'=>true]),
+    'observed_at'=>'2026-09-16 12:00:00',
+];
+$profile6 = tempnam(sys_get_temp_dir(), 'gic-write-profile-');
+try {
+    file_put_contents($profile6, json_encode(['version'=>'task3-persisted-gate','SAFE_T_SUBMIT'=>false,'SAFE_T_APPEAL'=>false,'SAFE_T_EMAIL_REVIEW'=>true,'SAFE_T_EMAIL_REPLY'=>true,'SELLER_SUPPORT_OPEN'=>false,'SELLER_SUPPORT_UPDATE'=>false]));
+    $config6 = new SvAmazonReturnsConfig([
+        'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production',
+        'AMAZON_RETURNS_GMAIL_INGEST'=>'0','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile6,
+        'GMAIL_OAUTH_CLIENT_ID'=>'test','GMAIL_OAUTH_CLIENT_SECRET'=>'test',
+        'GMAIL_OAUTH_REFRESH_TOKEN'=>'test','GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token',
+    ]);
+    $gmail6 = new SvAmazonGmailApiClient($config6, static fn()=>throw new RuntimeException('Gmail transport must not run for persisted pending gate.'));
+    $daemon6 = new GmailCatchupDaemon($pdo6, new SvAmazonTenantContext(1,1), $config6, $gmail6);
+    $result6 = (new ReflectionMethod($daemon6, 'runGmail'))->invoke($daemon6);
+    gicSame(0, $pdo6->claims, 'Persisted catch-up pending must block Gmail outbox claiming even when ingest is disabled.');
+    gicSame('GMAIL_CATCHUP_INCOMPLETE', $result6['reason']??null, 'Persisted catch-up pending needs explicit write-gate reason.');
+} finally { @unlink($profile6); }
+
 echo "gmail-incremental-catchup-test: OK\n";

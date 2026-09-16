@@ -88,6 +88,10 @@ class SvAmazonReturnsDaemon
         }
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
         $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
+        $gmailCursorState=$this->persistence->cursors->load('GMAIL',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY);
+        if(SvAmazonReturnsRuntime::gmailCatchupPendingFromCursor($gmailCursorState)){
+            $state['gmail_catchup_pending']='1';
+        }
         $results=['bootstrap'=>$bootstrap];
         if(($plan['gate']['status'] ?? '')==='FAILED')$results['financial_refresh_gate']=$plan['gate'];
         foreach($due as $task){
@@ -356,6 +360,10 @@ class SvAmazonReturnsDaemon
             $result['checkpoint_advanced']=$newCursor!==trim((string)$cursor);
         }
 
+        $persistedGmailCursor=$this->persistence->cursors->load('GMAIL',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY);
+        if(SvAmazonReturnsRuntime::gmailCatchupPendingFromCursor($persistedGmailCursor)){
+            $result['has_more']=true;
+        }
         $skipReason=SvAmazonReturnsRuntime::gmailCatchupSkipReason('gmail',$result);
         if($skipReason!==null){
             $result['reason']=$skipReason;

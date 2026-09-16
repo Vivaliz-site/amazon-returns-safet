@@ -200,6 +200,14 @@ final class SvAmazonReturnsRuntime
         return ($result['has_more'] ?? false)===true ? 300 : null;
     }
 
+    /** @param array<string,mixed>|null $cursor */
+    public static function gmailCatchupPendingFromCursor(?array $cursor): bool
+    {
+        if(!is_array($cursor))return false;
+        $metadata=is_array($cursor['metadata'] ?? null)?$cursor['metadata']:[];
+        return ($metadata['has_more'] ?? false)===true;
+    }
+
     /** @param array<string,mixed> $gmailResult */
     public static function gmailCatchupSkipReason(string $task,array $gmailResult): ?string
     {

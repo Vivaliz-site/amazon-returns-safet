@@ -6,6 +6,7 @@ require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/RemoteBridge.php';
 require_once __DIR__ . '/AmazonRequestedWait.php';
 require_once __DIR__ . '/TenantPersistence.php';
+require_once __DIR__ . '/Runtime.php';
 
 final class SvAmazonReturnsBridgeService
 {
@@ -39,6 +40,10 @@ final class SvAmazonReturnsBridgeService
     {
         if($this->config->sellerCentralBridgeMode()!=='polling'){
             return ['status'=>'BRIDGE_MODE_MISMATCH','http_status'=>409];
+        }
+        $gmailCursor=$this->p->cursors->load('GMAIL','history_id_v2');
+        if(SvAmazonReturnsRuntime::gmailCatchupPendingFromCursor($gmailCursor)){
+            return ['status'=>'NO_JOB','reason'=>'GMAIL_CATCHUP_INCOMPLETE'];
         }
         $flags=$this->config->writeFlags();
         $trusted=['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'];
