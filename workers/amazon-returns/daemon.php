@@ -360,9 +360,11 @@ class SvAmazonReturnsDaemon
             $result['checkpoint_advanced']=$newCursor!==trim((string)$cursor);
         }
 
-        $persistedGmailCursor=$this->persistence->cursors->load('GMAIL',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY);
-        if(SvAmazonReturnsRuntime::gmailCatchupPendingFromCursor($persistedGmailCursor)){
-            $result['has_more']=true;
+        if(!array_key_exists('has_more',$result)){
+            $persistedGmailCursor=$this->persistence->cursors->load('GMAIL',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY);
+            if(SvAmazonReturnsRuntime::gmailCatchupPendingFromCursor($persistedGmailCursor)){
+                $result['has_more']=true;
+            }
         }
         $skipReason=SvAmazonReturnsRuntime::gmailCatchupSkipReason('gmail',$result);
         if($skipReason!==null){

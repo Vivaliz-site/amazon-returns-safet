@@ -13,6 +13,7 @@ final class EmailGatePdo extends PDO {
 final class EmailGateStatement extends PDOStatement {
  public function __construct(private EmailGatePdo $db,private string $sql){}
  public function execute(?array $params=null):bool{$this->db->executed[]=['sql'=>$this->sql,'params'=>$params??[]];return true;}
+ public function fetch(int $mode=PDO::FETCH_DEFAULT,int $cursorOrientation=PDO::FETCH_ORI_NEXT,int $cursorOffset=0):mixed{return false;}
  public function fetchAll(int $mode=PDO::FETCH_DEFAULT,mixed ...$args):array{return [];}
  public function rowCount():int{return 0;}
 }
