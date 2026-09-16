@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch ShopVivaliz continuity jobs for Gemini worker
+
+[Path]
+PathChanged=/var/lib/agent-continuity/jobs/pending
+Unit=agent-continuity-worker.service
+
+[Install]
+WantedBy=multi-user.target

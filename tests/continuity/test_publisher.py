@@ -11,10 +11,11 @@ import unittest
 
 from tests.continuity.git_fixture import GitFixture
 from tools.continuity.job_queue import (
-    JobEnvelope, QueuePaths, WorkerReceipt, atomic_write_job, claim_pending_job,
+    JobEnvelope, QueuePaths, WorkerReceipt, atomic_write_job, atomic_write_receipt, claim_pending_job,
 )
 from tools.continuity.publisher import (
     PublisherConfig, PublishSafetyError, build_publisher_env, publish_receipt,
+    publisher_config_from_json, run_one_receipt,
 )
 from tools.continuity.worktrees import create_worker_task_worktree, prepare_worker_source
 
@@ -185,6 +186,42 @@ class PublisherTest(unittest.TestCase):
         self.assertIn("gh pr merge", workflow)
         self.assertIn("--auto", workflow)
         self.assertNotIn("GH_TOKEN:", workflow)
+
+
+    def test_run_one_receipt_publishes_completed_and_marks_done(self):
+        head = self.committed_head()
+        receipt_path = atomic_write_receipt(self.paths, self.receipt(head=head))
+        runner = FakeGitRunner()
+        result = run_one_receipt(self.config(), runner=runner)
+        self.assertEqual("published", result.classification)
+        self.assertEqual(receipt_path, result.receipt_path)
+        marker = self.paths.root.parent / "publisher" / f"{receipt_path.name}.done.json"
+        self.assertTrue(marker.exists())
+
+    def test_run_one_receipt_marks_failed_worker_receipt_skipped_without_git(self):
+        head = self.committed_head()
+        receipt_path = atomic_write_receipt(self.paths, self.receipt(head=head, status="failed"))
+        runner = FakeGitRunner()
+        result = run_one_receipt(self.config(), runner=runner)
+        self.assertEqual("skipped", result.classification)
+        self.assertEqual([], runner.calls)
+        marker = self.paths.root.parent / "publisher" / f"{receipt_path.name}.done.json"
+        self.assertTrue(marker.exists())
+
+    def test_publisher_config_reads_ephemeral_credential_path_from_environment(self):
+        cfg_path = self.root / "publisher-config.json"
+        cfg_path.write_text(json.dumps({
+            "job_queue_root": str(self.paths.root),
+            "worker_root": str(self.worker_base / "worktrees"),
+            "worker_uid": os.getuid(),
+            "publisher_allowed_repositories": ["Vivaliz-site/amazon-returns-safet"],
+            "publisher_known_hosts": str(self.known_hosts),
+        }), encoding="utf-8")
+        cfg = publisher_config_from_json(cfg_path, {
+            "CONTINUITY_PUBLISHER_SSH_KEY": str(self.key), "PATH": os.environ.get("PATH", "")
+        })
+        self.assertEqual(self.key, cfg.ssh_key_path)
+        self.assertEqual(self.known_hosts, cfg.known_hosts_path)
 
 
 

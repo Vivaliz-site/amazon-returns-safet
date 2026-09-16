@@ -15,6 +15,7 @@ from tools.continuity.job_queue import (
     atomic_write_receipt,
     claim_pending_job,
     load_job,
+    load_receipt,
     validate_job,
 )
 
@@ -126,6 +127,19 @@ class JobQueueTest(unittest.TestCase):
         loaded = load_job(path)
         self.assertEqual(self.job(), loaded)
         self.assertEqual(self.worktree.resolve(), validate_job(loaded, root=self.root, now=NOW))
+
+    def test_worker_receipt_round_trip_load_is_strict(self):
+        paths = QueuePaths.under(Path(self.tmp.name) / "receipt-load")
+        receipt = WorkerReceipt(
+            task_id="TASK-RECEIPT-001", lease_session_id="continuity-receipt-12345678",
+            provider="gemini", status="completed", resulting_head=SHA_B,
+            changed_paths=("a.txt",), validations=("unit:pass",), diagnostics="ok",
+            started_at=NOW.isoformat(), ended_at=(NOW + timedelta(seconds=1)).isoformat(),
+            model="gemini-3.1-flash-lite", input_tokens=1, output_tokens=2, cached_tokens=0,
+        )
+        path = atomic_write_receipt(paths, receipt)
+        self.assertEqual(receipt, load_receipt(path))
+
 
 
 if __name__ == "__main__":

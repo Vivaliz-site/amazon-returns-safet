@@ -1,0 +1,41 @@
+[Unit]
+Description=ShopVivaliz isolated continuity publisher
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/agent-continuity/config.json
+ConditionPathExists=/etc/agent-continuity/publisher/id_ed25519
+ConditionPathExists=/etc/agent-continuity/publisher-known-hosts
+
+[Service]
+Type=oneshot
+User=agent-continuity-publisher
+Group=agent-continuity-publisher
+SupplementaryGroups=agent-continuity agent-continuity-jobs
+WorkingDirectory=/opt/agent-continuity/current
+Environment=PYTHONUNBUFFERED=1
+Environment=CONTINUITY_CONFIG=/etc/agent-continuity/config.json
+LoadCredential=publisher_ssh_key:/etc/agent-continuity/publisher/id_ed25519
+Environment=CONTINUITY_PUBLISHER_SSH_KEY=%d/publisher_ssh_key
+ExecStart=/usr/bin/python3 -m tools.continuity.publisher --config /etc/agent-continuity/config.json --once
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/srv/continuity/sources /var/lib/agent-continuity/publisher
+ReadOnlyPaths=/srv/continuity/worktrees /var/lib/agent-continuity/jobs /opt/agent-continuity /etc/agent-continuity/config.json /etc/agent-continuity/publisher-known-hosts
+TasksMax=96
+MemoryMax=384M
+CPUQuota=50%
+TimeoutStartSec=10min

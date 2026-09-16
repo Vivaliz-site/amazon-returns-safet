@@ -110,6 +110,19 @@ def load_job(path: Path) -> JobEnvelope:
         raise JobValidationError("job JSON must be an object")
     return _strict_dataclass(JobEnvelope, payload)
 
+
+def load_receipt(path: Path) -> WorkerReceipt:
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise JobValidationError("invalid receipt JSON") from exc
+    if not isinstance(payload, dict):
+        raise JobValidationError("receipt JSON must be an object")
+    payload = dict(payload)
+    payload["changed_paths"] = tuple(payload.get("changed_paths") or ())
+    payload["validations"] = tuple(payload.get("validations") or ())
+    return _strict_dataclass(WorkerReceipt, payload)
+
 def validate_job(job: JobEnvelope, *, root: Path, now: datetime) -> Path:
     if not _TASK_RE.fullmatch(job.task_id):
         raise JobValidationError("unsafe task id")
