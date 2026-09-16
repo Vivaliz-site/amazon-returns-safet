@@ -135,14 +135,9 @@ class SvAmazonReturnsDaemon
             if($task==='gmail' && array_key_exists('has_more',$results[$task])){
                 $state['gmail_catchup_pending']=$results[$task]['has_more']===true ? '1' : '0';
             }
-            $state[$task]=$taskNow->format(DATE_ATOM);
             $gmailRetryDelay=SvAmazonReturnsRuntime::gmailRateLimitRetryDelaySeconds($task,$results[$task])
                 ?? SvAmazonReturnsRuntime::gmailCatchupRetryDelaySeconds($task,$results[$task]);
-            if($gmailRetryDelay!==null){
-                $cadence=max(1,(int)(SvAmazonReturnsRuntime::cadences()[$task]??43200));
-                $age=max(0,$cadence-$gmailRetryDelay);
-                $state[$task]=$taskNow->modify('-'.$age.' seconds')->format(DATE_ATOM);
-            }
+            $state[$task]=SvAmazonReturnsRuntime::taskScheduleMarker($task,$taskNow,$gmailRetryDelay);
         }
         if(
             $decisionStackChanged

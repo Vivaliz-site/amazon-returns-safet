@@ -221,6 +221,16 @@ final class SvAmazonReturnsRuntime
         return ($result['has_more'] ?? false)===true ? 300 : null;
     }
 
+    public static function taskScheduleMarker(
+        string $task,DateTimeImmutable $at,?int $retryDelaySeconds=null
+    ): string {
+        $at=$at->setTimezone(new DateTimeZone('UTC'));
+        if($retryDelaySeconds===null)return $at->format(DATE_ATOM);
+        $cadence=max(1,(int)(self::cadences()[$task]??43200));
+        $age=max(0,$cadence-max(0,$retryDelaySeconds));
+        return $at->modify('-'.$age.' seconds')->format(DATE_ATOM);
+    }
+
     /** @param array<string,mixed>|null $cursor */
     public static function gmailCatchupPendingFromCursor(?array $cursor): bool
     {
