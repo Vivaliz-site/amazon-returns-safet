@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -12,6 +13,7 @@ from tools.continuity.job_queue import (
     WorkerReceipt,
     atomic_write_job,
     atomic_write_receipt,
+    claim_pending_job,
     load_job,
     validate_job,
 )
@@ -107,6 +109,16 @@ class JobQueueTest(unittest.TestCase):
         )
         with self.assertRaises(JobValidationError):
             atomic_write_receipt(paths, receipt, max_diagnostics_bytes=1024)
+
+    def test_only_one_concurrent_pending_claim_succeeds(self):
+        paths = QueuePaths.under(Path(self.tmp.name) / "queue")
+        pending = atomic_write_job(paths, self.job())
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: claim_pending_job(paths, pending), range(2)))
+        claimed = [path for path in results if path is not None]
+        self.assertEqual(1, len(claimed))
+        self.assertEqual(paths.running.resolve(), claimed[0].parent.resolve())
+        self.assertFalse(pending.exists())
 
     def test_valid_job_round_trip(self):
         paths = QueuePaths.under(Path(self.tmp.name) / "queue")

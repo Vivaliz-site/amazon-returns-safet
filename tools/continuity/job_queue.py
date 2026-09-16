@@ -34,16 +34,19 @@ def _parse_time(raw: str) -> datetime:
 class QueuePaths:
     root: Path
     pending: Path
+    running: Path
     receipts: Path
 
     @classmethod
     def under(cls, root: Path) -> "QueuePaths":
         base = Path(root)
         pending = base / "pending"
+        running = base / "running"
         receipts = base / "receipts"
         pending.mkdir(parents=True, exist_ok=True)
+        running.mkdir(parents=True, exist_ok=True)
         receipts.mkdir(parents=True, exist_ok=True)
-        return cls(base, pending, receipts)
+        return cls(base, pending, running, receipts)
 
 
 @dataclass(frozen=True)
@@ -172,6 +175,26 @@ def _atomic_write(directory: Path, filename: str, data: bytes) -> Path:
 def atomic_write_job(paths: QueuePaths, job: JobEnvelope) -> Path:
     filename = f"{job.task_id}--{job.lease_session_id}.json"
     return _atomic_write(paths.pending, filename, job.to_json().encode("utf-8"))
+
+
+def claim_pending_job(paths: QueuePaths, pending_path: Path) -> Path | None:
+    source = Path(pending_path)
+    if source.parent.resolve() != paths.pending.resolve():
+        raise JobValidationError("pending job outside queue")
+    target = paths.running / source.name
+    try:
+        os.link(source, target)
+    except (FileExistsError, FileNotFoundError):
+        return None
+    try:
+        source.unlink()
+        return target
+    except Exception:
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _validate_receipt(receipt: WorkerReceipt, max_diagnostics_bytes: int) -> None:
