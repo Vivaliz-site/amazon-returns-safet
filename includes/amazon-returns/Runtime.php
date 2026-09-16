@@ -8,6 +8,7 @@ require_once __DIR__ . '/TenantContext.php';
 require_once __DIR__ . '/TenantPersistence.php';
 require_once __DIR__ . '/BridgeLiveness.php';
 require_once __DIR__ . '/BusinessHealth.php';
+require_once __DIR__ . '/OperationalHealth.php';
 
 final class SvAmazonReturnsRuntime
 {
@@ -370,7 +371,14 @@ final class SvAmazonReturnsRuntime
             $primaryStatusWorker
         );
         $writeFlags=$config->writeFlags();
-        $businessHealth=SvAmazonBusinessHealth::evaluate($config->enabled(),$config->mode(),$readiness,$writeFlags,$browserLiveness);
+        $operationalObservations=[];
+        foreach(self::cadences() as $task=>$seconds){
+            if(in_array($task,['health','policy_monitor'],true))continue;
+            $operationalObservations[$task]=$p->cursors->load('OPERATIONAL_TASK',$task);
+        }
+        $deadLetters=$p->outbox->countDeadLetters();
+        $operationalHealth=SvAmazonOperationalHealth::evaluate(self::cadences(),$operationalObservations,$now,$deadLetters);
+        $businessHealth=SvAmazonBusinessHealth::evaluate($config->enabled(),$config->mode(),$readiness,$writeFlags,$browserLiveness,$operationalHealth['blockers']);
         $healthStatus=(string)$businessHealth['status'];
         return [
             'status'=>$healthStatus,
@@ -379,7 +387,7 @@ final class SvAmazonReturnsRuntime
             'tables'=>$tables,
             'cases'=>$p->cases->countAll(),
             'pending_outbox'=>$p->outbox->countPendingProcessing(),
-            'dead_letters'=>$p->outbox->countDeadLetters(),
+            'dead_letters'=>$deadLetters,
             'pending_reviews'=>$p->reviews->countOpen(),
             'rule_conflicts'=>$p->reviews->countOpenByReason('LEARNED_RULE_CONFLICT'),
             'rule_applications'=>$p->ruleApplications->countAll(),

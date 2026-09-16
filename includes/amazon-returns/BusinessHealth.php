@@ -3,10 +3,10 @@ declare(strict_types=1);
 
 final class SvAmazonBusinessHealth
 {
-    public static function evaluate(bool $enabled,string $mode,array $readiness,array $writeFlags,array $browserLiveness): array
+    public static function evaluate(bool $enabled,string $mode,array $readiness,array $writeFlags,array $browserLiveness,array $operationalBlockers=[]): array
     {
         if(!$enabled)return ['status'=>'FAILED','blockers'=>['AMAZON_RETURNS_DISABLED']];
-        $blockers=[];
+        $blockers=array_values(array_filter($operationalBlockers,static fn(mixed $value):bool=>is_string($value) && trim($value)!==''));
         if(strtolower(trim($mode))!=='production')$blockers[]='MODE_NOT_PRODUCTION';
         foreach(['sp_api','gmail','seller_central_bridge'] as $dependency){
             if(($readiness[$dependency]['ready']??false)!==true)$blockers[]='READINESS_'.strtoupper($dependency);
