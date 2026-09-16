@@ -92,9 +92,16 @@ class SvAmazonReturnsDaemon
         if(($plan['gate']['status'] ?? '')==='FAILED')$results['financial_refresh_gate']=$plan['gate'];
         foreach($due as $task){
             if($task==='bootstrap')continue;
+            // A known-date wake may contain Gmail twice. Keep the first incomplete
+            // batch and its retry marker authoritative for this entire cycle.
+            if($task==='gmail' && SvAmazonReturnsRuntime::gmailCatchupSkipReason($task,$results['gmail'] ?? [])!==null)continue;
             $taskNow=$fixedNow ? $now : new DateTimeImmutable('now',new DateTimeZone('UTC'));
             try{
-                if($task==='financial' && $this->config->enabled() && !SvAmazonFinancialRefresh::canReconcile(
+                $gmailEvidence=['has_more'=>$results['gmail']['has_more'] ?? (($state['gmail_catchup_pending'] ?? '')==='1')];
+                $skipReason=$task==='gmail' ? null : SvAmazonReturnsRuntime::gmailCatchupSkipReason($task,$gmailEvidence);
+                if($skipReason!==null){
+                    $results[$task]=['status'=>'SKIPPED','reason'=>$skipReason];
+                }elseif($task==='financial' && $this->config->enabled() && !SvAmazonFinancialRefresh::canReconcile(
                     $results['sp_api'] ?? [], SvAmazonFinancialRefresh::initialScanComplete($this->persistence)
                 )){
                     $results[$task]=['status'=>'SKIPPED','reason'=>'FINANCIAL_REFRESH_NOT_ACCEPTED'];
@@ -116,6 +123,13 @@ class SvAmazonReturnsDaemon
                 );
             }catch(Throwable $observabilityError){
                 error_log('[amazon-returns-operational-observability] '.$observabilityError::class);
+            }
+            if(($results[$task]['reason'] ?? '')==='GMAIL_CATCHUP_INCOMPLETE' && $task!=='gmail'){
+                // Skipped work is still due after catch-up; it did not consume a deadline.
+                continue;
+            }
+            if($task==='gmail' && array_key_exists('has_more',$results[$task])){
+                $state['gmail_catchup_pending']=$results[$task]['has_more']===true ? '1' : '0';
             }
             $state[$task]=$taskNow->format(DATE_ATOM);
             $gmailRetryDelay=SvAmazonReturnsRuntime::gmailRateLimitRetryDelaySeconds($task,$results[$task])
@@ -342,6 +356,11 @@ class SvAmazonReturnsDaemon
             $result['checkpoint_advanced']=$newCursor!==trim((string)$cursor);
         }
 
+        $skipReason=SvAmazonReturnsRuntime::gmailCatchupSkipReason('gmail',$result);
+        if($skipReason!==null){
+            $result['reason']=$skipReason;
+            return $result;
+        }
         if(!$emailWriteEnabled)return $result;
         $rows=$this->persistence->outbox->claimBatch(
             10,

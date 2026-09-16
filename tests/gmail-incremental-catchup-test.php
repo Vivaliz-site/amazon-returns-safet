@@ -19,6 +19,11 @@ final class GmailCatchupPdo extends PDO
     /** @var list<array{sql:string,params:array<string,mixed>}> */
     public array $writes = [];
     public bool $failCaseLookup = false;
+    public int $claims = 0;
+    public function beginTransaction(): bool { $this->claims++; return true; }
+    public function commit(): bool { return true; }
+    public function rollBack(): bool { return true; }
+
 
     public function __construct() {}
 
@@ -254,5 +259,32 @@ gicSame('500', gicCursorValue($pdo5), 'C5 pass 2: checkpoint must advance monoto
 // --- Structural: the daemon must actually apply the catch-up retry delay it exposes ---
 $daemonSource = (string)file_get_contents(__DIR__ . '/../workers/amazon-returns/daemon.php');
 gicAssert(str_contains($daemonSource, 'gmailCatchupRetryDelaySeconds'), 'Daemon must apply the bounded Gmail catch-up continuation delay.');
+
+// Production write gates enabled: incomplete batches must never even claim email jobs.
+$profile = tempnam(sys_get_temp_dir(), 'gic-write-profile-');
+try {
+    file_put_contents($profile, json_encode(['version'=>'task3-test', 'SAFE_T_EMAIL_REVIEW'=>true, 'SAFE_T_EMAIL_REPLY'=>true, 'SAFE_T_SUBMIT'=>false, 'SAFE_T_APPEAL'=>false, 'SELLER_SUPPORT_OPEN'=>false, 'SELLER_SUPPORT_UPDATE'=>false]));
+    $config = new SvAmazonReturnsConfig([
+        'AMAZON_RETURNS_ENABLED'=>'1', 'AMAZON_RETURNS_MODE'=>'production',
+        'AMAZON_RETURNS_GMAIL_INGEST'=>'1', 'AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,
+        'GMAIL_OAUTH_CLIENT_ID'=>'test', 'GMAIL_OAUTH_CLIENT_SECRET'=>'test',
+        'GMAIL_OAUTH_REFRESH_TOKEN'=>'test', 'GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token',
+    ]);
+    gicAssert($config->externalWriteAllowed('SAFE_T_EMAIL_REPLY'), 'Fixture must enable email writes.');
+    foreach ([true, false] as $incomplete) {
+        $db = new GmailCatchupPdo();
+        gicSeedCursor($db, '100');
+        $methods = [];
+        $transport = static function ($method, $url, $headers, $body=null) use (&$methods, $incomplete, $transport3, $transport1) {
+            $methods[] = $method;
+            return ($incomplete ? $transport3 : $transport1)($method, $url, $headers, $body);
+        };
+        $daemon = new GmailCatchupDaemon($db, new SvAmazonTenantContext(1,1), $config, new SvAmazonGmailApiClient($config, $transport));
+        $result = (new ReflectionMethod($daemon, 'runGmail'))->invoke($daemon);
+        gicSame($incomplete ? 0 : 1, $db->claims, 'Incomplete Gmail must not claim email outbox; complete Gmail preserves claiming.');
+        gicSame([], array_values(array_filter($methods, static fn($m)=>$m!=='GET')), 'Catch-up must not send email.');
+        if ($incomplete) gicSame('GMAIL_CATCHUP_INCOMPLETE', $result['reason']??null, 'Safe skip reason must be explicit.');
+    }
+} finally { unlink($profile); }
 
 echo "gmail-incremental-catchup-test: OK\n";

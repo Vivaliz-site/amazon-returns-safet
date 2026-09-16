@@ -200,6 +200,14 @@ final class SvAmazonReturnsRuntime
         return ($result['has_more'] ?? false)===true ? 300 : null;
     }
 
+    /** @param array<string,mixed> $gmailResult */
+    public static function gmailCatchupSkipReason(string $task,array $gmailResult): ?string
+    {
+        if(($gmailResult['has_more'] ?? false)!==true)return null;
+        return in_array($task,['gmail','scheduler','seller_central','review_operations','erp_sales_returns'],true)
+            ? 'GMAIL_CATCHUP_INCOMPLETE' : null;
+    }
+
     public static function gmailEvidenceRevision(): string
     {
         $files=[
