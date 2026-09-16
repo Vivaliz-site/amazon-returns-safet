@@ -20,6 +20,14 @@ const SUPPORT_CASE_HISTORY_LIMIT = Number.isFinite(supportHistoryRaw)
   ? Math.max(50, Math.min(500, Math.trunc(supportHistoryRaw)))
   : 500;
 const SUPPORT_CASE_TERMINAL_STATUSES = ['RESOLVED','CLOSED','CANCELLED'];
+const supportLookupTimeoutRaw = Number(process.env.SELLER_CENTRAL_SUPPORT_LOOKUP_COMMAND_TIMEOUT_MS || 120000);
+const SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS = Number.isFinite(supportLookupTimeoutRaw)
+  ? Math.max(60000, Math.min(300000, Math.trunc(supportLookupTimeoutRaw)))
+  : 120000;
+const supportLookupBudgetRaw = Number(process.env.SELLER_CENTRAL_SUPPORT_LOOKUP_SCAN_BUDGET_MS || 90000);
+const SUPPORT_CASE_LOOKUP_SCAN_BUDGET_MS = Number.isFinite(supportLookupBudgetRaw)
+  ? Math.max(30000, Math.min(SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS - 10000, Math.trunc(supportLookupBudgetRaw)))
+  : 90000;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const text = value => String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -108,7 +116,7 @@ class Cdp {
     });
   }
 
-  static async connect() {
+  static async connect(commandTimeoutMs = 15000) {
     await ensureBrowser();
     const response = await fetch(`${CDP_BASE}/json/new?${encodeURIComponent('about:blank')}`, { method: 'PUT' });
     if (!response.ok) throw new Error(`could not create isolated CDP target (${response.status})`);
@@ -124,7 +132,7 @@ class Cdp {
         ws.addEventListener('open', resolve, { once: true });
         ws.addEventListener('error', reject, { once: true });
       });
-      return new Cdp(ws, page.id);
+      return new Cdp(ws, page.id, commandTimeoutMs);
     } catch (error) {
       try { ws?.close(); } catch {}
       await closeCdpTarget(page.id);
@@ -535,6 +543,10 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
     const needles=${JSON.stringify(needles)};
     const preferred=${JSON.stringify(preferred)};
     const includeTerminal=${includeTerminal === true ? 'true' : 'false'};
+    const scanBudgetMs=${SUPPORT_CASE_LOOKUP_SCAN_BUDGET_MS};
+    const scanStartedAt=Date.now();
+    const budgetExceeded=()=>Date.now()-scanStartedAt>=scanBudgetMs;
+    const budgetResult=()=>JSON.stringify({status:'UNAVAILABLE',reason:'LOOKUP_SCAN_BUDGET_EXHAUSTED'});
     const terminal=new Set(${JSON.stringify(SUPPORT_CASE_TERMINAL_STATUSES)});
     const activeSupportStatus=value=>{const status=String(value||'').trim().toUpperCase();return status!==''&&!terminal.has(status)};
     const supportStatusAllowed=value=>includeTerminal ? true : activeSupportStatus(value);
@@ -554,8 +566,10 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
       throw new Error('VIEW_CASE_HTTP_429');
     };
     if(preferred){
+      if(budgetExceeded())return budgetResult();
       try{
         const detail=await viewCase(preferred);
+        if(budgetExceeded())return budgetResult();
         const raw=JSON.stringify(detail);
         if(needles.some(n=>raw.includes(n))&&supportStatusAllowed(detail?.viewCaseMetaData?.caseStatus))return JSON.stringify({status:'FOUND',case_id:preferred});
       }catch{return JSON.stringify({status:'UNAVAILABLE',reason:'PREFERRED_CASE_LOOKUP_FAILED'})}
@@ -564,6 +578,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
     let inspected=0;
     let detailFailure=false;
     for(let page=0;inspected<limit;page++){
+      if(budgetExceeded())return budgetResult();
       const response=await fetch('/hill/hillservice/mons-api/SearchForCases',{
         method:'POST',credentials:'include',headers:{'content-type':'application/json'},
         body:JSON.stringify({page,searchPageSize:50,sortBy:'CreationDate',sortByOrder:'DESC',getCountOnly:false,caseFilters:{caseOwner:'MerchantCases'}})
@@ -581,8 +596,10 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
       }
       const candidates=rows.filter(item=>supportStatusAllowed(item.status)&&relevant.test(String(item.shortDescription||'')));
       for(const item of candidates){
+        if(budgetExceeded())return budgetResult();
         try{
           const detail=await viewCase(item.caseId);
+          if(budgetExceeded())return budgetResult();
           const status=detail?.viewCaseMetaData?.caseStatus||item.status;
           if(supportStatusAllowed(status)&&needles.some(n=>JSON.stringify(detail).includes(n))){
             return JSON.stringify({status:'FOUND',case_id:String(item.caseId||'')});
@@ -606,11 +623,11 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
 
 async function findSupportCase(cdp, job, options = {}) {
   const known = text(job.case?.support_case_id);
-  const lookup = await Cdp.connect();
+  const lookup = await Cdp.connect(SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS);
   try {
     await lookup.navigate(CASE_LOBBY, 4500);
     const auth = await authGate(lookup, 'help-v1', CASE_LOBBY, 4500);
-    if (auth) throw new Error('SUPPORT_CASE_LOOKUP_UNAVAILABLE');
+    if (auth) { const error = new Error('SUPPORT_CASE_LOOKUP_UNAVAILABLE'); error.lookupReason = `AUTH_GATE_${text(auth.status || 'AUTH_REQUIRED')}`; throw error; }
     const orderId = text(job.case?.order_id);
     const safeTId = text(job.case?.safe_t_id);
     const quick = text(await lookup.evaluate(`(()=>{const needles=${JSON.stringify([safeTId, orderId].filter(Boolean))};const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const hd=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(hd)docs.push(hd)}for(const d of docs){const body=d.body?.innerText||'';if(!needles.some(n=>body.includes(n)))continue;for(const a of d.querySelectorAll('a[href*="view-case"],a[href*="caseID="]')){const row=a.closest('tr,[role=row],div');const t=row?.innerText||'';if(needles.some(n=>t.includes(n))){const m=(a.href||'').match(/[?&]caseID=(\d{8,14})/);if(m)return m[1]}}}return ''})()`));
