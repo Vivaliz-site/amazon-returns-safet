@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source=fs.readFileSync(new URL('../admin/amazon-returns/assets/cockpit.js',import.meta.url),'utf8');
+const presentationSource=fs.readFileSync(new URL('../admin/amazon-returns/assets/review-presentation.js',import.meta.url),'utf8');
 const functionLine=name=>source.split('\n').find(line=>line.startsWith(`function ${name}(`));
+const presentationFunctionLine=name=>presentationSource.split('\n').find(line=>line.startsWith(`function ${name}(`));
 
 function harness(dirty){
   const controls={'#review-final-action':{value:'WAIT'},'#review-date-binding':{value:'NONE'}};
@@ -81,4 +83,44 @@ test('decision mode preserves approval rejection wait edit and exception audit s
   assert.equal(context.decisionFor().decision_mode,'WAIT');
   controls['#review-scope'].value='CASE_ONLY';
   assert.equal(context.decisionFor().decision_mode,'EXCEPTION');
+});
+
+test('case-only changes prepare the exception and enable confirmation immediately',()=>{
+  const controls={
+    '#review-final-action':{value:'CLOSE_LOSS'},
+    '#review-date-binding':{value:'APPEAL_DEADLINE'},
+    '#review-scope':{value:'CASE_ONLY'},
+    '#review-confirm':{disabled:true},
+  };
+  const state={reviewControlsDirty:true,reviewDecision:null,suggestion:null};
+  let renderedExceptionOnly=false;
+  const context={
+    state,
+    document:{querySelector:selector=>controls[selector]},
+    renderImpact:(_data,exceptionOnly)=>{renderedExceptionOnly=exceptionOnly;},
+    updateReviewDecisionSummary:()=>{},
+  };
+  vm.createContext(context);
+  vm.runInContext(functionLine('decisionFor'),context);
+  vm.runInContext(presentationFunctionLine('prepareCaseOnlyReview'),context);
+  assert.equal(context.prepareCaseOnlyReview(),true);
+  assert.equal(state.reviewDecision?.decision_mode,'EXCEPTION');
+  assert.equal(controls['#review-confirm'].disabled,false);
+  assert.equal(renderedExceptionOnly,true);
+});
+
+test('review display text never exposes the reported English AI phrases',()=>{
+  const helper=presentationFunctionLine('reviewDisplayText');
+  assert.ok(helper,'reviewDisplayText helper is required');
+  const context={humanText:value=>String(value||'').trim()};
+  vm.createContext(context);
+  vm.runInContext(`${presentationSource.split('\n').find(line=>line.startsWith('const reviewPtBrExact='))}\n${presentationSource.split('\n').find(line=>line.startsWith('function reviewLooksEnglish('))}\n${helper}`,context);
+  const rationale='The state is Em atendimento no Suporte ao Vendedor with a promised date and an appeal deadline. Since there are active wait conditions with explicit dates and policy review is required, we must wait until the promised date before taking further action.';
+  const uncertainty='Promised date has not yet been reached';
+  const policy='Policy eligible is currently false';
+  const rendered=[context.reviewDisplayText(rationale,'Texto alternativo em português.'),context.reviewDisplayText(uncertainty,'Texto alternativo em português.'),context.reviewDisplayText(policy,'Texto alternativo em português.')];
+  for(const text of rendered){
+    assert.ok(text.length>0,'localized text must not be empty');
+    assert.doesNotMatch(text,/\b(the|with|promised|deadline|since|there|conditions|policy|has|not|yet|been|reached|currently|false)\b/i);
+  }
 });
