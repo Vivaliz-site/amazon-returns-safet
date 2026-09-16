@@ -66,3 +66,19 @@ test('late recommendation from review A cannot mutate review B',async()=>{
   assert.equal(state.expected_version,7);
   assert.equal(state.suggestion.action,'WAIT');
 });
+test('decision mode preserves approval rejection wait edit and exception audit semantics',()=>{
+  const decisionLine=functionLine('decisionFor');
+  assert.ok(decisionLine,'decisionFor helper is required');
+  const controls={'#review-final-action':{value:'SAFE_T_APPEAL'},'#review-date-binding':{value:'APPEAL_DEADLINE'},'#review-scope':{value:'SIMILAR'}};
+  const state={suggestion:{action:'SAFE_T_APPEAL',parameters:{date_binding:'APPEAL_DEADLINE'}}};
+  const context={state,document:{querySelector:selector=>controls[selector]}};vm.createContext(context);vm.runInContext(decisionLine,context);
+  assert.equal(context.decisionFor().decision_mode,'APPROVED');
+  controls['#review-final-action'].value='CHECK_FINANCES';controls['#review-date-binding'].value='NONE';
+  assert.equal(context.decisionFor().decision_mode,'REJECTED');
+  controls['#review-final-action'].value='SAFE_T_APPEAL';controls['#review-date-binding'].value='NONE';
+  assert.equal(context.decisionFor().decision_mode,'EDITED_APPROVED');
+  controls['#review-final-action'].value='WAIT';controls['#review-date-binding'].value='PROMISED_DATE';
+  assert.equal(context.decisionFor().decision_mode,'WAIT');
+  controls['#review-scope'].value='CASE_ONLY';
+  assert.equal(context.decisionFor().decision_mode,'EXCEPTION');
+});
