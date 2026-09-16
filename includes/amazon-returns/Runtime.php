@@ -162,14 +162,28 @@ final class SvAmazonReturnsRuntime
         $file=__DIR__.'/GmailApi.php';
         $hash=@hash_file('sha256',$file);
         if(!is_string($hash) || $hash==='')throw new RuntimeException('Unable to fingerprint Gmail API client.');
-        return hash('sha256','history-probe-v3|'.$hash);
+        return hash('sha256','history-catchup-v1|'.$hash);
     }
 
-    /** @param array<string,mixed> $result @return array<string,string> */
+    /** @param array<string,mixed> $result @return array<string,mixed> */
     public static function operationalTaskMetadata(string $task,array $result): array
     {
         $status=strtoupper(trim((string)($result['status']??'UNKNOWN')));
         $metadata=['status'=>$status!==''?$status:'UNKNOWN'];
+        if($task==='gmail'){
+            if(array_key_exists('has_more',$result))$metadata['has_more']=($result['has_more']===true);
+            foreach(['messages','events'] as $key){
+                if(!array_key_exists($key,$result))continue;
+                $metadata[$key]=max(0,min(1000,(int)$result[$key]));
+            }
+            if(array_key_exists('checkpoint_advanced',$result)){
+                $metadata['checkpoint_advanced']=($result['checkpoint_advanced']===true);
+            }
+            if(self::gmailRateLimitRetryDelaySeconds('gmail',$result)!==null){
+                $metadata['quota_error']='RATE_LIMITED';
+            }
+            return $metadata;
+        }
         if($task!=='gmail_history_probe')return $metadata;
         foreach(['error_class','error'] as $key){
             $value=$result[$key]??null;

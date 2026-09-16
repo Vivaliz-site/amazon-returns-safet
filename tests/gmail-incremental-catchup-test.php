@@ -312,4 +312,13 @@ try {
     gicSame('GMAIL_CATCHUP_INCOMPLETE', $result6['reason']??null, 'Persisted catch-up pending needs explicit write-gate reason.');
 } finally { @unlink($profile6); }
 
+
+$progressMeta=SvAmazonReturnsRuntime::operationalTaskMetadata('gmail',[
+    'status'=>'OK','has_more'=>true,'messages'=>3,'events'=>2,'checkpoint_advanced'=>true,
+]);
+gicSame(true,$progressMeta['has_more']??null,'Catch-up operational metadata must expose has_more.');
+gicSame(3,$progressMeta['messages']??null,'Catch-up operational metadata must expose bounded message count.');
+gicSame(2,$progressMeta['events']??null,'Catch-up operational metadata must expose bounded event count.');
+gicSame(true,$progressMeta['checkpoint_advanced']??null,'Catch-up operational metadata must expose checkpoint progress.');
+
 echo "gmail-incremental-catchup-test: OK\n";
