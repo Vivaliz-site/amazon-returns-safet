@@ -2,58 +2,57 @@
 
 **Status:** NÃO APTO
 
-Auditoria formal executada segundo `EXTREME_AUDIT_PROTOCOL.md` e o overlay específico do projeto.
+Nova auditoria formal executada em 2026-09-16 segundo `EXTREME_AUDIT_PROTOCOL.md`, `AUDIT_RUNTIME_PARITY_V1.md`, matriz de transições/dados históricos e overlay específico do projeto.
 
 ## Última auditoria válida
-- Data: 2026-09-15
-- Commit/SHA auditado: `bbd0ec11405717cafdc7b817b009d9745b88fbd8`
-- Release/ambiente comprovado: produção `/home/ubuntu/amazon-returns-deploy/current` aponta para release do mesmo SHA `bbd0ec114057...`
-- Veredito: **NÃO APTO PARA CERTIFICAÇÃO**
-- Confiança do veredito: alta
-- Stop-the-line: rotina operacional Seller Central agendada encontra-se em estado `failed`
+- Data: 2026-09-16.
+- Commit/SHA auditado: `6edd00cfb41b3e92722fd00404829fa2b66587b0`.
+- Release observado: `/home/ubuntu/amazon-returns-deploy/current -> releases/20260916T142606Z-6edd00cfb41b`.
+- Veredito: **NÃO APTO PARA CERTIFICAÇÃO COMPLETA**.
+- Confiança: muito alta.
+- Stop-the-line: embora SHA e deploy estejam alinhados e o pós-deploy Seller Central tenha recuperado auth/contrato de lookup, o caminho crítico `SELLER_SUPPORT_OPEN` que falhava com `UI_DRIFT` não foi reexecutado ponta a ponta no novo release e a verificação direta do banco/outbox continua bloqueada por privilégio.
 
-## Evidência executada
-- suíte PHP completa passou;
-- auditoria SQL tenant-scoped passou;
-- teste de isolamento tenant passou;
-- testes Node passaram;
-- teste TOTP e suíte de continuidade Python passaram;
-- lint PHP, `node --check`, `bash -n` e varredura de chaves/SSH inseguro passaram;
-- GitHub Actions `Amazon Returns CI` do SHA auditado concluiu com sucesso;
-- `amazon-returns-safet.service` está `active/running` em produção e executa o mesmo SHA auditado;
-- o limite externo de recuperação D+90 está codificado/testado; D+75 é um limite de canal direto SAFE-T com fallback para Seller Support, não o encerramento global do caso.
+## Evidência fresca desta auditoria
+- `Amazon Returns CI` do SHA `6edd00cf...` concluiu com sucesso.
+- O release produtivo corresponde exatamente ao SHA auditado.
+- `amazon-returns-safet.service` foi observado ativo, com working directory no symlink de release atual.
+- Antes do deploy do `6edd00cf...`, ciclos Seller Central autenticavam e passavam no `support_lookup_probe`, mas vários jobs `SELLER_SUPPORT_OPEN` terminavam `UI_DRIFT`, `SUPPORT_CASE_LOOKUP_UNAVAILABLE`, `DETAIL_LOOKUP_FAILED` ou retry de reconciliação.
+- O SHA `6edd00cf...` adicionou pacing/retry para `ViewCase` e testes focais para 429/rate limit.
+- Após o deploy, o ciclo de 14:28 UTC terminou `success`: `AUTHENTICATED` e `SEARCH_AND_DETAIL_CONTRACT_OK` com HTTP 200 para search/detail. Esse ciclo não processou um job `SELLER_SUPPORT_OPEN`, portanto a correção ainda não está validada no caminho de negócio que escapava.
+- `amazon-returns-prod-readonly-audit.service` e `amazon-returns-prod-healthcheck.service` registram último resultado `success`.
+- A tentativa de executar a verificação direta tenant/outbox com `sudo` foi bloqueada pelo `NoNewPrivileges`; acesso MySQL como usuário `ubuntu` também foi negado. Logo contagens atuais de casos, `PROCESSING`, outbox e dead letters não foram novamente comprovadas diretamente.
 
-## Achados materiais
-### P1 — rotina Seller Central periódica falhando
-`amazon-returns-seller-central-browser.service` está em `failed` desde o ciclo de 2026-09-14 23:01 UTC. A execução terminou com `Seller Central CDP did not become ready` e status 75/TEMPFAIL. O timer executa duas vezes por dia.
+## Matriz de operação e paridade
+| Operação | Local/CI | Runtime no mesmo SHA | Resultado |
+| --- | --- | --- | --- |
+| daemon/read loop | CI/testes | serviço ativo no `6edd00cf...` | PASS operacional |
+| Seller Central auth/search/detail | testes + contrato | pós-deploy 14:28: HTTP 200/OK | PASS |
+| `SELLER_SUPPORT_OPEN` | testes/worker | falhava no release anterior; não houve job real pós-fix | **NÃO REVALIDADO** |
+| SAFE-T submit/appeal | cobertura e flags do sistema | não disparado nesta auditoria para evitar efeito real | NÃO REVALIDADO E2E |
+| email review/reply | implementação/flags | não disparado | NÃO REVALIDADO E2E |
+| Finances/reconciliação | testes/rotinas | estado live direto não lido | NÃO COMPROVADO NESTA EXECUÇÃO |
+| outbox/idempotência/dead letters | cobertura de código | acesso DB direto bloqueado | NÃO REVALIDADO LIVE |
+| SHA -> deploy | n/a | `6edd00cf...` == release | **PASS** |
 
-Um teste isolado com o mesmo binário Chromium, perfil temporário e CDP em `127.0.0.1:9225` ficou pronto com sucesso. Portanto browser/binário/porta são capazes de funcionar; a causa específica do ciclo produtivo ainda requer correlação com perfil/configuração protegida. Não foi feita alteração especulativa.
+## Achados
+### P1 — correção de Seller Support ainda não provada no job de negócio
+**COMPROVADO como dívida de evidência.** O probe read-only pós-deploy está verde, mas o defeito anterior ocorria durante jobs `SELLER_SUPPORT_OPEN`. `AUDIT_RUNTIME_PARITY_V1` não permite substituir a operação crítica por um probe representativo.
 
-Impacto: leituras/descobertas dependentes do Seller Central podem deixar de ocorrer no prazo esperado. Em um sistema de recuperação financeira com janelas temporais, isso é bloqueador de certificação.
+### P1 — estado live de outbox/dead letters/PROCESSING não revalidado diretamente
+A verificação preparada é read-only, porém exige root. O ambiente de execução impôs `NoNewPrivileges`; não foi possível provar novamente zero stale `PROCESSING`, dead letters e pendências sem próximo passo.
 
-### P1 — verificação de dados live incompleta nesta execução
-A verificação tenant/live de banco é root-only e o ambiente atual bloqueou elevação (`no new privileges`). O daemon e CI forneceram evidência forte, mas contagens atuais de casos/outbox/dead letters e zero `PROCESSING` não foram novamente comprovadas diretamente nesta auditoria.
-
-## Invariantes verificados
-| Invariante | Resultado |
-| --- | --- |
-| isolamento tenant/connection | PASS em testes/SQL audit |
-| D+90 como limite externo de recuperação | PASS |
-| D+75 não encerra recuperação global | PASS; fallback Seller Support |
-| CI do SHA de produção | PASS |
-| daemon principal ativo no SHA auditado | PASS |
-| ciclo Seller Central periódico | **FAIL** |
-| zero jobs/casos presos em produção | NÃO REVALIDADO diretamente |
+### P2 — histórico recente contém repetidos `UI_DRIFT`
+Mesmo com o novo fix, a classe de falha deve permanecer aberta até um ciclo com job equivalente demonstrar `efeito -> confirmação/read-back -> reconciliação`, não apenas search/detail.
 
 ## Risco residual
-Alto para casos cuja observação/ação depende do Seller Central enquanto o timer permanecer falhando. Não existe evidência suficiente para afirmar cobertura ponta a ponta de todos os casos ativos nesta execução.
+Moderado/alto. A proveniência está correta e a camada de lookup melhorou, mas uma ação crítica que falhou horas antes ainda carece de prova produção-equivalente pós-correção, e o estado de filas não pôde ser confrontado diretamente.
 
-## Dívida de evidência / saída do NO-GO
-1. corrigir e provar o próximo ciclo Seller Central;
-2. executar `verify-live-tenant-foundation.sh` com privilégio autorizado;
-3. comprovar zero `PROCESSING` vencido, dead letters e pendências sem próximo passo;
-4. auditar caso a caso todos os casos ativos dentro do limite de 90 dias;
-5. reexecutar o Gate Final de Completude.
+## Saída do NO-GO
+1. observar/processar de forma autorizada um próximo `SELLER_SUPPORT_OPEN` elegível no SHA `6edd00cf...` e confirmar read-back/reconciliação sem duplicidade;
+2. executar `verify-live-tenant-foundation.sh` em contexto root autorizado/read-only e registrar casos/outbox/dead letters/stale processing;
+3. revalidar SAFE-T/Finances/email pelas interfaces canônicas sem provocar ação indevida;
+4. auditar casos ativos dentro do limite operacional e classes históricas relevantes;
+5. executar reauditoria contraditória antes de mudar para `APTO`.
 
 ## Regra de validade
-Esta auditoria cobre somente o SHA/release registrado. Mudança material ou correção do achado operacional exige reauditoria proporcional ao risco.
+Esta auditoria cobre `6edd00cfb41b3e92722fd00404829fa2b66587b0` e o runtime observado em 2026-09-16. Mudança em bridges, write profile, OAuth, políticas, workers, filas ou regras de decisão exige reauditoria.
