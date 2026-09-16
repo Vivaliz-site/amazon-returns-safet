@@ -40,15 +40,18 @@ try{
         $sqlFilters['case_ids']=$caseIds;
     }
     $requiresPostFilter=$filters->requiresDecisionFilter();
-    $queryPage=$requiresPostFilter?1:$filters->page();$queryPerPage=$requiresPostFilter?1000:$filters->perPage();
-    $found=$p->cases->search($sqlFilters,$queryPage,$queryPerPage);
+    if($requiresPostFilter){
+        $rawItems=[];$rawPage=1;$rawTotal=0;$scanPerPage=250;
+        do{$batch=$p->cases->search($sqlFilters,$rawPage,$scanPerPage);if($rawPage===1)$rawTotal=(int)($batch['total']??0);$batchItems=is_array($batch['items']??null)?$batch['items']:[];array_push($rawItems,...$batchItems);$rawPage++;}while(count($rawItems)<$rawTotal&&$batchItems!==[]);
+        $found=['items'=>$rawItems,'total'=>$rawTotal];
+    }else{$found=$p->cases->search($sqlFilters,$filters->page(),$filters->perPage());}
     $items=[];$policies=$p->policies->allActive();$erpReturns=[];
     foreach($found['items'] as $row){
         $caseId=(int)($row['id']??0);if($caseId<1)continue;
         $case=SvAmazonReturnProjector::project($p->cases,$p->events,$caseId);$case['policies']=$policies;
         $timeline=$p->events->eventsForCase($caseId);$policy=SvAmazonReturnPolicyEngine::evaluate($case,$now);
         $decision=$coordinator->previewAction($case,$timeline,$policy,$now);
-        if($filters->action()!==null && strtoupper((string)($decision['action']??''))!==$filters->action())continue;
+        if(!$filters->acceptsDecision($decision))continue;
         $reviews=$p->reviews->forCase($caseId);$currentReview=null;
         for($i=count($reviews)-1;$i>=0;$i--){if(($reviews[$i]['status']??'')==='OPEN'){$currentReview=$reviews[$i];break;}}
         $apps=$p->ruleApplications->forCase($caseId);$app=$apps!==[]?$apps[array_key_last($apps)]:null;

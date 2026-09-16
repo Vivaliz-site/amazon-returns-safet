@@ -60,7 +60,13 @@ final class SvAmazonCockpitFilters
     }
     public function sqlFilters():array{return $this->filters;}
     public function filters():array{return $this->filters+($this->action!==null?['action'=>$this->action]:[]);}
-    public function requiresDecisionFilter():bool{return $this->action!==null;}
+    public function requiresDecisionFilter():bool{return $this->action!==null||$this->bucket()==='system';}
+    public function acceptsDecision(array $decision):bool{
+        $action=strtoupper((string)($decision['action']??''));
+        if($this->action!==null&&$action!==$this->action)return false;
+        if($this->bucket()==='system'&&in_array($action,['HUMAN_REVIEW','BLOCKED_REVIEW'],true))return false;
+        return true;
+    }
     public function action():?string{return $this->action;}
     public function bucket():?string{return isset($this->filters['bucket'])?(string)$this->filters['bucket']:null;}
     public function perPage():int{return $this->perPage;}
