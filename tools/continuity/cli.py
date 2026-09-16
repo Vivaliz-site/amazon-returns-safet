@@ -15,6 +15,7 @@ from .controller import Controller, RepoConfig
 from .dispatcher import AgentCandidate, Dispatcher
 from .git_scan import scan_repository
 from .github_state import GitHubStateReader
+from .job_queue import QueuePaths
 from .ledger import Ledger, TaskNotFound
 from .resume_packet import render_resume_packet
 
@@ -66,6 +67,8 @@ def _dispatch_dict(decision) -> dict[str, Any] | None:
         "agent": decision.agent.name,
         "claimed": decision.claimed,
         "launched": decision.launched,
+        "queued": decision.queued,
+        "job_id": decision.job_id,
         "session_id": decision.session_id,
         "resume_packet_sha256": hashlib.sha256(decision.resume_packet.encode("utf-8")).hexdigest(),
     }
@@ -150,12 +153,22 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "dispatch":
         candidates = _agent_candidates(config)
+        auto_dispatch = bool(config.get("auto_dispatch", False))
+        queue_paths = None
+        if auto_dispatch and config.get("job_queue_root"):
+            queue_paths = QueuePaths.under(Path(str(config["job_queue_root"])))
+        worker_root = Path(str(config["worker_root"])) if auto_dispatch and config.get("worker_root") else None
+        worker_uid = int(config["worker_uid"]) if auto_dispatch and config.get("worker_uid") is not None else None
         dispatcher = Dispatcher(
             ledger, candidates,
-            auto_dispatch=bool(config.get("auto_dispatch", False)),
+            auto_dispatch=auto_dispatch,
             availability=_agent_availability(candidates),
             lease_seconds=int(config.get("lease_seconds", 1800)),
-            retry_cooldown_seconds=int(config.get("retry_cooldown_seconds", 1800)),
+            retry_cooldown_seconds=max(1800, int(config.get("retry_cooldown_seconds", 1800))),
+            queue_paths=queue_paths,
+            worker_root=worker_root,
+            worker_uid=worker_uid,
+            max_auto_attempts=int(config.get("max_auto_attempts", 3)),
         )
         decision = dispatcher.claim_next(datetime.now(tz=UTC))
         payload = _dispatch_dict(decision)
@@ -164,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         elif payload is None:
             print("no dispatchable task or available agent")
         else:
-            mode = "launched" if payload["launched"] else "preview"
+            mode = "queued" if payload["queued"] else ("launched" if payload["launched"] else "preview")
             print(f"{mode} {payload['task_id']} agent={payload['agent']}")
         return 0
     if args.command == "associate":

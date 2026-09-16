@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import hashlib
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -7,8 +9,10 @@ from unittest.mock import patch
 
 from tests.continuity.git_fixture import GitFixture
 from tools.continuity.dispatcher import AgentCandidate, Dispatcher, _default_launcher
+from tools.continuity.job_queue import QueuePaths, load_job
 from tools.continuity.ledger import Ledger
 from tools.continuity.model import Classification, TaskRecord, TaskStatus
+from tools.continuity.worktrees import create_worker_task_worktree, prepare_worker_source
 
 UTC = timezone.utc
 
@@ -19,18 +23,27 @@ class DispatcherTest(unittest.TestCase):
         self.addCleanup(self.fx.close)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.ledger = Ledger(Path(self.tmp.name) / "ledger.sqlite3")
+        self.root = Path(self.tmp.name)
+        self.ledger = Ledger(self.root / "ledger.sqlite3")
+        self.paths = QueuePaths.under(self.root / "jobs")
+        self.worker_base = self.root / "worker"
+        source = prepare_worker_source(str(self.fx.remote), self.root / "sources", "org/repo")
+        self.worker = create_worker_task_worktree(
+            source, self.worker_base, "TASK-20260913-007", "continuity", "origin/main", os.getuid()
+        )
         self.now = datetime(2026, 9, 13, 21, 0, tzinfo=UTC)
 
-    def add_task(self):
+    def add_task(self, *, worker_owned=False):
+        path = self.worker.path if worker_owned else self.fx.repo
+        branch = self.worker.branch if worker_owned else "main"
+        head = subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], check=True, text=True, capture_output=True).stdout.strip()
         task = TaskRecord(
             task_id="TASK-20260913-007", repository="org/repo", host="host",
-            worktree_path=str(self.fx.repo), branch="main",
+            worktree_path=str(path), branch=branch,
             base_sha=self.fx.git("rev-parse", "origin/main").stdout.strip(),
-            current_head=self.fx.git("rev-parse", "HEAD").stdout.strip(),
-            objective="resume safely", status=TaskStatus.NEEDS_RESUME,
-            classification=Classification.NEEDS_RESUME, priority=10,
-            next_action="continue", created_at=self.now, updated_at=self.now,
+            current_head=head, objective="resume safely",
+            status=TaskStatus.NEEDS_RESUME, classification=Classification.NEEDS_RESUME,
+            priority=10, next_action="continue", created_at=self.now, updated_at=self.now,
         )
         self.ledger.create_task(task)
         return task
@@ -44,20 +57,54 @@ class DispatcherTest(unittest.TestCase):
             AgentCandidate("rooter", ["rooter", "resume"], True),
         ]
 
-    def test_auto_dispatch_routes_recurring_work_to_rooter_when_gemini_is_unavailable(self):
-        self.add_task()
-        launches = []
-        dispatcher = Dispatcher(
-            self.ledger, self.candidates(), auto_dispatch=True,
-            availability={"codex": True, "chatgpt": True, "claude": True, "gemini": False, "rooter": True},
-            launcher=lambda candidate, packet, cwd: launches.append(candidate.name) or True,
+    def dispatcher(self, *, auto_dispatch, availability, launcher=None, max_auto_attempts=3):
+        return Dispatcher(
+            self.ledger, self.candidates(), auto_dispatch=auto_dispatch,
+            availability=availability, launcher=launcher,
+            queue_paths=self.paths, worker_root=self.worker_base / "worktrees",
+            worker_uid=os.getuid(), max_auto_attempts=max_auto_attempts,
+        )
+
+    def test_auto_dispatch_queues_gemini_job_without_launcher(self):
+        task = self.add_task(worker_owned=True)
+        dispatcher = self.dispatcher(
+            auto_dispatch=True, availability={"gemini": True},
+            launcher=lambda *args: self.fail("automatic dispatch must not invoke launcher"),
         )
         decision = dispatcher.claim_next(self.now)
-        self.assertEqual("rooter", decision.agent.name)
-        self.assertEqual(["rooter"], launches)
+        self.assertTrue(decision.queued)
+        self.assertFalse(decision.launched)
+        self.assertTrue(decision.claimed)
+        self.assertEqual("gemini", decision.agent.name)
+        job_path = self.paths.pending / f"{decision.job_id}.json"
+        self.assertTrue(job_path.exists())
+        job = load_job(job_path)
+        self.assertEqual("gemini", job.provider)
+        packet_path = Path(job.resume_packet_path)
+        self.assertTrue(packet_path.exists())
+        self.assertEqual(job.resume_packet_sha256, hashlib.sha256(packet_path.read_bytes()).hexdigest())
+        loaded = self.ledger.get_task(task.task_id)
+        self.assertEqual(Classification.ACTIVE, loaded.classification)
 
-    def test_select_agent_uses_required_fallback_order(self):
-        dispatcher = Dispatcher(self.ledger, self.candidates(), auto_dispatch=False)
+    def test_auto_dispatch_rejects_legacy_shared_worktree(self):
+        task = self.add_task(worker_owned=False)
+        decision = self.dispatcher(auto_dispatch=True, availability={"gemini": True}).claim_next(self.now)
+        self.assertIsNone(decision)
+        self.assertIsNone(self.ledger.get_task(task.task_id).lease_expires_at)
+
+    def test_auto_dispatch_routes_to_rooter_only_when_gemini_unavailable(self):
+        self.add_task(worker_owned=True)
+        decision = self.dispatcher(
+            auto_dispatch=True,
+            availability={"codex": True, "chatgpt": True, "claude": True, "gemini": False, "rooter": True},
+        ).claim_next(self.now)
+        self.assertEqual("rooter", decision.agent.name)
+        self.assertTrue(decision.queued)
+        job = load_job(self.paths.pending / f"{decision.job_id}.json")
+        self.assertEqual("rooter", job.provider)
+
+    def test_select_agent_uses_interactive_fallback_order_in_preview_mode(self):
+        dispatcher = self.dispatcher(auto_dispatch=False, availability={})
         for availability, expected in (
             ({"codex": True, "chatgpt": True, "claude": True, "gemini": True}, "codex"),
             ({"codex": False, "chatgpt": True, "claude": True, "gemini": True}, "chatgpt"),
@@ -66,43 +113,49 @@ class DispatcherTest(unittest.TestCase):
         ):
             self.assertEqual(expected, dispatcher.select_agent(self.candidates(), availability).name)
 
-    def test_preview_mode_produces_packet_without_claim_or_launch(self):
-        task = self.add_task()
-        launches = []
-        dispatcher = Dispatcher(
-            self.ledger, self.candidates(), auto_dispatch=False,
-            availability={"codex": True}, launcher=lambda candidate, packet, cwd: launches.append(candidate.name) or True,
-        )
-        decision = dispatcher.claim_next(self.now)
+    def test_preview_mode_produces_packet_without_claim_or_queue(self):
+        task = self.add_task(worker_owned=False)
+        decision = self.dispatcher(auto_dispatch=False, availability={"codex": True}).claim_next(self.now)
         self.assertEqual("codex", decision.agent.name)
         self.assertIn(task.task_id, decision.resume_packet)
         self.assertFalse(decision.claimed)
         self.assertFalse(decision.launched)
-        self.assertEqual([], launches)
+        self.assertFalse(decision.queued)
+        self.assertIsNone(decision.job_id)
         self.assertIsNone(self.ledger.get_task(task.task_id).lease_expires_at)
 
     def test_active_lease_prevents_second_dispatcher_claim(self):
-        task = self.add_task()
+        task = self.add_task(worker_owned=True)
         self.ledger.claim(task.task_id, "gemini", "session-a", self.now, 1800)
-        dispatcher = Dispatcher(self.ledger, self.candidates(), auto_dispatch=True, availability={"gemini": True})
-        self.assertIsNone(dispatcher.claim_next(self.now))
+        decision = self.dispatcher(auto_dispatch=True, availability={"gemini": True}).claim_next(self.now)
+        self.assertIsNone(decision)
 
-    def test_launcher_receives_existing_task_worktree(self):
-        task = self.add_task()
-        seen = []
-        def launcher(candidate, packet, cwd):
-            seen.append(Path(cwd).resolve())
-            return True
-        dispatcher = Dispatcher(
-            self.ledger, self.candidates(), auto_dispatch=True,
-            availability={"gemini": True}, launcher=launcher,
-        )
-        decision = dispatcher.claim_next(self.now)
-        self.assertTrue(decision.launched)
-        self.assertEqual([Path(task.worktree_path).resolve()], seen)
+    def test_automatic_mode_never_selects_interactive_agents(self):
+        self.add_task(worker_owned=True)
+        decision = self.dispatcher(
+            auto_dispatch=True,
+            availability={"codex": True, "chatgpt": True, "claude": True, "gemini": False, "rooter": False},
+        ).claim_next(self.now)
+        self.assertIsNone(decision)
+
+    def test_retry_budget_blocks_further_automatic_queueing(self):
+        task = self.add_task(worker_owned=True)
+        for index in range(3):
+            self.ledger.record_dispatch_attempt(task.task_id, "gemini", self.now, "dispatch_queued", f"job-{index}")
+        decision = self.dispatcher(
+            auto_dispatch=True, availability={"gemini": True}, max_auto_attempts=3
+        ).claim_next(self.now)
+        self.assertIsNone(decision)
         loaded = self.ledger.get_task(task.task_id)
-        self.assertIsNone(loaded.lease_expires_at)
-        self.assertEqual(Classification.NEEDS_RESUME, loaded.classification)
+        self.assertEqual(Classification.BLOCKED_EXTERNAL, loaded.classification)
+        self.assertEqual(TaskStatus.BLOCKED, loaded.status)
+        self.assertEqual("automatic retry budget exhausted", loaded.blocker)
+
+    def test_recent_provider_failure_respects_cooldown(self):
+        task = self.add_task(worker_owned=True)
+        self.ledger.record_dispatch_attempt(task.task_id, "gemini", self.now, "launch_failed", "provider failed")
+        decision = self.dispatcher(auto_dispatch=True, availability={"gemini": True}).claim_next(self.now)
+        self.assertIsNone(decision)
 
     def test_default_launcher_does_not_stream_agent_output_into_controller_logs(self):
         candidate = AgentCandidate("codex", ["codex", "exec"], True)
@@ -112,43 +165,6 @@ class DispatcherTest(unittest.TestCase):
         kwargs = run.call_args.kwargs
         self.assertIs(subprocess.DEVNULL, kwargs["stdout"])
         self.assertIs(subprocess.DEVNULL, kwargs["stderr"])
-
-    def test_launch_failure_advances_to_next_available_agent(self):
-        self.add_task()
-        launches = []
-        def launcher(candidate, packet, cwd):
-            launches.append(candidate.name)
-            return candidate.name == "rooter"
-        dispatcher = Dispatcher(
-            self.ledger, self.candidates(), auto_dispatch=True,
-            availability={"gemini": True, "rooter": True}, launcher=launcher,
-        )
-        first = dispatcher.claim_next(self.now)
-        second = dispatcher.claim_next(self.now)
-        self.assertEqual("gemini", first.agent.name)
-        self.assertFalse(first.launched)
-        self.assertEqual("rooter", second.agent.name)
-        self.assertTrue(second.launched)
-        self.assertEqual(["gemini", "rooter"], launches)
-
-    def test_launch_failure_persists_attempt_then_requeues_same_worktree_and_branch(self):
-        task = self.add_task()
-        dispatcher = Dispatcher(
-            self.ledger, self.candidates(), auto_dispatch=True,
-            availability={"gemini": True}, launcher=lambda candidate, packet, cwd: False,
-        )
-        decision = dispatcher.claim_next(self.now)
-        self.assertTrue(decision.claimed)
-        self.assertFalse(decision.launched)
-        loaded = self.ledger.get_task(task.task_id)
-        self.assertEqual(Classification.NEEDS_RESUME, loaded.classification)
-        self.assertEqual(TaskStatus.NEEDS_RESUME, loaded.status)
-        self.assertEqual(task.worktree_path, loaded.worktree_path)
-        self.assertEqual(task.branch, loaded.branch)
-        self.assertIsNone(loaded.lease_expires_at)
-        attempts = self.ledger.list_dispatch_attempts(task.task_id)
-        self.assertEqual("launch_failed", attempts[-1]["outcome"])
-        self.assertEqual("gemini", attempts[-1]["agent_type"])
 
 
 if __name__ == "__main__":
