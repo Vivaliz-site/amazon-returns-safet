@@ -7,6 +7,7 @@ require_once __DIR__ . '/PolicySeeder.php';
 require_once __DIR__ . '/TenantContext.php';
 require_once __DIR__ . '/TenantPersistence.php';
 require_once __DIR__ . '/BridgeLiveness.php';
+require_once __DIR__ . '/BusinessHealth.php';
 
 final class SvAmazonReturnsRuntime
 {
@@ -368,7 +369,9 @@ final class SvAmazonReturnsRuntime
             $p->cursors->load('SELLER_CENTRAL','read_process_heartbeat'),
             $primaryStatusWorker
         );
-        $healthStatus=($browserLiveness['status'] ?? '')==='DEGRADED' ? 'DEGRADED' : 'OK';
+        $writeFlags=$config->writeFlags();
+        $businessHealth=SvAmazonBusinessHealth::evaluate($config->enabled(),$config->mode(),$readiness,$writeFlags,$browserLiveness);
+        $healthStatus=(string)$businessHealth['status'];
         return [
             'status'=>$healthStatus,
             'tenant_id'=>$p->context()->tenantId(),
@@ -398,7 +401,8 @@ final class SvAmazonReturnsRuntime
             'enabled'=>$config->enabled(),
             'readiness'=>$readiness,
             'seller_central_browser'=>$browserLiveness,
-            'write_flags'=>$config->writeFlags(),
+            'write_flags'=>$writeFlags,
+            'health_blockers'=>$businessHealth['blockers'],
         ];
     }
 }
