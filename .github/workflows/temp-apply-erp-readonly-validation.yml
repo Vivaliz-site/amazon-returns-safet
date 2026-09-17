@@ -1,0 +1,55 @@
+name: Temporary ERP readonly validation patch
+on:
+  push:
+    branches: [fix/erp-canary-readonly-validation-20260917]
+permissions:
+  contents: write
+jobs:
+  apply-test-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_mysql, curl
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Apply exact tested patch
+        run: |
+          set -euo pipefail
+          git apply --check tools/erp-canary-readonly-validation.patch
+          git apply tools/erp-canary-readonly-validation.patch
+      - name: Focused ERP tests
+        run: |
+          set -euo pipefail
+          php tests/erp-sales-return-browser-gateway-test.php
+          php tests/erp-sales-return-canary-test.php
+          node --test tests/erp-sales-return-browser-create-preflight.test.mjs
+          node --test tests/erp-sales-return-browser-adapter.test.mjs
+          node --check scripts/amazon-returns/erp-sales-return-browser.mjs
+          php -l includes/amazon-returns/ErpSalesReturnGateway.php
+          php -l scripts/amazon-returns/erp-sales-return-canary.php
+          git diff --check
+      - name: Full repository tests
+        run: |
+          set -euo pipefail
+          for test in tests/*.php; do php "$test"; done
+          php scripts/audit-tenant-sql.php
+          php tests/amazon-returns-tenant-isolation-test.php
+          node --test tests/*.test.mjs
+      - name: Commit clean branch
+        run: |
+          set -euo pipefail
+          git rm tools/erp-canary-readonly-validation.patch
+          git rm .github/workflows/temp-apply-erp-readonly-validation.yml
+          git add includes/amazon-returns/ErpSalesReturnGateway.php scripts/amazon-returns/erp-sales-return-browser.mjs scripts/amazon-returns/erp-sales-return-canary.php tests/erp-sales-return-browser-gateway-test.php tests/erp-sales-return-canary-test.php tests/erp-sales-return-browser-create-preflight.test.mjs
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix: preflight ERP canary creation without writes'
+          git push origin HEAD:fix/erp-canary-readonly-validation-20260917
