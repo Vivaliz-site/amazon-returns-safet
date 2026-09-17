@@ -24,7 +24,7 @@ from tools.continuity.git_scan import scan_repository
 from tools.continuity.github_state import GitHubStateReader
 from tools.continuity.job_queue import (
     JobEnvelope, QueuePaths, TaskEvidenceSnapshot, atomic_write_job,
-    atomic_write_task_evidence, load_receipt,
+    atomic_write_task_evidence, load_receipt, unresolved_queue_jobs,
 )
 from tools.continuity.ledger import Ledger
 from tools.continuity.model import Classification, TaskRecord, TaskStatus
@@ -203,15 +203,12 @@ def _preflight(config_path: Path) -> tuple[dict, str, dict]:
     if not legacy_rejected:
         raise PilotError("legacy path was not rejected by worker ownership boundary")
     queue_root = Path(str(config["job_queue_root"]))
-    queued_work = []
-    for subdir in ("pending", "running"):
-        directory = queue_root / subdir
-        if directory.exists():
-            queued_work.extend(path for path in directory.glob("*.json") if path.is_file())
-    if queued_work:
-        raise PilotError("pending/running continuity jobs exist before pilot")
-    receipt_dir = queue_root / "receipts"
+    queue = QueuePaths.under(queue_root)
     marker_dir = queue_root.parent / "publisher"
+    queued_work = unresolved_queue_jobs(queue, marker_dir)
+    if queued_work:
+        raise PilotError("unresolved continuity jobs exist before pilot")
+    receipt_dir = queue.receipts
     pending_receipts = [
         path for path in receipt_dir.glob("*.json")
         if not (marker_dir / f"{path.name}.done.json").exists()

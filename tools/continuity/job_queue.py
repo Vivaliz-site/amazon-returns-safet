@@ -305,7 +305,37 @@ def claim_pending_job(paths: QueuePaths, pending_path: Path) -> Path | None:
         raise
 
 
+def reclaim_expired_running_claims(paths: QueuePaths, now: datetime) -> tuple[Path, ...]:
+    current = now.astimezone(UTC)
+    released: list[Path] = []
+    for running in sorted(path for path in paths.running.glob("*.json") if path.is_file()):
+        pending = paths.pending / running.name
+        receipt = paths.receipts / running.name
+        if receipt.exists() or not pending.is_file():
+            continue
+        try:
+            pending_data = pending.read_bytes()
+            running_data = running.read_bytes()
+            if pending_data != running_data:
+                continue
+            job = load_job(running)
+            deadline = _parse_time(job.deadline_at)
+        except (OSError, JobValidationError):
+            continue
+        expected_name = f"{job.task_id}--{job.lease_session_id}.json"
+        claimed_at = datetime.fromtimestamp(running.stat().st_mtime, tz=UTC)
+        if running.name != expected_name or deadline > current or claimed_at > deadline:
+            continue
+        try:
+            running.unlink()
+        except FileNotFoundError:
+            continue
+        released.append(running)
+    return tuple(released)
+
+
 def claim_next_pending(paths: QueuePaths) -> Path | None:
+    reclaim_expired_running_claims(paths, datetime.now(tz=UTC))
     candidates = sorted(
         (path for path in paths.pending.glob("*.json") if path.is_file()),
         key=lambda path: (path.stat().st_mtime_ns, path.name),
@@ -315,6 +345,44 @@ def claim_next_pending(paths: QueuePaths) -> Path | None:
         if claimed is not None:
             return claimed
     return None
+
+
+def unresolved_queue_jobs(paths: QueuePaths, marker_dir: Path) -> tuple[str, ...]:
+    names = sorted({
+        path.name
+        for directory in (paths.pending, paths.running)
+        for path in directory.glob("*.json")
+        if path.is_file()
+    })
+    unresolved: list[str] = []
+    markers = Path(marker_dir)
+    for name in names:
+        receipt_path = paths.receipts / name
+        marker_path = markers / f"{name}.done.json"
+        try:
+            receipt = load_receipt(receipt_path)
+            expected_name = f"{receipt.task_id}--{receipt.lease_session_id}.json"
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            if not isinstance(marker, dict) or expected_name != name:
+                raise JobValidationError("terminal marker identity mismatch")
+            classification = str(marker.get("classification") or "")
+            if classification == "published":
+                terminal = (
+                    receipt.status == "completed"
+                    and marker.get("status") in {"pushed", "already_published"}
+                    and marker.get("head") == receipt.resulting_head
+                    and bool(_REPO_RE.fullmatch(str(marker.get("repository") or "")))
+                    and bool(str(marker.get("branch") or ""))
+                )
+            elif classification == "skipped":
+                terminal = receipt.status != "completed" and marker.get("status") == receipt.status
+            else:
+                terminal = False
+        except (OSError, json.JSONDecodeError, JobValidationError):
+            terminal = False
+        if not terminal:
+            unresolved.append(name)
+    return tuple(unresolved)
 
 
 def _validate_receipt(receipt: WorkerReceipt, max_diagnostics_bytes: int) -> None:
