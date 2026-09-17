@@ -9,10 +9,8 @@ User=www-data
 Group=www-data
 WorkingDirectory=/home/ubuntu/amazon-returns-deploy/current
 EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/.env
+EnvironmentFile=/home/ubuntu/amazon-returns-deploy/current/deploy/erp-canary-execute.env
 Environment=AMAZON_RETURNS_ENV_FILE=/home/ubuntu/amazon-returns-deploy/shared/.env
-Environment=AMAZON_RETURNS_WRITE_PROFILE_FILE=/home/ubuntu/amazon-returns-deploy/current/deploy/write-profile-erp-canary.json
-Environment=AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED=1
-Environment=AMAZON_RETURNS_WRITE_CANARY_CASE_IDS=13233
 ExecStart=/usr/bin/php /home/ubuntu/amazon-returns-deploy/current/scripts/amazon-returns/erp-sales-return-canary.php --mode=execute --case-id=13233
 TimeoutStartSec=5min
 UMask=0077
