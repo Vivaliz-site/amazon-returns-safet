@@ -30,20 +30,21 @@ final class SvAmazonErpSalesReturnTask
         $saleLookup=new SvAmazonErpInvoiceLookup(null,null,$config);
         $returnLookup=new SvAmazonErpReturnInvoiceLookup(null,null,$config);
         $gateway=new SvAmazonOlistBrowserErpSalesReturnGateway(null,$config->get('OLIST_ERP_CDP_URL','http://127.0.0.1:9226'));
-        $service=new SvAmazonErpSalesReturnService(
-            $p->erpSalesReturns,
-            $gateway,
-            static fn(string $orderId): array=>$p->cases->forOrder($orderId),
-            static fn(string $orderId): ?array=>$saleLookup->findSaleForOrder($orderId),
-            static fn(string $orderId): ?array=>$returnLookup->findForOrder($orderId),
-            $config->erpSalesReturnCreateEnabled()
-        );
         $limiter=SvAmazonErpApiRateLimiter::fromConfig($config);
 
         $rows=[];$rateLimited=false;
         foreach($orders as $orderId){
             $limiter->beforeRequest();
             try{
+                $cases=$p->cases->forOrder($orderId);
+                $service=new SvAmazonErpSalesReturnService(
+                    $p->erpSalesReturns,
+                    $gateway,
+                    static fn(string $candidateOrderId): array=>$p->cases->forOrder($candidateOrderId),
+                    static fn(string $candidateOrderId): ?array=>$saleLookup->findSaleForOrder($candidateOrderId),
+                    static fn(string $candidateOrderId): ?array=>$returnLookup->findForOrder($candidateOrderId),
+                    $config->erpSalesReturnCreateEnabled() && self::writeAllowedForOrderCases($config,$cases)
+                );
                 $row=$service->reconcileOrder($orderId);
                 $rows[]=['order_id'=>$orderId,'status'=>(string)($row['status']??'UNKNOWN')];
             }catch(Throwable $e){
@@ -78,6 +79,19 @@ final class SvAmazonErpSalesReturnTask
             return [$lp,$left]<=>[$rp,$right];
         });
         return $ids;
+    }
+
+    /** @param list<array<string,mixed>> $cases */
+    public static function writeAllowedForOrderCases(SvAmazonReturnsConfig $config,array $cases): bool
+    {
+        $refunded=0;
+        foreach($cases as $case){
+            if(!is_array($case) || (int)($case['quantity_refunded']??0)<1)continue;
+            $caseId=(int)($case['id']??0);
+            if($caseId<1 || !$config->writeCaseAllowed($caseId))return false;
+            $refunded++;
+        }
+        return $refunded>0;
     }
 
     /** @param array<string,mixed>|null $workflow */
