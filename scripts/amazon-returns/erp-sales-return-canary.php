@@ -63,6 +63,7 @@ $handoff=null;
 if($mode==='discover')@unlink($erpCanaryHandoff);
 if($mode==='execute'){
     if(!is_file($erpCanaryMarker))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_ARM_REQUIRED'],4);
+    if(!@unlink($erpCanaryMarker))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_ARM_CONSUME_FAILED'],4);
     if($useHandoff){
         if(!is_file($erpCanaryHandoff))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_HANDOFF_REQUIRED'],4);
         $raw=@file_get_contents($erpCanaryHandoff);
@@ -76,13 +77,12 @@ if($mode==='execute'){
             erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_HANDOFF_REQUIRED'],4);
         }
         if(time()-$generatedAt>300 || $generatedAt>time()+30){
-            @unlink($erpCanaryMarker);@unlink($erpCanaryHandoff);
+            @unlink($erpCanaryHandoff);
             erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_HANDOFF_EXPIRED'],4);
         }
         $handoff=$decoded;
         $requestedCaseId=$handoffCase;
     }
-    if(!@unlink($erpCanaryMarker))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_ARM_CONSUME_FAILED'],4);
     if($useHandoff && !@unlink($erpCanaryHandoff))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_HANDOFF_CONSUME_FAILED'],4);
 }
 
