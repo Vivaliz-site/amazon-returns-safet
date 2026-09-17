@@ -43,6 +43,7 @@ $loadPos=strpos($runner,'CANARY_HANDOFF_REQUIRED');
 $consumeMarkerPos=strpos($runner,'unlink($erpCanaryMarker)');
 $candidateQueryPos=strpos($runner,'SELECT * FROM amazon_return_erp_sales_returns');
 eaAssert(is_int($loadPos)&&is_int($consumeMarkerPos)&&is_int($candidateQueryPos),'Runner must expose handoff load, arm consumption and candidate revalidation.');
+eaAssert($consumeMarkerPos<$loadPos,'Every execute attempt must consume the one-shot arm before validating the handoff.');
 eaAssert($loadPos<$candidateQueryPos,'Execute must load the handoff before re-querying candidate state.');
 eaAssert($consumeMarkerPos<$candidateQueryPos,'One-shot arm must be consumed before revalidation or any external write path.');
 echo "erp-canary-activation-systemd-test: OK\n";
