@@ -97,6 +97,8 @@ class SystemdContractTest(unittest.TestCase):
         self.assertIn("UMask=0027", worker)
         self.assertNotIn("agent-continuity-jobs", worker)
         self.assertIn("ReadWritePaths=/srv/continuity/sources /srv/continuity/worktrees /var/lib/agent-continuity/jobs/running /var/lib/agent-continuity/jobs/receipts /var/lib/agent-continuity-worker", worker)
+        self.assertIn("InaccessiblePaths=/var/lib/agent-continuity/controller", worker)
+        self.assertNotIn("ReadOnlyPaths=/var/lib/agent-continuity/controller", worker)
         self.assertNotIn("publisher_ssh_key", worker)
         self.assertIn("User=agent-continuity-publisher", publisher)
         self.assertIn("Environment=HOME=/var/lib/agent-continuity-publisher", publisher)
@@ -109,6 +111,11 @@ class SystemdContractTest(unittest.TestCase):
         self.assertIn("InaccessiblePaths=/var/lib/agent-continuity/controller", publisher)
         self.assertNotIn("GEMINI_API_KEY", publisher)
         self.assertNotIn("GH_TOKEN", publisher)
+
+    def test_worker_code_has_no_controller_ledger_dependency(self):
+        worker = Path("tools/continuity/worker.py").read_text(encoding="utf-8").lower()
+        for forbidden in ("sqlite3", "ledger_path", "controller/ledger", "ledger"):
+            self.assertNotIn(forbidden, worker)
 
     def test_worker_and_publisher_path_units_watch_only_owned_queues(self):
         worker = Path("deploy/systemd/agent-continuity-worker.path").read_text(encoding="utf-8")

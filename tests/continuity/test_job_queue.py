@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import tools.continuity.job_queue as job_queue
 from tools.continuity.job_queue import (
     JobEnvelope,
     JobValidationError,
@@ -45,6 +46,8 @@ class JobQueueTest(unittest.TestCase):
             provider="gemini",
             resume_packet_sha256="c" * 64,
             resume_packet_path=str(Path(self.tmp.name) / "packet.txt"),
+            task_evidence_sha256="d" * 64,
+            task_evidence_path=str(Path(self.tmp.name) / "evidence.json"),
             created_at=NOW.isoformat(),
             deadline_at=(NOW + timedelta(minutes=20)).isoformat(),
         )
@@ -87,6 +90,42 @@ class JobQueueTest(unittest.TestCase):
         path.write_text(json.dumps(payload), encoding="utf-8")
         with self.assertRaises(JobValidationError):
             load_job(path)
+    def test_load_rejects_legacy_job_without_bound_task_evidence(self):
+        path = Path(self.tmp.name) / "legacy-job.json"
+        payload = json.loads(self.job().to_json())
+        payload.pop("task_evidence_sha256")
+        payload.pop("task_evidence_path")
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaises(JobValidationError):
+            load_job(path)
+
+    def test_task_evidence_snapshot_writer_is_atomic_immutable_and_0640(self):
+        snapshot_type = getattr(job_queue, "TaskEvidenceSnapshot", None)
+        writer = getattr(job_queue, "atomic_write_task_evidence", None)
+        self.assertIsNotNone(snapshot_type, "TaskEvidenceSnapshot must exist")
+        self.assertIsNotNone(writer, "atomic_write_task_evidence must exist")
+        snapshot = snapshot_type(
+            task_id="TASK-20260916-001",
+            repository="Vivaliz-site/amazon-returns-safet",
+            worktree_path=str(self.worktree),
+            branch="agent/TASK-20260916-001-continuity",
+            current_head=SHA_B,
+            agent_type="gemini",
+            agent_session_id="continuity-TASK-20260916-001-gemini-123456789",
+            lease_expires_at=(NOW + timedelta(minutes=20)).isoformat(),
+            dirty_files=(), staged_files=(), untracked_files=(),
+        )
+        paths = QueuePaths.under(Path(self.tmp.name) / "evidence-queue")
+        job_id = "TASK-20260916-001--continuity-TASK-20260916-001-gemini-123456789"
+        path = writer(paths, job_id, snapshot)
+        self.assertEqual(0o640, path.stat().st_mode & 0o777)
+        self.assertEqual(paths.root / "packets", path.parent)
+        payload = path.read_text(encoding="utf-8").lower()
+        for forbidden in ("token", "password", "secret", "cookie", "api_key", "private_key"):
+            self.assertNotIn(forbidden, payload)
+        with self.assertRaises(FileExistsError):
+            writer(paths, job_id, snapshot)
+
     def test_atomic_job_write_refuses_duplicate_name(self):
         paths = QueuePaths.under(Path(self.tmp.name) / "queue")
         first = atomic_write_job(paths, self.job())

@@ -91,33 +91,50 @@ class EnableAutoDispatchTest(unittest.TestCase):
         )
 
     def test_refuses_without_green_pilot_evidence(self):
-        rc = enable(self.cfg, pilot=None, source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True)
+        rc = enable(self.cfg, pilot=None, source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True, unit_start=lambda _: True)
         self.assertEqual(2, rc)
         self.assertFalse(json.loads(self.cfg.read_text())["auto_dispatch"])
 
     def test_refuses_forbidden_enabled_agents(self):
         self.write_config(agents=[{"name": "codex", "command": ["codex"], "enabled": True}])
-        rc = enable(self.cfg, pilot=self.pilot(), source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True)
+        rc = enable(self.cfg, pilot=self.pilot(), source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True, unit_start=lambda _: True)
         self.assertEqual(2, rc)
         self.assertFalse(json.loads(self.cfg.read_text())["auto_dispatch"])
 
     def test_refuses_pilot_runtime_sha_mismatch(self):
         pilot = self.pilot()
         pilot["runtime_sha"] = "c" * 40
-        rc = enable(self.cfg, pilot=pilot, source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True)
+        rc = enable(self.cfg, pilot=pilot, source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True, unit_start=lambda _: True)
         self.assertEqual(2, rc)
         self.assertFalse(json.loads(self.cfg.read_text())["auto_dispatch"])
 
     def test_refuses_runtime_sha_mismatch_and_unsafe_env_mode(self):
         self.runtime_sha.write_text("c" * 40 + "\n", encoding="utf-8")
-        self.assertEqual(2, enable(self.cfg, pilot=self.pilot(), source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True))
+        self.assertEqual(2, enable(self.cfg, pilot=self.pilot(), source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True, unit_start=lambda _: True))
         self.runtime_sha.write_text(SHA + "\n", encoding="utf-8")
         os.chmod(self.gemini_env, 0o666)
-        self.assertEqual(2, enable(self.cfg, pilot=self.pilot(), source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True))
+        self.assertEqual(2, enable(self.cfg, pilot=self.pilot(), source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True, unit_start=lambda _: True))
+
+    def test_refuses_when_required_path_cannot_start_before_enabling(self):
+        started = []
+
+        def start(unit):
+            started.append(unit)
+            return unit == "agent-continuity-worker.path"
+
+        rc = enable(
+            self.cfg, pilot=self.pilot(), source_sha=SHA, paths=self.paths(),
+            unit_enabled=lambda _: True, unit_start=start,
+        )
+        self.assertEqual(2, rc)
+        self.assertFalse(json.loads(self.cfg.read_text())["auto_dispatch"])
+        self.assertEqual(
+            ["agent-continuity-worker.path", "agent-continuity-publisher.path"], started
+        )
 
     def test_success_enables_only_gemini_and_preserves_operator_fields(self):
         before = json.loads(self.cfg.read_text())
-        rc = enable(self.cfg, pilot=self.pilot(), source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True)
+        rc = enable(self.cfg, pilot=self.pilot(), source_sha=SHA, paths=self.paths(), unit_enabled=lambda _: True, unit_start=lambda _: True)
         self.assertEqual(0, rc)
         after = json.loads(self.cfg.read_text())
         self.assertTrue(after["auto_dispatch"])

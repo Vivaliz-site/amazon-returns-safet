@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import signal
-import sqlite3
 import subprocess
 from typing import Callable, Mapping
 
@@ -21,6 +20,7 @@ from .job_queue import (
     atomic_write_receipt,
     claim_next_pending,
     load_job,
+    parse_task_evidence,
     validate_job,
 )
 from .resume_packet import redact
@@ -38,7 +38,6 @@ class ProcessResult:
 
 @dataclass(frozen=True)
 class WorkerConfig:
-    ledger_path: Path
     queue_paths: QueuePaths
     worker_root: Path
     worker_uid: int
@@ -93,28 +92,38 @@ def run_process(
         return ProcessResult(int(proc.returncode or -15), stdout or "", stderr or "", True)
 
 
-def _read_task_evidence(ledger_path: Path, task_id: str) -> dict[str, object] | None:
-    uri = f"file:{Path(ledger_path).resolve()}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True, timeout=5)
-    conn.row_factory = sqlite3.Row
+def _read_task_evidence(paths: QueuePaths, job: JobEnvelope) -> dict[str, object]:
     try:
-        row = conn.execute(
-            """SELECT task_id,repository,worktree_path,branch,current_head,agent_type,
-                      agent_session_id,lease_expires_at,dirty_files,staged_files,untracked_files
-               FROM tasks WHERE task_id=?""",
-            (task_id,),
-        ).fetchone()
-    finally:
-        conn.close()
-    if row is None:
-        return None
-    data = dict(row)
-    for key in ("dirty_files", "staged_files", "untracked_files"):
-        try:
-            data[key] = set(json.loads(str(data.get(key) or "[]")))
-        except json.JSONDecodeError:
-            data[key] = set()
-    return data
+        packet_root = (paths.root / "packets").resolve(strict=True)
+        evidence_path = Path(job.task_evidence_path).resolve(strict=True)
+        evidence_path.relative_to(packet_root)
+    except (OSError, ValueError) as exc:
+        raise JobValidationError("task evidence outside queue") from exc
+    expected_path = packet_root / f"{job.task_id}--{job.lease_session_id}.evidence.json"
+    if evidence_path != expected_path:
+        raise JobValidationError("task evidence path identity mismatch")
+    try:
+        raw = evidence_path.read_bytes()
+    except OSError as exc:
+        raise JobValidationError("task evidence unreadable") from exc
+    if hashlib.sha256(raw).hexdigest() != job.task_evidence_sha256:
+        raise JobValidationError("task evidence digest mismatch")
+    snapshot = parse_task_evidence(raw)
+    if snapshot.task_id != job.task_id:
+        raise JobValidationError("task evidence task mismatch")
+    return {
+        "task_id": snapshot.task_id,
+        "repository": snapshot.repository,
+        "worktree_path": snapshot.worktree_path,
+        "branch": snapshot.branch,
+        "current_head": snapshot.current_head,
+        "agent_type": snapshot.agent_type,
+        "agent_session_id": snapshot.agent_session_id,
+        "lease_expires_at": snapshot.lease_expires_at,
+        "dirty_files": set(snapshot.dirty_files),
+        "staged_files": set(snapshot.staged_files),
+        "untracked_files": set(snapshot.untracked_files),
+    }
 
 
 def _parse_dt(raw: object) -> datetime | None:
@@ -248,11 +257,12 @@ def run_one_job(
             config, job, classification="rejected_worktree", status="rejected",
             started_at=started, ended_at=current, reason=str(exc),
         )
-    task = _read_task_evidence(config.ledger_path, job.task_id)
-    if task is None:
+    try:
+        task = _read_task_evidence(config.queue_paths, job)
+    except JobValidationError as exc:
         return _emit_receipt(
-            config, job, classification="rejected_lease", status="rejected",
-            started_at=started, ended_at=current, reason="task missing from ledger",
+            config, job, classification="rejected_evidence", status="rejected",
+            started_at=started, ended_at=current, reason=str(exc),
         )
     lease_expiry = _parse_dt(task.get("lease_expires_at"))
     if (
@@ -272,7 +282,7 @@ def run_one_job(
     if not identity_ok:
         return _emit_receipt(
             config, job, classification="rejected_identity", status="rejected",
-            started_at=started, ended_at=current, reason="ledger identity mismatch",
+            started_at=started, ended_at=current, reason="task evidence identity mismatch",
         )
 
     finding = scan_repository(worktree)
@@ -280,7 +290,7 @@ def run_one_job(
         return _emit_receipt(
             config, job, classification="rejected_head_mismatch", status="rejected",
             started_at=started, ended_at=current, resulting_head=finding.head,
-            reason="expected head differs from ledger/worktree",
+            reason="expected head differs from task evidence/worktree",
         )
     if finding.branch != job.branch:
         return _emit_receipt(
@@ -305,7 +315,7 @@ def run_one_job(
         return _emit_receipt(
             config, job, classification="rejected_unexpected_worktree_state", status="rejected",
             started_at=started, ended_at=current, resulting_head=finding.head,
-            reason="worktree evidence exceeds ledger snapshot",
+            reason="worktree state exceeds task evidence snapshot",
         )
 
     packet, packet_error = _load_packet(job, config.queue_paths)
@@ -372,7 +382,6 @@ def _config_from_json(path: Path) -> WorkerConfig:
     payload = json.loads(path.read_text(encoding="utf-8"))
     queue_paths = QueuePaths.under(Path(str(payload["job_queue_root"])))
     return WorkerConfig(
-        ledger_path=Path(str(payload["ledger_path"])),
         queue_paths=queue_paths,
         worker_root=Path(str(payload["worker_root"])),
         worker_uid=int(payload.get("worker_uid", os.getuid())),

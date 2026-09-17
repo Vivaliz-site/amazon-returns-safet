@@ -5,14 +5,23 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
 from unittest.mock import patch
 
 from tests.continuity.git_fixture import GitFixture
-from tools.continuity.job_queue import JobEnvelope, QueuePaths, WorkerReceipt, atomic_write_job
+from tools.continuity.job_queue import (
+    JobEnvelope,
+    QueuePaths,
+    TaskEvidenceSnapshot,
+    WorkerReceipt,
+    atomic_write_job,
+    atomic_write_task_evidence,
+)
 from tools.continuity.ledger import Ledger
 from tools.continuity.model import Classification, TaskRecord, TaskStatus
 from tools.continuity.worker import (
@@ -76,7 +85,6 @@ class WorkerTest(unittest.TestCase):
 
     def config(self, *, timeout_seconds: int = 5) -> WorkerConfig:
         return WorkerConfig(
-            ledger_path=self.ledger_path,
             queue_paths=self.paths,
             worker_root=self.worker_base / "worktrees",
             worker_uid=os.getuid(),
@@ -91,20 +99,43 @@ class WorkerTest(unittest.TestCase):
         packet = "resume safely\n"
         packet_path = self.packet_dir / f"{self.task_id}--{self.session}.txt"
         packet_path.write_text(packet, encoding="utf-8")
+        evidence_path = self.write_task_evidence()
         data = dict(
             task_id=self.task_id, repository="Vivaliz-site/amazon-returns-safet",
             worktree_path=str(self.worktree.path), branch=self.worktree.branch,
             expected_head=self.worktree.head, base_sha=self.worktree.head,
             lease_session_id=self.session, provider="gemini",
             resume_packet_sha256=hashlib.sha256(packet.encode()).hexdigest(),
-            resume_packet_path=str(packet_path), created_at=NOW.isoformat(),
-            deadline_at=(NOW + timedelta(minutes=20)).isoformat(),
+            resume_packet_path=str(packet_path),
+            task_evidence_sha256=hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
+            task_evidence_path=str(evidence_path),
+            created_at=NOW.isoformat(), deadline_at=(NOW + timedelta(minutes=20)).isoformat(),
         )
         data.update(overrides)
         return JobEnvelope(**data)
 
     def enqueue(self, job: JobEnvelope) -> Path:
         return atomic_write_job(self.paths, job)
+
+    def write_task_evidence(self) -> Path:
+        task = self.ledger.get_task(self.task_id)
+        self.assertIsNotNone(task)
+        self.assertIsNotNone(task.lease_expires_at)
+        self.assertIsNotNone(task.agent_session_id)
+        job_id = f"{task.task_id}--{task.agent_session_id}"
+        evidence = self.packet_dir / f"{job_id}.evidence.json"
+        if evidence.is_file():
+            return evidence
+        snapshot = TaskEvidenceSnapshot(
+            task_id=task.task_id, repository=task.repository,
+            worktree_path=task.worktree_path, branch=task.branch,
+            current_head=task.current_head, agent_type=str(task.agent_type or ""),
+            agent_session_id=str(task.agent_session_id),
+            lease_expires_at=task.lease_expires_at.isoformat(),
+            dirty_files=tuple(task.dirty_files), staged_files=tuple(task.staged_files),
+            untracked_files=tuple(task.untracked_files),
+        )
+        return atomic_write_task_evidence(self.paths, job_id, snapshot)
 
     def test_worker_rejects_head_mismatch_without_running_gemini(self):
         self.enqueue(self.job(expected_head="0" * 40))
@@ -118,7 +149,7 @@ class WorkerTest(unittest.TestCase):
         self.enqueue(self.job(lease_session_id="wrong-session-1234"))
         runner = FakeRunner()
         result = run_one_job(self.config(), now=NOW, runner=runner)
-        self.assertEqual("rejected_lease", result.classification)
+        self.assertEqual("rejected_evidence", result.classification)
         self.assertEqual([], runner.calls)
 
     def test_worker_rejects_dirty_state_not_in_ledger_evidence(self):
@@ -127,6 +158,101 @@ class WorkerTest(unittest.TestCase):
         runner = FakeRunner()
         result = run_one_job(self.config(), now=NOW, runner=runner)
         self.assertEqual("rejected_unexpected_worktree_state", result.classification)
+        self.assertEqual([], runner.calls)
+
+    def test_sqlite_wal_readonly_reproduction_requires_writeable_shm_boundary(self):
+        wal_root = self.root / "wal-readonly"
+        wal_root.mkdir()
+        db = wal_root / "ledger.sqlite3"
+        writer = sqlite3.connect(db)
+        try:
+            self.assertEqual("wal", writer.execute("PRAGMA journal_mode=WAL").fetchone()[0])
+            writer.execute("CREATE TABLE evidence(task_id TEXT PRIMARY KEY)")
+            writer.execute("INSERT INTO evidence(task_id) VALUES(\"TASK-WAL-001\")")
+            writer.commit()
+            shm = Path(str(db) + "-shm")
+            wal = Path(str(db) + "-wal")
+            shm.unlink(missing_ok=True)
+            db.chmod(0o440)
+            wal.chmod(0o440)
+            wal_root.chmod(0o550)
+            code = (
+                "import sqlite3,sys; "
+                "c=sqlite3.connect(\"file:\"+sys.argv[1]+\"?mode=ro\",uri=True,timeout=1); "
+                "print(c.execute(\"SELECT task_id FROM evidence\").fetchone())"
+            )
+            child = subprocess.run(
+                [sys.executable, "-c", code, str(db)], text=True, capture_output=True, check=False
+            )
+            self.assertNotEqual(0, child.returncode)
+            self.assertRegex(
+                child.stderr, r"(attempt to write a readonly database|unable to open database file)"
+            )
+        finally:
+            wal_root.chmod(0o750)
+            for path in (db, Path(str(db) + "-wal"), Path(str(db) + "-shm")):
+                if path.exists():
+                    path.chmod(0o640)
+            writer.close()
+
+    def test_worker_uses_task_snapshot_when_ledger_is_unavailable(self):
+        self.write_task_evidence()
+        self.enqueue(self.job())
+        runner = FakeRunner()
+        self.ledger_path.chmod(0)
+        try:
+            try:
+                result = run_one_job(self.config(), now=NOW, runner=runner)
+            except sqlite3.OperationalError as exc:
+                self.fail(f"worker must not open controller ledger: {exc}")
+        finally:
+            self.ledger_path.chmod(0o640)
+        self.assertEqual("completed", result.classification)
+        self.assertEqual(1, len(runner.calls))
+
+    def test_worker_parses_the_exact_snapshot_bytes_bound_by_digest(self):
+        job = self.job()
+        evidence_path = Path(job.task_evidence_path)
+        original = evidence_path.read_bytes()
+        malicious = json.loads(original.decode("utf-8"))
+        malicious["current_head"] = "0" * 40
+        malicious_bytes = json.dumps(malicious, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        self.enqueue(job)
+        real_read_bytes = Path.read_bytes
+        mutated = {"done": False}
+
+        def race_read_bytes(path: Path):
+            data = real_read_bytes(path)
+            if Path(path) == evidence_path and not mutated["done"]:
+                mutated["done"] = True
+                evidence_path.write_bytes(malicious_bytes)
+            return data
+
+        runner = FakeRunner()
+        with patch.object(Path, "read_bytes", race_read_bytes):
+            result = run_one_job(self.config(), now=NOW, runner=runner)
+        self.assertTrue(mutated["done"])
+        self.assertEqual("completed", result.classification)
+        self.assertEqual(1, len(runner.calls))
+
+    def test_worker_rejects_tampered_task_snapshot_without_running_gemini(self):
+        job = self.job()
+        Path(job.task_evidence_path).write_text("{}", encoding="utf-8")
+        self.enqueue(job)
+        runner = FakeRunner()
+        result = run_one_job(self.config(), now=NOW, runner=runner)
+        self.assertEqual("rejected_evidence", result.classification)
+        self.assertEqual([], runner.calls)
+        payload = json.loads(result.receipt_path.read_text(encoding="utf-8"))
+        self.assertIn("task evidence digest mismatch", payload["diagnostics"])
+
+    def test_worker_rejects_missing_task_snapshot_without_running_gemini(self):
+        job = self.job()
+        Path(job.task_evidence_path).unlink()
+        self.enqueue(job)
+        runner = FakeRunner()
+        result = run_one_job(self.config(), now=NOW, runner=runner)
+        self.assertEqual("rejected_evidence", result.classification)
         self.assertEqual([], runner.calls)
 
     def test_worker_environment_strips_unrelated_credentials(self):
