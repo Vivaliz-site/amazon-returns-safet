@@ -13,10 +13,15 @@ const PROFILE = process.env.SELLER_CENTRAL_PROFILE || '';
 const BROWSER = process.env.SELLER_CENTRAL_BROWSER || process.env.SELLER_CENTRAL_OPERA || '';
 const STATUS_WORKER_ID = process.env.SELLER_CENTRAL_STATUS_WORKER_ID || 'seller-central-status';
 const POLL_MS = Math.max(15000, Number(process.env.SELLER_CENTRAL_STATUS_POLL_MS || 30000));
+const QUIESCE_MARKER = process.env.AMAZON_RETURNS_QUIESCE_MARKER || '/run/amazon-returns-seller-central.quiesce';
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
 const CASE_LOBBY = 'https://sellercentral.amazon.com.br/cu/case-lobby';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function quiesceRequested() {
+  try { return fs.existsSync(QUIESCE_MARKER); } catch { return false; }
+}
 const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
 const sha = value => createHash('sha256').update(String(value ?? '')).digest('hex');
 
@@ -417,7 +422,7 @@ async function main() {
   }
   try {
     if (process.argv.includes('--drain')) {
-      while (await runOnce()) {}
+      while (!quiesceRequested() && await runOnce()) {}
       return;
     }
     if (process.argv.includes('--once')) {

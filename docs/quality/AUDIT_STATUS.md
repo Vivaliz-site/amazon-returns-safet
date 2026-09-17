@@ -56,3 +56,12 @@ Moderado/alto. A proveniência está correta e a camada de lookup melhorou, mas 
 
 ## Regra de validade
 Esta auditoria cobre `6edd00cfb41b3e92722fd00404829fa2b66587b0` e o runtime observado em 2026-09-16. Mudança em bridges, write profile, OAuth, políticas, workers, filas ou regras de decisão exige reauditoria.
+
+## AUDIT_ESCAPE — 2026-09-17 — quiescência do Seller Central
+- **Classe:** deploy/runtime parity; worker com drain contínuo mantendo `PROCESSING` vivo durante a janela de quiescência.
+- **Evidência live:** o auto-deploy abortou com `worker_quiesce_timeout=180s`; o Seller Central concluiu um job longo e reivindicou imediatamente os jobs seguintes, sem janela `PROCESSING=0`.
+- **Causa funcional:** o deploy parava o timer, mas o oneshot já ativo continuava em `--drain` e podia reivindicar novo trabalho.
+- **Causa do falso negativo:** os testes simulavam corrida antes/depois do freeze, mas não cobriam um worker externo que terminava um job e reivindicava outro durante a espera.
+- **Correção sistêmica:** marcador de quiescência compartilhado; workers de write e read terminam o job corrente e não puxam o próximo.
+- **Guarda permanente:** `seller-central-quiesce-drain-test.php`, incluindo ausência de pull de rede sob marcador, mais regressões de quiescência existentes.
+- **Certificação:** permanece NÃO APTO até merge, auto-deploy no mesmo SHA, prova live de quiescência e revalidação dos writes/readbacks Seller Support e ERP.

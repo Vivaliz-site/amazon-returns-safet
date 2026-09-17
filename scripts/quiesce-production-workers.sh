@@ -43,6 +43,7 @@ quiesce_workers() {
     local timeout_seconds="${AMAZON_RETURNS_QUIESCE_TIMEOUT_SECONDS:-180}"
     local poll_seconds="${AMAZON_RETURNS_QUIESCE_POLL_SECONDS:-1}"
     local browser_timer='amazon-returns-seller-central-browser.timer'
+    local quiesce_marker="${AMAZON_RETURNS_QUIESCE_MARKER:-/run/amazon-returns-seller-central.quiesce}"
     local browser_service='amazon-returns-seller-central-browser.service'
     local -a services=('amazon-returns-safet.service' "$browser_service")
     [[ "$target_db" =~ ^[A-Za-z0-9_]+$ ]] || { echo 'invalid target database name' >&2; return 2; }
@@ -50,6 +51,7 @@ quiesce_workers() {
     [[ "$connection_key" =~ ^[a-z0-9][a-z0-9-]{0,95}$ ]] || { echo 'invalid connection key' >&2; return 2; }
     [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid quiesce timeout' >&2; return 2; }
     [[ "$poll_seconds" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid quiesce poll interval' >&2; return 2; }
+    [[ "$quiesce_marker" == /* ]] || { echo 'invalid quiesce marker path' >&2; return 2; }
 
     local tenant_id connection_id count deadline unit timer_was_active=0 released=0 released_writes=0
     local -a frozen=()
@@ -62,6 +64,9 @@ quiesce_workers() {
         timer_was_active=1
         systemctl stop "$browser_timer"
     fi
+    : > "$quiesce_marker"
+    chmod 0644 "$quiesce_marker"
+    trap 'rm -f -- "$quiesce_marker"; trap - RETURN' RETURN
     deadline=$((SECONDS + timeout_seconds))
 
     while (( SECONDS <= deadline )); do
