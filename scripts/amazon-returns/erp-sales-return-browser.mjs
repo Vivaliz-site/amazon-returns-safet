@@ -210,6 +210,9 @@ export function decideOlistTargetState(states) {
   return 'UI_DRIFT';
 }
 
+export const OLIST_CDP_CONNECT_TIMEOUT_MS = 2500;
+export const OLIST_CDP_COMMAND_TIMEOUT_MS = 15000;
+
 class CdpPageSession {
   constructor(webSocketUrl) { this.webSocketUrl = webSocketUrl; this.socket = null; this.nextId = 1; this.pending = new Map(); }
   async connect() {
@@ -231,14 +234,14 @@ class CdpPageSession {
     });
   }
   async send(method, params = {}) {
-    await withTimeout(this.connect(), 2500, 'UI_DRIFT', 'Olist browser CDP target connection timed out.');
+    await withTimeout(this.connect(), OLIST_CDP_CONNECT_TIMEOUT_MS, 'UI_DRIFT', 'Olist browser CDP target connection timed out.');
     const id = this.nextId++;
     const response = new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       this.socket.send(JSON.stringify({ id, method, params }));
     });
     try {
-      return await withTimeout(response, 2500, 'UI_DRIFT', 'Olist browser CDP target did not respond.');
+      return await withTimeout(response, OLIST_CDP_COMMAND_TIMEOUT_MS, 'UI_DRIFT', 'Olist browser CDP target did not respond.');
     } finally {
       this.pending.delete(id);
     }
