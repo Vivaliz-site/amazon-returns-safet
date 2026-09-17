@@ -11,7 +11,7 @@ export function buildOpenReturnForm(origin, command = {}) {
   const invoiceId = numericId(origin.idNotaFiscal);
   if (!invoiceId) throw new TypeError('ERP original sale invoice ID is required.');
   const originOrder = text(origin?.origem?.idPedidoEcommerce);
-  if (originOrder && originOrder !== orderId) throw new Error('ERP origin belongs to another Amazon order.');
+  if (ORDER_RE.test(originOrder) && originOrder !== orderId) throw new Error('ERP origin belongs to another Amazon order.');
   const refundDate = text(command.refund_at).slice(0, 10);
   const date = ISO_DATE_RE.test(refundDate) ? refundDate : text(origin.dataDevolucao).slice(0, 10);
   if (!ISO_DATE_RE.test(date)) throw new TypeError('ERP sales return date is required.');

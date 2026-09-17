@@ -34,6 +34,27 @@ test('builds an open no-payment sales return without return-invoice fields', () 
 });
 
 
+test('accepts an internal ERP ecommerce identifier when the API-confirmed Amazon sale is otherwise valid', () => {
+  const internalOrigin = structuredClone(origin);
+  internalOrigin.origem.idPedidoEcommerce = 'PxX4YvzlG';
+  const form = buildOpenReturnForm(internalOrigin, {
+    amazon_order_id: '702-1234567-1234567',
+    refund_at: '2026-09-12',
+    items: [{ sku: 'SKU-1', quantity_refunded: 2 }],
+  });
+  assert.equal(form.itens[0].quantidade, 2);
+});
+
+test('blocks creation when the ERP origin exposes a different valid Amazon order id', () => {
+  const otherOrderOrigin = structuredClone(origin);
+  otherOrderOrigin.origem.idPedidoEcommerce = '701-1111111-2222222';
+  assert.throws(() => buildOpenReturnForm(otherOrderOrigin, {
+    amazon_order_id: '702-1234567-1234567',
+    refund_at: '2026-09-12',
+    items: [{ sku: 'SKU-1', quantity_refunded: 2 }],
+  }), /another Amazon order/i);
+});
+
 test('uses only refunded quantity and marks a partial return instead of returning the full sale quantity', () => {
   const form = buildOpenReturnForm(origin, {
     amazon_order_id: '702-1234567-1234567',
