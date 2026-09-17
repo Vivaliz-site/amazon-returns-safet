@@ -85,6 +85,7 @@ final class SvAmazonReturnsRemoteBridge
             'action' => $kind,
             'idempotency_key' => (string)($row['idempotency_key'] ?? ''),
             'attempt_count' => (int)($row['attempt_count'] ?? 0),
+            'created_at' => self::nullableString($row['created_at'] ?? null),
             'write_enabled' => ($writeFlags[$kind] ?? false) === true,
             'case' => [
                 'order_id' => (string)($case['amazon_order_id'] ?? ''),
@@ -93,6 +94,7 @@ final class SvAmazonReturnsRemoteBridge
                 'sku' => (string)($case['sku'] ?? ''),
                 'program' => (string)($case['program'] ?? ''),
                 'physical_status' => (string)($case['physical_status'] ?? ''),
+                'refund_at' => self::nullableString($case['refund_at'] ?? null),
                 'safe_t_id' => self::nullableString($case['safe_t_id'] ?? null),
                 'support_case_id' => self::nullableString($case['support_case_id'] ?? null),
                 'quantity_refunded' => (int)($case['quantity_refunded'] ?? 0),

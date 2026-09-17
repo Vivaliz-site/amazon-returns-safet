@@ -533,16 +533,18 @@ async function safeTAppeal(cdp, job) {
   });
 }
 
-async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeTerminal = false } = {}) {
+async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeTerminal = false, cutoffEpochSeconds = null } = {}) {
   const orderId = text(job.case?.order_id);
   const safeTId = text(job.case?.safe_t_id);
   const needles = [orderId, safeTId].filter(Boolean);
   if (needles.length === 0) return null;
   const preferred = /^\d{8,14}$/.test(text(preferredCaseId)) ? text(preferredCaseId) : '';
+  const cutoff = Number(cutoffEpochSeconds);
   const raw = await cdp.evaluate(`(async()=>{
     const needles=${JSON.stringify(needles)};
     const preferred=${JSON.stringify(preferred)};
     const includeTerminal=${includeTerminal === true ? 'true' : 'false'};
+    const cutoffSeconds=${Number.isFinite(cutoff) && cutoff > 0 ? cutoff : 'null'};
     const scanBudgetMs=${SUPPORT_CASE_LOOKUP_SCAN_BUDGET_MS};
     const scanStartedAt=Date.now();
     const budgetExceeded=()=>Date.now()-scanStartedAt>=scanBudgetMs;
@@ -550,9 +552,24 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
     const terminal=new Set(${JSON.stringify(SUPPORT_CASE_TERMINAL_STATUSES)});
     const activeSupportStatus=value=>{const status=String(value||'').trim().toUpperCase();return status!==''&&!terminal.has(status)};
     const supportStatusAllowed=value=>includeTerminal ? true : activeSupportStatus(value);
+    const validCaseId=value=>{const candidate=String(value||'');return candidate.length>=8&&candidate.length<=14&&[...candidate].every(ch=>ch>='0'&&ch<='9')};
     const limit=${SUPPORT_CASE_HISTORY_LIMIT};
     const pageSize=50;
     const relevant=/reemb|refund|safe[- ]?t|pedido|order|fba|devolu|return|reimbursement|claim|reclama|review|revis/i;
+    const searchCases=async (searchText,page=0)=>{
+      const filters={caseOwner:'MerchantCases'};
+      if(searchText)filters.searchText=searchText;
+      const response=await fetch('/hill/hillservice/mons-api/SearchForCases',{
+        method:'POST',credentials:'include',headers:{'content-type':'application/json'},
+        body:JSON.stringify({page,searchPageSize:50,sortBy:'CreationDate',sortByOrder:'DESC',getCountOnly:false,caseFilters:filters})
+      });
+      if(!response.ok)return {error:'SEARCH_HTTP_'+response.status};
+      const search=await response.json();
+      if(!Array.isArray(search.caseSearchResultList)||!Number.isFinite(Number(search.totalNumberOfResults))){
+        return {error:'SEARCH_RESPONSE_INVALID'};
+      }
+      return {rows:search.caseSearchResultList,total:Number(search.totalNumberOfResults)};
+    };
     const viewCase=async caseId=>{
       const maxAttempts=4;
       for(let attempt=0;attempt<maxAttempts;attempt++){
@@ -565,36 +582,50 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
       }
       throw new Error('VIEW_CASE_HTTP_429');
     };
-    if(preferred){
+    const deterministicTerms=[preferred,...needles].filter((value,index,all)=>value&&all.indexOf(value)===index);
+    for(const term of deterministicTerms){
       if(budgetExceeded())return budgetResult();
-      try{
-        const detail=await viewCase(preferred);
-        if(budgetExceeded())return budgetResult();
-        const raw=JSON.stringify(detail);
-        if(needles.some(n=>raw.includes(n))&&supportStatusAllowed(detail?.viewCaseMetaData?.caseStatus))return JSON.stringify({status:'FOUND',case_id:preferred});
-      }catch{return JSON.stringify({status:'UNAVAILABLE',reason:'PREFERRED_CASE_LOOKUP_FAILED'})}
+      const search=await searchCases(term);
+      if(search.error)return JSON.stringify({status:'UNAVAILABLE',reason:search.error});
+      for(const item of search.rows){
+        const caseId=String(item.caseId||'');
+        if(!validCaseId(caseId)||!supportStatusAllowed(item.status))continue;
+        const preferredCandidate=preferred&&caseId===preferred;
+        const relevantCandidate=relevant.test(String(item.shortDescription||''));
+        if(!preferredCandidate&&!relevantCandidate)continue;
+        try{
+          const detail=await viewCase(caseId);
+          const status=detail?.viewCaseMetaData?.caseStatus||item.status;
+          if(supportStatusAllowed(status)&&needles.some(n=>JSON.stringify(detail).includes(n))){
+            return JSON.stringify({status:'FOUND',case_id:caseId});
+          }
+        }catch{return JSON.stringify({status:'UNAVAILABLE',reason:'DETAIL_LOOKUP_FAILED'})}
+      }
+    }
+    if(!Number.isFinite(cutoffSeconds)||cutoffSeconds<=0){
+      return JSON.stringify({status:'UNAVAILABLE',reason:'LOOKUP_CUTOFF_UNAVAILABLE'});
     }
     let total=null;
     let inspected=0;
     let detailFailure=false;
     for(let page=0;inspected<limit;page++){
       if(budgetExceeded())return budgetResult();
-      const response=await fetch('/hill/hillservice/mons-api/SearchForCases',{
-        method:'POST',credentials:'include',headers:{'content-type':'application/json'},
-        body:JSON.stringify({page,searchPageSize:50,sortBy:'CreationDate',sortByOrder:'DESC',getCountOnly:false,caseFilters:{caseOwner:'MerchantCases'}})
-      });
-      if(!response.ok)return JSON.stringify({status:'UNAVAILABLE',reason:'SEARCH_HTTP_'+response.status});
-      const search=await response.json();
-      if(!Array.isArray(search.caseSearchResultList)||!Number.isFinite(Number(search.totalNumberOfResults))){
-        return JSON.stringify({status:'UNAVAILABLE',reason:'SEARCH_RESPONSE_INVALID'});
-      }
-      const rows=search.caseSearchResultList;
-      if(total===null)total=Number(search.totalNumberOfResults);
+      const search=await searchCases('',page);
+      if(search.error)return JSON.stringify({status:'UNAVAILABLE',reason:search.error});
+      const rows=search.rows;
+      if(total===null)total=search.total;
+      const dated=[];
       for(const item of rows){
+        const created=Number(item.creationDate);
+        if(!Number.isFinite(created))return JSON.stringify({status:'UNAVAILABLE',reason:'SEARCH_CREATION_DATE_INVALID'});
+        dated.push({item,created});
+      }
+      const recent=dated.filter(entry=>entry.created>=cutoffSeconds).map(entry=>entry.item);
+      for(const item of recent){
         const summary=JSON.stringify(item);
         if(needles.some(n=>summary.includes(n))&&supportStatusAllowed(item.status))return JSON.stringify({status:'FOUND',case_id:String(item.caseId||'')});
       }
-      const candidates=rows.filter(item=>supportStatusAllowed(item.status)&&relevant.test(String(item.shortDescription||'')));
+      const candidates=recent.filter(item=>supportStatusAllowed(item.status)&&relevant.test(String(item.shortDescription||'')));
       for(const item of candidates){
         if(budgetExceeded())return budgetResult();
         try{
@@ -607,7 +638,8 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
         }catch{detailFailure=true}
       }
       inspected+=rows.length;
-      if(rows.length<pageSize||inspected>=total)break;
+      const crossedCutoff=dated.some(entry=>entry.created<cutoffSeconds);
+      if(rows.length<pageSize||inspected>=total||crossedCutoff)break;
     }
     if(detailFailure)return JSON.stringify({status:'UNAVAILABLE',reason:'DETAIL_LOOKUP_FAILED'});
     return JSON.stringify({status:'NOT_FOUND',total:Number(total||0),inspected});
@@ -620,7 +652,6 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
   error.lookupReason = text(parsed.reason || 'UNKNOWN');
   throw error;
 }
-
 async function findSupportCase(cdp, job, options = {}) {
   const known = text(job.case?.support_case_id);
   const lookup = await Cdp.connect();
@@ -632,7 +663,21 @@ async function findSupportCase(cdp, job, options = {}) {
     const orderId = text(job.case?.order_id);
     const safeTId = text(job.case?.safe_t_id);
     const quick = text(await lookup.evaluate(`(()=>{const needles=${JSON.stringify([safeTId, orderId].filter(Boolean))};const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const hd=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(hd)docs.push(hd)}for(const d of docs){const body=d.body?.innerText||'';if(!needles.some(n=>body.includes(n)))continue;for(const a of d.querySelectorAll('a[href*="view-case"],a[href*="caseID="]')){const row=a.closest('tr,[role=row],div');const t=row?.innerText||'';if(needles.some(n=>t.includes(n))){const m=(a.href||'').match(/[?&]caseID=(\d{8,14})/);if(m)return m[1]}}}return ''})()`));
-    return await scanSupportCaseHistory(lookup, job, known || quick, options);
+    let cutoffEpochSeconds = Number(options.cutoffEpochSeconds);
+    if (!Number.isFinite(cutoffEpochSeconds) || cutoffEpochSeconds <= 0) {
+      const cutoffValue = text(options.includeTerminal === true ? job.created_at : job.case?.refund_at);
+      const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(cutoffValue)
+        ? `${cutoffValue.replace(' ', 'T')}Z`
+        : cutoffValue;
+      const cutoffMs = Date.parse(normalized);
+      if (!Number.isFinite(cutoffMs)) {
+        const error = new Error('SUPPORT_CASE_LOOKUP_UNAVAILABLE');
+        error.lookupReason = 'LOOKUP_CUTOFF_UNAVAILABLE';
+        throw error;
+      }
+      cutoffEpochSeconds = Math.floor(cutoffMs / 1000) - 86400;
+    }
+    return await scanSupportCaseHistory(lookup, job, known || quick, { ...options, cutoffEpochSeconds });
   } catch (error) {
     if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') throw error;
     throw new Error('SUPPORT_CASE_LOOKUP_UNAVAILABLE', { cause: error });
