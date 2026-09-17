@@ -23,7 +23,9 @@ ecSame(false,SvAmazonErpSalesReturnCanary::verifyExternalReadBack($badQty,$ok),'
 $runnerPath=__DIR__.'/../scripts/amazon-returns/erp-sales-return-canary.php';
 $runner=is_file($runnerPath)?(string)file_get_contents($runnerPath):'';
 ecSame(true,$runner!=='','canary runner script must exist');
-foreach(['--mode=discover','--mode=execute','erpSalesReturnCreateEnabled()','writeCaseAllowed','writeAllowedForOrderCases','verifyExternalReadBack'] as $token){
+foreach(['--mode=discover','--mode=execute','AMAZON_RETURNS_WRITE_CANARY_CASE_IDS','erpSalesReturnCreateEnabled()','writeCaseAllowed','writeAllowedForOrderCases','verifyExternalReadBack'] as $token){
     ecSame(true,str_contains($runner,$token),'canary runner missing safety contract: '.$token);
 }
+ecSame(false,str_contains($runner,'EXECUTE_REQUIRES_CASE_ID'),'execute mode must not require a stale versioned case ID.');
+ecSame(true,str_contains($runner,"'AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'=>(string)\$caseId"),'execute mode must scope the freshly discovered case in-process.');
 echo "erp-sales-return-canary-test: OK\n";

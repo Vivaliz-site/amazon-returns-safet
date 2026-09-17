@@ -19,7 +19,7 @@ $global=json_decode((string)file_get_contents(__DIR__.'/../deploy/write-profile.
 eaAssert(($global['ERP_SALES_RETURN_CREATE']??null)===false,'Global daemon ERP gate must stay disabled during canary.');
 $canaryEnvPath=__DIR__.'/../deploy/erp-canary-execute.env';
 $canaryEnv=is_file($canaryEnvPath)?(string)file_get_contents($canaryEnvPath):'';
-eaAssert(str_contains($canaryEnv,'AMAZON_RETURNS_WRITE_CANARY_CASE_IDS=13233'),'Versioned canary env must pin case 13233.');
+eaAssert(!str_contains($canaryEnv,'AMAZON_RETURNS_WRITE_CANARY_CASE_IDS='),'Versioned canary env must not pin a stale case ID; execute scopes the discovered candidate in-process.');
 eaAssert(str_contains($canaryEnv,'AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED=1'),'Versioned canary env must enable the dedicated ERP gate.');
 eaAssert(str_contains($canaryEnv,'AMAZON_RETURNS_WRITE_PROFILE_FILE=/home/ubuntu/amazon-returns-deploy/current/deploy/write-profile-erp-canary.json'),'Versioned canary env must pin the isolated write profile.');
 $unitPath=__DIR__.'/../deploy/systemd/amazon-returns-erp-canary-execute.service';
@@ -29,7 +29,7 @@ $sharedEnvPos=strpos($unit,'EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/
 $canaryEnvPos=strpos($unit,'EnvironmentFile=/home/ubuntu/amazon-returns-deploy/current/deploy/erp-canary-execute.env');
 eaAssert(is_int($sharedEnvPos)&&is_int($canaryEnvPos)&&$canaryEnvPos>$sharedEnvPos,'Canary override env file must load after shared .env.');
 eaAssert(!str_contains($unit,'Environment=AMAZON_RETURNS_WRITE_CANARY_CASE_IDS='),'Case scope must not rely on Environment= because EnvironmentFile can override it.');
-eaAssert(str_contains($unit,'--mode=execute --case-id=13233'),'Canary execute command must target only case 13233.');
+eaAssert(str_contains($unit,'--mode=execute') && !str_contains($unit,'--case-id='),'Canary execute command must dynamically scope the freshly discovered candidate.');
 $provision=(string)file_get_contents(__DIR__.'/../scripts/provision-production.sh');
 eaAssert(str_contains($provision,'amazon-returns-erp-canary-execute.service'),'Production provision must install the execute unit.');
 $discoverPos=strpos($provision,'systemctl start amazon-returns-erp-canary-discovery.service');

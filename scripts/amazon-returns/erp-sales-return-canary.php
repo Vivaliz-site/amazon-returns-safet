@@ -33,10 +33,6 @@ if(array_key_exists('case-id',$options)){
     if($parsed===false || $parsed<1)erp_canary_reply(['status'=>'ERROR','reason'=>'CASE_ID_INVALID'],2);
     $requestedCaseId=(int)$parsed;
 }
-if($mode==='execute' && $requestedCaseId===null){
-    erp_canary_reply(['status'=>'ERROR','reason'=>'EXECUTE_REQUIRES_CASE_ID'],2);
-}
-
 try{
     $config=new SvAmazonReturnsConfig();
     $db=amazon_returns_require_pdo();
@@ -109,12 +105,15 @@ try{
     }
 
     $caseId=(int)$candidate['case_id'];$orderId=(string)$candidate['order_id'];
-    if(!$config->erpSalesReturnCreateEnabled())erp_canary_reply(['status'=>'BLOCKED','reason'=>'ERP_WRITE_GATE_DISABLED','case_id'=>$caseId,'order_id'=>$orderId],4);
-    if(!SvAmazonErpSalesReturnCanary::exactWriteScope($config->get('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'),$caseId)){
+    $writeConfig=$requestedCaseId===null
+        ? new SvAmazonReturnsConfig(['AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'=>(string)$caseId])
+        : $config;
+    if(!$writeConfig->erpSalesReturnCreateEnabled())erp_canary_reply(['status'=>'BLOCKED','reason'=>'ERP_WRITE_GATE_DISABLED','case_id'=>$caseId,'order_id'=>$orderId],4);
+    if(!SvAmazonErpSalesReturnCanary::exactWriteScope($writeConfig->get('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'),$caseId)){
         erp_canary_reply(['status'=>'BLOCKED','reason'=>'EXACT_CANARY_SCOPE_REQUIRED','case_id'=>$caseId,'order_id'=>$orderId],4);
     }
-    if(!$config->writeCaseAllowed($caseId))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_CASE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
-    if(!SvAmazonErpSalesReturnTask::writeAllowedForOrderCases($config,$candidateCases)){
+    if(!$writeConfig->writeCaseAllowed($caseId))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_CASE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
+    if(!SvAmazonErpSalesReturnTask::writeAllowedForOrderCases($writeConfig,$candidateCases)){
         erp_canary_reply(['status'=>'BLOCKED','reason'=>'ORDER_CASE_SCOPE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
     }
 
