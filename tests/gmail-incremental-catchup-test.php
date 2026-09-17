@@ -321,4 +321,32 @@ gicSame(3,$progressMeta['messages']??null,'Catch-up operational metadata must ex
 gicSame(2,$progressMeta['events']??null,'Catch-up operational metadata must expose bounded event count.');
 gicSame(true,$progressMeta['checkpoint_advanced']??null,'Catch-up operational metadata must expose checkpoint progress.');
 
+
+// --- C7: history probe must never fall back to the legacy unbounded history pagination path ---
+$pdo7 = new GmailCatchupPdo();
+gicSeedCursor($pdo7, '700');
+$historyMaxResults = null;
+$historyCalls = 0;
+$transport7 = static function (string $method, string $url, array $headers, ?array $body = null) use (&$historyMaxResults, &$historyCalls): array {
+    if (str_contains($url, '/profile')) return ['status' => 200, 'json' => ['historyId' => '900']];
+    if (str_contains($url, '/history?')) {
+        $historyCalls++;
+        if ($historyCalls > 1) throw new RuntimeException('C7 legacy history pagination escaped the bounded probe.');
+        parse_str((string)parse_url($url, PHP_URL_QUERY), $query);
+        $historyMaxResults = (int)($query['maxResults'] ?? 0);
+        return ['status' => 200, 'json' => [
+            'history' => [['id' => '800', 'messagesAdded' => [['message' => ['id' => 'm-c7']]]]],
+            'nextPageToken' => 'more-history',
+        ]];
+    }
+    if (str_contains($url, '/messages/m-c7')) return ['status' => 200, 'json' => gicMessageJson('m-c7', GIC_NEUTRAL_SUBJECT)];
+    throw new RuntimeException('Unexpected URL in C7: ' . $url);
+};
+$gmail7 = new SvAmazonGmailApiClient(gicConfig(), $transport7);
+$daemon7 = new GmailCatchupDaemon($pdo7, new SvAmazonTenantContext(1, 1), gicConfig(), $gmail7);
+$probe7 = (new ReflectionMethod($daemon7, 'runGmailHistoryProbe'))->invoke($daemon7);
+gicSame('OK', $probe7['status'] ?? null, 'C7: bounded Gmail history probe must remain healthy.');
+gicSame(1, $historyMaxResults, 'C7: history probe must inspect at most one history record, never the legacy 500-record path.');
+gicSame('700', gicCursorValue($pdo7), 'C7: history probe must remain read-only and never advance the persisted Gmail checkpoint.');
+
 echo "gmail-incremental-catchup-test: OK\n";
