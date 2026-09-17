@@ -36,6 +36,7 @@ REPOSITORY = "Vivaliz-site/amazon-returns-safet"
 PUBLIC_REMOTE = "https://github.com/Vivaliz-site/amazon-returns-safet.git"
 WORKER_USER = "agent-continuity-worker"
 PUBLISHER_USER = "agent-continuity-publisher"
+CONTROLLER_GROUP = "agent-continuity"
 RUNTIME_ROOT = Path("/opt/agent-continuity/current")
 RUNTIME_SHA = Path("/opt/agent-continuity/.source-sha")
 DEFAULT_CONFIG = Path("/etc/agent-continuity/config.json")
@@ -94,8 +95,12 @@ def _is_enabled(unit: str) -> bool:
     return _run(["systemctl", "is-enabled", "--quiet", unit], check=False).returncode == 0
 
 
-def _user_can_read(user: str, path: Path) -> bool:
-    return _run(["runuser", "-u", user, "--", "test", "-r", str(path)], check=False).returncode == 0
+def _user_can_read(user: str, path: Path, *, supplementary_group: str | None = None) -> bool:
+    args = ["runuser", "-u", user]
+    if supplementary_group:
+        args.extend(["-G", supplementary_group])
+    args.extend(["--", "test", "-r", str(path)])
+    return _run(args, check=False).returncode == 0
 
 
 def _worker_python(code: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -172,7 +177,7 @@ def _preflight(config_path: Path) -> tuple[dict, str, dict]:
     proof = _read_json(PUBLISHER_PROOF)
     if proof.get("repository") != REPOSITORY or proof.get("read_only") is not False:
         raise PilotError("publisher deploy-key proof is not write-enabled for expected repository")
-    if not _user_can_read(WORKER_USER, GEMINI_ENV):
+    if not _user_can_read(WORKER_USER, GEMINI_ENV, supplementary_group=CONTROLLER_GROUP):
         raise PilotError("worker cannot read dedicated Gemini environment")
     worker_reads_publisher = _user_can_read(WORKER_USER, PUBLISHER_KEY)
     publisher_reads_gemini = _user_can_read(PUBLISHER_USER, GEMINI_ENV)
