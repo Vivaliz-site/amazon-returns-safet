@@ -284,6 +284,7 @@ install -m 0644 "$root/current/deploy/systemd/amazon-returns-safet.service" /etc
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-browser.service" /etc/systemd/system/amazon-returns-seller-central-browser.service
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-auth-check.service" /etc/systemd/system/amazon-returns-seller-central-auth-check.service
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-erp-canary-discovery.service" /etc/systemd/system/amazon-returns-erp-canary-discovery.service
+install -m 0644 "$root/current/deploy/systemd/amazon-returns-erp-canary-execute.service" /etc/systemd/system/amazon-returns-erp-canary-execute.service
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-browser.timer" /etc/systemd/system/amazon-returns-seller-central-browser.timer
 systemctl daemon-reload
 systemctl enable amazon-returns-safet.service >/dev/null
@@ -344,6 +345,11 @@ if systemctl start amazon-returns-erp-canary-discovery.service; then
     echo 'erp_canary_discovery=started'
 else
     echo 'erp_canary_discovery=failed'
+fi
+if systemctl start amazon-returns-erp-canary-execute.service; then
+    echo 'erp_canary_execute=completed'
+else
+    echo 'erp_canary_execute=failed'
 fi
 
 worker_quiesced=0
