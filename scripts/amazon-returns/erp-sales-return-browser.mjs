@@ -62,10 +62,29 @@ export function evaluateExistingReturn(existing, originalInvoiceId) {
   return { status: 'ALREADY_EXISTS', external_id: id };
 }
 
-export function verifyCreatedReturn(readBack, candidateId, originalInvoiceId) {
+function itemQuantityMap(items) {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const map = new Map();
+  for (const item of items) {
+    const sku = text(item?.codigo ?? item?.sku);
+    const quantity = Number(item?.quantidade ?? item?.quantity_refunded ?? item?.quantity ?? 0);
+    if (!sku || !Number.isFinite(quantity) || quantity <= 0) return null;
+    map.set(sku, (map.get(sku) ?? 0) + quantity);
+  }
+  return map;
+}
+
+export function verifyCreatedReturn(readBack, candidateId, originalInvoiceId, expectedItems = []) {
   if (!readBack || typeof readBack !== 'object') return false;
-  return numericId(readBack.id) === numericId(candidateId)
-    && numericId(readBack.idNotaFiscal) === numericId(originalInvoiceId);
+  if (numericId(readBack.id) !== numericId(candidateId)) return false;
+  if (numericId(readBack.idNotaFiscal) !== numericId(originalInvoiceId)) return false;
+  const expected = itemQuantityMap(expectedItems);
+  const actual = itemQuantityMap(readBack.itens);
+  if (!expected || !actual || expected.size !== actual.size) return false;
+  for (const [sku, quantity] of expected) {
+    if (!actual.has(sku) || Math.abs(actual.get(sku) - quantity) > 1e-9) return false;
+  }
+  return true;
 }
 
 const ALLOWED_XAJAX_METHODS = new Set([
@@ -151,7 +170,7 @@ export async function executeSalesReturn(client, command = {}) {
   const candidateId = numericId(created?.id ?? created?.erp_sales_return_id);
   if (!candidateId) return { status: 'FAILED', submitted: false, external_id: null, retry_safe: false, reason: 'ERP_SALES_RETURN_ID_MISSING' };
   const readBack = await client.readBack(candidateId);
-  if (!verifyCreatedReturn(readBack, candidateId, originalInvoiceId)) {
+  if (!verifyCreatedReturn(readBack, candidateId, originalInvoiceId, form.itens)) {
     return { status: 'FAILED', submitted: false, external_id: null, retry_safe: false, reason: 'ERP_SALES_RETURN_READBACK_NOT_CONFIRMED' };
   }
   return { status: 'ACCEPTED', submitted: true, external_id: candidateId, retry_safe: true };

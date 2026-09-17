@@ -57,10 +57,14 @@ test('treats an existing ERP return as authoritative and never requests another 
   assert.deepEqual(evaluateExistingReturn({ id: '16764', idNotaFiscal: '202' }, '202'), { status: 'ALREADY_EXISTS', external_id: '16764' });
 });
 
-test('requires read-back to match both created return id and original sale invoice', () => {
-  assert.equal(verifyCreatedReturn({ id: '991', idNotaFiscal: '202' }, '991', '202'), true);
-  assert.equal(verifyCreatedReturn({ id: '992', idNotaFiscal: '202' }, '991', '202'), false);
-  assert.equal(verifyCreatedReturn({ id: '991', idNotaFiscal: '999' }, '991', '202'), false);
+test('requires read-back to prove created id, original invoice, SKU and refunded quantity', () => {
+  const expected = [{ codigo: 'SKU-1', quantidade: 2 }];
+  assert.equal(verifyCreatedReturn({ id: '991', idNotaFiscal: '202', itens: [{ codigo: 'SKU-1', quantidade: '2.0000' }] }, '991', '202', expected), true);
+  assert.equal(verifyCreatedReturn({ id: '992', idNotaFiscal: '202', itens: [{ codigo: 'SKU-1', quantidade: 2 }] }, '991', '202', expected), false);
+  assert.equal(verifyCreatedReturn({ id: '991', idNotaFiscal: '999', itens: [{ codigo: 'SKU-1', quantidade: 2 }] }, '991', '202', expected), false);
+  assert.equal(verifyCreatedReturn({ id: '991', idNotaFiscal: '202', itens: [{ codigo: 'SKU-X', quantidade: 2 }] }, '991', '202', expected), false);
+  assert.equal(verifyCreatedReturn({ id: '991', idNotaFiscal: '202', itens: [{ codigo: 'SKU-1', quantidade: 1 }] }, '991', '202', expected), false);
+  assert.equal(verifyCreatedReturn({ id: '991', idNotaFiscal: '202' }, '991', '202', expected), false);
 });
 
 test('preflights the ERP return registry twice and never saves when a return already exists without an invoice', async () => {
@@ -86,7 +90,7 @@ test('validates, rechecks, saves once and requires read-back before accepting a 
     async loadOrigin(invoiceId) { calls.push(['origin', invoiceId]); return origin; },
     async validate(form) { calls.push(['validate', form.idFormaPagamento, form.situacao]); return { ok: true }; },
     async save(id, form) { calls.push(['save', id, form.idFormaPagamento, form.situacao]); return { id: '991' }; },
-    async readBack(id) { calls.push(['readback', id]); return { id: '991', idNotaFiscal: '202', idNotaFiscalEntrada: null }; },
+    async readBack(id) { calls.push(['readback', id]); return { id: '991', idNotaFiscal: '202', idNotaFiscalEntrada: null, itens: [{ codigo: 'SKU-1', quantidade: 2 }] }; },
   };
   const { executeSalesReturn } = await import('../scripts/amazon-returns/erp-sales-return-browser.mjs');
   const result = await executeSalesReturn(client, { amazon_order_id: '702-1234567-1234567', original_invoice_id: '202', refund_at: '2026-09-12', items: [{ sku: 'SKU-1', quantity_refunded: 2 }] });
@@ -104,7 +108,7 @@ test('maps only the verified Olist sales-return XAJAX operations and never invok
     if (method === 'obterDadosOrigemInclusao') return origin;
     if (method === 'validar') return { ok: true };
     if (method === 'salvar') return { id: 991 };
-    if (method === 'obter') return { id: 991, idNotaFiscal: 202 };
+    if (method === 'obter') return { id: 991, idNotaFiscal: 202, itens: [{ codigo: 'SKU-1', quantidade: 2 }] };
     throw new Error('unexpected method ' + method);
   };
   const client = createOlistXajaxClient(rpc);
@@ -154,7 +158,7 @@ test('CLI command contract creates through the guarded workflow and exposes read
     async loadOrigin() { return origin; },
     async validate() { return { ok: true }; },
     async save() { return { id: 991 }; },
-    async readBack(id) { return { id: Number(id), idNotaFiscal: 202 }; },
+    async readBack(id) { return { id: Number(id), idNotaFiscal: 202, itens: [{ codigo: 'SKU-1', quantidade: 1 }] }; },
   };
   const create = await runAdapterCommand({
     action: 'CREATE', amazon_order_id: '702-1234567-1234567', original_invoice_id: '202',
