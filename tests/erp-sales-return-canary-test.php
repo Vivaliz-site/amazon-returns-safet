@@ -18,6 +18,10 @@ ecSame(false,SvAmazonErpSalesReturnCanary::exactWriteScope('77,78',77),'multi-ca
 ecSame(false,SvAmazonErpSalesReturnCanary::exactWriteScope('invalid',77),'invalid canary scope must fail closed');
 $read=['id'=>'444','idNotaFiscal'=>'9001','itens'=>[['codigo'=>'SKU-1','quantidade'=>1]]];
 ecSame(true,SvAmazonErpSalesReturnCanary::verifyExternalReadBack($read,$ok),'matching external readback must pass');
+$renamedRead=$read;$renamedRead['itens'][0]['codigo']='SKU-1-NOVO';
+ecSame(true,SvAmazonErpSalesReturnCanary::verifyExternalReadBack($renamedRead,$ok),'single-item readback may use the resolved ERP code');
+$ambiguousCandidate=$ok;$ambiguousCandidate['items']=[['sku'=>'SKU-1','quantity_refunded'=>1],['sku'=>'SKU-2','quantity_refunded'=>1]];
+ecSame(false,SvAmazonErpSalesReturnCanary::verifyExternalReadBack($renamedRead,$ambiguousCandidate),'multi-item SKU drift must fail closed');
 $badQty=$read;$badQty['itens'][0]['quantidade']=2;
 ecSame(false,SvAmazonErpSalesReturnCanary::verifyExternalReadBack($badQty,$ok),'quantity drift must fail readback');
 $runnerPath=__DIR__.'/../scripts/amazon-returns/erp-sales-return-canary.php';
