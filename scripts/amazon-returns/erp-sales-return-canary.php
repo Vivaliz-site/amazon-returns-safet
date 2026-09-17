@@ -42,6 +42,16 @@ if($requestedCaseId!==null && $auto){
     erp_canary_reply(['status'=>'ERROR','reason'=>'CASE_ID_AND_AUTO_ARE_MUTUALLY_EXCLUSIVE'],2);
 }
 
+$erpCanaryMarker='/home/ubuntu/amazon-returns-deploy/shared/erp-canary-execute-once';
+if($mode==='execute'){
+    if(!is_file($erpCanaryMarker)){
+        erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_ARM_REQUIRED'],4);
+    }
+    if(!@unlink($erpCanaryMarker)){
+        erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_ARM_CONSUME_FAILED'],4);
+    }
+}
+
 try{
     $config=new SvAmazonReturnsConfig();
     $db=amazon_returns_require_pdo();

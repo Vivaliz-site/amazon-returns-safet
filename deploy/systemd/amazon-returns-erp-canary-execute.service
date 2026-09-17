@@ -11,6 +11,7 @@ WorkingDirectory=/home/ubuntu/amazon-returns-deploy/current
 EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/.env
 EnvironmentFile=/home/ubuntu/amazon-returns-deploy/current/deploy/erp-canary-execute.env
 Environment=AMAZON_RETURNS_ENV_FILE=/home/ubuntu/amazon-returns-deploy/shared/.env
+ExecCondition=/usr/bin/test -f /home/ubuntu/amazon-returns-deploy/shared/erp-canary-execute-once
 ExecStart=/usr/bin/php /home/ubuntu/amazon-returns-deploy/current/scripts/amazon-returns/erp-sales-return-canary.php --mode=execute --auto
 TimeoutStartSec=5min
 UMask=0077
