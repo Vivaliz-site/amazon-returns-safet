@@ -30,4 +30,6 @@ ecSame(true,$runner!=='','canary runner script must exist');
 foreach(['--mode=discover','--mode=execute','--auto','erpSalesReturnCreateEnabled()','writeCaseAllowed','writeAllowedForOrderCases','verifyExternalReadBack'] as $token){
     ecSame(true,str_contains($runner,$token),'canary runner missing safety contract: '.$token);
 }
+ecSame(true,str_contains($runner,'last_error_code'),'failed canary output must expose persisted ERP error code.');
+ecSame(true,str_contains($runner,'last_error_message'),'failed canary output must expose persisted ERP error message.');
 echo "erp-sales-return-canary-test: OK\n";
