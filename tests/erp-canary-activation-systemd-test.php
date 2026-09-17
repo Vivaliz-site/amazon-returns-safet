@@ -37,8 +37,8 @@ eaAssert(str_contains($runner,'CANARY_HANDOFF_REQUIRED'),'Execute without discov
 eaAssert(str_contains($runner,'CANARY_HANDOFF_EXPIRED'),'Stale discovery handoff must fail closed.');
 eaAssert(str_contains($runner,'CANARY_HANDOFF_MISMATCH'),'Any revalidation drift from the discovered candidate must fail closed.');
 eaAssert(str_contains($runner,"'generated_at'=>gmdate('c')"),'Discovery handoff must record an explicit UTC generation time.');
-eaAssert(str_contains($runner,"'case_id'=>(int)$candidate['case_id']") && str_contains($runner,"'order_id'=>(string)$candidate['order_id']"),'Discovery handoff must bind case and order identity.');
-eaAssert(str_contains($runner,"'original_invoice_id'=>(string)$candidate['original_invoice_id']"),'Discovery handoff must bind original invoice identity.');
+eaAssert(str_contains($runner,"'case_id'=>(int)\$candidate['case_id']") && str_contains($runner,"'order_id'=>(string)\$candidate['order_id']"),'Discovery handoff must bind case and order identity.');
+eaAssert(str_contains($runner,"'original_invoice_id'=>(string)\$candidate['original_invoice_id']"),'Discovery handoff must bind original invoice identity.');
 $loadPos=strpos($runner,'CANARY_HANDOFF_REQUIRED');
 $consumeMarkerPos=strpos($runner,'unlink($erpCanaryMarker)');
 $candidateQueryPos=strpos($runner,'SELECT * FROM amazon_return_erp_sales_returns');
