@@ -12,6 +12,7 @@ const PROFILE = process.env.SELLER_CENTRAL_PROFILE || '';
 const BROWSER = process.env.SELLER_CENTRAL_BROWSER || process.env.SELLER_CENTRAL_OPERA || '';
 const WORKER_ID = process.env.SELLER_CENTRAL_WORKER_ID || 'seller-central-browser';
 const POLL_MS = Math.max(10000, Number(process.env.SELLER_CENTRAL_BRIDGE_POLL_MS || 30000));
+const QUIESCE_MARKER = process.env.AMAZON_RETURNS_QUIESCE_MARKER || '/run/amazon-returns-seller-central.quiesce';
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
 const HELP_URL = 'https://sellercentral.amazon.com.br/help/center?redirectSource=Hill';
 const CASE_LOBBY = 'https://sellercentral.amazon.com.br/cu/case-lobby';
@@ -30,6 +31,10 @@ const SUPPORT_CASE_LOOKUP_SCAN_BUDGET_MS = Number.isFinite(supportLookupBudgetRa
   : 90000;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function quiesceRequested() {
+  try { return fs.existsSync(QUIESCE_MARKER); } catch { return false; }
+}
 const text = value => String(value ?? '').replace(/\s+/g, ' ').trim();
 const sha = value => createHash('sha256').update(String(value ?? '')).digest('hex');
 
@@ -1187,7 +1192,7 @@ async function main() {
     return;
   }
   if (process.argv.includes('--drain')) {
-    while (true) {
+    while (!quiesceRequested()) {
       const outcome = await runOnce();
       if (!outcome.processed || outcome.drainBlocked) break;
     }

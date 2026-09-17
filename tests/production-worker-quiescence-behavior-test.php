@@ -37,6 +37,7 @@ systemctl(){
     esac
 }
 sleep(){ :; }
+AMAZON_RETURNS_QUIESCE_MARKER="$(dirname "$COUNTS")/quiesce.marker" \
 AMAZON_RETURNS_QUIESCE_TIMEOUT_SECONDS=10 \
 AMAZON_RETURNS_QUIESCE_POLL_SECONDS=1 \
 quiesce_workers amazon_returns_safet shopvivaliz amazon-br-primary

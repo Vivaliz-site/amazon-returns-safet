@@ -11,7 +11,7 @@ qw_scalar(){ case "$2" in *amazon_return_tenants*) echo 7;; *amazon_return_conne
 qw_processing_count(){ head -n1 "$COUNTS"; tail -n +2 "$COUNTS" > "$COUNTS.next"; mv "$COUNTS.next" "$COUNTS"; }
 systemctl(){ printf '%s\n' "$*" >> "$LOG"; return 0; }
 sleep(){ :; }
-AMAZON_RETURNS_QUIESCE_TIMEOUT_SECONDS=10 AMAZON_RETURNS_QUIESCE_POLL_SECONDS=1 quiesce_workers amazon_returns_safet shopvivaliz amazon-br-primary
+AMAZON_RETURNS_QUIESCE_MARKER="$(dirname "$COUNTS")/quiesce.marker" AMAZON_RETURNS_QUIESCE_TIMEOUT_SECONDS=10 AMAZON_RETURNS_QUIESCE_POLL_SECONDS=1 quiesce_workers amazon_returns_safet shopvivaliz amazon-br-primary
 BASH;
 $command='HELPER='.escapeshellarg($helper).' COUNTS='.escapeshellarg($counts).' LOG='.escapeshellarg($log).' bash -c '.escapeshellarg($bash).' 2>&1';
 exec($command,$output,$exitCode);
@@ -20,5 +20,6 @@ $events=(string)file_get_contents($log);
 qfAssert(str_contains($events,'start amazon-returns-safet.service'),'Failed post-stop validation must restart the main worker.');
 qfAssert(!str_contains($events,'start amazon-returns-seller-central-browser.service'),'Failure recovery must not blindly restart an external-write browser oneshot.');
 qfAssert(str_contains($events,'start amazon-returns-seller-central-browser.timer'),'Failed post-stop validation must restore the browser timer.');
+qfAssert(!file_exists($tmp.'/quiesce.marker'),'Failed quiescence must remove the drain marker.');
 @unlink($counts);@unlink($log);@rmdir($tmp);
 echo "production-worker-quiescence-failure-test: OK\n";
