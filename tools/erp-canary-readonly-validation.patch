@@ -1,0 +1,173 @@
+diff --git a/scripts/amazon-returns/erp-sales-return-browser.mjs b/scripts/amazon-returns/erp-sales-return-browser.mjs
+--- a/scripts/amazon-returns/erp-sales-return-browser.mjs
++++ b/scripts/amazon-returns/erp-sales-return-browser.mjs
+@@ -149,6 +149,25 @@ export function createOlistXajaxClient(rpc) {
+   };
+ }
+ 
++export async function validateSalesReturnCreate(client, command = {}) {
++  if (!client || typeof client !== 'object') throw new TypeError('ERP browser client is required.');
++  const orderId = text(command.amazon_order_id);
++  if (!ORDER_RE.test(orderId)) throw new TypeError('Amazon order ID is invalid.');
++  const originalInvoiceId = numericId(command.original_invoice_id);
++  if (!originalInvoiceId) throw new TypeError('ERP original sale invoice ID is required.');
++  const existing = evaluateExistingReturn(await client.findExistingReturn(originalInvoiceId, command.original_invoice_number), originalInvoiceId);
++  if (existing) return { ...existing, submitted: false, retry_safe: true };
++  try {
++    const origin = await client.loadOrigin(originalInvoiceId);
++    const form = buildOpenReturnForm(origin, command);
++    await client.validate(form);
++  } catch {
++    return { status: 'NOT_READY', submitted: false, external_id: null, retry_safe: true };
++  }
++  return { status: 'READY', submitted: false, external_id: null, retry_safe: true };
++}
++
+ export async function executeSalesReturn(client, command = {}) {
+@@ -179,6 +198,7 @@ export async function executeSalesReturn(client, command = {}) {
+ export async function runAdapterCommand(command, client) {
+   const action = text(command?.action).toUpperCase();
+   if (action === 'CREATE') return executeSalesReturn(client, command);
++  if (action === 'VALIDATE_CREATE') return validateSalesReturnCreate(client, command);
+   if (action === 'PREFLIGHT') {
+     const originalInvoiceId = numericId(command?.original_invoice_id);
+     if (!originalInvoiceId) throw new TypeError('ERP original sale invoice ID is required.');
+diff --git a/includes/amazon-returns/ErpSalesReturnGateway.php b/includes/amazon-returns/ErpSalesReturnGateway.php
+--- a/includes/amazon-returns/ErpSalesReturnGateway.php
++++ b/includes/amazon-returns/ErpSalesReturnGateway.php
+@@ -73,6 +73,27 @@ final class SvAmazonOlistBrowserErpSalesReturnGateway implements SvAmazonErpSale
+         return ['ok'=>false,'uncertain'=>$externalId!=='' && (($result['retry_safe']??false)!==true),'id'=>$externalId!==''?$externalId:null,'error_code'=>$code,'error_message'=>$message];
+     }
+ 
++    public function preflightCreate(array $command): bool
++    {
++        $sale=is_array($command['original_sale']??null)?$command['original_sale']:[];
++        $orderId=trim((string)($command['amazon_order_id']??''));
++        $invoiceId=trim((string)($sale['invoice_id']??''));
++        $refundAt=substr(trim((string)($command['refund_at']??'')),0,10);
++        if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$orderId)!==1 || preg_match('/^[0-9]+$/D',$invoiceId)!==1 || preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D',$refundAt)!==1)return false;
++        $result=$this->run([
++            'action'=>'VALIDATE_CREATE','amazon_order_id'=>$orderId,
++            'original_invoice_id'=>$invoiceId,
++            'original_invoice_number'=>trim((string)($sale['invoice_number']??'')),
++            'refund_at'=>$refundAt,
++            'items'=>is_array($command['items']??null)?$command['items']:[],
++        ]);
++        $status=strtoupper(trim((string)($result['status']??'')));
++        if($status==='READY')return true;
++        if(in_array($status,['NOT_READY','ALREADY_EXISTS'],true))return false;
++        throw new RuntimeException('ERP sales return create preflight was not confirmed: '.($status!==''?$status:'UNKNOWN').'.');
++    }
++
+     public function probeExisting(string $originalInvoiceId,string $originalInvoiceNumber=''): ?string
+     {
+         $originalInvoiceId=trim($originalInvoiceId);
+diff --git a/scripts/amazon-returns/erp-sales-return-canary.php b/scripts/amazon-returns/erp-sales-return-canary.php
+--- a/scripts/amazon-returns/erp-sales-return-canary.php
++++ b/scripts/amazon-returns/erp-sales-return-canary.php
+@@ -94,6 +94,19 @@ try{
+         if(($checked['eligible']??false)!==true){
+             $rejected[(string)($checked['reason']??'UNKNOWN')]=($rejected[(string)($checked['reason']??'UNKNOWN')]??0)+1;
+             continue;
+         }
++        $writeReady=$browserGateway->preflightCreate([
++            'amazon_order_id'=>(string)$checked['order_id'],
++            'original_sale'=>[
++                'invoice_id'=>(string)$checked['original_invoice_id'],
++                'invoice_number'=>(string)$checked['original_invoice_number'],
++            ],
++            'refund_at'=>(string)$checked['refund_at'],
++            'items'=>$checked['items'],
++        ]);
++        if(!$writeReady){
++            $rejected['ERP_CREATE_PREFLIGHT_NOT_READY']=($rejected['ERP_CREATE_PREFLIGHT_NOT_READY']??0)+1;
++            continue;
++        }
+         $candidate=$checked;$candidateCases=$cases;break;
+     }
+ 
+diff --git a/tests/erp-sales-return-browser-gateway-test.php b/tests/erp-sales-return-browser-gateway-test.php
+--- a/tests/erp-sales-return-browser-gateway-test.php
++++ b/tests/erp-sales-return-browser-gateway-test.php
+@@ -6,6 +6,7 @@ $calls=[];
+ $runner=static function(array $payload) use (&$calls): array {
+     $calls[]=$payload;
+     if(($payload['action']??'')==='CREATE')return ['status'=>'ACCEPTED','submitted'=>true,'external_id'=>'991','retry_safe'=>true];
++    if(($payload['action']??'')==='VALIDATE_CREATE')return ['status'=>'READY','submitted'=>false,'external_id'=>null,'retry_safe'=>true];
+     if(($payload['action']??'')==='READBACK')return ['status'=>'FOUND','submitted'=>false,'external_id'=>'991','record'=>['id'=>991,'idNotaFiscal'=>202]];
+     if(($payload['action']??'')==='PREFLIGHT')return ['status'=>'FOUND','submitted'=>false,'external_id'=>'880','retry_safe'=>true];
+     throw new RuntimeException('unexpected action');
+@@ -22,6 +23,8 @@ bgSame('202',$calls[0]['original_invoice_id']??null,'Gateway must flatten origina
+ bgSame('303',$calls[0]['original_invoice_number']??null,'Gateway must flatten original invoice number for adapter.');
+ bgSame('2026-09-12',$calls[0]['refund_at']??null,'Gateway must send the refund date only.');
++$ready=$gateway->preflightCreate(['amazon_order_id'=>'702-1234567-1234567','refund_at'=>'2026-09-12 10:00:00','original_sale'=>['invoice_id'=>'202','invoice_number'=>'303'],'items'=>[['sku'=>'SKU-1','quantity_refunded'=>1]]]);
++bgSame(true,$ready,'Gateway create preflight must confirm a write-safe candidate without writing.');
+ $existing=$gateway->probeExisting('202','303');
+ bgSame('880',$existing,'Gateway preflight must expose an existing internal ERP return without writing.');
+ $read=$gateway->readBack('991','702-1234567-1234567');
+diff --git a/tests/erp-sales-return-canary-test.php b/tests/erp-sales-return-canary-test.php
+--- a/tests/erp-sales-return-canary-test.php
++++ b/tests/erp-sales-return-canary-test.php
+@@ -23,7 +23,7 @@ $badQty=$read;$badQty['itens'][0]['quantidade']=2;
+ ecSame(false,SvAmazonErpSalesReturnCanary::verifyExternalReadBack($badQty,$ok),'quantity drift must fail readback');
+ $runnerPath=__DIR__.'/../scripts/amazon-returns/erp-sales-return-canary.php';
+ $runner=is_file($runnerPath)?(string)file_get_contents($runnerPath):'';
+ ecSame(true,$runner!=='','canary runner script must exist');
+-foreach(['--mode=discover','--mode=execute','--auto','erpSalesReturnCreateEnabled()','writeCaseAllowed','writeAllowedForOrderCases','verifyExternalReadBack'] as $token){
++foreach(['--mode=discover','--mode=execute','--auto','erpSalesReturnCreateEnabled()','writeCaseAllowed','writeAllowedForOrderCases','preflightCreate','verifyExternalReadBack'] as $token){
+     ecSame(true,str_contains($runner,$token),'canary runner missing safety contract: '.$token);
+ }
+ echo "erp-sales-return-canary-test: OK\n";
+diff --git a/tests/erp-sales-return-browser-create-preflight.test.mjs b/tests/erp-sales-return-browser-create-preflight.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/tests/erp-sales-return-browser-create-preflight.test.mjs
+@@ -0,0 +1,49 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { runAdapterCommand } from '../scripts/amazon-returns/erp-sales-return-browser.mjs';
++
++const origin = {
++  id: 0,
++  objOrigem: 2,
++  idNotaFiscal: '202',
++  dataDevolucao: '2026-09-13',
++  itens: [{ id: 0, idProduto: '707', codigo: 'SKU-1', quantidadeOrigem: '2.0000', valorUnitario: '10.00', unidade: 'UN' }],
++  origem: { idPedidoEcommerce: '702-1234567-1234567' },
++};
++
++const command = {
++  action: 'VALIDATE_CREATE',
++  amazon_order_id: '702-1234567-1234567',
++  original_invoice_id: '202',
++  original_invoice_number: '303',
++  refund_at: '2026-09-12',
++  items: [{ sku: 'SKU-1', quantity_refunded: 1 }],
++};
++
++test('validates a sales-return candidate without ever saving it', async () => {
++  const calls = [];
++  const client = {
++    async findExistingReturn() { calls.push('find'); return null; },
++    async loadOrigin() { calls.push('origin'); return origin; },
++    async validate() { calls.push('validate'); return { ok: true }; },
++    async save() { calls.push('save'); throw new Error('must not save during preflight'); },
++    async readBack() { calls.push('readback'); throw new Error('must not read back during preflight'); },
++  };
++  const result = await runAdapterCommand(command, client);
++  assert.deepEqual(result, { status: 'READY', submitted: false, external_id: null, retry_safe: true });
++  assert.deepEqual(calls, ['find', 'origin', 'validate']);
++});
++
++test('turns ERP form or validation rejection into a retry-safe not-ready result', async () => {
++  const client = {
++    async findExistingReturn() { return null; },
++    async loadOrigin() { return origin; },
++    async validate() { throw new Error('Numero do endereco do cliente nao informado.'); },
++    async save() { throw new Error('must not save during preflight'); },
++  };
++  const result = await runAdapterCommand(command, client);
++  assert.equal(result.status, 'NOT_READY');
++  assert.equal(result.submitted, false);
++  assert.equal(result.retry_safe, true);
++});
