@@ -283,6 +283,7 @@ systemctl reload apache2
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-safet.service" /etc/systemd/system/amazon-returns-safet.service
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-browser.service" /etc/systemd/system/amazon-returns-seller-central-browser.service
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-auth-check.service" /etc/systemd/system/amazon-returns-seller-central-auth-check.service
+install -m 0644 "$root/current/deploy/systemd/amazon-returns-erp-canary-discovery.service" /etc/systemd/system/amazon-returns-erp-canary-discovery.service
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-browser.timer" /etc/systemd/system/amazon-returns-seller-central-browser.timer
 systemctl daemon-reload
 systemctl enable amazon-returns-safet.service >/dev/null
@@ -339,6 +340,11 @@ systemctl enable --now amazon-returns-deploy.timer >/dev/null
 "$root/current/scripts/provision-olist-erp-browser-host.sh" --source-root "$root/current" --enable-service
 systemctl is-active --quiet amazon-returns-olist-erp-browser.service
 echo 'olist_erp_browser_service=enabled'
+if systemctl start amazon-returns-erp-canary-discovery.service; then
+    echo 'erp_canary_discovery=started'
+else
+    echo 'erp_canary_discovery=failed'
+fi
 
 worker_quiesced=0
 quiesce_started=0
