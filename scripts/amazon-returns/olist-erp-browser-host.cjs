@@ -16,6 +16,7 @@ const { chromium } = require(modulePath);
 
 let context;
 let stopping = false;
+let reauthInFlight = null;
 async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
@@ -26,6 +27,28 @@ process.once('SIGTERM', () => void shutdown(0));
 process.once('SIGINT', () => void shutdown(130));
 
 (async () => {
+  const { classifyOlistLocation, ensureOlistAuthenticated } = await import('./olist-erp-auth.mjs');
+  const credentials = {
+    email: process.env.OLIST_ERP_LOGIN_EMAIL || '',
+    password: process.env.OLIST_ERP_LOGIN_PASSWORD || '',
+  };
+
+  async function maybeReauthenticate(page) {
+    if (stopping || reauthInFlight || classifyOlistLocation(page.url()) !== 'AUTH') return;
+    reauthInFlight = ensureOlistAuthenticated(page, credentials)
+      .catch(() => ({ status: 'AUTH_REQUIRED', reason: 'LOGIN_FAILED' }))
+      .finally(() => { reauthInFlight = null; });
+    await reauthInFlight;
+  }
+
+  function wirePage(page) {
+    page.on('framenavigated', frame => {
+      if (frame === page.mainFrame() && classifyOlistLocation(page.url()) === 'AUTH') {
+        void maybeReauthenticate(page);
+      }
+    });
+  }
+
   context = await chromium.launchPersistentContext(profileDir, {
     headless: true,
     executablePath: browserPath,
@@ -35,8 +58,12 @@ process.once('SIGINT', () => void shutdown(130));
       `--remote-debugging-port=${cdpPort}`,
     ],
   });
+  context.on('page', wirePage);
+  for (const existingPage of context.pages()) wirePage(existingPage);
+
   const page = context.pages()[0] || await context.newPage();
   await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+  if (classifyOlistLocation(page.url()) === 'AUTH') await maybeReauthenticate(page);
   await new Promise(() => {});
 })().catch(error => {
   console.error('Olist ERP browser host failed:', error?.name || 'Error', String(error?.message || '').split('\n')[0].slice(0, 300));
