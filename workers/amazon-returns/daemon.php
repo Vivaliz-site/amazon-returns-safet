@@ -66,6 +66,7 @@ class SvAmazonReturnsDaemon
         $gmailEvidenceRevision=SvAmazonReturnsRuntime::gmailEvidenceRevision();
         $gmailClientRevision=SvAmazonReturnsRuntime::gmailClientRevision();
         $outboxStackRevision=SvAmazonReturnsRuntime::outboxStackRevision();
+        $outboxStackChanged=($state['outbox_stack_revision'] ?? null)!==$outboxStackRevision;
         $gmailEvidenceChanged=($state['gmail_evidence_revision'] ?? null)!==$gmailEvidenceRevision;
         $gmailClientChanged=($state['gmail_client_revision'] ?? null)!==$gmailClientRevision;
         $due=SvAmazonReturnsRuntime::dueTasks(
@@ -93,6 +94,19 @@ class SvAmazonReturnsDaemon
             $state['gmail_catchup_pending']='1';
         }
         $results=['bootstrap'=>$bootstrap];
+        if($outboxStackChanged){
+            try{
+                $results['outbox_recovery']=[
+                    'status'=>'OK',
+                    'reactivated'=>$this->persistence->outbox->reactivateSafeDeferredSellerSupportWrites(),
+                ];
+            }catch(Throwable $e){
+                $results['outbox_recovery']=[
+                    'status'=>'FAILED','error_class'=>$e::class,
+                    'error'=>$this->safeError($e->getMessage()),
+                ];
+            }
+        }
         if(($plan['gate']['status'] ?? '')==='FAILED')$results['financial_refresh_gate']=$plan['gate'];
         foreach($due as $task){
             if($task==='bootstrap')continue;
@@ -148,7 +162,9 @@ class SvAmazonReturnsDaemon
             $state['decision_stack_revision']=$decisionStackRevision;
         }
         if(isset($results['seller_central'])
-            && SvAmazonReturnsRuntime::sellerCentralCycleAcknowledgesOutboxRevision($results['seller_central'])){
+            && SvAmazonReturnsRuntime::sellerCentralCycleAcknowledgesOutboxRevision($results['seller_central'])
+            && (!$outboxStackChanged || ($results['outbox_recovery']['status'] ?? null)==='OK')
+        ){
             $state['outbox_stack_revision']=$outboxStackRevision;
         }
         if(
