@@ -153,6 +153,24 @@ export function createOlistXajaxClient(rpc) {
   };
 }
 
+export async function validateSalesReturnCreate(client, command = {}) {
+  if (!client || typeof client !== 'object') throw new TypeError('ERP browser client is required.');
+  const orderId = text(command.amazon_order_id);
+  if (!ORDER_RE.test(orderId)) throw new TypeError('Amazon order ID is invalid.');
+  const originalInvoiceId = numericId(command.original_invoice_id);
+  if (!originalInvoiceId) throw new TypeError('ERP original sale invoice ID is required.');
+  const existing = evaluateExistingReturn(await client.findExistingReturn(originalInvoiceId, command.original_invoice_number), originalInvoiceId);
+  if (existing) return { ...existing, submitted: false, retry_safe: true };
+  try {
+    const origin = await client.loadOrigin(originalInvoiceId);
+    const form = buildOpenReturnForm(origin, command);
+    await client.validate(form);
+  } catch {
+    return { status: 'NOT_READY', submitted: false, external_id: null, retry_safe: true };
+  }
+  return { status: 'READY', submitted: false, external_id: null, retry_safe: true };
+}
+
 export async function executeSalesReturn(client, command = {}) {
   if (!client || typeof client !== 'object') throw new TypeError('ERP browser client is required.');
   const orderId = text(command.amazon_order_id);
@@ -183,6 +201,7 @@ export async function executeSalesReturn(client, command = {}) {
 export async function runAdapterCommand(command, client) {
   const action = text(command?.action).toUpperCase();
   if (action === 'CREATE') return executeSalesReturn(client, command);
+  if (action === 'VALIDATE_CREATE') return validateSalesReturnCreate(client, command);
   if (action === 'PREFLIGHT') {
     const originalInvoiceId = numericId(command?.original_invoice_id);
     if (!originalInvoiceId) throw new TypeError('ERP original sale invoice ID is required.');
