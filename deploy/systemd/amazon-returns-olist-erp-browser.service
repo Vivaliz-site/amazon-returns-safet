@@ -9,6 +9,7 @@ User=ubuntu
 Group=www-data
 WorkingDirectory=/home/ubuntu/amazon-returns-deploy/current
 EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/olist-erp-browser.env
+EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/olist-erp-browser-login.env
 Environment=AMAZON_RETURNS_RELEASE_ROOT=/home/ubuntu/amazon-returns-deploy/current
 ExecStart=/home/ubuntu/amazon-returns-deploy/current/scripts/amazon-returns/run-olist-erp-browser.sh
 Restart=always
