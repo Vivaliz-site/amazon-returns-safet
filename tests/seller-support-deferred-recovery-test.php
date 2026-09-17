@@ -39,9 +39,10 @@ $sql=(string)($exec['sql']??'');$params=$exec['params']??[];
 foreach(['tenant_id','amazon_connection_id',"status='PENDING'",'available_at>UTC_TIMESTAMP()',"kind='SELLER_SUPPORT_OPEN'","kind='SELLER_SUPPORT_UPDATE'"] as $needle){
     ssdrAssert(str_contains($sql,$needle),'Recovery SQL missing guard: '.$needle);
 }
-ssdrAssert(str_contains($sql,'available_at=UTC_TIMESTAMP()'),'Recovery must only wake the existing deferred row.');
-foreach(['attempt_count=','payload_json=','last_error=','status=\'PROCESSING\''] as $forbidden){
-    ssdrAssert(!str_contains($sql,$forbidden),'Recovery must preserve idempotency state: '.$forbidden);
+ssdrAssert(str_contains($sql,'available_at=UTC_TIMESTAMP()'),'Recovery must wake the existing deferred row.');
+$wherePos=strpos($sql,' WHERE ');$setClause=$wherePos===false?$sql:substr($sql,0,$wherePos);
+foreach(['attempt_count','payload_json','last_error','status='] as $forbidden){
+    ssdrAssert(!str_contains($setClause,$forbidden),'Recovery SET clause must preserve idempotency state: '.$forbidden);
 }
 ssdrSame('UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE',$params[':lookup_error']??null,
     'Only the known pre-write lookup failure may be rearmed for SELLER_SUPPORT_OPEN.');
