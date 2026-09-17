@@ -2,7 +2,7 @@
 <?php
 declare(strict_types=1);
 
-// Usage: --mode=discover | --mode=execute --case-id=123
+// Usage: --mode=discover | --mode=execute --case-id=123 | --mode=execute --auto
 
 require_once dirname(__DIR__,2).'/includes/Database.php';
 require_once dirname(__DIR__,2).'/includes/amazon-returns/Config.php';
@@ -22,7 +22,7 @@ function erp_canary_reply(array $payload,int $exit=0): never
     exit($exit);
 }
 
-$options=getopt('',['mode:','case-id:']);
+$options=getopt('',['mode:','case-id:','auto']);
 $mode=strtolower(trim((string)($options['mode']??'')));
 if(!in_array($mode,['discover','execute'],true)){
     erp_canary_reply(['status'=>'ERROR','reason'=>'MODE_REQUIRED','allowed_modes'=>['discover','execute']],2);
@@ -33,8 +33,13 @@ if(array_key_exists('case-id',$options)){
     if($parsed===false || $parsed<1)erp_canary_reply(['status'=>'ERROR','reason'=>'CASE_ID_INVALID'],2);
     $requestedCaseId=(int)$parsed;
 }
-if($mode==='execute' && $requestedCaseId===null){
-    erp_canary_reply(['status'=>'ERROR','reason'=>'EXECUTE_REQUIRES_CASE_ID'],2);
+
+$auto=array_key_exists('auto',$options);
+if($mode==='execute' && $requestedCaseId===null && !$auto){
+    erp_canary_reply(['status'=>'ERROR','reason'=>'EXECUTE_REQUIRES_CASE_ID_OR_AUTO'],2);
+}
+if($requestedCaseId!==null && $auto){
+    erp_canary_reply(['status'=>'ERROR','reason'=>'CASE_ID_AND_AUTO_ARE_MUTUALLY_EXCLUSIVE'],2);
 }
 
 try{
@@ -109,12 +114,13 @@ try{
     }
 
     $caseId=(int)$candidate['case_id'];$orderId=(string)$candidate['order_id'];
-    if(!$config->erpSalesReturnCreateEnabled())erp_canary_reply(['status'=>'BLOCKED','reason'=>'ERP_WRITE_GATE_DISABLED','case_id'=>$caseId,'order_id'=>$orderId],4);
-    if(!SvAmazonErpSalesReturnCanary::exactWriteScope($config->get('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'),$caseId)){
+    $writeConfig=$auto ? new SvAmazonReturnsConfig(['AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'=>(string)$caseId]) : $config;
+    if(!$writeConfig->erpSalesReturnCreateEnabled())erp_canary_reply(['status'=>'BLOCKED','reason'=>'ERP_WRITE_GATE_DISABLED','case_id'=>$caseId,'order_id'=>$orderId],4);
+    if(!SvAmazonErpSalesReturnCanary::exactWriteScope($writeConfig->get('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'),$caseId)){
         erp_canary_reply(['status'=>'BLOCKED','reason'=>'EXACT_CANARY_SCOPE_REQUIRED','case_id'=>$caseId,'order_id'=>$orderId],4);
     }
-    if(!$config->writeCaseAllowed($caseId))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_CASE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
-    if(!SvAmazonErpSalesReturnTask::writeAllowedForOrderCases($config,$candidateCases)){
+    if(!$writeConfig->writeCaseAllowed($caseId))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_CASE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
+    if(!SvAmazonErpSalesReturnTask::writeAllowedForOrderCases($writeConfig,$candidateCases)){
         erp_canary_reply(['status'=>'BLOCKED','reason'=>'ORDER_CASE_SCOPE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
     }
 

@@ -23,7 +23,7 @@ ecSame(false,SvAmazonErpSalesReturnCanary::verifyExternalReadBack($badQty,$ok),'
 $runnerPath=__DIR__.'/../scripts/amazon-returns/erp-sales-return-canary.php';
 $runner=is_file($runnerPath)?(string)file_get_contents($runnerPath):'';
 ecSame(true,$runner!=='','canary runner script must exist');
-foreach(['--mode=discover','--mode=execute','erpSalesReturnCreateEnabled()','writeCaseAllowed','writeAllowedForOrderCases','verifyExternalReadBack'] as $token){
+foreach(['--mode=discover','--mode=execute','--auto','erpSalesReturnCreateEnabled()','writeCaseAllowed','writeAllowedForOrderCases','verifyExternalReadBack'] as $token){
     ecSame(true,str_contains($runner,$token),'canary runner missing safety contract: '.$token);
 }
 echo "erp-sales-return-canary-test: OK\n";
