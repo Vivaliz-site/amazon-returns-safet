@@ -20,11 +20,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Apply exact tested patch
+      - name: Apply exact tested changes
         run: |
           set -euo pipefail
-          git apply --check tools/erp-canary-readonly-validation.patch
-          git apply tools/erp-canary-readonly-validation.patch
+          python3 tools/apply-erp-readonly-validation.py
+          git diff --check
       - name: Focused ERP tests
         run: |
           set -euo pipefail
@@ -35,7 +35,6 @@ jobs:
           node --check scripts/amazon-returns/erp-sales-return-browser.mjs
           php -l includes/amazon-returns/ErpSalesReturnGateway.php
           php -l scripts/amazon-returns/erp-sales-return-canary.php
-          git diff --check
       - name: Full repository tests
         run: |
           set -euo pipefail
@@ -46,8 +45,7 @@ jobs:
       - name: Commit clean branch
         run: |
           set -euo pipefail
-          git rm tools/erp-canary-readonly-validation.patch
-          git rm .github/workflows/temp-apply-erp-readonly-validation.yml
+          git rm tools/erp-canary-readonly-validation.patch tools/apply-erp-readonly-validation.py .github/workflows/temp-apply-erp-readonly-validation.yml
           git add includes/amazon-returns/ErpSalesReturnGateway.php scripts/amazon-returns/erp-sales-return-browser.mjs scripts/amazon-returns/erp-sales-return-canary.php tests/erp-sales-return-browser-gateway-test.php tests/erp-sales-return-canary-test.php tests/erp-sales-return-browser-create-preflight.test.mjs
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
