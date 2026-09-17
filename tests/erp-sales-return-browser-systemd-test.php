@@ -13,6 +13,7 @@ $unit=(string)file_get_contents($unitPath);$script=(string)file_get_contents($sc
 bsAssert(str_contains($unit,'User=ubuntu'),'Olist browser must run as the non-root ubuntu user.');
 bsAssert(str_contains($unit,'Restart=always'),'Olist browser must persist independently of chat/PC sessions.');
 bsAssert(str_contains($unit,'NoNewPrivileges=true'),'Olist browser service must use no-new-privileges hardening.');
+bsAssert(str_contains($unit,'EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/olist-erp-browser-login.env'),'Olist browser must load persistent login credentials from a separate protected env file.');
 bsAssert(str_contains($host,'launchPersistentContext'),'Olist host must launch Chromium through Playwright for stable navigation.');
 bsAssert(str_contains($host,'--remote-debugging-address=127.0.0.1'),'CDP must listen only on loopback.');
 bsAssert(str_contains($host,'--remote-debugging-port='),'Olist browser must expose its dedicated CDP port.');
@@ -20,5 +21,8 @@ bsAssert(str_contains($host,'https://erp.olist.com/devolucoes_vendas#list'),'Oli
 bsAssert(str_contains($script,'olist-erp-browser-host.cjs'),'Runner must execute the Playwright host.');
 bsAssert(str_contains($provision,'playwright-core'),'Provisioner must persist the Playwright runtime outside the npx cache.');
 bsAssert(str_contains($provision,'BROWSER_ROOT="$SHARED/olist-erp-browser"') && str_contains($provision,'$BROWSER_ROOT/profile'),'Provisioner must create a dedicated persistent profile.');
+bsAssert(str_contains($provision,'LOGIN_ENV_FILE="$SHARED/olist-erp-browser-login.env"'),'Provisioner must use a separate persistent login env path.');
+bsAssert(str_contains($provision,'touch "$LOGIN_ENV_FILE"'),'Provisioner must preserve or create the login env without truncating existing credentials.');
+bsAssert(!str_contains($provision,'cat >"$LOGIN_ENV_FILE"'),'Provisioner must never truncate the persistent login env.');
 bsAssert(!str_contains($host,'seller-central-browser/profile'),'Olist browser must not share Seller Central profile state.');
 echo "erp-sales-return-browser-systemd-test: OK\n";
