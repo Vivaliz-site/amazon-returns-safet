@@ -28,6 +28,12 @@ final class SvAmazonErpSalesReturnCanary
         ];
     }
 
+    public static function exactWriteScope(string $raw,int $caseId): bool
+    {
+        $raw=trim($raw);
+        return $caseId>0 && preg_match('/^[1-9][0-9]*$/D',$raw)===1 && (int)$raw===$caseId;
+    }
+
     /** @param array<string,mixed> $record @param array<string,mixed> $candidate */
     public static function verifyExternalReadBack(array $record,array $candidate): bool
     {

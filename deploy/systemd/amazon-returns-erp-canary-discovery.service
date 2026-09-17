@@ -1,7 +1,7 @@
 [Unit]
 Description=ShopVivaliz Amazon Returns ERP canary discovery
-After=network-online.target amazon-returns-safet.service
-Wants=network-online.target
+After=network-online.target amazon-returns-safet.service amazon-returns-olist-erp-browser.service
+Wants=network-online.target amazon-returns-olist-erp-browser.service
 
 [Service]
 Type=oneshot

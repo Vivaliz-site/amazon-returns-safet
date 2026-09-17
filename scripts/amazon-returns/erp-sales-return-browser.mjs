@@ -179,6 +179,17 @@ export async function executeSalesReturn(client, command = {}) {
 export async function runAdapterCommand(command, client) {
   const action = text(command?.action).toUpperCase();
   if (action === 'CREATE') return executeSalesReturn(client, command);
+  if (action === 'PREFLIGHT') {
+    const originalInvoiceId = numericId(command?.original_invoice_id);
+    if (!originalInvoiceId) throw new TypeError('ERP original sale invoice ID is required.');
+    const existing = evaluateExistingReturn(
+      await client.findExistingReturn(originalInvoiceId, command?.original_invoice_number),
+      originalInvoiceId,
+    );
+    return existing
+      ? { status: 'FOUND', submitted: false, external_id: existing.external_id, retry_safe: true }
+      : { status: 'NOT_FOUND', submitted: false, external_id: null, retry_safe: true };
+  }
   if (action === 'READBACK') {
     const id = numericId(command?.external_id ?? command?.erp_sales_return_id);
     if (!id) throw new TypeError('ERP sales return ID is required.');

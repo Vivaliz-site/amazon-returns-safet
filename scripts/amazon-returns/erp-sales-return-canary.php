@@ -53,6 +53,7 @@ try{
     $saleLookup=new SvAmazonErpInvoiceLookup(null,null,$config);
     $returnLookup=new SvAmazonErpReturnInvoiceLookup(null,null,$config);
     $limiter=SvAmazonErpApiRateLimiter::fromConfig($config);
+    $browserGateway=new SvAmazonOlistBrowserErpSalesReturnGateway(null,$config->get('OLIST_ERP_CDP_URL','http://127.0.0.1:9226'));
     $candidate=null;$candidateCases=[];$rejected=[];
 
     foreach($workflows as $workflow){
@@ -76,6 +77,15 @@ try{
         $limiter->beforeRequest();
         $sale=$saleLookup->findSaleForOrder($orderId);
         $checked=SvAmazonErpSalesReturnCanary::evaluate($workflow,$cases,$sale,$existingReturn);
+        if(($checked['eligible']??false)===true){
+            $existingSalesReturn=$browserGateway->probeExisting(
+                (string)$checked['original_invoice_id'],(string)$checked['original_invoice_number']
+            );
+            if($existingSalesReturn!==null){
+                $rejected['ERP_SALES_RETURN_ALREADY_EXISTS']=($rejected['ERP_SALES_RETURN_ALREADY_EXISTS']??0)+1;
+                continue;
+            }
+        }
         if(($checked['eligible']??false)!==true){
             $rejected[(string)($checked['reason']??'UNKNOWN')]=($rejected[(string)($checked['reason']??'UNKNOWN')]??0)+1;
             continue;
@@ -100,12 +110,15 @@ try{
 
     $caseId=(int)$candidate['case_id'];$orderId=(string)$candidate['order_id'];
     if(!$config->erpSalesReturnCreateEnabled())erp_canary_reply(['status'=>'BLOCKED','reason'=>'ERP_WRITE_GATE_DISABLED','case_id'=>$caseId,'order_id'=>$orderId],4);
+    if(!SvAmazonErpSalesReturnCanary::exactWriteScope($config->get('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'),$caseId)){
+        erp_canary_reply(['status'=>'BLOCKED','reason'=>'EXACT_CANARY_SCOPE_REQUIRED','case_id'=>$caseId,'order_id'=>$orderId],4);
+    }
     if(!$config->writeCaseAllowed($caseId))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_CASE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
     if(!SvAmazonErpSalesReturnTask::writeAllowedForOrderCases($config,$candidateCases)){
         erp_canary_reply(['status'=>'BLOCKED','reason'=>'ORDER_CASE_SCOPE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
     }
 
-    $gateway=new SvAmazonOlistBrowserErpSalesReturnGateway(null,$config->get('OLIST_ERP_CDP_URL','http://127.0.0.1:9226'));
+    $gateway=$browserGateway;
     $service=new SvAmazonErpSalesReturnService(
         $p->erpSalesReturns,$gateway,
         static fn(string $id):array=>$p->cases->forOrder($id),

@@ -167,6 +167,9 @@ test('CLI command contract creates through the guarded workflow and exposes read
   assert.equal(create.status, 'ACCEPTED');
   assert.equal(create.external_id, '991');
   assert.equal(finds, 2);
+  const preflight = await runAdapterCommand({ action: 'PREFLIGHT', original_invoice_id: '202', original_invoice_number: '303' }, client);
+  assert.equal(preflight.status, 'NOT_FOUND');
+  assert.equal(preflight.external_id, null);
   const read = await runAdapterCommand({ action: 'READBACK', external_id: '991' }, client);
   assert.equal(read.status, 'FOUND');
   assert.equal(read.record.id, 991);

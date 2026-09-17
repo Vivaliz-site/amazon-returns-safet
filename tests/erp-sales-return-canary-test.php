@@ -12,6 +12,10 @@ ecSame('701-1234567-1234567',$ok['order_id']??null,'candidate must expose the or
 ecSame(false,SvAmazonErpSalesReturnCanary::evaluate($workflow,[$case,['id'=>78]+$case],$sale,null)['eligible']??null,'multi-case refunded order must fail closed');
 ecSame(false,SvAmazonErpSalesReturnCanary::evaluate($workflow,[$case],$sale,['invoice_id'=>'999'])['eligible']??null,'existing return invoice must block canary');
 ecSame(false,SvAmazonErpSalesReturnCanary::evaluate($workflow,[$case],['order_id'=>'702-0000000-0000000','invoice_id'=>'9001'],null)['eligible']??null,'sale order mismatch must block canary');
+ecSame(true,SvAmazonErpSalesReturnCanary::exactWriteScope('77',77),'exact single-case canary scope must pass');
+ecSame(false,SvAmazonErpSalesReturnCanary::exactWriteScope('',77),'missing canary scope must fail closed');
+ecSame(false,SvAmazonErpSalesReturnCanary::exactWriteScope('77,78',77),'multi-case canary scope must fail closed');
+ecSame(false,SvAmazonErpSalesReturnCanary::exactWriteScope('invalid',77),'invalid canary scope must fail closed');
 $read=['id'=>'444','idNotaFiscal'=>'9001','itens'=>[['codigo'=>'SKU-1','quantidade'=>1]]];
 ecSame(true,SvAmazonErpSalesReturnCanary::verifyExternalReadBack($read,$ok),'matching external readback must pass');
 $badQty=$read;$badQty['itens'][0]['quantidade']=2;
