@@ -4,6 +4,7 @@ ROOT="/home/ubuntu/amazon-returns-deploy"
 SHARED="$ROOT/shared"
 BROWSER_ROOT="$SHARED/olist-erp-browser"
 ENV_FILE="$SHARED/olist-erp-browser.env"
+LOGIN_ENV_FILE="$SHARED/olist-erp-browser-login.env"
 SOURCE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENABLE_SERVICE=0
 while (($#)); do
@@ -48,6 +49,9 @@ OLIST_ERP_CDP_PORT=9226
 EOF
 chown root:www-data "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
+touch "$LOGIN_ENV_FILE"
+chown root:www-data "$LOGIN_ENV_FILE"
+chmod 0640 "$LOGIN_ENV_FILE"
 install -o root -g root -m 0644 "$SOURCE_ROOT/deploy/systemd/amazon-returns-olist-erp-browser.service" /etc/systemd/system/amazon-returns-olist-erp-browser.service
 systemctl daemon-reload
 if [[ "$ENABLE_SERVICE" -eq 1 ]]; then
