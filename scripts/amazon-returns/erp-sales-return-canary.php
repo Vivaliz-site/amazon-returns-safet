@@ -2,7 +2,7 @@
 <?php
 declare(strict_types=1);
 
-// Usage: --mode=discover | --mode=execute --case-id=123 | --mode=execute --auto
+// Usage: --mode=discover | --mode=execute --case-id=123 | --mode=execute --handoff
 
 require_once dirname(__DIR__,2).'/includes/Database.php';
 require_once dirname(__DIR__,2).'/includes/amazon-returns/Config.php';
@@ -22,7 +22,23 @@ function erp_canary_reply(array $payload,int $exit=0): never
     exit($exit);
 }
 
-$options=getopt('',['mode:','case-id:','auto']);
+function erp_canary_write_handoff(string $path,array $candidate): void
+{
+    $payload=[
+        'generated_at'=>gmdate('c'),
+        'case_id'=>(int)$candidate['case_id'],
+        'order_id'=>(string)$candidate['order_id'],
+        'original_invoice_id'=>(string)$candidate['original_invoice_id'],
+        'original_invoice_number'=>(string)$candidate['original_invoice_number'],
+    ];
+    $tmp=$path.'.tmp.'.getmypid();
+    $json=json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES).PHP_EOL;
+    if(file_put_contents($tmp,$json,LOCK_EX)===false)throw new RuntimeException('Could not write ERP canary handoff.');
+    @chmod($tmp,0640);
+    if(!@rename($tmp,$path)){@unlink($tmp);throw new RuntimeException('Could not publish ERP canary handoff.');}
+}
+
+$options=getopt('',['mode:','case-id:','handoff']);
 $mode=strtolower(trim((string)($options['mode']??'')));
 if(!in_array($mode,['discover','execute'],true)){
     erp_canary_reply(['status'=>'ERROR','reason'=>'MODE_REQUIRED','allowed_modes'=>['discover','execute']],2);
@@ -33,23 +49,41 @@ if(array_key_exists('case-id',$options)){
     if($parsed===false || $parsed<1)erp_canary_reply(['status'=>'ERROR','reason'=>'CASE_ID_INVALID'],2);
     $requestedCaseId=(int)$parsed;
 }
-
-$auto=array_key_exists('auto',$options);
-if($mode==='execute' && $requestedCaseId===null && !$auto){
-    erp_canary_reply(['status'=>'ERROR','reason'=>'EXECUTE_REQUIRES_CASE_ID_OR_AUTO'],2);
+$useHandoff=array_key_exists('handoff',$options);
+if($mode==='execute' && $requestedCaseId===null && !$useHandoff){
+    erp_canary_reply(['status'=>'ERROR','reason'=>'EXECUTE_REQUIRES_CASE_ID_OR_HANDOFF'],2);
 }
-if($requestedCaseId!==null && $auto){
-    erp_canary_reply(['status'=>'ERROR','reason'=>'CASE_ID_AND_AUTO_ARE_MUTUALLY_EXCLUSIVE'],2);
+if($requestedCaseId!==null && $useHandoff){
+    erp_canary_reply(['status'=>'ERROR','reason'=>'CASE_ID_AND_HANDOFF_ARE_MUTUALLY_EXCLUSIVE'],2);
 }
 
 $erpCanaryMarker='/home/ubuntu/amazon-returns-deploy/shared/erp-canary-execute-once';
+$erpCanaryHandoff='/home/ubuntu/amazon-returns-deploy/shared/erp-canary-candidate.json';
+$handoff=null;
+if($mode==='discover')@unlink($erpCanaryHandoff);
 if($mode==='execute'){
-    if(!is_file($erpCanaryMarker)){
-        erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_ARM_REQUIRED'],4);
+    if(!is_file($erpCanaryMarker))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_ARM_REQUIRED'],4);
+    if($useHandoff){
+        if(!is_file($erpCanaryHandoff))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_HANDOFF_REQUIRED'],4);
+        $raw=@file_get_contents($erpCanaryHandoff);
+        $decoded=is_string($raw)?json_decode($raw,true):null;
+        if(!is_array($decoded))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_HANDOFF_REQUIRED'],4);
+        $generatedAt=strtotime((string)($decoded['generated_at']??''));
+        $handoffCase=(int)($decoded['case_id']??0);
+        $handoffOrder=trim((string)($decoded['order_id']??''));
+        $handoffInvoice=trim((string)($decoded['original_invoice_id']??''));
+        if($generatedAt===false || $handoffCase<1 || $handoffOrder==='' || $handoffInvoice===''){
+            erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_HANDOFF_REQUIRED'],4);
+        }
+        if(time()-$generatedAt>300 || $generatedAt>time()+30){
+            @unlink($erpCanaryMarker);@unlink($erpCanaryHandoff);
+            erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_HANDOFF_EXPIRED'],4);
+        }
+        $handoff=$decoded;
+        $requestedCaseId=$handoffCase;
     }
-    if(!@unlink($erpCanaryMarker)){
-        erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_ARM_CONSUME_FAILED'],4);
-    }
+    if(!@unlink($erpCanaryMarker))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_ARM_CONSUME_FAILED'],4);
+    if($useHandoff && !@unlink($erpCanaryHandoff))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_HANDOFF_CONSUME_FAILED'],4);
 }
 
 try{
@@ -93,13 +127,8 @@ try{
         $sale=$saleLookup->findSaleForOrder($orderId);
         $checked=SvAmazonErpSalesReturnCanary::evaluate($workflow,$cases,$sale,$existingReturn);
         if(($checked['eligible']??false)===true){
-            $existingSalesReturn=$browserGateway->probeExisting(
-                (string)$checked['original_invoice_id'],(string)$checked['original_invoice_number']
-            );
-            if($existingSalesReturn!==null){
-                $rejected['ERP_SALES_RETURN_ALREADY_EXISTS']=($rejected['ERP_SALES_RETURN_ALREADY_EXISTS']??0)+1;
-                continue;
-            }
+            $existingSalesReturn=$browserGateway->probeExisting((string)$checked['original_invoice_id'],(string)$checked['original_invoice_number']);
+            if($existingSalesReturn!==null){$rejected['ERP_SALES_RETURN_ALREADY_EXISTS']=($rejected['ERP_SALES_RETURN_ALREADY_EXISTS']??0)+1;continue;}
         }
         if(($checked['eligible']??false)!==true){
             $rejected[(string)($checked['reason']??'UNKNOWN')]=($rejected[(string)($checked['reason']??'UNKNOWN')]??0)+1;
@@ -107,79 +136,59 @@ try{
         }
         $writeReady=$browserGateway->preflightCreate([
             'amazon_order_id'=>(string)$checked['order_id'],
-            'original_sale'=>[
-                'invoice_id'=>(string)$checked['original_invoice_id'],
-                'invoice_number'=>(string)$checked['original_invoice_number'],
-            ],
-            'refund_at'=>(string)$checked['refund_at'],
-            'items'=>$checked['items'],
+            'original_sale'=>['invoice_id'=>(string)$checked['original_invoice_id'],'invoice_number'=>(string)$checked['original_invoice_number']],
+            'refund_at'=>(string)$checked['refund_at'],'items'=>$checked['items'],
         ]);
-        if(!$writeReady){
-            $rejected['ERP_CREATE_PREFLIGHT_NOT_READY']=($rejected['ERP_CREATE_PREFLIGHT_NOT_READY']??0)+1;
-            continue;
+        if(!$writeReady){$rejected['ERP_CREATE_PREFLIGHT_NOT_READY']=($rejected['ERP_CREATE_PREFLIGHT_NOT_READY']??0)+1;continue;}
+        if(is_array($handoff)){
+            $same=(int)$checked['case_id']===(int)$handoff['case_id']
+                && hash_equals((string)$handoff['order_id'],(string)$checked['order_id'])
+                && hash_equals((string)$handoff['original_invoice_id'],(string)$checked['original_invoice_id'])
+                && hash_equals((string)($handoff['original_invoice_number']??''),(string)$checked['original_invoice_number']);
+            if(!$same)erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_HANDOFF_MISMATCH','case_id'=>(int)$checked['case_id'],'order_id'=>(string)$checked['order_id']],4);
         }
         $candidate=$checked;$candidateCases=$cases;break;
     }
 
     if(!is_array($candidate)){
-        erp_canary_reply([
-            'status'=>'NO_SAFE_CANDIDATE','mode'=>$mode,'ready_workflows'=>count($workflows),
-            'requested_case_id'=>$requestedCaseId,'rejected'=>$rejected,
-        ],3);
+        erp_canary_reply(['status'=>'NO_SAFE_CANDIDATE','mode'=>$mode,'ready_workflows'=>count($workflows),'requested_case_id'=>$requestedCaseId,'rejected'=>$rejected],3);
     }
 
     if($mode==='discover'){
+        erp_canary_write_handoff($erpCanaryHandoff,$candidate);
         erp_canary_reply([
-            'status'=>'READY','mode'=>'discover','candidate'=>$candidate,
+            'status'=>'READY','mode'=>'discover','candidate'=>$candidate,'handoff'=>'WRITTEN',
             'write_enabled'=>$config->erpSalesReturnCreateEnabled(),
             'write_case_allowed'=>$config->writeCaseAllowed((int)$candidate['case_id']),
         ]);
     }
 
     $caseId=(int)$candidate['case_id'];$orderId=(string)$candidate['order_id'];
-    $writeConfig=$auto ? new SvAmazonReturnsConfig(['AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'=>(string)$caseId]) : $config;
+    $writeConfig=$useHandoff ? new SvAmazonReturnsConfig(['AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'=>(string)$caseId]) : $config;
     if(!$writeConfig->erpSalesReturnCreateEnabled())erp_canary_reply(['status'=>'BLOCKED','reason'=>'ERP_WRITE_GATE_DISABLED','case_id'=>$caseId,'order_id'=>$orderId],4);
-    if(!SvAmazonErpSalesReturnCanary::exactWriteScope($writeConfig->get('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'),$caseId)){
-        erp_canary_reply(['status'=>'BLOCKED','reason'=>'EXACT_CANARY_SCOPE_REQUIRED','case_id'=>$caseId,'order_id'=>$orderId],4);
-    }
+    if(!SvAmazonErpSalesReturnCanary::exactWriteScope($writeConfig->get('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'),$caseId))erp_canary_reply(['status'=>'BLOCKED','reason'=>'EXACT_CANARY_SCOPE_REQUIRED','case_id'=>$caseId,'order_id'=>$orderId],4);
     if(!$writeConfig->writeCaseAllowed($caseId))erp_canary_reply(['status'=>'BLOCKED','reason'=>'CANARY_CASE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
-    if(!SvAmazonErpSalesReturnTask::writeAllowedForOrderCases($writeConfig,$candidateCases)){
-        erp_canary_reply(['status'=>'BLOCKED','reason'=>'ORDER_CASE_SCOPE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
-    }
+    if(!SvAmazonErpSalesReturnTask::writeAllowedForOrderCases($writeConfig,$candidateCases))erp_canary_reply(['status'=>'BLOCKED','reason'=>'ORDER_CASE_SCOPE_NOT_ALLOWLISTED','case_id'=>$caseId,'order_id'=>$orderId],4);
 
-    $gateway=$browserGateway;
     $service=new SvAmazonErpSalesReturnService(
-        $p->erpSalesReturns,$gateway,
+        $p->erpSalesReturns,$browserGateway,
         static fn(string $id):array=>$p->cases->forOrder($id),
         static fn(string $id):?array=>$saleLookup->findSaleForOrder($id),
-        static fn(string $id):?array=>$returnLookup->findForOrder($id),
-        true
+        static fn(string $id):?array=>$returnLookup->findForOrder($id),true
     );
     $first=$service->reconcileOrder($orderId);
     if(strtoupper(trim((string)($first['status']??'')))!=='RETURN_CREATED_WAITING_INVOICE'){
-        erp_canary_reply([
-            'status'=>'FAILED','reason'=>'WRITE_NOT_PROVEN','case_id'=>$caseId,'order_id'=>$orderId,
-            'workflow_status'=>$first['status']??null,'last_error_code'=>$first['last_error_code']??null,
-            'last_error_message'=>$first['last_error_message']??null,
-        ],5);
+        erp_canary_reply(['status'=>'FAILED','reason'=>'WRITE_NOT_PROVEN','case_id'=>$caseId,'order_id'=>$orderId,'workflow_status'=>$first['status']??null,'last_error_code'=>$first['last_error_code']??null,'last_error_message'=>$first['last_error_message']??null],5);
     }
     $externalId=trim((string)($first['erp_sales_return_id']??''));
     if(preg_match('/^[0-9]+$/D',$externalId)!==1)erp_canary_reply(['status'=>'FAILED','reason'=>'EXTERNAL_ID_MISSING','case_id'=>$caseId,'order_id'=>$orderId],5);
     $candidate['erp_sales_return_id']=$externalId;
-    $readBack=$gateway->readBack($externalId,$orderId);
-    if(!is_array($readBack) || !SvAmazonErpSalesReturnCanary::verifyExternalReadBack($readBack,$candidate)){
-        erp_canary_reply(['status'=>'FAILED','reason'=>'EXTERNAL_READBACK_MISMATCH','case_id'=>$caseId,'order_id'=>$orderId,'erp_sales_return_id'=>$externalId],6);
-    }
+    $readBack=$browserGateway->readBack($externalId,$orderId);
+    if(!is_array($readBack)||!SvAmazonErpSalesReturnCanary::verifyExternalReadBack($readBack,$candidate))erp_canary_reply(['status'=>'FAILED','reason'=>'EXTERNAL_READBACK_MISMATCH','case_id'=>$caseId,'order_id'=>$orderId,'erp_sales_return_id'=>$externalId],6);
     $second=$service->reconcileOrder($orderId);
     $secondId=trim((string)($second['erp_sales_return_id']??''));
-    if(strtoupper(trim((string)($second['status']??'')))!=='RETURN_CREATED_WAITING_INVOICE' || $secondId!==$externalId){
-        erp_canary_reply(['status'=>'FAILED','reason'=>'IDEMPOTENCY_RECHECK_FAILED','case_id'=>$caseId,'order_id'=>$orderId,'erp_sales_return_id'=>$externalId],7);
-    }
-    erp_canary_reply([
-        'status'=>'PROVEN','mode'=>'execute','case_id'=>$caseId,'order_id'=>$orderId,
-        'erp_sales_return_id'=>$externalId,'external_readback'=>'MATCHED','idempotency_recheck'=>'MATCHED',
-        'items'=>$candidate['items'],'refund_at'=>$candidate['refund_at'],
-    ]);
+    if(strtoupper(trim((string)($second['status']??'')))!=='RETURN_CREATED_WAITING_INVOICE'||$secondId!==$externalId)erp_canary_reply(['status'=>'FAILED','reason'=>'IDEMPOTENCY_RECHECK_FAILED','case_id'=>$caseId,'order_id'=>$orderId,'erp_sales_return_id'=>$externalId],7);
+    erp_canary_reply(['status'=>'PROVEN','mode'=>'execute','case_id'=>$caseId,'order_id'=>$orderId,'erp_sales_return_id'=>$externalId,'external_readback'=>'MATCHED','idempotency_recheck'=>'MATCHED','items'=>$candidate['items'],'refund_at'=>$candidate['refund_at']]);
 }catch(Throwable $e){
     erp_canary_reply(['status'=>'ERROR','reason'=>'CANARY_RUNTIME_ERROR','error_class'=>$e::class],10);
 }
