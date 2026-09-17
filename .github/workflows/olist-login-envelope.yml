@@ -1,0 +1,41 @@
+name: Olist Login Envelope
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/olist-login-envelope.yml
+
+permissions:
+  contents: read
+
+jobs:
+  envelope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      OLIST_ERP_LOGIN_EMAIL: ${{ secrets.OLIST_ERP_LOGIN_EMAIL }}
+      OLIST_ERP_LOGIN_PASSWORD: ${{ secrets.OLIST_ERP_LOGIN_PASSWORD }}
+      OLIST_ENV_SYNC_KEY: ${{ secrets.OLIST_ENV_SYNC_KEY }}
+    steps:
+      - name: Create encrypted login envelope
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$OLIST_ERP_LOGIN_EMAIL"
+          test -n "$OLIST_ERP_LOGIN_PASSWORD"
+          test -n "$OLIST_ENV_SYNC_KEY"
+          printf 'OLIST_ERP_LOGIN_EMAIL=%s\nOLIST_ERP_LOGIN_PASSWORD=%s\n' \
+            "$OLIST_ERP_LOGIN_EMAIL" "$OLIST_ERP_LOGIN_PASSWORD" > olist-login.env
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -md sha256 \
+            -pass env:OLIST_ENV_SYNC_KEY \
+            -in olist-login.env -out olist-login.env.enc
+          rm -f olist-login.env
+      - name: Upload encrypted envelope
+        uses: actions/upload-artifact@v4
+        with:
+          name: olist-login-envelope
+          path: olist-login.env.enc
+          if-no-files-found: error
+          retention-days: 1
