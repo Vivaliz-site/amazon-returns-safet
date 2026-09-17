@@ -12,7 +12,7 @@ $cfg=new SvAmazonReturnsConfig([
  'AMAZON_RETURNS_SUPPORT_WRITE'=>'0','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,
  'AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED'=>'1',
 ]);
-wpSame('safet-full-recovery-v2',$cfg->writeProfileVersion(),'profile version');
+wpSame('safet-full-recovery-v3',$cfg->writeProfileVersion(),'profile version');
 foreach([
  'SAFE_T_SUBMIT'=>'profile enables future eligible openings',
  'SAFE_T_APPEAL'=>'profile enables eligible appeals',
@@ -21,9 +21,9 @@ foreach([
  'SELLER_SUPPORT_OPEN'=>'profile enables deterministic Seller Support escalation',
  'SELLER_SUPPORT_UPDATE'=>'profile enables deterministic Seller Support follow-up',
 ] as $action=>$why)wpSame(true,$cfg->externalWriteAllowed($action),$why);
-wpSame(false,$cfg->externalWriteAllowed('ERP_SALES_RETURN_CREATE'),'ERP sales-return profile must ship disabled');
+wpSame(true,$cfg->externalWriteAllowed('ERP_SALES_RETURN_CREATE'),'ERP sales-return profile must be promoted after proven canary');
 wpSame(true,method_exists($cfg,'erpSalesReturnCreateEnabled'),'config must expose the dedicated ERP sales-return gate');
-if(method_exists($cfg,'erpSalesReturnCreateEnabled'))wpSame(false,$cfg->erpSalesReturnCreateEnabled(),'environment flag alone must not bypass the disabled profile');
+if(method_exists($cfg,'erpSalesReturnCreateEnabled'))wpSame(true,$cfg->erpSalesReturnCreateEnabled(),'promoted profile plus environment gate enables ERP sales-return creation');
 $kill=new SvAmazonReturnsConfig([
  'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production',
  'AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'1',
@@ -43,11 +43,11 @@ $checker=__DIR__.'/../scripts/write-profile-check.php';
 wpSame(true,is_file($checker),'runtime verifier must use a profile checker');
 if(is_file($checker)){
  $json=shell_exec('php '.escapeshellarg($checker));$checked=is_string($json)?json_decode($json,true):null;
- wpSame('safet-full-recovery-v2',$checked['version']??null,'checker profile version');
+ wpSame('safet-full-recovery-v3',$checked['version']??null,'checker profile version');
  foreach(['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'] as $action){
   wpSame(true,$checked['flags'][$action]??null,'checker sees '.$action.' enabled');
  }
- wpSame(false,$checked['flags']['ERP_SALES_RETURN_CREATE']??null,'checker sees ERP sales-return write disabled');
+ wpSame(true,$checked['flags']['ERP_SALES_RETURN_CREATE']??null,'checker sees ERP sales-return write promoted');
 }
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 wpSame(true,str_contains($daemon,'write_profile_revision'),'profile change must force scheduler reevaluation');
