@@ -58,7 +58,7 @@ ssdrAssert(str_contains($daemonSource,'outboxStackChanged'),'Daemon must detect 
 ssdrAssert(str_contains($daemonSource,'reactivateSafeDeferredSellerSupportWrites'),
     'Daemon must rearm only safe deferred Seller Support rows after a fixed write stack is deployed.');
 ssdrAssert(str_contains($daemonSource,"'outbox_recovery'"),'Daemon must expose recovery evidence in runtime results.');
-ssdrAssert(str_contains($daemonSource,"($results['outbox_recovery']['status'] ?? null)==='OK'"),
+ssdrAssert(str_contains($daemonSource,'($results[\'outbox_recovery\'][\'status\'] ?? null)===\'OK\''),
     'Daemon must not acknowledge the new outbox revision when recovery failed.');
 
 echo "seller-support-deferred-recovery-test: OK\n";
