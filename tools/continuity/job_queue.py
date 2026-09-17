@@ -367,7 +367,13 @@ def unresolved_queue_jobs(paths: QueuePaths, marker_dir: Path) -> tuple[str, ...
                 raise JobValidationError("terminal marker identity mismatch")
             classification = str(marker.get("classification") or "")
             if classification == "published":
-                terminal = receipt.status == "completed"
+                terminal = (
+                    receipt.status == "completed"
+                    and marker.get("status") in {"pushed", "already_published"}
+                    and marker.get("head") == receipt.resulting_head
+                    and bool(_REPO_RE.fullmatch(str(marker.get("repository") or "")))
+                    and bool(str(marker.get("branch") or ""))
+                )
             elif classification == "skipped":
                 terminal = receipt.status != "completed" and marker.get("status") == receipt.status
             else:

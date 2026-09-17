@@ -189,6 +189,32 @@ class UnresolvedQueueTest(unittest.TestCase):
         self.assertTrue(pending.exists())
         self.assertTrue(running.exists())
 
+    def test_incomplete_published_marker_remains_unresolved(self):
+        unresolved = getattr(job_queue, "unresolved_queue_jobs", None)
+        self.assertIsNotNone(unresolved, "unresolved_queue_jobs must exist")
+        pending = atomic_write_job(self.paths, self.job)
+        running = claim_pending_job(self.paths, pending)
+        atomic_write_receipt(
+            self.paths,
+            WorkerReceipt(
+                task_id=self.job.task_id,
+                lease_session_id=self.job.lease_session_id,
+                provider="gemini",
+                status="completed",
+                resulting_head="b" * 40,
+                changed_paths=(),
+                validations=(),
+                diagnostics="ok",
+                started_at=self.now.isoformat(),
+                ended_at=self.now.isoformat(),
+            ),
+        )
+        marker_path = self.markers / f"{pending.name}.done.json"
+        marker_path.write_text(json.dumps({"classification": "published"}) + "\n", encoding="utf-8")
+
+        self.assertEqual((pending.name,), unresolved(self.paths, self.markers))
+        self.assertTrue(running.exists())
+
     def test_missing_or_invalid_terminal_marker_remains_unresolved(self):
         unresolved = getattr(job_queue, "unresolved_queue_jobs", None)
         self.assertIsNotNone(unresolved, "unresolved_queue_jobs must exist")
