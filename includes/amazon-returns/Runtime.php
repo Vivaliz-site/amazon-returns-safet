@@ -215,6 +215,16 @@ final class SvAmazonReturnsRuntime
     }
 
     /** @param array<string,mixed> $result */
+    public static function gmailTransportRetryDelaySeconds(string $task,array $result): ?int
+    {
+        if(!in_array($task,['gmail','gmail_refund_reconciliation'],true))return null;
+        if(strtoupper(trim((string)($result['status']??'')))!=='FAILED')return null;
+        $error=strtolower(trim((string)($result['error']??'')));
+        if($error==='')return null;
+        return str_contains($error,'gmail api transport failed:')?300:null;
+    }
+
+    /** @param array<string,mixed> $result */
     public static function gmailCatchupRetryDelaySeconds(string $task,array $result): ?int
     {
         if($task!=='gmail')return null;
