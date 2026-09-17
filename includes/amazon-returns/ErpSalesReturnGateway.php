@@ -73,6 +73,21 @@ final class SvAmazonOlistBrowserErpSalesReturnGateway implements SvAmazonErpSale
         return ['ok'=>false,'uncertain'=>$externalId!=='' && (($result['retry_safe']??false)!==true),'id'=>$externalId!==''?$externalId:null,'error_code'=>$code,'error_message'=>$message];
     }
 
+    public function probeExisting(string $originalInvoiceId,string $originalInvoiceNumber=''): ?string
+    {
+        $originalInvoiceId=trim($originalInvoiceId);
+        if(preg_match('/^[0-9]+$/D',$originalInvoiceId)!==1)throw new InvalidArgumentException('ERP original sale invoice ID is invalid.');
+        $result=$this->run([
+            'action'=>'PREFLIGHT','original_invoice_id'=>$originalInvoiceId,
+            'original_invoice_number'=>trim($originalInvoiceNumber),
+        ]);
+        $status=strtoupper(trim((string)($result['status']??'')));
+        if($status==='NOT_FOUND')return null;
+        $externalId=trim((string)($result['external_id']??''));
+        if($status==='FOUND' && preg_match('/^[0-9]+$/D',$externalId)===1)return $externalId;
+        throw new RuntimeException('ERP sales return preflight was not confirmed.');
+    }
+
     public function readBack(string $erpSalesReturnId,string $amazonOrderId): ?array
     {
         if(preg_match('/^[0-9]+$/D',trim($erpSalesReturnId))!==1)return null;
