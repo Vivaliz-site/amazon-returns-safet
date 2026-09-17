@@ -134,7 +134,11 @@ try{
     );
     $first=$service->reconcileOrder($orderId);
     if(strtoupper(trim((string)($first['status']??'')))!=='RETURN_CREATED_WAITING_INVOICE'){
-        erp_canary_reply(['status'=>'FAILED','reason'=>'WRITE_NOT_PROVEN','case_id'=>$caseId,'order_id'=>$orderId,'workflow_status'=>$first['status']??null],5);
+        erp_canary_reply([
+            'status'=>'FAILED','reason'=>'WRITE_NOT_PROVEN','case_id'=>$caseId,'order_id'=>$orderId,
+            'workflow_status'=>$first['status']??null,'last_error_code'=>$first['last_error_code']??null,
+            'last_error_message'=>$first['last_error_message']??null,
+        ],5);
     }
     $externalId=trim((string)($first['erp_sales_return_id']??''));
     if(preg_match('/^[0-9]+$/D',$externalId)!==1)erp_canary_reply(['status'=>'FAILED','reason'=>'EXTERNAL_ID_MISSING','case_id'=>$caseId,'order_id'=>$orderId],5);
