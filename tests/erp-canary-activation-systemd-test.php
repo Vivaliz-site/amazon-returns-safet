@@ -29,6 +29,7 @@ eaAssert(is_int($sharedEnvPos)&&is_int($canaryEnvPos)&&$canaryEnvPos>$sharedEnvP
 eaAssert(!str_contains($unit,'Environment=AMAZON_RETURNS_WRITE_CANARY_CASE_IDS='),'Case scope must not rely on Environment= because EnvironmentFile can override it.');
 eaAssert(str_contains($unit,'--mode=execute --auto'),'Canary execute command must select one currently safe candidate at runtime.');
 eaAssert(!str_contains($unit,'--case-id='),'Canary execute command must not pin a stale case ID.');
+eaAssert(str_contains($unit,'ExecCondition=/usr/bin/test -f /home/ubuntu/amazon-returns-deploy/shared/erp-canary-execute-once'),'Systemd unit must refuse direct starts unless the one-shot marker is armed.');
 $provision=(string)file_get_contents(__DIR__.'/../scripts/provision-production.sh');
 eaAssert(str_contains($provision,'amazon-returns-erp-canary-execute.service'),'Production provision must install the execute unit.');
 $discoverPos=strpos($provision,'systemctl start amazon-returns-erp-canary-discovery.service');
@@ -39,6 +40,14 @@ eaAssert(str_contains($provision,$marker),'ERP canary execute must require an ex
 $markerCheckPos=strpos($provision,'[[ -f "$erp_canary_execute_marker" ]]');
 $markerRemovePos=strpos($provision,'rm -f -- "$erp_canary_execute_marker"');
 eaAssert(is_int($markerCheckPos)&&$markerCheckPos<$executePos,'One-shot marker must guard canary execution.');
-eaAssert(is_int($markerRemovePos)&&$markerRemovePos<$executePos,'One-shot marker must be consumed before external write to prevent automatic retries.');
+eaAssert($markerRemovePos===false,'Provision must not consume the marker before systemd/runner can enforce it.');
 eaAssert(str_contains($provision,'erp_canary_execute=skipped_not_armed'),'Unarmed deploy must explicitly skip ERP canary writes.');
+$runner=(string)file_get_contents(__DIR__.'/../scripts/amazon-returns/erp-sales-return-canary.php');
+$runnerMarkerPos=strpos($runner,$marker);
+$runnerConsumePos=strpos($runner,'unlink($erpCanaryMarker)');
+$candidateQueryPos=strpos($runner,'SELECT * FROM amazon_return_erp_sales_returns');
+eaAssert(is_int($runnerMarkerPos)&&is_int($runnerConsumePos)&&is_int($candidateQueryPos),'Runner must own the one-shot marker contract.');
+eaAssert($runnerConsumePos<$candidateQueryPos,'Runner must consume the marker before candidate selection or any external write.');
+eaAssert(str_contains($runner,'CANARY_ARM_REQUIRED'),'Direct execute without marker must fail closed.');
+eaAssert(str_contains($runner,'CANARY_ARM_CONSUME_FAILED'),'Marker consumption failure must fail closed.');
 echo "erp-canary-activation-systemd-test: OK\n";

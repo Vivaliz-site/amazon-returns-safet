@@ -348,7 +348,6 @@ else
 fi
 erp_canary_execute_marker="/home/ubuntu/amazon-returns-deploy/shared/erp-canary-execute-once"
 if [[ -f "$erp_canary_execute_marker" ]]; then
-    rm -f -- "$erp_canary_execute_marker"
     if systemctl start amazon-returns-erp-canary-execute.service; then
         echo erp_canary_execute=completed
     else
