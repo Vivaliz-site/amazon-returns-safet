@@ -1,0 +1,19 @@
+[Unit]
+Description=ShopVivaliz Amazon Returns ERP canary discovery
+After=network-online.target amazon-returns-safet.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/home/ubuntu/amazon-returns-deploy/current
+EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/.env
+Environment=AMAZON_RETURNS_ENV_FILE=/home/ubuntu/amazon-returns-deploy/shared/.env
+ExecStart=/usr/bin/php /home/ubuntu/amazon-returns-deploy/current/scripts/amazon-returns/erp-sales-return-canary.php --mode=discover
+SuccessExitStatus=3
+TimeoutStartSec=3min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
