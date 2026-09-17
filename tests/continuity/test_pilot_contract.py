@@ -34,6 +34,12 @@ class PilotContractTest(unittest.TestCase):
             self.assertIn(marker, envelope)
         self.assertIn('job_id = f"{claimed.task_id}--{claimed.agent_session_id}"', text)
 
+    def test_worker_credential_preflight_matches_systemd_supplementary_group(self):
+        text = Path("scripts/run-continuity-pilot.py").read_text(encoding="utf-8")
+        self.assertIn('CONTROLLER_GROUP = "agent-continuity"', text)
+        self.assertIn('supplementary_group=CONTROLLER_GROUP', text)
+        self.assertIn('"-G", supplementary_group', text)
+
     def test_worker_gemini_smoke_uses_worker_accessible_cwd(self):
         text = Path("scripts/run-continuity-pilot.py").read_text(encoding="utf-8")
         self.assertIn('cwd=Path(f"/var/lib/{WORKER_USER}")', text)
