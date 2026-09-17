@@ -25,12 +25,17 @@ export function buildOpenReturnForm(origin, command = {}) {
     requestedBySku.set(sku, (requestedBySku.get(sku) ?? 0) + quantity);
   }
   const originItems = Array.isArray(origin.itens) ? origin.itens : [];
+  const positiveOriginItems = originItems.filter(item => Number(item?.quantidadeOrigem ?? 0) > 0);
   const items = [];
   let partial = false;
   for (const [sku, quantity] of requestedBySku) {
     const matches = originItems.filter(item => text(item?.codigo) === sku);
-    if (matches.length !== 1) throw new Error(`Refunded SKU ${sku} cannot be matched exactly to the ERP sale.`);
-    const source = matches[0];
+    const source = matches.length === 1
+      ? matches[0]
+      : requestedBySku.size === 1 && positiveOriginItems.length === 1
+        ? positiveOriginItems[0]
+        : null;
+    if (!source) throw new Error(`Refunded SKU ${sku} cannot be matched exactly to the ERP sale.`);
     const available = Number(source?.quantidadeOrigem ?? 0);
     if (!Number.isFinite(available) || available <= 0 || quantity > available) {
       throw new Error(`Refunded SKU ${sku} quantity exceeds the ERP sale quantity.`);
@@ -38,7 +43,6 @@ export function buildOpenReturnForm(origin, command = {}) {
     if (quantity < available) partial = true;
     items.push({ ...source, quantidade: quantity });
   }
-  const positiveOriginItems = originItems.filter(item => Number(item?.quantidadeOrigem ?? 0) > 0);
   if (items.length !== positiveOriginItems.length) partial = true;
   if (items.length === 0) throw new TypeError('ERP sales return requires items.');
   const form = structuredClone(origin);

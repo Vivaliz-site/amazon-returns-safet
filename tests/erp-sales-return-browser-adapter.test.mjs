@@ -66,8 +66,23 @@ test('uses only refunded quantity and marks a partial return instead of returnin
   assert.equal(form.ehDevolucaoParcial, 'S');
 });
 
-test('blocks creation when a refunded SKU cannot be matched exactly to the ERP sale', () => {
-  assert.throws(() => buildOpenReturnForm(origin, {
+test('falls back to the only positive ERP sale item when exactly one refunded item has a historical SKU', () => {
+  const renamedOrigin = structuredClone(origin);
+  renamedOrigin.itens[0].codigo = 'SKU-1-NOVO';
+  const form = buildOpenReturnForm(renamedOrigin, {
+    amazon_order_id: '702-1234567-1234567',
+    refund_at: '2026-09-12',
+    items: [{ sku: 'SKU-1', quantity_refunded: 1 }],
+  });
+  assert.equal(form.itens.length, 1);
+  assert.equal(form.itens[0].codigo, 'SKU-1-NOVO');
+  assert.equal(form.itens[0].quantidade, 1);
+});
+
+test('blocks a mismatched refunded SKU when the ERP sale has more than one positive item', () => {
+  const ambiguousOrigin = structuredClone(origin);
+  ambiguousOrigin.itens.push({ id: 0, idProduto: '708', codigo: 'SKU-2', quantidadeOrigem: '1.0000', valorUnitario: '5.00', unidade: 'UN' });
+  assert.throws(() => buildOpenReturnForm(ambiguousOrigin, {
     amazon_order_id: '702-1234567-1234567',
     refund_at: '2026-09-12',
     items: [{ sku: 'SKU-X', quantity_refunded: 1 }],
