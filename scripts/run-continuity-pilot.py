@@ -22,7 +22,10 @@ from tools.continuity.controller import Controller, RepoConfig
 from tools.continuity.dispatcher import _atomic_write_packet
 from tools.continuity.git_scan import scan_repository
 from tools.continuity.github_state import GitHubStateReader
-from tools.continuity.job_queue import JobEnvelope, QueuePaths, atomic_write_job, load_receipt
+from tools.continuity.job_queue import (
+    JobEnvelope, QueuePaths, TaskEvidenceSnapshot, atomic_write_job,
+    atomic_write_task_evidence, load_receipt,
+)
 from tools.continuity.ledger import Ledger
 from tools.continuity.model import Classification, TaskRecord, TaskStatus
 from tools.continuity.resume_packet import redact, render_resume_packet
@@ -313,18 +316,32 @@ def _enqueue_gemini_resume(config: dict, state: dict, task_id: str) -> dict:
     finding = scan_repository(worktree)
     packet = render_resume_packet(claimed, finding, None)
     queue = QueuePaths.under(Path(str(config["job_queue_root"])))
-    job_id = f"{task_id}--{session_b}"
+    job_id = f"{claimed.task_id}--{claimed.agent_session_id}"
     packet_path = _atomic_write_packet(queue, job_id, packet)
+    if claimed.lease_expires_at is None:
+        raise PilotError("Gemini pilot claim has no lease expiry")
+    snapshot = TaskEvidenceSnapshot(
+        task_id=claimed.task_id, repository=claimed.repository,
+        worktree_path=claimed.worktree_path, branch=claimed.branch,
+        current_head=claimed.current_head, agent_type=str(claimed.agent_type or "gemini").lower(),
+        agent_session_id=str(claimed.agent_session_id or session_b),
+        lease_expires_at=claimed.lease_expires_at.isoformat(),
+        dirty_files=tuple(claimed.dirty_files), staged_files=tuple(claimed.staged_files),
+        untracked_files=tuple(claimed.untracked_files),
+    )
+    evidence_path = atomic_write_task_evidence(queue, job_id, snapshot)
     job = JobEnvelope(
-        task_id=task_id, repository=REPOSITORY, worktree_path=str(worktree),
-        branch=str(state["branch"]), expected_head=finding.head,
+        task_id=claimed.task_id, repository=claimed.repository, worktree_path=claimed.worktree_path,
+        branch=claimed.branch, expected_head=finding.head,
         base_sha=claimed.base_sha, lease_session_id=session_b, provider="gemini",
         resume_packet_sha256=hashlib.sha256(packet.encode("utf-8")).hexdigest(),
-        resume_packet_path=str(packet_path), created_at=now.isoformat(),
-        deadline_at=claimed.lease_expires_at.isoformat(),
+        resume_packet_path=str(packet_path),
+        task_evidence_sha256=hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
+        task_evidence_path=str(evidence_path),
+        created_at=now.isoformat(), deadline_at=claimed.lease_expires_at.isoformat(),
     )
     job_path = atomic_write_job(queue, job)
-    if (job_path.stat().st_mode & 0o777) != 0o640 or (packet_path.stat().st_mode & 0o777) != 0o640:
+    if any((path.stat().st_mode & 0o777) != 0o640 for path in (job_path, packet_path, evidence_path)):
         raise PilotError("shared queue artifacts are not group-readable 0640")
     service = _run(["systemctl", "start", "agent-continuity-worker.service"], check=False)
     receipt_path = queue.receipts / f"{task_id}--{session_b}.json"

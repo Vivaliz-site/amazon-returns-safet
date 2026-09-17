@@ -105,6 +105,7 @@ def enable(
     source_sha: str,
     paths: GatePaths,
     unit_enabled: Callable[[str], bool],
+    unit_start: Callable[[str], bool],
 ) -> int:
     config_path = Path(config_path)
     if not SHA40.fullmatch(source_sha):
@@ -186,6 +187,11 @@ def enable(
     config["max_auto_attempts"] = int(config.get("max_auto_attempts", 3))
     config["worker_timeout_seconds"] = int(config.get("worker_timeout_seconds", 900))
     config["retry_cooldown_seconds"] = max(1800, int(config.get("retry_cooldown_seconds", 1800)))
+    path_units = (paths.worker_path_unit.name, paths.publisher_path_unit.name)
+    start_results = [(unit, unit_start(unit)) for unit in path_units]
+    failed_starts = [unit for unit, started in start_results if not started]
+    if failed_starts:
+        return _fail(f"required path unit failed to start: {', '.join(failed_starts)}")
     try:
         _write_atomic_config(config_path, config)
     except OSError:
@@ -233,6 +239,19 @@ def _unit_enabled(unit: str) -> bool:
     ).returncode == 0
 
 
+def _unit_start(unit: str) -> bool:
+    started = subprocess.run(
+        ["systemctl", "start", unit],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+    ).returncode == 0
+    if not started:
+        return False
+    return subprocess.run(
+        ["systemctl", "is-active", "--quiet", unit],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+    ).returncode == 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="enable-continuity-auto-dispatch")
     parser.add_argument("--config", default="/etc/agent-continuity/config.json")
@@ -248,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
         return _fail("production preflight evidence is unavailable")
     rc = enable(
         Path(args.config), pilot=pilot, source_sha=args.source_sha,
-        paths=paths, unit_enabled=_unit_enabled,
+        paths=paths, unit_enabled=_unit_enabled, unit_start=_unit_start,
     )
     if rc == 0:
         print("CONTINUITY_AUTO_DISPATCH_ENABLED=true")

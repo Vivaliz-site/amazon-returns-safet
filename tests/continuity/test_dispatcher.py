@@ -84,6 +84,11 @@ class DispatcherTest(unittest.TestCase):
         self.assertTrue(packet_path.exists())
         self.assertEqual(0o640, packet_path.stat().st_mode & 0o777)
         self.assertEqual(job.resume_packet_sha256, hashlib.sha256(packet_path.read_bytes()).hexdigest())
+        evidence_path = Path(job.task_evidence_path)
+        self.assertTrue(evidence_path.exists())
+        self.assertEqual(self.paths.root / "packets", evidence_path.parent)
+        self.assertEqual(0o640, evidence_path.stat().st_mode & 0o777)
+        self.assertEqual(job.task_evidence_sha256, hashlib.sha256(evidence_path.read_bytes()).hexdigest())
         loaded = self.ledger.get_task(task.task_id)
         self.assertEqual(Classification.ACTIVE, loaded.classification)
 

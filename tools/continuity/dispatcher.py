@@ -9,7 +9,7 @@ import subprocess
 from typing import Callable, Mapping, Sequence
 
 from .git_scan import scan_repository
-from .job_queue import JobEnvelope, QueuePaths, atomic_write_job
+from .job_queue import JobEnvelope, QueuePaths, TaskEvidenceSnapshot, atomic_write_job, atomic_write_task_evidence
 from .ledger import Ledger, LeaseConflict
 from .model import Classification, TaskStatus, ensure_utc
 from .resume_packet import render_resume_packet
@@ -199,26 +199,46 @@ class Dispatcher:
         packet = render_resume_packet(claimed, finding, None)
         job_id = f"{task.task_id}--{session_id}"
         packet_path: Path | None = None
+        evidence_path: Path | None = None
         try:
             packet_path = _atomic_write_packet(self.queue_paths, job_id, packet)
+            lease_expires_at = claimed.lease_expires_at or (now + timedelta(seconds=self.lease_seconds))
+            snapshot = TaskEvidenceSnapshot(
+                task_id=claimed.task_id,
+                repository=claimed.repository,
+                worktree_path=claimed.worktree_path,
+                branch=claimed.branch,
+                current_head=claimed.current_head,
+                agent_type=str(claimed.agent_type or agent.name).lower(),
+                agent_session_id=str(claimed.agent_session_id or session_id),
+                lease_expires_at=lease_expires_at.isoformat(),
+                dirty_files=tuple(claimed.dirty_files),
+                staged_files=tuple(claimed.staged_files),
+                untracked_files=tuple(claimed.untracked_files),
+            )
+            evidence_path = atomic_write_task_evidence(self.queue_paths, job_id, snapshot)
             envelope = JobEnvelope(
-                task_id=task.task_id,
-                repository=task.repository,
-                worktree_path=task.worktree_path,
-                branch=task.branch,
+                task_id=claimed.task_id,
+                repository=claimed.repository,
+                worktree_path=claimed.worktree_path,
+                branch=claimed.branch,
                 expected_head=finding.head,
-                base_sha=task.base_sha,
+                base_sha=claimed.base_sha,
                 lease_session_id=session_id,
                 provider=agent.name.lower(),
                 resume_packet_sha256=hashlib.sha256(packet.encode("utf-8")).hexdigest(),
                 resume_packet_path=str(packet_path),
+                task_evidence_sha256=hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
+                task_evidence_path=str(evidence_path),
                 created_at=now.isoformat(),
-                deadline_at=(claimed.lease_expires_at or (now + timedelta(seconds=self.lease_seconds))).isoformat(),
+                deadline_at=lease_expires_at.isoformat(),
             )
             job_path = atomic_write_job(self.queue_paths, envelope)
         except Exception:
             if packet_path is not None:
                 packet_path.unlink(missing_ok=True)
+            if evidence_path is not None:
+                evidence_path.unlink(missing_ok=True)
             self.ledger.record_dispatch_attempt(task.task_id, agent.name, now, "queue_failed", "job queue write failed")
             self.ledger.update_fields(
                 task.task_id, status=TaskStatus.NEEDS_RESUME, classification=Classification.NEEDS_RESUME,

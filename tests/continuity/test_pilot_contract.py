@@ -20,6 +20,20 @@ class PilotContractTest(unittest.TestCase):
         self.assertIn("https://github.com/Vivaliz-site/amazon-returns-safet.git", text)
         self.assertIn("/home/ubuntu/amazon-returns-deploy-source", text)
 
+    def test_pilot_job_envelope_uses_claimed_task_as_source_of_truth(self):
+        text = Path("scripts/run-continuity-pilot.py").read_text(encoding="utf-8")
+        start = text.index("job = JobEnvelope(")
+        end = text.index("\n    )", start)
+        envelope = text[start:end]
+        for marker in (
+            "task_id=claimed.task_id",
+            "repository=claimed.repository",
+            "worktree_path=claimed.worktree_path",
+            "branch=claimed.branch",
+        ):
+            self.assertIn(marker, envelope)
+        self.assertIn('job_id = f"{claimed.task_id}--{claimed.agent_session_id}"', text)
+
     def test_worker_gemini_smoke_uses_worker_accessible_cwd(self):
         text = Path("scripts/run-continuity-pilot.py").read_text(encoding="utf-8")
         self.assertIn('cwd=Path(f"/var/lib/{WORKER_USER}")', text)

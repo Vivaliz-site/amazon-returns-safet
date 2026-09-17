@@ -50,6 +50,24 @@ class QueuePaths:
 
 
 @dataclass(frozen=True)
+class TaskEvidenceSnapshot:
+    task_id: str
+    repository: str
+    worktree_path: str
+    branch: str
+    current_head: str
+    agent_type: str
+    agent_session_id: str
+    lease_expires_at: str
+    dirty_files: tuple[str, ...]
+    staged_files: tuple[str, ...]
+    untracked_files: tuple[str, ...]
+
+    def to_json(self) -> str:
+        return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
+
+
+@dataclass(frozen=True)
 class JobEnvelope:
     task_id: str
     repository: str
@@ -61,6 +79,8 @@ class JobEnvelope:
     provider: str
     resume_packet_sha256: str
     resume_packet_path: str
+    task_evidence_sha256: str
+    task_evidence_path: str
     created_at: str
     deadline_at: str
 
@@ -111,6 +131,53 @@ def load_job(path: Path) -> JobEnvelope:
     return _strict_dataclass(JobEnvelope, payload)
 
 
+def _validate_task_evidence(snapshot: TaskEvidenceSnapshot) -> None:
+    if not _TASK_RE.fullmatch(snapshot.task_id):
+        raise JobValidationError("unsafe evidence task id")
+    if not _REPO_RE.fullmatch(snapshot.repository):
+        raise JobValidationError("unsafe evidence repository")
+    if not Path(snapshot.worktree_path).is_absolute():
+        raise JobValidationError("evidence worktree path must be absolute")
+    if not snapshot.branch:
+        raise JobValidationError("evidence branch is required")
+    if not _SHA40_RE.fullmatch(snapshot.current_head):
+        raise JobValidationError("invalid evidence git sha")
+    if snapshot.agent_type.lower() not in _ALLOWED_PROVIDERS:
+        raise JobValidationError("forbidden evidence provider")
+    if not _ID_RE.fullmatch(snapshot.agent_session_id):
+        raise JobValidationError("unsafe evidence lease session id")
+    _parse_time(snapshot.lease_expires_at)
+    for values in (snapshot.dirty_files, snapshot.staged_files, snapshot.untracked_files):
+        if not all(isinstance(value, str) and "\x00" not in value for value in values):
+            raise JobValidationError("invalid evidence file list")
+
+
+def parse_task_evidence(data: bytes) -> TaskEvidenceSnapshot:
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise JobValidationError("invalid task evidence JSON") from exc
+    if not isinstance(payload, dict):
+        raise JobValidationError("task evidence JSON must be an object")
+    payload = dict(payload)
+    for key in ("dirty_files", "staged_files", "untracked_files"):
+        raw = payload.get(key)
+        if not isinstance(raw, list):
+            raise JobValidationError("task evidence file lists must be arrays")
+        payload[key] = tuple(raw)
+    snapshot = _strict_dataclass(TaskEvidenceSnapshot, payload)
+    _validate_task_evidence(snapshot)
+    return snapshot
+
+
+def load_task_evidence(path: Path) -> TaskEvidenceSnapshot:
+    try:
+        raw = Path(path).read_bytes()
+    except OSError as exc:
+        raise JobValidationError("invalid task evidence JSON") from exc
+    return parse_task_evidence(raw)
+
+
 def load_receipt(path: Path) -> WorkerReceipt:
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -136,6 +203,8 @@ def validate_job(job: JobEnvelope, *, root: Path, now: datetime) -> Path:
         raise JobValidationError("invalid git sha")
     if not _SHA256_RE.fullmatch(job.resume_packet_sha256):
         raise JobValidationError("invalid resume packet digest")
+    if not _SHA256_RE.fullmatch(job.task_evidence_sha256):
+        raise JobValidationError("invalid task evidence digest")
     created = _parse_time(job.created_at)
     deadline = _parse_time(job.deadline_at)
     current = now.astimezone(UTC)
@@ -189,6 +258,18 @@ def _atomic_write(directory: Path, filename: str, data: bytes) -> Path:
         except FileNotFoundError:
             pass
         raise
+
+def atomic_write_task_evidence(paths: QueuePaths, job_id: str, snapshot: TaskEvidenceSnapshot) -> Path:
+    _validate_task_evidence(snapshot)
+    expected_job_id = f"{snapshot.task_id}--{snapshot.agent_session_id}"
+    if job_id != expected_job_id:
+        raise JobValidationError("task evidence job identity mismatch")
+    return _atomic_write(
+        paths.root / "packets",
+        f"{job_id}.evidence.json",
+        snapshot.to_json().encode("utf-8"),
+    )
+
 
 def atomic_write_job(paths: QueuePaths, job: JobEnvelope) -> Path:
     filename = f"{job.task_id}--{job.lease_session_id}.json"

@@ -68,6 +68,8 @@ class PublisherTest(unittest.TestCase):
             expected_head=self.worktree.head, base_sha=self.worktree.head,
             lease_session_id=self.session, provider="gemini",
             resume_packet_sha256=packet_digest, resume_packet_path=str(packet_path),
+            task_evidence_sha256="e" * 64,
+            task_evidence_path=str(self.paths.root / "packets" / f"{self.task_id}--{self.session}.evidence.json"),
             created_at=NOW.isoformat(), deadline_at=(NOW + timedelta(hours=1)).isoformat(),
         )
         pending = atomic_write_job(self.paths, job)
