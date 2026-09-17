@@ -14,7 +14,7 @@ $cfg=new SvAmazonReturnsConfig([
 ]);
 eaAssert($cfg->erpSalesReturnCreateEnabled()===true,'Dedicated canary config must make the ERP gate effective.');
 $global=json_decode((string)file_get_contents(__DIR__.'/../deploy/write-profile.json'),true);
-eaAssert(($global['ERP_SALES_RETURN_CREATE']??null)===false,'Global daemon ERP gate must stay disabled during canary.');
+eaAssert(($global['ERP_SALES_RETURN_CREATE']??null)===true,'Global daemon ERP gate must be promoted only after a proven canary.');
 $canaryEnvPath=__DIR__.'/../deploy/erp-canary-execute.env';
 $canaryEnv=is_file($canaryEnvPath)?(string)file_get_contents($canaryEnvPath):'';
 eaAssert(!str_contains($canaryEnv,'AMAZON_RETURNS_WRITE_CANARY_CASE_IDS='),'Versioned canary env must not pin a stale case ID.');
@@ -31,7 +31,9 @@ eaAssert(str_contains($unit,'--mode=execute --auto'),'Canary execute command mus
 eaAssert(!str_contains($unit,'--case-id='),'Canary execute command must not pin a stale case ID.');
 $provision=(string)file_get_contents(__DIR__.'/../scripts/provision-production.sh');
 eaAssert(str_contains($provision,'amazon-returns-erp-canary-execute.service'),'Production provision must install the execute unit.');
+eaAssert(str_contains($provision,'erp_global_promoted'),'Provision must detect the global ERP promotion state.');
+eaAssert(str_contains($provision,'erp_canary_execute=skipped_global_profile_enabled'),'Promoted deployments must skip another write canary.');
 $discoverPos=strpos($provision,'systemctl start amazon-returns-erp-canary-discovery.service');
 $executePos=strpos($provision,'systemctl start amazon-returns-erp-canary-execute.service');
-eaAssert(is_int($discoverPos)&&is_int($executePos)&&$executePos>$discoverPos,'Execute canary must start only after read-only discovery.');
+eaAssert(is_int($discoverPos)&&is_int($executePos)&&$executePos>$discoverPos,'Pre-promotion execute canary must start only after read-only discovery.');
 echo "erp-canary-activation-systemd-test: OK\n";
