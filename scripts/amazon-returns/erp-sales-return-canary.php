@@ -95,6 +95,19 @@ try{
             $rejected[(string)($checked['reason']??'UNKNOWN')]=($rejected[(string)($checked['reason']??'UNKNOWN')]??0)+1;
             continue;
         }
+        $writeReady=$browserGateway->preflightCreate([
+            'amazon_order_id'=>(string)$checked['order_id'],
+            'original_sale'=>[
+                'invoice_id'=>(string)$checked['original_invoice_id'],
+                'invoice_number'=>(string)$checked['original_invoice_number'],
+            ],
+            'refund_at'=>(string)$checked['refund_at'],
+            'items'=>$checked['items'],
+        ]);
+        if(!$writeReady){
+            $rejected['ERP_CREATE_PREFLIGHT_NOT_READY']=($rejected['ERP_CREATE_PREFLIGHT_NOT_READY']??0)+1;
+            continue;
+        }
         $candidate=$checked;$candidateCases=$cases;break;
     }
 

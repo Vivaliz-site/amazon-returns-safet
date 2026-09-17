@@ -73,6 +73,26 @@ final class SvAmazonOlistBrowserErpSalesReturnGateway implements SvAmazonErpSale
         return ['ok'=>false,'uncertain'=>$externalId!=='' && (($result['retry_safe']??false)!==true),'id'=>$externalId!==''?$externalId:null,'error_code'=>$code,'error_message'=>$message];
     }
 
+    public function preflightCreate(array $command): bool
+    {
+        $sale=is_array($command['original_sale']??null)?$command['original_sale']:[];
+        $orderId=trim((string)($command['amazon_order_id']??''));
+        $invoiceId=trim((string)($sale['invoice_id']??''));
+        $refundAt=substr(trim((string)($command['refund_at']??'')),0,10);
+        if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$orderId)!==1 || preg_match('/^[0-9]+$/D',$invoiceId)!==1 || preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D',$refundAt)!==1)return false;
+        $result=$this->run([
+            'action'=>'VALIDATE_CREATE','amazon_order_id'=>$orderId,
+            'original_invoice_id'=>$invoiceId,
+            'original_invoice_number'=>trim((string)($sale['invoice_number']??'')),
+            'refund_at'=>$refundAt,
+            'items'=>is_array($command['items']??null)?$command['items']:[],
+        ]);
+        $status=strtoupper(trim((string)($result['status']??'')));
+        if($status==='READY')return true;
+        if(in_array($status,['NOT_READY','ALREADY_EXISTS'],true))return false;
+        throw new RuntimeException('ERP sales return create preflight was not confirmed: '.($status!==''?$status:'UNKNOWN').'.');
+    }
+
     public function probeExisting(string $originalInvoiceId,string $originalInvoiceNumber=''): ?string
     {
         $originalInvoiceId=trim($originalInvoiceId);
