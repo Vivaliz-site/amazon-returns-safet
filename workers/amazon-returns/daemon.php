@@ -289,11 +289,12 @@ class SvAmazonReturnsDaemon
         if(($gate['status'] ?? '')!=='READY_NO_RUNTIME_PROVIDER')return $gate;
         $gmail=$this->gmailClient();
         $cursor=SvAmazonGmailIngestor::loadCursor($this->persistence->cursors,'history_id');
-        $pulled=$gmail->pull($cursor,1);
+        $pulled=$gmail->pullIncrementalBatch($cursor,1,self::GMAIL_CATCHUP_MESSAGE_LIMIT);
         return [
             'status'=>'OK',
             'messages'=>count($pulled['messages'] ?? []),
             'recovered_cursor'=>($pulled['recovered_cursor'] ?? false)===true,
+            'has_more'=>($pulled['has_more'] ?? false)===true,
             'cursor_advanced'=>false,
             'external_write'=>false,
         ];

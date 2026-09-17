@@ -113,6 +113,6 @@ $probeStart=strpos($daemon,'private function runGmailHistoryProbe');
 $probeEnd=$probeStart===false?false:strpos($daemon,'private function runGmail',$probeStart+10);
 gerAssert($probeStart!==false && $probeEnd!==false,'Gmail history probe must remain independently auditable.');
 $probeBody=substr($daemon,(int)$probeStart,(int)$probeEnd-(int)$probeStart);
-gerAssert(str_contains($probeBody,'->pull($cursor,1)'),'Probe must execute the same incremental Gmail pull path with a bounded bootstrap.');
+gerAssert(str_contains($probeBody,'->pullIncrementalBatch($cursor,1,self::GMAIL_CATCHUP_MESSAGE_LIMIT)'),'Probe must execute the same incremental Gmail pull path with a bounded bootstrap.');
 gerAssert(!str_contains($probeBody,'->send') && !str_contains($probeBody,'saveCursor'),'Probe must not send email or advance the production Gmail cursor.');
 echo "gmail-evidence-revision-reconciliation-test: OK\n";
