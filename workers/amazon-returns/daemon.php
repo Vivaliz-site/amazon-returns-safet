@@ -136,6 +136,7 @@ class SvAmazonReturnsDaemon
                 $state['gmail_catchup_pending']=$results[$task]['has_more']===true ? '1' : '0';
             }
             $gmailRetryDelay=SvAmazonReturnsRuntime::gmailRateLimitRetryDelaySeconds($task,$results[$task])
+                ?? SvAmazonReturnsRuntime::gmailTransportRetryDelaySeconds($task,$results[$task])
                 ?? SvAmazonReturnsRuntime::gmailCatchupRetryDelaySeconds($task,$results[$task]);
             $state[$task]=SvAmazonReturnsRuntime::taskScheduleMarker($task,$taskNow,$gmailRetryDelay);
         }
