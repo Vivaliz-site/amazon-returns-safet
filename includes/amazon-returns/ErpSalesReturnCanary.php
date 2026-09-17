@@ -43,7 +43,10 @@ final class SvAmazonErpSalesReturnCanary
         if($expectedId!=='' && $id!==$expectedId)return false;
         if(trim((string)($record['idNotaFiscal']??''))!==trim((string)($candidate['original_invoice_id']??'')))return false;
         $expected=self::itemMap($candidate['items']??null);$actual=self::itemMap($record['itens']??null);
-        return $expected!==null && $actual!==null && $expected===$actual;
+        if($expected===null || $actual===null)return false;
+        if($expected===$actual)return true;
+        if(count($expected)!==1 || count($actual)!==1)return false;
+        return array_values($expected)[0]===array_values($actual)[0];
     }
 
     /** @return array{eligible:false,reason:string} */
