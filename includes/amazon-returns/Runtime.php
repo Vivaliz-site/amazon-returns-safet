@@ -129,10 +129,19 @@ final class SvAmazonReturnsRuntime
 
     public static function outboxStackRevision(): string
     {
-        $file=__DIR__.'/TenantOutbox.php';
-        $hash=@hash_file('sha256',$file);
-        if(!is_string($hash) || $hash==='')throw new RuntimeException('Unable to fingerprint Amazon returns outbox stack.');
-        return $hash;
+        $files=[
+            __DIR__.'/TenantOutbox.php',
+            __DIR__.'/BridgeService.php',
+            __DIR__.'/RemoteBridge.php',
+            dirname(__DIR__,2).'/scripts/amazon-returns/seller-central-bridge-worker.mjs',
+        ];
+        $parts=[];
+        foreach($files as $file){
+            $hash=@hash_file('sha256',$file);
+            if(!is_string($hash) || $hash==='')throw new RuntimeException('Unable to fingerprint Amazon returns outbox stack.');
+            $parts[]=basename($file).':'.$hash;
+        }
+        return hash('sha256',implode('|',$parts));
     }
 
     /** @param array<string,mixed> $result */

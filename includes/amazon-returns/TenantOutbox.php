@@ -202,6 +202,22 @@ final class SvAmazonTenantReturnsOutbox
         return max(0,(int)$stmt->fetchColumn());
     }
 
+    public function reactivateSafeDeferredSellerSupportWrites(): int
+    {
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_outbox SET available_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND status='PENDING' AND available_at>UTC_TIMESTAMP() AND locked_at IS NULL AND ("
+            . "(kind='SELLER_SUPPORT_OPEN' AND last_error=:lookup_error) OR "
+            . "(kind='SELLER_SUPPORT_UPDATE' AND last_error=:reply_error))"
+        );
+        $stmt->execute($this->scopeParams([
+            ':lookup_error'=>'UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE',
+            ':reply_error'=>'UI_DRIFT: SUPPORT_REPLY_SEND_MISSING',
+        ]));
+        return max(0,$stmt->rowCount());
+    }
+
     public function hasActive(int $caseId,string $kind): bool
     {
         $stmt=$this->prepare(
