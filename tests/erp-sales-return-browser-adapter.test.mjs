@@ -212,3 +212,12 @@ test('CDP target calls have a bounded timeout so stale browser targets cannot ha
     error => error?.code === 'UI_DRIFT' && /stale target/i.test(error.message)
   );
 });
+
+
+test('CDP XAJAX commands have a longer bounded timeout than target connection setup', async () => {
+  const adapter = await import('../scripts/amazon-returns/erp-sales-return-browser.mjs');
+  assert.equal(adapter.OLIST_CDP_CONNECT_TIMEOUT_MS, 2500);
+  assert.ok(adapter.OLIST_CDP_COMMAND_TIMEOUT_MS >= 10000, 'XAJAX timeout must cover observed multi-second ERP calls');
+  assert.ok(adapter.OLIST_CDP_COMMAND_TIMEOUT_MS <= 30000, 'XAJAX timeout must remain bounded');
+  assert.ok(adapter.OLIST_CDP_COMMAND_TIMEOUT_MS > adapter.OLIST_CDP_CONNECT_TIMEOUT_MS);
+});
