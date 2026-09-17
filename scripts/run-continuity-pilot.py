@@ -95,8 +95,12 @@ def _is_enabled(unit: str) -> bool:
     return _run(["systemctl", "is-enabled", "--quiet", unit], check=False).returncode == 0
 
 
-def _user_can_read(user: str, path: Path, *, supplementary_group: str | None = None) -> bool:
+def _user_can_read(
+    user: str, path: Path, *, primary_group: str | None = None, supplementary_group: str | None = None
+) -> bool:
     args = ["runuser", "-u", user]
+    if primary_group:
+        args.extend(["-g", primary_group])
     if supplementary_group:
         args.extend(["-G", supplementary_group])
     args.extend(["--", "test", "-r", str(path)])
@@ -177,7 +181,9 @@ def _preflight(config_path: Path) -> tuple[dict, str, dict]:
     proof = _read_json(PUBLISHER_PROOF)
     if proof.get("repository") != REPOSITORY or proof.get("read_only") is not False:
         raise PilotError("publisher deploy-key proof is not write-enabled for expected repository")
-    if not _user_can_read(WORKER_USER, GEMINI_ENV, supplementary_group=CONTROLLER_GROUP):
+    if not _user_can_read(
+        WORKER_USER, GEMINI_ENV, primary_group=WORKER_USER, supplementary_group=CONTROLLER_GROUP
+    ):
         raise PilotError("worker cannot read dedicated Gemini environment")
     worker_reads_publisher = _user_can_read(WORKER_USER, PUBLISHER_KEY)
     publisher_reads_gemini = _user_can_read(PUBLISHER_USER, GEMINI_ENV)
