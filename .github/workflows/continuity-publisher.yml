@@ -52,7 +52,9 @@ jobs:
           fi
           pr_url="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --base main --state open --json url --jq '.[0].url // ""')"
           if [ -z "$pr_url" ]; then
-            pr_url="$(gh pr create --repo "$REPOSITORY" --base main --head "$BRANCH" --fill)"
+            pr_title="Continuity recovery: ${BRANCH#agent/}"
+            pr_body="Automated continuity recovery branch at verified head ${EXPECTED_HEAD}. Created by the privileged default-branch publisher after workflow-change checks."
+            pr_url="$(gh pr create --repo "$REPOSITORY" --base main --head "$BRANCH" --title "$pr_title" --body "$pr_body")"
           fi
           test -n "$pr_url"
           printf 'PR_URL=%s\n' "$pr_url" >> "$GITHUB_ENV"
