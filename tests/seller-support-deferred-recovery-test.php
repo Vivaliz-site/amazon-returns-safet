@@ -1,0 +1,63 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__.'/../includes/amazon-returns/TenantContext.php';
+require_once __DIR__.'/../includes/amazon-returns/TenantOutbox.php';
+require_once __DIR__.'/../includes/amazon-returns/Runtime.php';
+
+function ssdrAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeException($message);}
+function ssdrSame(mixed $expected,mixed $actual,string $message):void{
+    if($expected!==$actual)throw new RuntimeException($message.' expected='.var_export($expected,true).' actual='.var_export($actual,true));
+}
+
+final class SsdrPdo extends PDO{
+    /** @var list<array<string,mixed>> */ public array $executed=[];
+    /** @var list<array<string,mixed>> */ public array $responses=[];
+    public function __construct(){}
+    public function queue(array $response):void{$this->responses[]=$response;}
+    public function prepare(string $query,array $options=[]):PDOStatement|false{
+        return new SsdrStatement($this,$query,array_shift($this->responses)??[]);
+    }
+}
+final class SsdrStatement extends PDOStatement{
+    public function __construct(private SsdrPdo $db,private string $sql,private array $response){}
+    public function execute(?array $params=null):bool{
+        $this->db->executed[]=['sql'=>$this->sql,'params'=>$params??[]];return true;
+    }
+    public function rowCount():int{return (int)($this->response['row_count']??0);}
+}
+
+$db=new SsdrPdo();
+$outbox=new SvAmazonTenantReturnsOutbox($db,new SvAmazonTenantContext(1,10));
+ssdrAssert(method_exists($outbox,'reactivateSafeDeferredSellerSupportWrites'),
+    'Outbox must expose a scoped recovery for safe deferred Seller Support pre-write failures.');
+$db->queue(['row_count'=>13]);
+$reactivated=$outbox->reactivateSafeDeferredSellerSupportWrites();
+ssdrSame(13,$reactivated,'Recovery must report the rows made immediately available.');
+$exec=$db->executed[array_key_last($db->executed)]??[];
+$sql=(string)($exec['sql']??'');$params=$exec['params']??[];
+foreach(['tenant_id','amazon_connection_id',"status='PENDING'",'available_at>UTC_TIMESTAMP()',"kind='SELLER_SUPPORT_OPEN'","kind='SELLER_SUPPORT_UPDATE'"] as $needle){
+    ssdrAssert(str_contains($sql,$needle),'Recovery SQL missing guard: '.$needle);
+}
+ssdrAssert(str_contains($sql,'available_at=UTC_TIMESTAMP()'),'Recovery must only wake the existing deferred row.');
+foreach(['attempt_count=','payload_json=','last_error=','status=\'PROCESSING\''] as $forbidden){
+    ssdrAssert(!str_contains($sql,$forbidden),'Recovery must preserve idempotency state: '.$forbidden);
+}
+ssdrSame('UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE',$params[':lookup_error']??null,
+    'Only the known pre-write lookup failure may be rearmed for SELLER_SUPPORT_OPEN.');
+ssdrSame('UI_DRIFT: SUPPORT_REPLY_SEND_MISSING',$params[':reply_error']??null,
+    'Only the known pre-send reply failure may be rearmed for SELLER_SUPPORT_UPDATE.');
+
+$runtimeSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
+foreach(['TenantOutbox.php','BridgeService.php','RemoteBridge.php','seller-central-bridge-worker.mjs'] as $file){
+    ssdrAssert(str_contains($runtimeSource,$file),'Outbox stack revision must fingerprint '.$file.'.');
+}
+$daemonSource=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
+ssdrAssert(str_contains($daemonSource,'outboxStackChanged'),'Daemon must detect an outbox execution-stack revision change.');
+ssdrAssert(str_contains($daemonSource,'reactivateSafeDeferredSellerSupportWrites'),
+    'Daemon must rearm only safe deferred Seller Support rows after a fixed write stack is deployed.');
+ssdrAssert(str_contains($daemonSource,"'outbox_recovery'"),'Daemon must expose recovery evidence in runtime results.');
+ssdrAssert(str_contains($daemonSource,"($results['outbox_recovery']['status'] ?? null)==='OK'"),
+    'Daemon must not acknowledge the new outbox revision when recovery failed.');
+
+echo "seller-support-deferred-recovery-test: OK\n";
