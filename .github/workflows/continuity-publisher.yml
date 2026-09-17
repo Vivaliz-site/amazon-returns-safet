@@ -44,6 +44,12 @@ jobs:
       - name: Create or reuse pull request
         run: |
           set -euo pipefail
+          merged_pr_url="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --base main --state all --json url,mergedAt --jq '[.[] | select(.mergedAt != null)][0].url // ""')"
+          if [ -n "$merged_pr_url" ]; then
+            printf 'ALREADY_MERGED=true\n' >> "$GITHUB_ENV"
+            printf 'PR_URL=%s\n' "$merged_pr_url" >> "$GITHUB_ENV"
+            exit 0
+          fi
           pr_url="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --base main --state open --json url --jq '.[0].url // ""')"
           if [ -z "$pr_url" ]; then
             pr_url="$(gh pr create --repo "$REPOSITORY" --base main --head "$BRANCH" --fill)"
@@ -52,6 +58,7 @@ jobs:
           printf 'PR_URL=%s\n' "$pr_url" >> "$GITHUB_ENV"
 
       - name: Wait for Amazon Returns CI run to appear
+        if: env.ALREADY_MERGED != 'true'
         run: |
           set -euo pipefail
           ci_run_id=""
@@ -68,6 +75,7 @@ jobs:
           exit 1
 
       - name: Require Amazon Returns CI success
+        if: env.ALREADY_MERGED != 'true'
         run: |
           set -euo pipefail
           for attempt in $(seq 1 60); do
@@ -84,6 +92,7 @@ jobs:
           exit 1
 
       - name: Enable auto-merge after checks are green
+        if: env.ALREADY_MERGED != 'true'
         run: |
           set -euo pipefail
           gh pr merge "$PR_URL" --repo "$REPOSITORY" --auto --squash --delete-branch
