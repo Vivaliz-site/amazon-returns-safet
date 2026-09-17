@@ -34,4 +34,11 @@ eaAssert(str_contains($provision,'amazon-returns-erp-canary-execute.service'),'P
 $discoverPos=strpos($provision,'systemctl start amazon-returns-erp-canary-discovery.service');
 $executePos=strpos($provision,'systemctl start amazon-returns-erp-canary-execute.service');
 eaAssert(is_int($discoverPos)&&is_int($executePos)&&$executePos>$discoverPos,'Execute canary must start only after read-only discovery.');
+$marker='/home/ubuntu/amazon-returns-deploy/shared/erp-canary-execute-once';
+eaAssert(str_contains($provision,$marker),'ERP canary execute must require an explicit one-shot marker.');
+$markerCheckPos=strpos($provision,'[[ -f "$erp_canary_execute_marker" ]]');
+$markerRemovePos=strpos($provision,'rm -f -- "$erp_canary_execute_marker"');
+eaAssert(is_int($markerCheckPos)&&$markerCheckPos<$executePos,'One-shot marker must guard canary execution.');
+eaAssert(is_int($markerRemovePos)&&$markerRemovePos<$executePos,'One-shot marker must be consumed before external write to prevent automatic retries.');
+eaAssert(str_contains($provision,'erp_canary_execute=skipped_not_armed'),'Unarmed deploy must explicitly skip ERP canary writes.');
 echo "erp-canary-activation-systemd-test: OK\n";

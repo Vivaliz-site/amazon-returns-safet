@@ -346,10 +346,16 @@ if systemctl start amazon-returns-erp-canary-discovery.service; then
 else
     echo 'erp_canary_discovery=failed'
 fi
-if systemctl start amazon-returns-erp-canary-execute.service; then
-    echo 'erp_canary_execute=completed'
+erp_canary_execute_marker="/home/ubuntu/amazon-returns-deploy/shared/erp-canary-execute-once"
+if [[ -f "$erp_canary_execute_marker" ]]; then
+    rm -f -- "$erp_canary_execute_marker"
+    if systemctl start amazon-returns-erp-canary-execute.service; then
+        echo erp_canary_execute=completed
+    else
+        echo erp_canary_execute=failed
+    fi
 else
-    echo 'erp_canary_execute=failed'
+    echo erp_canary_execute=skipped_not_armed
 fi
 
 worker_quiesced=0
