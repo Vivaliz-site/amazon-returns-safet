@@ -37,7 +37,8 @@ class PilotContractTest(unittest.TestCase):
     def test_worker_credential_preflight_matches_systemd_supplementary_group(self):
         text = Path("scripts/run-continuity-pilot.py").read_text(encoding="utf-8")
         self.assertIn('CONTROLLER_GROUP = "agent-continuity"', text)
-        self.assertIn('supplementary_group=CONTROLLER_GROUP', text)
+        self.assertIn('primary_group=WORKER_USER, supplementary_group=CONTROLLER_GROUP', text)
+        self.assertIn('"-g", primary_group', text)
         self.assertIn('"-G", supplementary_group', text)
 
     def test_worker_gemini_smoke_uses_worker_accessible_cwd(self):
