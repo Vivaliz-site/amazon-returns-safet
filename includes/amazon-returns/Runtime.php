@@ -265,6 +265,15 @@ final class SvAmazonReturnsRuntime
         return ($result['has_more'] ?? false)===true ? 300 : null;
     }
 
+    /** @param array<string,mixed> $result */
+    public static function returnsReportRetryDelaySeconds(string $task,array $result): ?int
+    {
+        if($task!=='returns_report')return null;
+        if(strtoupper(trim((string)($result['status']??'')))!=='PENDING')return null;
+        $processing=strtoupper(trim((string)($result['processing_status']??'')));
+        return in_array($processing,['IN_QUEUE','IN_PROGRESS'],true)?300:null;
+    }
+
     public static function taskScheduleMarker(
         string $task,DateTimeImmutable $at,?int $retryDelaySeconds=null
     ): string {
