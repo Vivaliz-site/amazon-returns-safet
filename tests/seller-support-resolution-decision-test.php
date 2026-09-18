@@ -114,4 +114,38 @@ $afterHistoricalAppeal=$engine->nextAction($directAppealCase,[$acceptedAppealHis
 ssrdSame('WAIT',$afterHistoricalAppeal['action']??null,'A reconciled support case must not repeat a SAFE-T appeal already accepted in the event history.');
 ssrdSame('APPEAL_ALREADY_SUBMITTED',$afterHistoricalAppeal['reason']??null,'Accepted appeal history must remain authoritative after state changes.');
 
+// A Seller Support observation that fails normalization (invalid case ID) must
+// never be silently ignored or crash the engine: it must block for human review.
+$invalidObservationCase=$appealCase;
+$invalidObservationCase['id']=6;
+$invalidObservationCase['amazon_order_id']='703-1111111-1111111';
+$invalidObservationCase['support_case_id']='NOT-A-VALID-ID';
+$invalidObservation=[
+    'id'=>2005,'case_id'=>6,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-10 04:50:00','payload'=>[
+        'case_id'=>'NOT-A-VALID-ID','case_status'=>'RESOLVED','latest_text'=>'Caso resolvido.',
+    ],
+];
+$invalidResult=$engine->nextAction($invalidObservationCase,[$invalidObservation],$policy,new DateTimeImmutable('2026-09-10 05:00:00',new DateTimeZone('UTC')));
+ssrdSame('BLOCKED_REVIEW',$invalidResult['action']??null,'A Seller Support observation that fails normalization must block for human review, never be silently skipped.');
+ssrdSame('SELLER_SUPPORT_OBSERVATION_INVALID',$invalidResult['reason']??null,'Invalid Seller Support observation must be named explicitly.');
+
+// Support guidance to email review without a SAFE-T ID linked to the case must
+// block for human review rather than attempt an email review with nothing to reference.
+$noSafeTIdCase=$appealCase;
+$noSafeTIdCase['id']=7;
+$noSafeTIdCase['amazon_order_id']='703-2222222-2222222';
+$noSafeTIdCase['safe_t_id']=null;
+$noSafeTIdCase['support_case_id']='21838892482';
+$noSafeTIdObserved=[
+    'id'=>2006,'case_id'=>7,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-10 04:55:00','payload'=>[
+        'case_id'=>'21838892482','case_status'=>'RESOLVED',
+        'latest_text'=>'Para uma análise detalhada, envie sua solicitação para Safe-T-Review@amazon.com.',
+    ],
+];
+$noSafeTIdResult=$engine->nextAction($noSafeTIdCase,[$noSafeTIdObserved],$policy,new DateTimeImmutable('2026-09-10 05:00:00',new DateTimeZone('UTC')));
+ssrdSame('BLOCKED_REVIEW',$noSafeTIdResult['action']??null,'Support-directed email review without a linked SAFE-T ID must block for human review, never send an email review with nothing to reference.');
+ssrdSame('SUPPORT_RESOLUTION_SAFE_T_ID_MISSING',$noSafeTIdResult['reason']??null,'Missing SAFE-T ID on a support-directed email review must be named explicitly.');
+
 echo "seller-support-resolution-decision-test: OK\n";
