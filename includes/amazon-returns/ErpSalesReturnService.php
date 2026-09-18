@@ -48,6 +48,16 @@ final class SvAmazonErpSalesReturnService
         // original sale lookup is temporarily unavailable.
         $workflow=$this->store->ensureWorkflow(['amazon_order_id'=>$orderId]);
         $persistedStatus=strtoupper(trim((string)($workflow['status']??'')));
+        if(
+            $persistedStatus==='RETURN_CREATED_WAITING_INVOICE'
+            && ($workflow['reconciled_quantity_refunded']??null)===null
+            && $this->legacyCreatedReturnCanBaseline($workflow,$cases)
+        ){
+            // Legacy rows were created and read back before quantity tracking existed.
+            // Baseline locally only when every current refund predates that verified
+            // ERP creation, so a later refund can never be hidden by the migration.
+            return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
+        }
         if($persistedStatus==='RETURN_INVOICE_EXISTS'){
             $reconciledRaw=$workflow['reconciled_quantity_refunded']??null;
             if($reconciledRaw===null){
@@ -199,6 +209,34 @@ final class SvAmazonErpSalesReturnService
             'invoice_number'=>self::nullable($workflow['original_invoice_number']??null),
             'access_key'=>self::nullable($workflow['original_invoice_key']??null),
         ];
+    }
+
+    /** @param array<string,mixed> $workflow @param list<array<string,mixed>> $cases */
+    private function legacyCreatedReturnCanBaseline(array $workflow,array $cases): bool
+    {
+        $createdAt=self::utcTimestamp($workflow['created_in_erp_at']??null);
+        if($createdAt===null)return false;
+        $latestRefundAt=null;
+        foreach($cases as $case){
+            if(!is_array($case) || (int)($case['quantity_refunded']??0)<1)continue;
+            $refundAt=self::utcTimestamp($case['refund_at']??null);
+            if($refundAt===null)return false;
+            if($latestRefundAt===null || $refundAt>$latestRefundAt)$latestRefundAt=$refundAt;
+        }
+        return $latestRefundAt!==null && $latestRefundAt<=$createdAt;
+    }
+
+    private static function utcTimestamp(mixed $value): ?DateTimeImmutable
+    {
+        if(!is_scalar($value))return null;
+        $value=trim((string)$value);
+        if($value==='')return null;
+        try{
+            return (new DateTimeImmutable($value,new DateTimeZone('UTC')))
+                ->setTimezone(new DateTimeZone('UTC'));
+        }catch(Throwable){
+            return null;
+        }
     }
 
     /** @param list<array<string,mixed>> $cases */
