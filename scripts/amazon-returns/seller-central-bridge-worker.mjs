@@ -879,6 +879,35 @@ function sellerSupportUnavailableResult() {
   });
 }
 
+function supportCaseIdFromHillTargetUrl(value) {
+  try {
+    const parsed = new URL(String(value ?? ''));
+    if (!parsed.pathname.includes('/hill/website/chat')) return '';
+    const caseId = String(parsed.searchParams.get('caseID') ?? '').trim();
+    return /^\d{8,14}$/.test(caseId) ? caseId : '';
+  } catch {
+    return '';
+  }
+}
+
+async function hillPopupSupportCaseId() {
+  let targets;
+  try {
+    const response = await fetch(`${CDP_BASE}/json/list`, { signal: AbortSignal.timeout(2500) });
+    if (!response.ok) return '';
+    targets = await response.json();
+  } catch {
+    return '';
+  }
+  if (!Array.isArray(targets)) return '';
+  for (const row of [...targets].reverse()) {
+    if (row?.type !== 'page') continue;
+    const caseId = supportCaseIdFromHillTargetUrl(row?.url);
+    if (caseId) return caseId;
+  }
+  return '';
+}
+
 async function hillPopupSupportState() {
   let targets;
   try {
@@ -957,6 +986,7 @@ async function contactSupportAndReadBack(cdp, job) {
   }
   await sleep(4500);
   let caseId = await currentSupportCaseId(cdp);
+  if (!caseId) caseId = await hillPopupSupportCaseId();
   for (let attempt = 0; !caseId && attempt < 5; attempt++) {
     try {
       caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
