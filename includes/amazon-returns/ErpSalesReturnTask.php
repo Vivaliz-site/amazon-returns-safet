@@ -110,6 +110,7 @@ final class SvAmazonErpSalesReturnTask
         $result['skipped_processed']=$skippedProcessed;
         $result['resume_pending']=$rateLimited;
         $result['incomplete_workflows']=$p->erpSalesReturns->countIncomplete();
+        $result['incomplete_workflows_detail']=$p->erpSalesReturns->incompleteAuditRows();
         if($result['incomplete_workflows']>0)$result['status']='PARTIAL';
         return $result;
     }
