@@ -223,6 +223,7 @@ final class SvAmazonErpSalesReturnService
             'ERP_SALES_RETURN_BROWSER_UNAVAILABLE',
             'ERP_SALES_RETURN_UI_DRIFT',
             'ERP_SALES_RETURN_ADDRESS_NUMBER_REQUIRED',
+            'ERP_SALES_RETURN_ITEM_MAPPING_FAILED',
             'ERP_ORIGINAL_SALE_NOT_FOUND',
         ],true);
     }
@@ -243,8 +244,13 @@ final class SvAmazonErpSalesReturnService
             if(!isset($aggregated[$key]))$aggregated[$key]=[
                 'amazon_order_item_id'=>$itemId!==''?$itemId:null,
                 'sku'=>$sku!==''?$sku:null,
+                'quantity_ordered'=>0,
                 'quantity_refunded'=>0,
             ];
+            $aggregated[$key]['quantity_ordered']=max(
+                (int)$aggregated[$key]['quantity_ordered'],
+                max(0,(int)($case['quantity_ordered']??0))
+            );
             $aggregated[$key]['quantity_refunded']+=(int)$quantity;
         }
         ksort($aggregated,SORT_STRING);
