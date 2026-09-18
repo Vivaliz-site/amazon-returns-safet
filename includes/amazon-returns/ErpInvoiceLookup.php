@@ -87,7 +87,7 @@ final class SvAmazonErpInvoiceLookup
     }
 
     /** @return array<string,mixed>|null */
-    private function findSaleViaSalesOrder(string $amazonOrderId): ?array
+    public function findSaleViaSalesOrder(string $amazonOrderId): ?array
     {
         $query=http_build_query([
             'numeroPedidoEcommerce'=>$amazonOrderId,

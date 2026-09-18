@@ -43,7 +43,12 @@ final class SvAmazonErpSalesReturnTask
                     $gateway,
                     static fn(string $candidateOrderId): array=>$p->cases->forOrder($candidateOrderId),
                     static function(string $candidateOrderId) use ($limiter,$saleLookup,$p,$cases): ?array {
-                        $sale=$saleLookup->findSaleForOrder($candidateOrderId);
+                        $workflow=$p->erpSalesReturns->findByOrder($candidateOrderId);
+                        $knownMiss=is_array($workflow)
+                            && strtoupper(trim((string)($workflow['last_error_code']??'')))==='ERP_ORIGINAL_SALE_NOT_FOUND';
+                        $sale=$knownMiss
+                            ? $saleLookup->findSaleViaSalesOrder($candidateOrderId)
+                            : $saleLookup->findSaleForOrder($candidateOrderId);
                         if(is_array($sale))return $sale;
                         $invoiceNumber=self::salesInvoiceNumberFromCases(
                             $cases,
