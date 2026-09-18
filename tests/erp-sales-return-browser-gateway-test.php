@@ -32,4 +32,13 @@ $authGateway=new SvAmazonOlistBrowserErpSalesReturnGateway(static fn(array $p): 
 $blocked=$authGateway->create(['amazon_order_id'=>'702-1234567-1234567','refund_at'=>'2026-09-12 10:00:00','original_sale'=>['invoice_id'=>'202'],'items'=>[['sku'=>'SKU-1','quantity_refunded'=>1]]]);
 bgSame(false,$blocked['ok']??null,'Authentication failure must not be treated as success.');
 bgSame('ERP_SALES_RETURN_AUTH_REQUIRED',$blocked['error_code']??null,'Authentication failure must expose a safe gateway code.');
+
+$itemGateway=new SvAmazonOlistBrowserErpSalesReturnGateway(static fn(array $p): array=>['status'=>'ITEM_MAPPING_FAILED','submitted'=>false,'external_id'=>null,'retry_safe'=>true]);
+$itemBlocked=$itemGateway->create(['amazon_order_id'=>'702-1234567-1234567','refund_at'=>'2026-09-12 10:00:00','original_sale'=>['invoice_id'=>'202'],'items'=>[['sku'=>'SKU-X','quantity_refunded'=>1]]]);
+bgSame('ERP_SALES_RETURN_ITEM_MAPPING_FAILED',$itemBlocked['error_code']??null,'Ambiguous item mapping must persist as a non-generic blocker.');
+
+$addressGateway=new SvAmazonOlistBrowserErpSalesReturnGateway(static fn(array $p): array=>['status'=>'ADDRESS_NUMBER_REQUIRED','submitted'=>false,'external_id'=>null,'retry_safe'=>true]);
+$addressBlocked=$addressGateway->create(['amazon_order_id'=>'702-1234567-1234567','refund_at'=>'2026-09-12 10:00:00','original_sale'=>['invoice_id'=>'202'],'items'=>[['sku'=>'SKU-1','quantity_refunded'=>1]]]);
+bgSame('ERP_SALES_RETURN_ADDRESS_NUMBER_REQUIRED',$addressBlocked['error_code']??null,'Missing customer address number must persist as a specific non-generic blocker.');
+
 echo "erp-sales-return-browser-gateway-test: OK\n";

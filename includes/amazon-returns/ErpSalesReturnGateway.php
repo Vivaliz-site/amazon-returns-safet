@@ -75,6 +75,8 @@ final class SvAmazonOlistBrowserErpSalesReturnGateway implements SvAmazonErpSale
             'UI_DRIFT'=>['ERP_SALES_RETURN_UI_DRIFT','A tela de devolucoes do Olist/Tiny mudou e a escrita foi bloqueada.'],
             'BROWSER_UNAVAILABLE'=>['ERP_SALES_RETURN_BROWSER_UNAVAILABLE','O navegador do Olist/Tiny na VM nao esta disponivel.'],
             'BROWSER_CONFIG_INVALID'=>['ERP_SALES_RETURN_BROWSER_UNAVAILABLE','O navegador do Olist/Tiny na VM nao esta configurado corretamente.'],
+            'ITEM_MAPPING_FAILED'=>['ERP_SALES_RETURN_ITEM_MAPPING_FAILED','Os itens reembolsados nao puderam ser correlacionados com seguranca aos itens da venda original no Olist/Tiny.'],
+            'ADDRESS_NUMBER_REQUIRED'=>['ERP_SALES_RETURN_ADDRESS_NUMBER_REQUIRED','O Olist/Tiny rejeitou a devolucao porque o endereco da venda original nao possui numero confirmado.'],
         ];
         [$code,$message]=$map[$status]??['ERP_SALES_RETURN_CREATE_FAILED','Nao foi possivel criar a devolucao automaticamente no Olist/Tiny.'];
         return ['ok'=>false,'uncertain'=>$externalId!=='' && (($result['retry_safe']??false)!==true),'id'=>$externalId!==''?$externalId:null,'error_code'=>$code,'error_message'=>$message];
