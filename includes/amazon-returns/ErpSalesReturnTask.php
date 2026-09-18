@@ -65,12 +65,20 @@ final class SvAmazonErpSalesReturnTask
                             ? $saleLookup->findSaleViaSalesOrder($candidateOrderId)
                             : $saleLookup->findSaleForOrder($candidateOrderId);
                         if(is_array($sale))return $sale;
-                        $invoiceNumber=self::salesInvoiceNumberFromCases(
-                            $cases,
-                            static fn(int $caseId): array=>$p->events->eventsForCase($caseId)
+                        $eventsForCase=static fn(int $caseId): array=>$p->events->eventsForCase($caseId);
+                        $invoiceNumber=self::salesInvoiceNumberFromCases($cases,$eventsForCase);
+                        if($invoiceNumber!==null){
+                            $sale=$saleLookup->findOrderByInvoiceNumber($invoiceNumber);
+                            if(is_array($sale))return $sale;
+                        }
+                        $orphanFacts=self::orphanSaleFacts($cases,$eventsForCase);
+                        if($orphanFacts===null)return null;
+                        return $saleLookup->findOrphanSaleForOrder(
+                            $candidateOrderId,
+                            $orphanFacts['order_date'],
+                            $orphanFacts['sales_amount'],
+                            $orphanFacts['items']
                         );
-                        if($invoiceNumber===null)return null;
-                        return $saleLookup->findOrderByInvoiceNumber($invoiceNumber);
                     },
                     static function(string $candidateOrderId) use ($limiter,$returnLookup): ?array {
                         $limiter->beforeRequest();
@@ -168,6 +176,61 @@ final class SvAmazonErpSalesReturnTask
         }
         if(count($numbers)!==1)return null;
         return (string)array_values($numbers)[0];
+    }
+
+    /**
+     * Builds conservative local evidence for orphan invoice recovery.
+     * Requires one order date, one distinct positive BRL Shipment/Sales amount,
+     * and a complete refunded-order SKU/quantity signature.
+     *
+     * @param list<array<string,mixed>> $cases
+     * @param callable(int):array $eventsForCase
+     * @return array{order_date:string,sales_amount:string,items:array<string,int>}|null
+     */
+    public static function orphanSaleFacts(array $cases,callable $eventsForCase): ?array
+    {
+        $dates=[];$amounts=[];$items=[];
+        foreach($cases as $case){
+            if(!is_array($case))continue;
+            $sku=strtolower(trim((string)($case['sku']??'')));
+            $quantity=(int)($case['quantity_ordered']??0);
+            if($sku==='' || $quantity<1)return null;
+            $items[$sku]=($items[$sku]??0)+$quantity;
+            $caseId=(int)($case['id']??0);
+            if($caseId<1)return null;
+            foreach($eventsForCase($caseId) as $event){
+                if(!is_array($event))continue;
+                $type=strtoupper(trim((string)($event['event_type']??'')));
+                $payload=is_array($event['payload']??null)?$event['payload']:[];
+                if($type==='ORDER_SYNCED'){
+                    $raw=trim((string)($payload['order_at']??''));
+                    if($raw!==''){
+                        try{$date=(new DateTimeImmutable($raw,new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');}
+                        catch(Throwable){$date='';}
+                        if($date!=='')$dates[$date]=true;
+                    }
+                }
+                if($type!=='FINANCIAL_TRANSACTION_OBSERVED')continue;
+                $tx=is_array($payload['transaction']??null)?$payload['transaction']:[];
+                if(strtoupper(trim((string)($tx['transaction_type']??'')))!=='SHIPMENT')continue;
+                foreach(($tx['breakdowns']??[]) as $breakdown){
+                    if(!is_array($breakdown))continue;
+                    if(strtoupper(trim((string)($breakdown['breakdown_type']??'')))!=='SALES')continue;
+                    $money=is_array($breakdown['breakdown_amount']??null)?$breakdown['breakdown_amount']:[];
+                    $amount=$money['amount']??null;
+                    $currency=strtoupper(trim((string)($money['currency']??'')));
+                    if($currency!=='BRL' || !is_numeric($amount) || (float)$amount<=0)continue;
+                    $amounts[number_format((float)$amount,2,'.','')]=true;
+                }
+            }
+        }
+        ksort($items,SORT_STRING);
+        if($items===[] || count($dates)!==1 || count($amounts)!==1)return null;
+        return [
+            'order_date'=>(string)array_key_first($dates),
+            'sales_amount'=>(string)array_key_first($amounts),
+            'items'=>$items,
+        ];
     }
 
     /** @param array<string,mixed>|null $workflow */
