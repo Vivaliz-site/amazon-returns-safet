@@ -10,7 +10,7 @@ require_once $repo;
 ehlsAssert(method_exists(SvAmazonErpSalesReturnRepository::class,'countIncomplete'),'ERP repository must expose current incomplete workflow count.');
 ehlsAssert(method_exists(SvAmazonErpSalesReturnRepository::class,'healthBreakdown'),'ERP repository must expose status/error/duplicate health breakdown.');
 $repoSource=(string)file_get_contents($repo);
-ehlsAssert(str_contains($repoSource,"status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS')"),'Incomplete count must fail closed for any workflow without proven target-side creation/readback.');
+ehlsAssert(str_contains($repoSource,"status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D')"),'Incomplete count must fail closed for active workflows while excluding refunds intentionally ignored outside the 90-day window.');
 ehlsAssert(str_contains($repoSource,"duplicate_groups"),'ERP health breakdown must audit duplicate identifiers, not only aggregate incompletes.');
 
 $runtimeSource=(string)file_get_contents($runtime);
