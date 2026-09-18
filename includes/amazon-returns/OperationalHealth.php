@@ -14,7 +14,7 @@ final class SvAmazonOperationalHealth
             $prefix='TASK_'.strtoupper($task).'_';
             if(!is_array($cursor)){$blockers[]=$prefix.'NOT_OBSERVED';continue;}
             $status=strtoupper(trim((string)($cursor['metadata']['status']??'UNKNOWN')));
-            if(in_array($status,['FAILED','PARTIAL','DEGRADED','BLOCKED_CREDENTIALS','SKIPPED_DISABLED'],true))$blockers[]=$prefix.$status;
+            if(in_array($status,['FAILED','PARTIAL','DEGRADED','BLOCKED_CREDENTIALS','SKIPPED_DISABLED','SKIPPED_NOT_CONFIGURED'],true))$blockers[]=$prefix.$status;
             $observedAt=trim((string)($cursor['observed_at']??''));
             if($observedAt===''){$blockers[]=$prefix.'NOT_OBSERVED';continue;}
             try{$seen=(new DateTimeImmutable($observedAt,new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));}
