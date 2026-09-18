@@ -923,7 +923,12 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
     if (await frameHas(cdp, 'Create a case')) {
       return await submitDirectSupportCaseAndReadBack(cdp, job, narrative);
     }
-    if (await clickFrameTextWhenReady(cdp, 'Contact an associate', 1500)) {
+    if (await frameHas(cdp, 'Contact an associate')) {
+      const contactClicked = (await cdp.clickFrameButtonTrustedByText('Contact an associate'))
+        || Boolean(await clickFrameTextWhenReady(cdp, 'Contact an associate', 1500));
+      if (!contactClicked) {
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_ASSOCIATE_CLICK_FAILED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      }
       contacted = true;
       break;
     }
@@ -1066,12 +1071,20 @@ async function supportOpen(cdp, job) {
       continue;
     }
     if (await frameHas(cdp, 'Contact an associate')) {
-      await clickFrameTextWhenReady(cdp, 'Contact an associate', 5000);
+      const contactClicked = (await cdp.clickFrameButtonTrustedByText('Contact an associate'))
+        || Boolean(await clickFrameTextWhenReady(cdp, 'Contact an associate', 5000));
+      if (!contactClicked) {
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_ASSOCIATE_CLICK_FAILED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      }
       await sleep(750);
       continue;
     }
     if (await frameHas(cdp, 'Entre em contato com um associado')) {
-      await clickFrameTextWhenReady(cdp, 'Entre em contato com um associado', 5000);
+      const contactClicked = (await cdp.clickFrameButtonTrustedByText('Entre em contato com um associado'))
+        || Boolean(await clickFrameTextWhenReady(cdp, 'Entre em contato com um associado', 5000));
+      if (!contactClicked) {
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_ASSOCIATE_CLICK_FAILED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      }
       await sleep(750);
       continue;
     }
