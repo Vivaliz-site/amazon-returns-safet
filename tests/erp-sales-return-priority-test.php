@@ -30,4 +30,19 @@ erpPrioritySame(['702-5555555-6666666'],SvAmazonErpSalesReturnTask::filterQuotaR
     ['702-1111111-2222222','702-3333333-4444444']
 ),'Quota continuation must skip orders already persisted as processed.');
 
+$windowNow=new DateTimeImmutable('2026-09-18 12:00:00',new DateTimeZone('UTC'));
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::refundWithinOperationalWindow([
+    ['quantity_refunded'=>1,'refund_at'=>'2026-06-20 12:00:00'],
+],$windowNow),'Refund exactly 90 days old must remain operational.');
+erpPrioritySame(false,SvAmazonErpSalesReturnTask::refundWithinOperationalWindow([
+    ['quantity_refunded'=>1,'refund_at'=>'2026-06-20 11:59:59'],
+],$windowNow),'Refund older than 90 days must be ignored.');
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::refundWithinOperationalWindow([
+    ['quantity_refunded'=>1,'refund_at'=>''],
+],$windowNow),'Missing refund timestamp must remain operational conservatively.');
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::refundWithinOperationalWindow([
+    ['quantity_refunded'=>1,'refund_at'=>'not-a-date'],
+],$windowNow),'Invalid refund timestamp must remain operational conservatively.');
+erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'IGNORED_REFUND_OLDER_THAN_90D']),'Refunds outside the 90-day operational window must not spend ERP quota.');
+
 echo "erp-sales-return-priority-test: OK\n";
