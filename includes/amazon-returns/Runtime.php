@@ -485,6 +485,11 @@ final class SvAmazonReturnsRuntime
         }
         $deadLetters=$p->outbox->countDeadLetters();
         $operationalHealth=SvAmazonOperationalHealth::evaluate(self::cadences(),$operationalObservations,$now,$deadLetters);
+        $erpIncomplete=$p->erpSalesReturns->countIncomplete();
+        if($erpIncomplete>0){
+            $operationalHealth['blockers'][]='TASK_ERP_SALES_RETURNS_INCOMPLETE';
+            $operationalHealth['blockers']=array_values(array_unique($operationalHealth['blockers']));
+        }
         $businessHealth=SvAmazonBusinessHealth::evaluate($config->enabled(),$config->mode(),$readiness,$writeFlags,$browserLiveness,$operationalHealth['blockers']);
         $healthStatus=(string)$businessHealth['status'];
         return [
@@ -496,6 +501,7 @@ final class SvAmazonReturnsRuntime
             'pending_outbox'=>$p->outbox->countPendingProcessing(),
             'dead_letters'=>$deadLetters,
             'pending_reviews'=>$p->reviews->countOpen(),
+            'erp_sales_return_incomplete'=>$erpIncomplete,
             'rule_conflicts'=>$p->reviews->countOpenByReason('LEARNED_RULE_CONFLICT'),
             'rule_applications'=>$p->ruleApplications->countAll(),
             'ai_suggestion_failures'=>$p->reviews->countAiFailures(),

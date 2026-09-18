@@ -37,6 +37,14 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
         return is_array($row)?$row:null;
     }
 
+    public function countIncomplete(): int
+    {
+        $stmt=$this->sql(
+            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS')"
+        );
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
     /** @param array<string,mixed> $data @return array<string,mixed> */
     public function ensureWorkflow(array $data): array
     {
