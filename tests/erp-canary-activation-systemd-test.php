@@ -14,7 +14,7 @@ $cfg=new SvAmazonReturnsConfig([
 ]);
 eaAssert($cfg->erpSalesReturnCreateEnabled()===true,'Dedicated canary config must make the ERP gate effective.');
 $global=json_decode((string)file_get_contents(__DIR__.'/../deploy/write-profile.json'),true);
-eaAssert(($global['ERP_SALES_RETURN_CREATE']??null)===false,'Global daemon ERP gate must stay disabled during canary.');
+eaAssert(($global['ERP_SALES_RETURN_CREATE']??null)===true,'Global daemon ERP gate must be enabled after the proven production canary.');
 $canaryEnv=(string)file_get_contents(__DIR__.'/../deploy/erp-canary-execute.env');
 eaAssert(!str_contains($canaryEnv,'AMAZON_RETURNS_WRITE_CANARY_CASE_IDS='),'Versioned canary env must not pin a stale case ID.');
 eaAssert(str_contains($canaryEnv,'AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED=1'),'Dedicated ERP gate must remain isolated to canary execution.');

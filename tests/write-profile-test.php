@@ -21,9 +21,9 @@ foreach([
  'SELLER_SUPPORT_OPEN'=>'profile enables deterministic Seller Support escalation',
  'SELLER_SUPPORT_UPDATE'=>'profile enables deterministic Seller Support follow-up',
 ] as $action=>$why)wpSame(true,$cfg->externalWriteAllowed($action),$why);
-wpSame(false,$cfg->externalWriteAllowed('ERP_SALES_RETURN_CREATE'),'ERP sales-return profile must ship disabled');
+wpSame(true,$cfg->externalWriteAllowed('ERP_SALES_RETURN_CREATE'),'ERP sales-return profile must ship enabled after proven production canary');
 wpSame(true,method_exists($cfg,'erpSalesReturnCreateEnabled'),'config must expose the dedicated ERP sales-return gate');
-if(method_exists($cfg,'erpSalesReturnCreateEnabled'))wpSame(false,$cfg->erpSalesReturnCreateEnabled(),'environment flag alone must not bypass the disabled profile');
+if(method_exists($cfg,'erpSalesReturnCreateEnabled'))wpSame(true,$cfg->erpSalesReturnCreateEnabled(),'both production ERP gates must enable sales-return creation');
 $kill=new SvAmazonReturnsConfig([
  'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production',
  'AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'1',
@@ -47,7 +47,7 @@ if(is_file($checker)){
  foreach(['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'] as $action){
   wpSame(true,$checked['flags'][$action]??null,'checker sees '.$action.' enabled');
  }
- wpSame(false,$checked['flags']['ERP_SALES_RETURN_CREATE']??null,'checker sees ERP sales-return write disabled');
+ wpSame(false,$checked['flags']['ERP_SALES_RETURN_CREATE']??null,'checker remains fail-closed without the dedicated environment gate');
 }
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 wpSame(true,str_contains($daemon,'write_profile_revision'),'profile change must force scheduler reevaluation');
