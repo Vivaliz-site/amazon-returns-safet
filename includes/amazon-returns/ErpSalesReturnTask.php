@@ -181,7 +181,8 @@ final class SvAmazonErpSalesReturnTask
 
     /**
      * Builds conservative local evidence for orphan invoice recovery.
-     * Requires one order date, one distinct positive BRL Shipment/Sales amount,
+     * Requires one order date, one distinct BRL item value (prefer the absolute
+     * Refund/Refunded Sales amount used by the fiscal invoice, otherwise Shipment/Sales),
      * and a complete refunded-order SKU/quantity signature.
      *
      * @param list<array<string,mixed>> $cases
@@ -190,7 +191,7 @@ final class SvAmazonErpSalesReturnTask
      */
     public static function orphanSaleFacts(array $cases,callable $eventsForCase): ?array
     {
-        $dates=[];$amounts=[];$items=[];
+        $dates=[];$shipmentAmounts=[];$refundedSalesAmounts=[];$items=[];
         foreach($cases as $case){
             if(!is_array($case))continue;
             $sku=strtolower(trim((string)($case['sku']??'')));
@@ -216,20 +217,26 @@ final class SvAmazonErpSalesReturnTask
                 }
                 if($type!=='FINANCIAL_TRANSACTION_OBSERVED')continue;
                 $tx=is_array($payload['transaction']??null)?$payload['transaction']:[];
-                if(strtoupper(trim((string)($tx['transaction_type']??'')))!=='SHIPMENT')continue;
+                $transactionType=strtoupper(trim((string)($tx['transaction_type']??'')));
                 foreach(($tx['breakdowns']??[]) as $breakdown){
                     if(!is_array($breakdown))continue;
-                    if(strtoupper(trim((string)($breakdown['breakdown_type']??'')))!=='SALES')continue;
+                    $breakdownType=strtoupper(trim((string)($breakdown['breakdown_type']??'')));
                     $money=is_array($breakdown['breakdown_amount']??null)?$breakdown['breakdown_amount']:[];
                     $amount=$money['amount']??null;
                     $currency=strtoupper(trim((string)($money['currency']??'')));
-                    if($currency!=='BRL' || !is_numeric($amount) || (float)$amount<=0)continue;
-                    $amounts[number_format((float)$amount,2,'.','')]=true;
+                    if($currency!=='BRL' || !is_numeric($amount))continue;
+                    if($transactionType==='REFUND' && $breakdownType==='REFUNDED SALES' && (float)$amount<0){
+                        $refundedSalesAmounts[number_format(abs((float)$amount),2,'.','')]=true;
+                    }elseif($transactionType==='SHIPMENT' && $breakdownType==='SALES' && (float)$amount>0){
+                        $shipmentAmounts[number_format((float)$amount,2,'.','')]=true;
+                    }
                 }
             }
         }
         ksort($items,SORT_STRING);
-        if($items===[] || count($dates)!==1 || count($amounts)!==1)return null;
+        if($items===[] || count($dates)!==1)return null;
+        $amounts=$refundedSalesAmounts!==[]?$refundedSalesAmounts:$shipmentAmounts;
+        if(count($amounts)!==1)return null;
         return [
             'order_date'=>(string)array_key_first($dates),
             'sales_amount'=>(string)array_key_first($amounts),

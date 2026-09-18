@@ -103,6 +103,22 @@ orphanSame('2026-04-01',$boundaryFacts['order_date']??null,'ERP orphan matching 
 orphanSame('45.80',$facts['sales_amount']??null,'Duplicate shipment observations must collapse to one distinct Sales amount.');
 orphanSame(['abc'=>2,'ved-80t'=>1],$facts['items']??null,'Case SKU quantities must form a normalized exact multiset.');
 
+$refundValueEvents=$events;
+foreach([11,12] as $caseId){
+    $refundValueEvents[$caseId][]=[
+        'event_type'=>'FINANCIAL_TRANSACTION_OBSERVED',
+        'payload'=>['transaction'=>[
+            'transaction_type'=>'Refund',
+            'breakdowns'=>[
+                ['breakdown_type'=>'Refunded Expenses','breakdown_amount'=>['amount'=>'2.69','currency'=>'BRL']],
+                ['breakdown_type'=>'Refunded Sales','breakdown_amount'=>['amount'=>'-27.99','currency'=>'BRL']],
+            ],
+        ]],
+    ];
+}
+$refundFacts=SvAmazonErpSalesReturnTask::orphanSaleFacts($cases,static fn(int $id):array=>$refundValueEvents[$id]??[]);
+orphanSame('27.99',$refundFacts['sales_amount']??null,'Refunded Sales must be preferred because it matches the fiscal sale-item value used by Olist invoices.');
+
 $events[12][]=['event_type'=>'FINANCIAL_TRANSACTION_OBSERVED','payload'=>['transaction'=>['transaction_type'=>'Shipment','breakdowns'=>[['breakdown_type'=>'Sales','breakdown_amount'=>['amount'=>'46.00','currency'=>'BRL']]]]]];
 orphanSame(null,SvAmazonErpSalesReturnTask::orphanSaleFacts($cases,static fn(int $id):array=>$events[$id]??[]),'Conflicting Sales amounts must disable orphan recovery.');
 $cases[1]['sku']='';
