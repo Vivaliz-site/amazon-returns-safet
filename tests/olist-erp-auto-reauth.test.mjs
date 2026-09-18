@@ -6,6 +6,7 @@ import { classifyOlistLocation, ensureOlistAuthenticated } from '../scripts/amaz
 test('classifies ERP and Tiny identity locations without exposing credentials', () => {
   assert.equal(classifyOlistLocation('https://erp.olist.com/devolucoes_vendas#list'), 'ERP');
   assert.equal(classifyOlistLocation('https://erp.olist.com/login/'), 'AUTH');
+  assert.equal(classifyOlistLocation('https://erp.olist.com/'), 'AUTH');
   assert.equal(classifyOlistLocation('https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/auth'), 'AUTH');
   assert.equal(classifyOlistLocation('https://id.olist.com/login'), 'AUTH');
   assert.equal(classifyOlistLocation('https://example.com/'), 'OTHER');

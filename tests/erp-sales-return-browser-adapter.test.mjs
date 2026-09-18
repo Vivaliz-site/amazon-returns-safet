@@ -339,6 +339,7 @@ test('CDP RPC executes the whitelisted XAJAX expression through the attached pag
 test('classifies Olist browser readiness without treating the login page as ERP-ready', () => {
   assert.equal(classifyOlistPageState('https://erp.olist.com/devolucoes_vendas#list', true), 'READY');
   assert.equal(classifyOlistPageState('https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/auth', false), 'AUTH_REQUIRED');
+  assert.equal(classifyOlistPageState('https://erp.olist.com/', false), 'AUTH_REQUIRED');
   assert.equal(classifyOlistPageState('https://erp.olist.com/devolucoes_vendas#list', false), 'UI_DRIFT');
 });
 
