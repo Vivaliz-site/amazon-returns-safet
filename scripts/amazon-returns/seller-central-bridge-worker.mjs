@@ -890,21 +890,30 @@ function supportCaseIdFromHillTargetUrl(value) {
   }
 }
 
-async function hillPopupSupportCaseId(excludedCaseIds = []) {
+async function hillPopupSupportCaseIds() {
   let targets;
   try {
     const response = await fetch(`${CDP_BASE}/json/list`, { signal: AbortSignal.timeout(2500) });
-    if (!response.ok) return '';
+    if (!response.ok) return [];
     targets = await response.json();
   } catch {
-    return '';
+    return [];
   }
-  if (!Array.isArray(targets)) return '';
-  const excluded = new Set((Array.isArray(excludedCaseIds) ? excludedCaseIds : []).map(text).filter(Boolean));
-  for (const row of [...targets].reverse()) {
+  if (!Array.isArray(targets)) return [];
+  const ids = [];
+  for (const row of targets) {
     if (row?.type !== 'page') continue;
     const caseId = supportCaseIdFromHillTargetUrl(row?.url);
-    if (caseId && !excluded.has(caseId)) return caseId;
+    if (caseId && !ids.includes(caseId)) ids.push(caseId);
+  }
+  return ids;
+}
+
+async function hillPopupSupportCaseId(excludedCaseIds = []) {
+  const excluded = new Set((Array.isArray(excludedCaseIds) ? excludedCaseIds : []).map(text).filter(Boolean));
+  const ids = await hillPopupSupportCaseIds();
+  for (const caseId of [...ids].reverse()) {
+    if (!excluded.has(caseId)) return caseId;
   }
   return '';
 }
@@ -961,8 +970,15 @@ async function currentSupportCaseId(cdp) {
   return text(await cdp.evaluate(`(()=>{const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){for(const a of d.querySelectorAll('a[href*="caseID="]')){const m=(a.href||'').match(/[?&]caseID=(\\d{8,14})/);if(m)return m[1]}const body=d.body?.innerText||'';const m=body.match(/(?:ID do caso|Case ID)[:\\s#-]*(\\d{8,14})/i);if(m)return m[1]}return ''})()`));
 }
 
+async function supportCaseMatchesJob(cdp, job, caseId) {
+  const candidate = text(caseId);
+  const needles = [text(job.case?.order_id), text(job.case?.safe_t_id)].filter(Boolean);
+  if (!/^\d{8,14}$/.test(candidate) || needles.length === 0) return false;
+  return (await cdp.evaluate(`(async()=>{try{const response=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(${JSON.stringify(candidate)})+'&timeZone=UTC&pageSize=50',{credentials:'include'});if(!response.ok)return false;const detail=await response.json();const body=JSON.stringify(detail||{});const needles=${JSON.stringify(needles)};return needles.some(needle=>body.includes(needle))}catch{return false}})()`)) === true;
+}
+
 async function contactSupportAndReadBack(cdp, job) {
-  const popupCaseIdBeforeWrite = await hillPopupSupportCaseId();
+  const popupCaseIdsBeforeWrite = await hillPopupSupportCaseIds();
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline && !(await hillContactReady(cdp))) await sleep(750);
   if (!(await hillContactReady(cdp))) {
@@ -986,9 +1002,21 @@ async function contactSupportAndReadBack(cdp, job) {
       next_allowed_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     });
   }
-  await sleep(4500);
+  await sleep(1500);
   let caseId = await currentSupportCaseId(cdp);
-  if (!caseId) caseId = await hillPopupSupportCaseId(popupCaseIdBeforeWrite ? [popupCaseIdBeforeWrite] : []);
+  if (caseId && !(await supportCaseMatchesJob(cdp, job, caseId))) caseId = '';
+  const excludedPopupCaseIds = [...popupCaseIdsBeforeWrite];
+  for (let attempt = 0; !caseId && attempt < 8; attempt++) {
+    const popupCaseId = await hillPopupSupportCaseId(excludedPopupCaseIds);
+    if (popupCaseId) {
+      if (await supportCaseMatchesJob(cdp, job, popupCaseId)) {
+        caseId = popupCaseId;
+        break;
+      }
+      if (!excludedPopupCaseIds.includes(popupCaseId)) excludedPopupCaseIds.push(popupCaseId);
+    }
+    if (!caseId) await sleep(750);
+  }
   for (let attempt = 0; !caseId && attempt < 5; attempt++) {
     try {
       caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
@@ -1042,6 +1070,7 @@ async function submitDirectSupportCaseAndReadBack(cdp, job, narrative) {
   }
   await sleep(2500);
   let caseId = await currentSupportCaseId(cdp);
+  if (caseId && !(await supportCaseMatchesJob(cdp, job, caseId))) caseId = '';
   for (let attempt = 0; !caseId && attempt < 6; attempt++) {
     try {
       caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
