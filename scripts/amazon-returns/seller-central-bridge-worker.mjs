@@ -223,13 +223,81 @@ class Cdp {
     return true;
   }
 
+  async frameButtonReadyByText(label) {
+    return (await this.evaluate(`(()=>{const label=${JSON.stringify(label)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const host of d.querySelectorAll('kat-button,button')){const text=(host.getAttribute('label')||host.innerText||'').trim();if(text!==label)continue;const button=host.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(button&&!button.disabled)return true}}return false})()`)) === true;
+  }
+
+  async frameOptionSelectedByText(label) {
+    return (await this.evaluate(`(()=>{const label=${JSON.stringify(label)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const host of d.querySelectorAll('kat-button,button')){const text=(host.getAttribute('label')||host.innerText||'').trim();if(text!==label)continue;const cls=String(host.className||'');if(cls.split(/\\s+/).includes('selected-option'))return true}}return false})()`)) === true;
+  }
+
   async clickFrameButtonTrustedByText(label) {
-    const point = await this.evaluate(`(()=>{const label=${JSON.stringify(label)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const host of d.querySelectorAll('kat-button,button')){const text=(host.getAttribute('label')||host.innerText||'').trim();if(text!==label)continue;const button=host.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(!button||button.disabled)continue;f.scrollIntoView({block:'center'});button.scrollIntoView({block:'center'});const a=f.getBoundingClientRect(),b=button.getBoundingClientRect();const x=a.left+b.left+(b.width/2),y=a.top+b.top+(b.height/2);if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>innerWidth||y>innerHeight)return null;return {x,y}}}return null})()`);
-    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
-    await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y, button: 'none' });
-    await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 });
-    await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 });
-    return true;
+    const evaluated = await this.send('Runtime.evaluate', {
+      expression: `(()=>{const label=${JSON.stringify(label)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const host of d.querySelectorAll('kat-button,button')){const text=(host.getAttribute('label')||host.innerText||'').trim();if(text!==label)continue;const button=host.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(!button||button.disabled)continue;return button}}return null})()`,
+      returnByValue: false,
+      awaitPromise: true,
+    });
+    const objectId = evaluated?.result?.objectId;
+    if (!objectId) return false;
+    try {
+      await this.send('DOM.scrollIntoViewIfNeeded', { objectId });
+      await sleep(120);
+      const box = await this.send('DOM.getBoxModel', { objectId });
+      const quad = box?.model?.content;
+      if (!Array.isArray(quad) || quad.length < 8) return false;
+      const x = (Number(quad[0]) + Number(quad[2]) + Number(quad[4]) + Number(quad[6])) / 4;
+      const y = (Number(quad[1]) + Number(quad[3]) + Number(quad[5]) + Number(quad[7])) / 4;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+      await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' });
+      await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+      await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      await this.send('Runtime.releaseObject', { objectId }).catch(() => {});
+    }
+  }
+
+  async fillFrameTextareaTrusted(selector, value) {
+    const expected = String(value ?? '');
+    if (!selector || expected === '') return false;
+    const evaluated = await this.send('Runtime.evaluate', {
+      expression: `(()=>{const selector=${JSON.stringify(selector)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;const host=d.querySelector(selector);const textarea=host?.tagName==='KAT-TEXTAREA'?host.shadowRoot?.querySelector('textarea'):host?.tagName==='TEXTAREA'?host:null;if(!textarea||host?.hasAttribute?.('disabled')||textarea.disabled)continue;return textarea}return null})()`,
+      returnByValue: false,
+      awaitPromise: true,
+    });
+    const objectId = evaluated?.result?.objectId;
+    if (!objectId) return false;
+    try {
+      await this.send('DOM.scrollIntoViewIfNeeded', { objectId });
+      await sleep(120);
+      const box = await this.send('DOM.getBoxModel', { objectId });
+      const quad = box?.model?.content;
+      if (!Array.isArray(quad) || quad.length < 8) return false;
+      const x = (Number(quad[0]) + Number(quad[2]) + Number(quad[4]) + Number(quad[6])) / 4;
+      const y = (Number(quad[1]) + Number(quad[3]) + Number(quad[5]) + Number(quad[7])) / 4;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+      await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' });
+      await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+      await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+      await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65 });
+      await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65 });
+      await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+      await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+      await this.send('Input.insertText', { text: expected });
+      await sleep(300);
+      return (await this.send('Runtime.callFunctionOn', {
+        objectId,
+        functionDeclaration: 'function(expected){return this.value===expected}',
+        arguments: [{ value: expected }],
+        returnByValue: true,
+      }))?.result?.value === true;
+    } catch {
+      return false;
+    } finally {
+      await this.send('Runtime.releaseObject', { objectId }).catch(() => {});
+    }
   }
 
   async fillFrameInputTrustedByLabel(labels, value) {
@@ -770,7 +838,12 @@ async function hillChatReady(cdp) {
 }
 
 async function clickHillChat(cdp) {
-  return (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(!d)continue;for(const b of d.querySelectorAll('kat-button,button')){const label=(b.getAttribute('label')||b.innerText||'').trim();if(!['Chat now','Conversar agora','Iniciar chat'].includes(label))continue;const button=b.tagName==='KAT-BUTTON'?b.shadowRoot?.querySelector('button'):b;if(button&&!button.disabled){button.click();return label}}}return ''})()`)).toString().trim();
+  const point = await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const outer=f.contentDocument;const hill=outer?.querySelector('spl-hill-form');const innerFrame=hill?.shadowRoot?.querySelector('iframe');const d=innerFrame?.contentDocument;if(!d)continue;for(const h of d.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.innerText||'').trim();if(!['Chat now','Conversar agora','Iniciar chat'].includes(label))continue;const button=h.tagName==='KAT-BUTTON'?h.shadowRoot?.querySelector('button'):h;if(!button||button.disabled)continue;f.scrollIntoView({block:'center'});hill.scrollIntoView({block:'center'});button.scrollIntoView({block:'center'});const a=f.getBoundingClientRect(),b=innerFrame.getBoundingClientRect(),c=button.getBoundingClientRect();const x=a.left+b.left+c.left+(c.width/2),y=a.top+b.top+c.top+(c.height/2);if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>innerWidth||y>innerHeight)return null;return {x,y,label}}return null})()`);
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return '';
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y, button: 'none' });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+  return text(point.label);
 }
 
 async function hillContactReady(cdp) {
@@ -867,10 +940,11 @@ async function contactSupportAndReadBack(cdp, job) {
   }
   let channel = await submitHillEmail(cdp, job);
   if (channel !== 'Email') {
-    if (await hillChatReady(cdp)) {
-      return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_COMPLETION_NOT_IMPLEMENTED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    if (!(await hillChatReady(cdp))) {
+      return bridgeResult('UI_DRIFT', { reason: channel || 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
     }
-    return bridgeResult('UI_DRIFT', { reason: channel || 'SUPPORT_EMAIL_SEND_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    channel = await clickHillChat(cdp);
+    if (!channel) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_START_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
   await sleep(1500);
   if (await hillSupportUnavailable(cdp)) {
@@ -897,7 +971,7 @@ async function contactSupportAndReadBack(cdp, job) {
   if (!/^\d{8,14}$/.test(caseId)) {
     return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
   }
-  const reason = channel === 'Email' ? 'SUPPORT_CASE_OPENED_VIA_EMAIL' : `SUPPORT_CASE_OPENED_VIA_${channel.toUpperCase().replace(/\s+/g,'_')}`;
+  const reason = channel === 'Email' ? 'SUPPORT_CASE_OPENED_VIA_EMAIL' : 'SUPPORT_CASE_OPENED_VIA_CHAT';
   return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason, evidence: await evidence(cdp, 'help-v1') });
 }
 async function fillGeneralSupportIssue(cdp, job, narrative) {
@@ -1109,11 +1183,80 @@ async function supportOpen(cdp, job) {
   const orderInputReady = await cdp.waitFor(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-input[placeholder*="112-"]');if(h&&!h.hasAttribute('disabled'))return true}return false})()`, 30000);
   if (!orderInputReady || !(await cdp.setFrameKat('kat-input[placeholder*="112-"]', orderId))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ORDER_INPUT_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000)) && !(await clickFrameTextWhenReady(cdp, 'Continuar', 10000))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ORDER_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-  const flowDeadline = Date.now() + 120000;
+  const flowDeadline = Date.now() + 180000;
   let fbaAsinFilled = false;
   let narrativeFilled = false;
   while (Date.now() < flowDeadline) {
     if (await hillContactReady(cdp)) return await contactSupportAndReadBack(cdp, job);
+    const contactSelected = (await cdp.frameOptionSelectedByText('Contact an associate'))
+      || (await cdp.frameOptionSelectedByText('Entre em contato com um associado'));
+    if (contactSelected) {
+      const additionalInfoReady = (await cdp.evaluate(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-textarea.meld-text-area');if(h&&!h.hasAttribute('disabled'))return true}return false})()`)) === true;
+      if (!additionalInfoReady) {
+        await sleep(500);
+        continue;
+      }
+      if (!narrativeFilled) {
+        if (!(await cdp.fillFrameTextareaTrusted('kat-textarea.meld-text-area', narrative))) {
+          return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_ADDITIONAL_INFO_NOT_WRITABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+        }
+        narrativeFilled = true;
+        await sleep(500);
+      }
+      const advanced = (await cdp.clickFrameButtonTrustedByText('Continue'))
+        || (await cdp.clickFrameButtonTrustedByText('Continuar'))
+        || Boolean(await clickFirstFrameTextWhenReady(cdp, ['Continue','Continuar'], 10000));
+      if (!advanced) {
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_SELECTED_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      }
+      await sleep(750);
+      continue;
+    }
+    if (await frameHas(cdp, 'Create a case')) {
+      return await submitDirectSupportCaseAndReadBack(cdp, job, narrative);
+    }
+    if (await cdp.frameButtonReadyByText('Contact an associate')) {
+      const contactClicked = (await cdp.clickFrameButtonTrustedByText('Contact an associate'))
+        || Boolean(await clickFrameTextWhenReady(cdp, 'Contact an associate', 5000));
+      if (!contactClicked) {
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_ASSOCIATE_CLICK_FAILED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      }
+      await sleep(750);
+      if (await hillContactReady(cdp)) continue;
+      const postContactContinue = (await cdp.clickFrameButtonTrustedByText('Continue'))
+        || (await cdp.clickFrameButtonTrustedByText('Continuar'))
+        || Boolean(await clickFirstFrameTextWhenReady(cdp, ['Continue','Continuar'], 5000));
+      if (postContactContinue) { await sleep(750); continue; }
+      const routed = await clickFirstFrameTextWhenReady(cdp, ['FBA related','A-to-z Claims'], 15000);
+      if (routed) { await sleep(750); continue; }
+      continue;
+    }
+    if (await cdp.frameButtonReadyByText('Entre em contato com um associado')) {
+      const contactClicked = (await cdp.clickFrameButtonTrustedByText('Entre em contato com um associado'))
+        || Boolean(await clickFrameTextWhenReady(cdp, 'Entre em contato com um associado', 5000));
+      if (!contactClicked) {
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_ASSOCIATE_CLICK_FAILED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+      }
+      await sleep(750);
+      if (await hillContactReady(cdp)) continue;
+      const postContactContinue = (await cdp.clickFrameButtonTrustedByText('Continue'))
+        || (await cdp.clickFrameButtonTrustedByText('Continuar'))
+        || Boolean(await clickFirstFrameTextWhenReady(cdp, ['Continue','Continuar'], 5000));
+      if (postContactContinue) { await sleep(750); continue; }
+      const routed = await clickFirstFrameTextWhenReady(cdp, ['FBA related','A-to-z Claims'], 15000);
+      if (routed) { await sleep(750); continue; }
+      continue;
+    }
+    if (await frameHas(cdp, 'Having issues with your order?')) {
+      await clickFrameTextWhenReady(cdp, 'Having issues with your order?', 5000);
+      await sleep(750);
+      continue;
+    }
+    if (await frameHas(cdp, 'Está com problemas com seu pedido?')) {
+      await clickFrameTextWhenReady(cdp, 'Está com problemas com seu pedido?', 5000);
+      await sleep(750);
+      continue;
+    }
     if (await frameHas(cdp, 'Request Reimbursement for an Order')) {
       await clickFrameTextWhenReady(cdp, 'Request Reimbursement for an Order', 5000);
       await sleep(750);
@@ -1121,24 +1264,6 @@ async function supportOpen(cdp, job) {
     }
     if (await frameHas(cdp, 'Solicitar reembolso para um pedido')) {
       await clickFrameTextWhenReady(cdp, 'Solicitar reembolso para um pedido', 5000);
-      await sleep(750);
-      continue;
-    }
-    if (await frameHas(cdp, 'Contact an associate')) {
-      const contactClicked = (await cdp.clickFrameButtonTrustedByText('Contact an associate'))
-        || Boolean(await clickFrameTextWhenReady(cdp, 'Contact an associate', 5000));
-      if (!contactClicked) {
-        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_ASSOCIATE_CLICK_FAILED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-      }
-      await sleep(750);
-      continue;
-    }
-    if (await frameHas(cdp, 'Entre em contato com um associado')) {
-      const contactClicked = (await cdp.clickFrameButtonTrustedByText('Entre em contato com um associado'))
-        || Boolean(await clickFrameTextWhenReady(cdp, 'Entre em contato com um associado', 5000));
-      if (!contactClicked) {
-        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_ASSOCIATE_CLICK_FAILED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-      }
       await sleep(750);
       continue;
     }
@@ -1161,6 +1286,30 @@ async function supportOpen(cdp, job) {
     }
     await sleep(750);
   }
+  // Seller Central may surface the final contact control exactly as the normal
+  // transition deadline expires. Process one bounded actionable grace phase
+  // before classifying the UI as drift.
+  for (const contactLabel of ['Contact an associate','Entre em contato com um associado']) {
+    if (!(await frameHas(cdp, contactLabel))) continue;
+    const clicked = (await cdp.clickFrameButtonTrustedByText(contactLabel))
+      || Boolean(await clickFrameTextWhenReady(cdp, contactLabel, 5000));
+    if (!clicked) {
+      return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_ASSOCIATE_CLICK_FAILED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    }
+    const graceDeadline = Date.now() + 45000;
+    while (Date.now() < graceDeadline) {
+      if (await hillContactReady(cdp)) return await contactSupportAndReadBack(cdp, job);
+      if (await frameHas(cdp, 'Create a case')) return await submitDirectSupportCaseAndReadBack(cdp, job, narrative);
+      const postContactContinue = (await cdp.clickFrameButtonTrustedByText('Continue'))
+        || (await cdp.clickFrameButtonTrustedByText('Continuar'))
+        || Boolean(await clickFirstFrameTextWhenReady(cdp, ['Continue','Continuar'], 1500));
+      if (postContactContinue) { await sleep(750); continue; }
+      const routed = await clickFirstFrameTextWhenReady(cdp, ['FBA related','A-to-z Claims'], 1500);
+      if (routed) { await sleep(750); continue; }
+      await sleep(750);
+    }
+    break;
+  }
   if (await hillPopupSupportState() === 'UNAVAILABLE') return sellerSupportUnavailableResult();
   return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
 }
@@ -1172,6 +1321,13 @@ async function supportUpdate(cdp, job) {
   await cdp.navigate(`https://sellercentral.amazon.com.br/cu/case-dashboard/view-case?caseID=${encodeURIComponent(caseId)}`, 5000);
   const auth = await authGate(cdp, 'help-v1', `https://sellercentral.amazon.com.br/cu/case-dashboard/view-case?caseID=${encodeURIComponent(caseId)}`, 5000);
   if (auth) return auth;
+  const supportPage = await cdp.pageState(18000);
+  const supportBody = text(supportPage?.text).toLowerCase();
+  if (supportBody.includes('answered cases cannot be reopened after 5 days with no activity')
+      || supportBody.includes('casos respondidos não podem ser reabertos após 5 dias sem atividade')
+      || supportBody.includes('casos respondidos nao podem ser reabertos apos 5 dias sem atividade')) {
+    return bridgeResult('SUPERSEDED', { reason: 'SUPPORT_CASE_NOT_REOPENABLE', retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
+  }
   const narrative = narrativeFor(job, 9000);
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
   if (already) return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
