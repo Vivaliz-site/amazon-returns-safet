@@ -42,9 +42,10 @@ $policy=['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'];
 $now=new DateTimeImmutable('2026-09-16 15:00:00',new DateTimeZone('UTC'));
 
 $decision=$engine->nextAction($case,$timeline,$policy,$now);
-sseafSame('SELLER_SUPPORT_UPDATE',$decision['action']??null,'An expired support-directed SAFE-T appeal is an operational recovery condition, not a human decision.');
+sseafSame('SELLER_SUPPORT_OPEN',$decision['action']??null,'An expired support-directed SAFE-T appeal must open a fresh Seller Support case because terminal cases cannot be reopened.');
 sseafSame('SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE',$decision['reason']??null,'The fallback must preserve the precise recovery reason.');
-sseafSame('21839077561',$decision['support_case_id']??null,'Recovery must continue in the existing Seller Support case, not open a duplicate.');
-sseafAssert(preg_match('/^[a-f0-9]{64}$/',(string)($decision['idempotency_key']??''))===1,'Seller Support update must be idempotent.');
+sseafSame('GENERAL_ORDER_SUPPORT',$decision['support_route']??null,'Expired SAFE-T appeal recovery must use the deterministic general support route.');
+sseafSame('21839077561',$decision['previous_support_case_id']??null,'The previous terminal Seller Support case must remain linked as evidence for the new recovery case.');
+sseafAssert(preg_match('/^[a-f0-9]{64}$/',(string)($decision['idempotency_key']??''))===1,'Seller Support recovery write must be idempotent.');
 
 echo "support-resolution-expired-appeal-fallback-test: OK\n";

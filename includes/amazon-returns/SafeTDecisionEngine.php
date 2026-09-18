@@ -526,9 +526,10 @@ final class SvAmazonSafeTDecisionEngine
             }
             if($safeTId!=='' && $deadline instanceof DateTimeImmutable && $now>$deadline){
                 return [
-                    'action'=>'SELLER_SUPPORT_UPDATE','reason'=>'SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE','case_id'=>$caseId,
-                    'support_case_id'=>$support['case_id'],
-                    'idempotency_key'=>hash('sha256','support-expired-safe-t-appeal|'.$safeTId.'|'.$support['case_id'].'|'.$support['content_fingerprint'].'|'.$deadline->format(DATE_ATOM)),
+                    'action'=>'SELLER_SUPPORT_OPEN','reason'=>'SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE','case_id'=>$caseId,
+                    'support_route'=>'GENERAL_ORDER_SUPPORT',
+                    'previous_support_case_id'=>$support['case_id'],
+                    'idempotency_key'=>hash('sha256','support-expired-safe-t-appeal-new-case|'.$safeTId.'|'.$support['case_id'].'|'.$support['content_fingerprint'].'|'.$deadline->format(DATE_ATOM)),
                 ];
             }
             return $this->decision('BLOCKED_REVIEW','SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE',$caseId);
