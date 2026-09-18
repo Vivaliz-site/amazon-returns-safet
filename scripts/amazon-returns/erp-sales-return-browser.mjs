@@ -47,6 +47,11 @@ export function buildOpenReturnForm(origin, command = {}) {
   if (items.length !== positiveOriginItems.length) partial = true;
   if (items.length === 0) throw new TypeError('ERP sales return requires items.');
   const form = structuredClone(origin);
+  if (form?.contato && typeof form.contato === 'object') {
+    const contactNumber = text(form.contato.enderecoNro);
+    const originNumber = text(form.numeroOrigem);
+    if (!contactNumber && originNumber) form.contato.enderecoNro = originNumber;
+  }
   delete form.idNotaFiscalEntrada;
   delete form.gerarNotaDevolucao;
   form.id = 0;
