@@ -11,4 +11,14 @@ erpPrioritySame(4,SvAmazonErpSalesReturnTask::workflowPriority(['status'=>'BLOCK
 erpPrioritySame(5,SvAmazonErpSalesReturnTask::workflowPriority(['status'=>'RETURN_INVOICE_EXISTS']),'Completed invoice link should have lowest priority.');
 erpPrioritySame('0000-00-00 00:00:00',SvAmazonErpSalesReturnTask::workflowLastCheckedAt(null),'Unseen work must sort ahead of recently checked work.');
 erpPrioritySame('2026-09-18 01:00:00',SvAmazonErpSalesReturnTask::workflowLastCheckedAt(['last_checked_at'=>'2026-09-18 01:00:00']),'Persisted check time must drive resume ordering.');
+
+$cases=[['id'=>11],['id'=>12]];
+$events=[
+  11=>[['event_type'=>'RETURN_REPORT_OBSERVED','source'=>'SP_API_REPORTS','payload'=>['invoice_number'=>'002214']]],
+  12=>[['event_type'=>'SALES_INVOICE_LINKED','source'=>'ERP_OLIST_INVOICE','payload'=>['invoice_number'=>'2214']]],
+];
+erpPrioritySame('002214',SvAmazonErpSalesReturnTask::salesInvoiceNumberFromCases($cases,static fn(int $id):array=>$events[$id]??[]),'Equivalent invoice numbers across cases must collapse to one fallback invoice.');
+$events[12]=[['event_type'=>'SALES_INVOICE_LINKED','source'=>'ERP_OLIST_INVOICE','payload'=>['invoice_number'=>'9999']]];
+erpPrioritySame(null,SvAmazonErpSalesReturnTask::salesInvoiceNumberFromCases($cases,static fn(int $id):array=>$events[$id]??[]),'Conflicting invoice numbers must disable fallback lookup.');
+
 echo "erp-sales-return-priority-test: OK\n";

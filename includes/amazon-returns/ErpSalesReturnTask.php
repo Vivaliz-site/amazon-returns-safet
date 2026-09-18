@@ -8,6 +8,7 @@ require_once __DIR__.'/ErpReturnInvoiceLookup.php';
 require_once __DIR__.'/ErpSalesReturnGateway.php';
 require_once __DIR__.'/ErpSalesReturnService.php';
 require_once __DIR__.'/ErpApiRateLimiter.php';
+require_once __DIR__.'/CaseConsultation.php';
 
 final class SvAmazonErpSalesReturnTask
 {
@@ -41,9 +42,17 @@ final class SvAmazonErpSalesReturnTask
                     $p->erpSalesReturns,
                     $gateway,
                     static fn(string $candidateOrderId): array=>$p->cases->forOrder($candidateOrderId),
-                    static function(string $candidateOrderId) use ($limiter,$saleLookup): ?array {
+                    static function(string $candidateOrderId) use ($limiter,$saleLookup,$p,$cases): ?array {
                         $limiter->beforeRequest();
-                        return $saleLookup->findSaleForOrder($candidateOrderId);
+                        $sale=$saleLookup->findSaleForOrder($candidateOrderId);
+                        if(is_array($sale))return $sale;
+                        $invoiceNumber=self::salesInvoiceNumberFromCases(
+                            $cases,
+                            static fn(int $caseId): array=>$p->events->eventsForCase($caseId)
+                        );
+                        if($invoiceNumber===null)return null;
+                        $limiter->beforeRequest();
+                        return $saleLookup->findOrderByInvoiceNumber($invoiceNumber);
                     },
                     static function(string $candidateOrderId) use ($limiter,$returnLookup): ?array {
                         $limiter->beforeRequest();
@@ -102,6 +111,24 @@ final class SvAmazonErpSalesReturnTask
             $refunded++;
         }
         return $refunded>0;
+    }
+
+    /** @param list<array<string,mixed>> $cases @param callable(int):array $eventsForCase */
+    public static function salesInvoiceNumberFromCases(array $cases,callable $eventsForCase): ?string
+    {
+        $numbers=[];
+        foreach($cases as $case){
+            if(!is_array($case))continue;
+            $caseId=(int)($case['id']??0);
+            if($caseId<1)continue;
+            $facts=SvAmazonCaseConsultation::invoiceFacts($eventsForCase($caseId));
+            $number=trim((string)($facts['sales_invoice_number']??''));
+            if(preg_match('/^[0-9]{1,20}$/D',$number)!==1)continue;
+            $key=ltrim($number,'0')===''?'0':ltrim($number,'0');
+            if(!isset($numbers[$key]))$numbers[$key]=$number;
+        }
+        if(count($numbers)!==1)return null;
+        return (string)array_values($numbers)[0];
     }
 
     /** @param array<string,mixed>|null $workflow */
