@@ -11,9 +11,12 @@ qw_processing_count() {
     qw_scalar "$target_db" "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING'"
 }
 
-qw_release_stale_read_jobs() {
+qw_release_orphaned_read_jobs() {
     local target_db="$1" tenant_id="$2" connection_id="$3"
-    qw_scalar "$target_db" "UPDATE amazon_return_outbox SET status='PENDING',attempt_count=GREATEST(attempt_count-1,0),locked_at=NULL,last_error='LEASE_EXPIRED_DURING_QUIESCE',updated_at=UTC_TIMESTAMP() WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND (locked_at IS NULL OR locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND)) AND kind IN ('SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'); SELECT ROW_COUNT();"
+    # Called only after the Seller Central browser worker is confirmed inactive.
+    # No process remains to own a read-only lease, so waiting for lease expiry can
+    # exceed the deploy timeout. Read jobs have no external side effect and can requeue.
+    qw_scalar "$target_db" "UPDATE amazon_return_outbox SET status='PENDING',attempt_count=GREATEST(attempt_count-1,0),locked_at=NULL,last_error='WORKER_INACTIVE_DURING_QUIESCE',updated_at=UTC_TIMESTAMP() WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND kind IN ('SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'); SELECT ROW_COUNT();"
 }
 
 qw_release_stale_write_jobs() {
@@ -76,10 +79,10 @@ quiesce_workers() {
             released=0
             released_writes=0
             if ! qw_unit_running "$browser_service"; then
-                released="$(qw_release_stale_read_jobs "$target_db" "$tenant_id" "$connection_id")"
+                released="$(qw_release_orphaned_read_jobs "$target_db" "$tenant_id" "$connection_id")"
                 [[ "$released" =~ ^[0-9]+$ ]] || { echo 'invalid stale read release count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
                 if (( released > 0 )); then
-                    printf 'worker_quiesce_released_stale_reads=%s\n' "$released"
+                    printf 'worker_quiesce_released_orphaned_reads=%s\n' "$released"
                 else
                     released_writes="$(qw_release_stale_write_jobs "$target_db" "$tenant_id" "$connection_id")"
                     [[ "$released_writes" =~ ^[0-9]+$ ]] || { echo 'invalid stale write release count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
