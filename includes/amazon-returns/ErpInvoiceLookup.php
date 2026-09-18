@@ -11,6 +11,10 @@ final class SvAmazonErpInvoiceLookup
     private $http;
     /** @var callable():void|null */
     private $beforeRequest;
+    /** @var array<string,list<array<string,mixed>>> */
+    private array $invoiceDateCache=[];
+    /** @var array<string,array<string,mixed>> */
+    private array $invoiceDetailCache=[];
     private string $apiBase='https://api.tiny.com.br/public-api/v3';
 
     /** @param array<string,string>|null $credentials */
@@ -122,6 +126,164 @@ final class SvAmazonErpInvoiceLookup
         }
         if(strtoupper(trim((string)($invoice['tipo']??'S')))!=='S')return null;
         return $this->saleProjection($invoice,$amazonOrderId,null);
+    }
+
+    /**
+     * Recovers historical ERP sale invoices whose marketplace linkage was lost.
+     * The match is intentionally strict: exact issue date, exact gross sale amount,
+     * exact SKU/quantity multiset, authorized normal outgoing invoice, and a single
+     * orphan candidate only. Ambiguous or incomplete evidence returns null.
+     *
+     * @param array<string,int> $expectedItems normalized or raw SKU=>quantity map
+     * @return array<string,mixed>|null
+     */
+    public function findOrphanSaleForOrder(
+        string $amazonOrderId,
+        string $orderDate,
+        string $salesAmount,
+        array $expectedItems
+    ): ?array {
+        $amazonOrderId=trim($amazonOrderId);
+        if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$amazonOrderId)!==1){
+            throw new InvalidArgumentException('Amazon order ID is invalid.');
+        }
+        $orderDate=self::dateKey($orderDate);
+        $money=self::moneyKey($salesAmount);
+        if($money===null || (float)$money<=0){
+            throw new InvalidArgumentException('ERP orphan recovery sale amount is invalid.');
+        }
+        $expected=self::normalizeItemMap($expectedItems);
+        if($expected===[]){
+            throw new InvalidArgumentException('ERP orphan recovery item signature is empty.');
+        }
+
+        $candidateIds=[];
+        foreach($this->invoicesForDate($orderDate) as $row){
+            if(strtoupper(trim((string)($row['tipo']??'')))!=='S')continue;
+            if(trim((string)($row['situacao']??''))!=='6')continue;
+            if(self::moneyKey($row['valor']??null)!==$money)continue;
+            $ecommerce=is_array($row['ecommerce']??null)?$row['ecommerce']:[];
+            if(!self::isOrphanEcommerce($ecommerce))continue;
+            $id=trim((string)($row['id']??''));
+            if(preg_match('/^[0-9]+$/D',$id)!==1)continue;
+            $candidateIds[$id]=true;
+        }
+        if($candidateIds===[])return null;
+
+        $matches=[];
+        foreach(array_keys($candidateIds) as $invoiceId){
+            $invoiceId=(string)$invoiceId;
+            $detail=$this->invoiceDetail($invoiceId);
+            if(trim((string)($detail['id']??''))!==$invoiceId)continue;
+            if(strtoupper(trim((string)($detail['tipo']??'')))!=='S')continue;
+            if(trim((string)($detail['situacao']??''))!=='6')continue;
+            if(trim((string)($detail['finalidade']??''))!=='1')continue;
+            if(trim((string)($detail['dataEmissao']??''))!==$orderDate)continue;
+            if(self::moneyKey($detail['valor']??null)!==$money)continue;
+            $ecommerce=is_array($detail['ecommerce']??null)?$detail['ecommerce']:[];
+            if(!self::isOrphanEcommerce($ecommerce))continue;
+            $items=is_array($detail['itens']??null)?$detail['itens']:[];
+            if(self::invoiceItemMap($items)!==$expected)continue;
+            $matches[$invoiceId]=$detail;
+        }
+        if(count($matches)!==1)return null;
+        $sale=$this->saleProjection(array_values($matches)[0],$amazonOrderId,null);
+        $sale['match_method']='ORPHAN_INVOICE_EXACT_DATE_AMOUNT_ITEMS';
+        return $sale;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function invoicesForDate(string $date): array
+    {
+        if(isset($this->invoiceDateCache[$date]))return $this->invoiceDateCache[$date];
+        $all=[];$offset=0;$limit=100;$pages=0;
+        do{
+            $query=http_build_query([
+                'tipo'=>'S','dataInicial'=>$date,'dataFinal'=>$date,
+                'limit'=>$limit,'offset'=>$offset,
+            ],'','&',PHP_QUERY_RFC3986);
+            $json=$this->requestJson('GET',$this->apiBase.'/notas?'.$query,'ERP orphan invoice list lookup');
+            $rows=is_array($json['itens']??null)?array_values(array_filter($json['itens'],'is_array')):[];
+            foreach($rows as $row){
+                $id=trim((string)($row['id']??''));
+                if($id!=='')$all[$id]=$row;
+            }
+            $total=max(0,(int)($json['paginacao']['total']??count($all)));
+            $offset+=$limit;$pages++;
+            if($pages>=10 && $offset<$total){
+                throw new RuntimeException('ERP orphan invoice pagination exceeded safety limit.');
+            }
+        }while(count($rows)===$limit && $offset<$total);
+        return $this->invoiceDateCache[$date]=array_values($all);
+    }
+
+    /** @return array<string,mixed> */
+    private function invoiceDetail(string $invoiceId): array
+    {
+        if(isset($this->invoiceDetailCache[$invoiceId]))return $this->invoiceDetailCache[$invoiceId];
+        return $this->invoiceDetailCache[$invoiceId]=$this->requestJson(
+            'GET',$this->apiBase.'/notas/'.rawurlencode($invoiceId),'ERP orphan invoice detail lookup'
+        );
+    }
+
+    /** @param array<string,mixed> $ecommerce */
+    private static function isOrphanEcommerce(array $ecommerce): bool
+    {
+        $id=(int)($ecommerce['id']??0);
+        $order=trim((string)($ecommerce['numeroPedidoEcommerce']??''));
+        $channelOrder=trim((string)($ecommerce['numeroPedidoCanalVenda']??''));
+        return $id===0 && $order==='' && $channelOrder==='';
+    }
+
+    /** @param array<string,int> $items @return array<string,int> */
+    private static function normalizeItemMap(array $items): array
+    {
+        $normalized=[];
+        foreach($items as $sku=>$quantity){
+            $key=strtolower(trim((string)$sku));
+            $qty=(int)$quantity;
+            if($key==='' || $qty<1)continue;
+            $normalized[$key]=($normalized[$key]??0)+$qty;
+        }
+        ksort($normalized,SORT_STRING);
+        return $normalized;
+    }
+
+    /** @param list<array<string,mixed>> $items @return array<string,int> */
+    private static function invoiceItemMap(array $items): array
+    {
+        $raw=[];
+        foreach($items as $item){
+            if(!is_array($item))continue;
+            $product=is_array($item['produto']??null)?$item['produto']:[];
+            $sku=trim((string)($item['codigo']??$item['sku']??$product['codigo']??$product['sku']??''));
+            $quantity=$item['quantidade']??null;
+            if($sku==='' || !is_numeric($quantity))continue;
+            $qty=(int)$quantity;
+            if($qty<1 || abs((float)$quantity-$qty)>0.000001)continue;
+            $raw[$sku]=($raw[$sku]??0)+$qty;
+        }
+        return self::normalizeItemMap($raw);
+    }
+
+    private static function moneyKey(mixed $value): ?string
+    {
+        if(!is_scalar($value) || !is_numeric((string)$value))return null;
+        $amount=(float)$value;
+        if(!is_finite($amount))return null;
+        return number_format($amount,2,'.','');
+    }
+
+    private static function dateKey(string $value): string
+    {
+        $value=trim($value);
+        $date=DateTimeImmutable::createFromFormat('!Y-m-d',$value,new DateTimeZone('UTC'));
+        $errors=DateTimeImmutable::getLastErrors();
+        if(!$date || (is_array($errors) && (($errors['warning_count']??0)>0 || ($errors['error_count']??0)>0))
+            || $date->format('Y-m-d')!==$value){
+            throw new InvalidArgumentException('ERP orphan recovery order date is invalid.');
+        }
+        return $value;
     }
 
     /** @return list<array<string,mixed>> */
