@@ -40,8 +40,9 @@ final class SvAmazonReturnsAdminAuth
         if (!self::verifyCredentials($username, $password)) return false;
         session_regenerate_id(true);
         $now=time();
+        $canonicalUsername = trim((string)(getenv('AMAZON_RETURNS_ADMIN_USERNAME') ?: $username));
         $_SESSION['amazon_returns_admin'] = [
-            'username'=>trim($username),
+            'username'=>$canonicalUsername !== '' ? $canonicalUsername : trim($username),
             'authenticated_at'=>$now,
             'last_seen_at'=>$now,
         ];
