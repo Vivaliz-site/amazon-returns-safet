@@ -65,4 +65,16 @@ $query=[];parse_str((string)parse_url($fallbackCalls[1]??'',PHP_URL_QUERY),$quer
 erpSaleSame('702-1111111-2222222',$query['numeroPedidoEcommerce']??null,'Sales-order fallback must query the exact Amazon order.');
 erpSaleSame('0',(string)($query['origemPedido']??''),'Sales-order fallback must restrict results to sales orders.');
 
+$directPacing=0;$directCalls=[];
+$directHttp=static function(string $method,string $url,array $headers,?string $body) use (&$directCalls): array {
+    $directCalls[]=$url;
+    $path=(string)parse_url($url,PHP_URL_PATH);
+    if($path==='/public-api/v3/pedidos')return ['status'=>200,'json'=>['itens'=>[]]];
+    throw new RuntimeException('Known-miss direct fallback must not re-query invoices.');
+};
+$directLookup=new SvAmazonErpInvoiceLookup(['TINY_ACCESS_TOKEN'=>'test-token'],$directHttp,null,static function() use (&$directPacing):void{$directPacing++;});
+erpSaleSame(null,$directLookup->findSaleViaSalesOrder('702-1111111-2222222'),'Known-miss direct fallback may return null when ERP sales order is absent.');
+erpSaleSame(1,count($directCalls),'Known-miss direct fallback must spend only one request when no sales order exists.');
+erpSaleSame(1,$directPacing,'Known-miss direct fallback request must remain paced.');
+
 echo "erp-sale-by-order-test: OK\n";
