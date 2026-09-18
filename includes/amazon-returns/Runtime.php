@@ -316,11 +316,13 @@ final class SvAmazonReturnsRuntime
         ?string $gmailEvidenceRevision=null,
         ?string $outboxStackRevision=null,
         ?string $gmailClientRevision=null,
-        ?string $erpSalesReturnStackRevision=null
+        ?string $erpSalesReturnStackRevision=null,
+        bool $returnsReportPending=false
     ): array {
         $now=$now->setTimezone(new DateTimeZone('UTC'));
         $due=['bootstrap'];
         foreach(self::cadences() as $task=>$seconds){
+            if($task==='returns_report' && $returnsReportPending)$seconds=300;
             $last=$state[$task] ?? null;
             if(!is_string($last) || $last===''){
                 $due[]=$task;

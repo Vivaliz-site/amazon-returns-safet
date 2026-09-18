@@ -70,8 +70,10 @@ class SvAmazonReturnsDaemon
         $outboxStackChanged=($state['outbox_stack_revision'] ?? null)!==$outboxStackRevision;
         $gmailEvidenceChanged=($state['gmail_evidence_revision'] ?? null)!==$gmailEvidenceRevision;
         $gmailClientChanged=($state['gmail_client_revision'] ?? null)!==$gmailClientRevision;
+        $returnsReportPending=SvAmazonReturnsReport::loadCursor($this->persistence,'pending_report')!==null;
         $due=SvAmazonReturnsRuntime::dueTasks(
-            $state,$now,$decisionStackRevision,$gmailEvidenceRevision,$outboxStackRevision,$gmailClientRevision,$erpSalesReturnStackRevision
+            $state,$now,$decisionStackRevision,$gmailEvidenceRevision,$outboxStackRevision,$gmailClientRevision,
+            $erpSalesReturnStackRevision,$returnsReportPending
         );
         $openingRevision=$bootstrap['policy_audit']['policy_key']??null;
         if($openingRevision!==null && ($state['opening_policy_revision']??null)!==$openingRevision){
