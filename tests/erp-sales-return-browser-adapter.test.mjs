@@ -34,6 +34,26 @@ test('builds an open no-payment sales return without return-invoice fields', () 
 });
 
 
+test('backfills the validated contact address number from numeroOrigem without overwriting an existing number', () => {
+  const missingNumberOrigin = structuredClone(origin);
+  missingNumberOrigin.contato = { enderecoNro: '' };
+  const form = buildOpenReturnForm(missingNumberOrigin, {
+    amazon_order_id: '702-1234567-1234567',
+    refund_at: '2026-09-12',
+    items: [{ sku: 'SKU-1', quantity_refunded: 1 }],
+  });
+  assert.equal(form.contato.enderecoNro, '303');
+
+  const existingNumberOrigin = structuredClone(origin);
+  existingNumberOrigin.contato = { enderecoNro: '999' };
+  const preserved = buildOpenReturnForm(existingNumberOrigin, {
+    amazon_order_id: '702-1234567-1234567',
+    refund_at: '2026-09-12',
+    items: [{ sku: 'SKU-1', quantity_refunded: 1 }],
+  });
+  assert.equal(preserved.contato.enderecoNro, '999');
+});
+
 test('accepts an internal ERP ecommerce identifier when the API-confirmed Amazon sale is otherwise valid', () => {
   const internalOrigin = structuredClone(origin);
   internalOrigin.origem.idPedidoEcommerce = 'PxX4YvzlG';
