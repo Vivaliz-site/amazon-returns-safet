@@ -90,12 +90,16 @@ class SvAmazonReturnsDaemon
             $due=array_values(array_unique([...$due,...SvAmazonReturnsRuntime::writeConfigurationChangeTasks()]));
             $state['write_profile_revision']=$writeRevision;
         }
-        $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
-        $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
         $gmailCursorState=$this->persistence->cursors->load('GMAIL',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY);
         if(SvAmazonReturnsRuntime::gmailCatchupPendingFromCursor($gmailCursorState)){
             $state['gmail_catchup_pending']='1';
+            $gmailTaskCursor=$this->persistence->cursors->load('OPERATIONAL_TASK','gmail');
+            $due=SvAmazonReturnsRuntime::reconcileGmailCatchupSchedule(
+                $due,$gmailCursorState,$gmailTaskCursor,$now
+            );
         }
+        $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
+        $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
         $results=['bootstrap'=>$bootstrap];
         if($outboxStackChanged){
             try{

@@ -283,6 +283,32 @@ final class SvAmazonReturnsRuntime
         return ($metadata['has_more'] ?? false)===true;
     }
 
+    /** @param list<string> $due @return list<string> */
+    public static function reconcileGmailCatchupSchedule(
+        array $due,
+        ?array $gmailCursor,
+        ?array $gmailTaskCursor,
+        DateTimeImmutable $now,
+        int $retrySeconds=300
+    ): array {
+        if(!self::gmailCatchupPendingFromCursor($gmailCursor)){
+            return array_values(array_unique($due));
+        }
+        $due=array_values(array_filter($due,static fn(mixed $task):bool=>$task!=='gmail'));
+        $retrySeconds=max(1,$retrySeconds);
+        $latest=null;
+        foreach([$gmailCursor,$gmailTaskCursor] as $cursor){
+            if(!is_array($cursor))continue;
+            $observed=self::timestamp($cursor['observed_at'] ?? null);
+            if($observed!==null && ($latest===null || $observed>$latest))$latest=$observed;
+        }
+        $now=$now->setTimezone(new DateTimeZone('UTC'));
+        if($latest===null || $now->getTimestamp()-$latest->getTimestamp()>=$retrySeconds){
+            $due[]='gmail';
+        }
+        return array_values(array_unique($due));
+    }
+
     /** @param array<string,mixed> $gmailResult */
     public static function gmailCatchupSkipReason(string $task,array $gmailResult): ?string
     {
