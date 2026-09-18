@@ -153,6 +153,7 @@ class SvAmazonReturnsDaemon
             $gmailRetryDelay=SvAmazonReturnsRuntime::gmailRateLimitRetryDelaySeconds($task,$results[$task])
                 ?? SvAmazonReturnsRuntime::gmailTransportRetryDelaySeconds($task,$results[$task])
                 ?? SvAmazonReturnsRuntime::gmailCatchupRetryDelaySeconds($task,$results[$task])
+                ?? SvAmazonReturnsRuntime::returnsReportRetryDelaySeconds($task,$results[$task])
                 ?? SvAmazonReturnsRuntime::erpRateLimitRetryDelaySeconds($task,$results[$task]);
             $state[$task]=SvAmazonReturnsRuntime::taskScheduleMarker($task,$taskNow,$gmailRetryDelay);
         }
