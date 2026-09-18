@@ -50,11 +50,17 @@ final class FakeErpSalesReturnGateway implements SvAmazonErpSalesReturnGateway
 {
     public int $createCalls=0;
     public int $readBackCalls=0;
+    public int $probeExistingCalls=0;
     public ?array $lastCommand=null;
     /** @param array<string,mixed> $createResult @param array<string,mixed>|null $readBack */
-    public function __construct(private array $createResult=['ok'=>true,'id'=>'RET-1'],private ?array $readBack=['id'=>'RET-1']) {}
+    public function __construct(
+        private array $createResult=['ok'=>true,'id'=>'RET-1'],
+        private ?array $readBack=['id'=>'RET-1'],
+        private ?string $existingSalesReturnId=null
+    ) {}
     public function create(array $command): array { $this->createCalls++;$this->lastCommand=$command;return $this->createResult; }
     public function readBack(string $erpSalesReturnId,string $amazonOrderId): ?array { $this->readBackCalls++;return $this->readBack; }
+    public function probeExisting(string $originalInvoiceId,string $originalInvoiceNumber=''): ?string { $this->probeExistingCalls++;return $this->existingSalesReturnId; }
 }
 
 function workflowCases(string $orderId): array {
@@ -156,5 +162,55 @@ $result=(new SvAmazonErpSalesReturnService(
 ))->reconcileOrder($order);
 erpWorkflowSame('BLOCKED',$result['status']??null,'Unverified ERP writer must block the workflow.');
 erpWorkflowSame('ERP_SALES_RETURN_WRITE_NOT_VERIFIED',$result['last_error_code']??null,'Block reason must identify the unverified ERP operation.');
+
+
+
+// A previously uncertain create must recover only after authoritative target-side absence is proved.
+// Persisted original-sale identity must be reused so quota is not wasted re-reading an already saved sale.
+$store=new FakeErpSalesReturnStore();
+$store->rows[$order]=[
+    'amazon_order_id'=>$order,'status'=>'BLOCKED',
+    'original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001',
+    'erp_sales_return_id'=>null,'return_invoice_id'=>null,
+    'last_error_code'=>'ERP_SALES_RETURN_CREATE_FAILED','last_error_message'=>'uncertain old create',
+];
+$gateway=new FakeErpSalesReturnGateway(['ok'=>true,'id'=>'RET-99'],['id'=>'RET-99','order_id'=>$order],null);
+$returnQueue=[null,null];$returnCalls=0;$saleCalls=0;
+$service=new SvAmazonErpSalesReturnService(
+    $store,$gateway,
+    static fn(string $id):array=>workflowCases($id),
+    static function(string $id) use (&$saleCalls):?array {$saleCalls++;return workflowSale($id);},
+    static function(string $id) use (&$returnQueue,&$returnCalls):?array {$returnCalls++;return array_shift($returnQueue);},
+    true
+);
+$result=$service->reconcileOrder($order);
+erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'Verified target absence must permit one guarded retry of an uncertain create.');
+erpWorkflowSame(0,$saleCalls,'Persisted original sale must suppress redundant ERP sale API lookup.');
+erpWorkflowSame(1,$gateway->probeExistingCalls,'Uncertain create recovery must probe the target before retry.');
+erpWorkflowSame(1,$gateway->createCalls,'Verified target absence may perform exactly one guarded create.');
+erpWorkflowSame(1,$gateway->readBackCalls,'Retried create must still require target readback.');
+
+// If the target probe finds the previously-created return, recover by readback and never write again.
+$store=new FakeErpSalesReturnStore();
+$store->rows[$order]=[
+    'amazon_order_id'=>$order,'status'=>'BLOCKED',
+    'original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001',
+    'erp_sales_return_id'=>null,'return_invoice_id'=>null,
+    'last_error_code'=>'ERP_SALES_RETURN_CREATE_FAILED','last_error_message'=>'uncertain old create',
+];
+$gateway=new FakeErpSalesReturnGateway(['ok'=>true,'id'=>'SHOULD-NOT-WRITE'],['id'=>'RET-EXIST','order_id'=>$order],'RET-EXIST');
+$returnQueue=[null];$returnCalls=0;$saleCalls=0;
+$result=(new SvAmazonErpSalesReturnService(
+    $store,$gateway,
+    static fn(string $id):array=>workflowCases($id),
+    static function(string $id) use (&$saleCalls):?array {$saleCalls++;return workflowSale($id);},
+    static function(string $id) use (&$returnQueue,&$returnCalls):?array {$returnCalls++;return array_shift($returnQueue);},
+    true
+))->reconcileOrder($order);
+erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'Existing sales return discovered after uncertain create must be recovered by readback.');
+erpWorkflowSame('RET-EXIST',$result['erp_sales_return_id']??null,'Recovered external return ID must be persisted.');
+erpWorkflowSame(0,$saleCalls,'Recovered uncertain create must reuse persisted original sale identity.');
+erpWorkflowSame(1,$gateway->probeExistingCalls,'Recovery must execute exactly one target probe.');
+erpWorkflowSame(0,$gateway->createCalls,'Existing target return must suppress duplicate write.');
 
 echo "erp-sales-return-workflow-test: OK\n";

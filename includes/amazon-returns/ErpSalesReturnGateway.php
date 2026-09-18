@@ -8,6 +8,8 @@ interface SvAmazonErpSalesReturnGateway
 
     /** @return array<string,mixed>|null */
     public function readBack(string $erpSalesReturnId,string $amazonOrderId): ?array;
+
+    public function probeExisting(string $originalInvoiceId,string $originalInvoiceNumber=''): ?string;
 }
 
 final class SvAmazonUnverifiedErpSalesReturnGateway implements SvAmazonErpSalesReturnGateway
@@ -25,6 +27,11 @@ final class SvAmazonUnverifiedErpSalesReturnGateway implements SvAmazonErpSalesR
     public function readBack(string $erpSalesReturnId,string $amazonOrderId): ?array
     {
         return null;
+    }
+
+    public function probeExisting(string $originalInvoiceId,string $originalInvoiceNumber=''): ?string
+    {
+        throw new RuntimeException('ERP sales return existence probe is not verified.');
     }
 }
 

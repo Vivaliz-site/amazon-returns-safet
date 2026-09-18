@@ -142,6 +142,7 @@ final class SvAmazonErpSalesReturnTask
             $code=strtoupper(trim((string)($workflow['last_error_code']??'')));
             if(in_array($code,[
                 'ERP_ORIGINAL_SALE_NOT_FOUND',
+                'ERP_SALES_RETURN_CREATE_FAILED',
                 'ERP_SALES_RETURN_WRITE_NOT_VERIFIED',
                 'ERP_SALES_RETURN_AUTH_REQUIRED',
                 'ERP_SALES_RETURN_BROWSER_UNAVAILABLE',
