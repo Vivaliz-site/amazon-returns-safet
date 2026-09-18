@@ -118,20 +118,34 @@ final class SvAmazonErpSalesReturnTask
     /** @return list<string> */
     private static function refundedOrders(SvAmazonTenantPersistence $p): array
     {
-        $orders=[];$page=1;$perPage=100;
+        $orderCases=[];$page=1;$perPage=100;
         do{
             $found=$p->cases->search([], $page, $perPage);
             foreach($found['items']??[] as $case){
                 if(!is_array($case) || (int)($case['quantity_refunded']??0)<1)continue;
                 $orderId=trim((string)($case['amazon_order_id']??''));
                 if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$orderId)!==1)continue;
-                $orders[$orderId]=true;
+                $orderCases[$orderId][]=$case;
             }
             $total=(int)($found['total']??0);$page++;
         }while((($page-1)*$perPage)<$total && $page<=1000);
+
         $workflows=[];
-        foreach(array_keys($orders) as $orderId){
+        $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        foreach($orderCases as $orderId=>$cases){
             $workflow=$p->erpSalesReturns->findByOrder($orderId);
+            if(!self::refundWithinOperationalWindow($cases,$now)){
+                if(is_array($workflow)){
+                    $status=strtoupper(trim((string)($workflow['status']??'')));
+                    if(in_array($status,['PENDING','READY_TO_CREATE','BLOCKED','IGNORED_REFUND_OLDER_THAN_90D'],true)){
+                        $p->erpSalesReturns->markIgnoredRefundOlderThan90Days($orderId);
+                    }
+                }
+                continue;
+            }
+            if(is_array($workflow) && strtoupper(trim((string)($workflow['status']??'')))==='IGNORED_REFUND_OLDER_THAN_90D'){
+                $workflow=$p->erpSalesReturns->reactivateIgnoredRefund($orderId);
+            }
             if(!self::workflowProcessable($workflow))continue;
             $workflows[$orderId]=$workflow;
         }
@@ -146,6 +160,24 @@ final class SvAmazonErpSalesReturnTask
             return [$lp,$lt,$left]<=>[$rp,$rt,$right];
         });
         return $ids;
+    }
+
+    /** @param list<array<string,mixed>> $cases */
+    public static function refundWithinOperationalWindow(array $cases,?DateTimeImmutable $now=null): bool
+    {
+        $now=($now??new DateTimeImmutable('now',new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));
+        $cutoff=$now->sub(new DateInterval('P90D'));
+        $hasRefundedCase=false;
+        foreach($cases as $case){
+            if(!is_array($case) || (int)($case['quantity_refunded']??0)<1)continue;
+            $hasRefundedCase=true;
+            $raw=trim((string)($case['refund_at']??''));
+            if($raw==='')return true;
+            try{$refundAt=(new DateTimeImmutable($raw,new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));}
+            catch(Throwable){return true;}
+            if($refundAt >= $cutoff)return true;
+        }
+        return !$hasRefundedCase;
     }
 
     /** @param list<array<string,mixed>> $cases */
@@ -248,7 +280,7 @@ final class SvAmazonErpSalesReturnTask
     public static function workflowProcessable(?array $workflow): bool
     {
         $status=strtoupper(trim((string)($workflow['status']??'PENDING')));
-        return $status!=='RETURN_INVOICE_EXISTS';
+        return !in_array($status,['RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D'],true);
     }
 
     /** @param array<string,mixed>|null $cursor @return list<string> */
