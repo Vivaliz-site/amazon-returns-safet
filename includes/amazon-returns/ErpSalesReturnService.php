@@ -48,7 +48,10 @@ final class SvAmazonErpSalesReturnService
             return $this->store->linkReturnInvoice($orderId,$existingInvoice);
         }
 
-        $sale=($this->saleResolver)($orderId);
+        // Reuse the already-persisted sale identity before spending ERP API quota.
+        // This is especially important while resuming a partially processed backlog.
+        $sale=$this->persistedOriginalSale($workflow,$orderId);
+        if($sale===null)$sale=($this->saleResolver)($orderId);
         if(!is_array($sale)){
             return $this->store->markBlocked($orderId,'ERP_ORIGINAL_SALE_NOT_FOUND','Nao foi possivel localizar a venda original no Olist/Tiny.');
         }
@@ -69,7 +72,34 @@ final class SvAmazonErpSalesReturnService
         if(in_array($status,['RETURN_INVOICE_EXISTS','RETURN_CREATED_WAITING_INVOICE'],true)){
             return $workflow;
         }
-        if($status==='BLOCKED' && !$this->retryablePreWriteBlock((string)($workflow['last_error_code']??''))){
+
+        // Generic CREATE_FAILED is intentionally uncertain: never retry it blindly.
+        // First prove target-side absence. If the old write actually exists, read it
+        // back and recover the workflow instead of creating a duplicate.
+        $verifiedAbsentAfterUncertainCreate=false;
+        $errorCode=strtoupper(trim((string)($workflow['last_error_code']??'')));
+        if($status==='BLOCKED' && $errorCode==='ERP_SALES_RETURN_CREATE_FAILED'){
+            $originalInvoiceId=trim((string)($workflow['original_invoice_id']??''));
+            if($originalInvoiceId==='')return $workflow;
+            $existingSalesReturnId=$this->gateway->probeExisting(
+                $originalInvoiceId,
+                trim((string)($workflow['original_invoice_number']??''))
+            );
+            if($existingSalesReturnId!==null){
+                $readBack=$this->gateway->readBack($existingSalesReturnId,$orderId);
+                if($this->validReadBack($readBack,$existingSalesReturnId,$orderId)){
+                    return $this->store->markReturnCreated($orderId,$existingSalesReturnId);
+                }
+                return $this->store->markBlocked(
+                    $orderId,
+                    'ERP_SALES_RETURN_READBACK_NOT_CONFIRMED',
+                    'A devolucao existente no Olist/Tiny nao pôde ser confirmada por leitura. Nova escrita foi bloqueada para evitar duplicidade.'
+                );
+            }
+            $verifiedAbsentAfterUncertainCreate=true;
+        }
+        if($status==='BLOCKED' && !$verifiedAbsentAfterUncertainCreate
+            && !$this->retryablePreWriteBlock((string)($workflow['last_error_code']??''))){
             return $workflow;
         }
 
@@ -123,6 +153,19 @@ final class SvAmazonErpSalesReturnService
         $code=self::safeCode($result['error_code']??null,'ERP_SALES_RETURN_CREATE_FAILED');
         $message=self::safeMessage($result['error_message']??null,'Nao foi possivel criar a devolucao automaticamente no Olist/Tiny.');
         return $this->store->markBlocked($orderId,$code,$message);
+    }
+
+    /** @param array<string,mixed> $workflow @return array<string,mixed>|null */
+    private function persistedOriginalSale(array $workflow,string $orderId): ?array
+    {
+        $invoiceId=trim((string)($workflow['original_invoice_id']??''));
+        if($invoiceId==='')return null;
+        return [
+            'order_id'=>$orderId,
+            'invoice_id'=>$invoiceId,
+            'invoice_number'=>self::nullable($workflow['original_invoice_number']??null),
+            'access_key'=>self::nullable($workflow['original_invoice_key']??null),
+        ];
     }
 
     /** @param list<array<string,mixed>> $cases */
