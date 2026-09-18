@@ -27,5 +27,6 @@ csuAssert(strpos($page,'class="panel cockpit"')<strpos($page,'id="automation-wor
 csuAssert(str_contains($page,'class="operator-glance"'),'Top operator glance summary required.');
 csuAssert(str_contains($summary,'response.status===401'),'Summary loader must detect an expired admin session explicitly.');
 csuAssert(str_contains($summary,"throw new Error('SESSION_EXPIRED')"),'Summary loader must propagate the session-expired sentinel.');
-csuAssert(str_contains($page,'cockpit.js?v='),'Base cockpit session recovery must be loaded with the summary module.');
+csuAssert(str_contains($page,'cockpit-summary.js?v=autonomy-2'),'Summary auth fix must use a fresh browser asset version.');
+csuAssert(str_contains($page,'cockpit.js?v=admin-session-expiry-1'),'Base cockpit auth fix must use a fresh browser asset version.');
 echo "cockpit-summary-ui-test: OK\n";
