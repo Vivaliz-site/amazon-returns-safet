@@ -797,8 +797,61 @@ async function supportCaseReadbackSnapshot(cdp) {
   return await cdp.evaluate(`(()=>{const out=[];const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){out.push({url:d.location?.href||'',links:[...d.querySelectorAll('a[href]')].map(a=>({href:a.href||'',text:(a.innerText||'').trim().slice(0,120)})).filter(x=>/case|support/i.test(x.href+x.text)).slice(0,30),text:(d.body?.innerText||'').slice(0,5000)})}return out})()`);
 }
 
+function sellerSupportUnavailableResult() {
+  return bridgeResult('BLOCKED_UNTIL', {
+    block_reason: 'SELLER_SUPPORT_CURRENTLY_UNAVAILABLE',
+    reason: 'SELLER_SUPPORT_CURRENTLY_UNAVAILABLE',
+    retry_safe: true,
+    next_allowed_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  });
+}
+
+async function hillPopupSupportState() {
+  let targets;
+  try {
+    const response = await fetch(`${CDP_BASE}/json/list`, { signal: AbortSignal.timeout(2500) });
+    if (!response.ok) return 'UNKNOWN';
+    targets = await response.json();
+  } catch {
+    return 'UNKNOWN';
+  }
+  if (!Array.isArray(targets)) return 'UNKNOWN';
+  const popup = [...targets].reverse().find(row =>
+    row?.type === 'page'
+    && text(row?.url).includes('/hill/website/chat')
+    && text(row?.webSocketDebuggerUrl)
+  );
+  if (!popup) return 'NONE';
+  let ws;
+  let cdp;
+  try {
+    ws = new WebSocket(popup.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => {
+      ws.addEventListener('open', resolve, { once: true });
+      ws.addEventListener('error', reject, { once: true });
+    });
+    cdp = new Cdp(ws, null, 5000);
+    const state = await cdp.pageState(5000);
+    const body = text(state?.text);
+    const phrases = [
+      'No support agents are available right now',
+      'Support currently unavailable',
+      'Nenhum agente de suporte está disponível no momento',
+      'Suporte indisponível no momento',
+    ];
+    return phrases.some(phrase => body.includes(phrase)) ? 'UNAVAILABLE' : 'AVAILABLE';
+  } catch {
+    return 'UNKNOWN';
+  } finally {
+    if (cdp) await cdp.close();
+    else try { ws?.close(); } catch {}
+  }
+}
+
 async function hillSupportUnavailable(cdp) {
-  return (await cdp.evaluate(`(()=>{const phrases=['No support agents are available right now','Support currently unavailable','Nenhum agente de suporte está disponível no momento','Suporte indisponível no momento'];for(const f of document.querySelectorAll('iframe')){const outer=f.contentDocument;const hill=outer?.querySelector('spl-hill-form');const inner=hill?.shadowRoot?.querySelector('iframe')?.contentDocument;const bodies=[outer?.body?.innerText||'',inner?.body?.innerText||''];if(bodies.some(body=>phrases.some(p=>body.includes(p))))return true}return false})()`)) === true;
+  const embedded = (await cdp.evaluate(`(()=>{const phrases=['No support agents are available right now','Support currently unavailable','Nenhum agente de suporte está disponível no momento','Suporte indisponível no momento'];for(const f of document.querySelectorAll('iframe')){const outer=f.contentDocument;const hill=outer?.querySelector('spl-hill-form');const inner=hill?.shadowRoot?.querySelector('iframe')?.contentDocument;const bodies=[outer?.body?.innerText||'',inner?.body?.innerText||''];if(bodies.some(body=>phrases.some(p=>body.includes(p))))return true}return false})()`)) === true;
+  if (embedded) return true;
+  return await hillPopupSupportState() === 'UNAVAILABLE';
 }
 
 async function currentSupportCaseId(cdp) {
@@ -809,6 +862,7 @@ async function contactSupportAndReadBack(cdp, job) {
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline && !(await hillContactReady(cdp))) await sleep(750);
   if (!(await hillContactReady(cdp))) {
+    if (await hillPopupSupportState() === 'UNAVAILABLE') return sellerSupportUnavailableResult();
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
   let channel = await submitHillEmail(cdp, job);
@@ -1107,6 +1161,7 @@ async function supportOpen(cdp, job) {
     }
     await sleep(750);
   }
+  if (await hillPopupSupportState() === 'UNAVAILABLE') return sellerSupportUnavailableResult();
   return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
 }
 async function supportUpdate(cdp, job) {
