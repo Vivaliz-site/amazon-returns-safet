@@ -135,6 +135,15 @@ $result=makeWorkflowService($store,$gateway,$queue,true,$lookupCalls)->reconcile
 erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'A safe pre-write block must resume after the verified writer is installed.');
 erpWorkflowSame(1,$gateway->createCalls,'Resumed pre-write block must perform exactly one guarded write.');
 
+// A sale that was temporarily missing must resume safely once the original sale becomes available.
+$store=new FakeErpSalesReturnStore();
+$store->rows[$order]=['amazon_order_id'=>$order,'status'=>'BLOCKED','original_invoice_id'=>null,'original_invoice_number'=>null,'original_invoice_key'=>null,'erp_sales_return_id'=>null,'return_invoice_id'=>null,'last_error_code'=>'ERP_ORIGINAL_SALE_NOT_FOUND','last_error_message'=>'sale not found yet'];
+$gateway=new FakeErpSalesReturnGateway();$queue=[null];$lookupCalls=0;
+$result=makeWorkflowService($store,$gateway,$queue,false,$lookupCalls)->reconcileOrder($order);
+erpWorkflowSame('READY_TO_CREATE',$result['status']??null,'A previously missing original sale must be retried once it becomes resolvable.');
+erpWorkflowSame('500',$result['original_invoice_id']??null,'Recovered original sale must be persisted before readiness.');
+erpWorkflowSame(0,$gateway->createCalls,'Retrying original sale lookup with write gate off must not create externally.');
+
 // Unverified production gateway must block rather than substitute another ERP write.
 $store=new FakeErpSalesReturnStore();
 $blockedGateway=new SvAmazonUnverifiedErpSalesReturnGateway();$queue=[null,null];$lookupCalls=0;
