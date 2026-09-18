@@ -62,6 +62,21 @@ bootstrap_continuity() {
 
 bootstrap_continuity
 
+sync_olist_login_inbox() {
+    local sync_script="$repo/scripts/sync-olist-erp-login-env.sh"
+    local result
+    [[ -x "$sync_script" ]] || return 0
+    result="$("$sync_script")"
+    echo "$result"
+    if [[ "$result" == *"olist_login_env_synced=true"* ]]; then
+        systemctl restart amazon-returns-olist-erp-browser.service
+        systemctl is-active --quiet amazon-returns-olist-erp-browser.service
+        echo 'olist_erp_browser_login_sync_restart=ok'
+    fi
+}
+
+sync_olist_login_inbox
+
 runuser -u ubuntu -- git -C "$repo" fetch --quiet origin main
 target_sha="$(runuser -u ubuntu -- git -C "$repo" rev-parse origin/main)"
 deployed_sha="$(cat "$deploy_root/current/.release-sha" 2>/dev/null || true)"

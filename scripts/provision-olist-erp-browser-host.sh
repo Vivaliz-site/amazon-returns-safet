@@ -14,6 +14,7 @@ while (($#)); do
     *) echo "unknown option" >&2; exit 64 ;;
   esac
 done
+LOGIN_SYNC_SCRIPT="$SOURCE_ROOT/scripts/sync-olist-erp-login-env.sh"
 [[ "$(id -u)" -eq 0 ]] || { echo "root required" >&2; exit 77; }
 
 browser=""
@@ -52,9 +53,15 @@ chmod 0640 "$ENV_FILE"
 touch "$LOGIN_ENV_FILE"
 chown root:www-data "$LOGIN_ENV_FILE"
 chmod 0640 "$LOGIN_ENV_FILE"
+login_sync_result="$("$LOGIN_SYNC_SCRIPT")"
+echo "$login_sync_result"
 install -o root -g root -m 0644 "$SOURCE_ROOT/deploy/systemd/amazon-returns-olist-erp-browser.service" /etc/systemd/system/amazon-returns-olist-erp-browser.service
 systemctl daemon-reload
 if [[ "$ENABLE_SERVICE" -eq 1 ]]; then
   systemctl enable --now amazon-returns-olist-erp-browser.service
+  if [[ "$login_sync_result" == *"olist_login_env_synced=true"* ]]; then
+    systemctl restart amazon-returns-olist-erp-browser.service
+    systemctl is-active --quiet amazon-returns-olist-erp-browser.service
+  fi
 fi
-echo "Olist ERP browser host provisioned; interactive ERP authentication remains separate"
+echo "Olist ERP browser host provisioned; protected fallback authentication remains separate"
