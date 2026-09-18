@@ -4,7 +4,9 @@ const TARGET_URL = 'https://erp.olist.com/devolucoes_vendas#list';
 
 export function classifyOlistLocation(rawUrl) {
   try {
-    const host = new URL(String(rawUrl || '')).hostname.toLowerCase();
+    const url = new URL(String(rawUrl || ''));
+    const host = url.hostname.toLowerCase();
+    if (host === ERP_HOST && /^\/login(?:\/|$)/i.test(url.pathname)) return 'AUTH';
     if (host === ERP_HOST) return 'ERP';
     if (AUTH_HOSTS.has(host)) return 'AUTH';
     return 'OTHER';
