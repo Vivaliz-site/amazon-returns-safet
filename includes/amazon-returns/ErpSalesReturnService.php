@@ -43,6 +43,10 @@ final class SvAmazonErpSalesReturnService
         // return invoice is authoritative and must suppress creation even when the
         // original sale lookup is temporarily unavailable.
         $workflow=$this->store->ensureWorkflow(['amazon_order_id'=>$orderId]);
+        $persistedStatus=strtoupper(trim((string)($workflow['status']??'')));
+        if($persistedStatus==='RETURN_INVOICE_EXISTS'){
+            return $workflow;
+        }
         $existingInvoice=($this->returnInvoiceLookup)($orderId);
         if(is_array($existingInvoice)){
             return $this->store->linkReturnInvoice($orderId,$existingInvoice);
