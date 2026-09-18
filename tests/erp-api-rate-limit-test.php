@@ -6,6 +6,7 @@ require_once __DIR__.'/../includes/amazon-returns/Config.php';
 $path=__DIR__.'/../includes/amazon-returns/ErpApiRateLimiter.php';
 if(!is_file($path))throw new RuntimeException('ERP API rate limiter implementation is missing.');
 require_once $path;
+require_once __DIR__.'/../includes/amazon-returns/Runtime.php';
 
 function erpRateSame(mixed $expected,mixed $actual,string $message): void {
     if($expected!==$actual)throw new RuntimeException($message.' expected='.var_export($expected,true).' actual='.var_export($actual,true));
@@ -26,5 +27,8 @@ $fromConfig=SvAmazonErpApiRateLimiter::fromConfig($config,$clock,$sleep);
 erpRateSame(900,$fromConfig->minIntervalMs(),'ERP pacing must honor the configured interval.');
 
 erpRateSame(true,is_subclass_of(SvAmazonErpRateLimitException::class,RuntimeException::class),'Rate-limit exception must be a runtime failure.');
+erpRateSame(300,SvAmazonReturnsRuntime::erpRateLimitRetryDelaySeconds('erp_sales_returns',['rate_limited'=>true]),'ERP quota exhaustion must retry in five minutes.');
+erpRateSame(null,SvAmazonReturnsRuntime::erpRateLimitRetryDelaySeconds('erp_sales_returns',['rate_limited'=>false]),'Successful ERP cycle keeps normal cadence.');
+erpRateSame(null,SvAmazonReturnsRuntime::erpRateLimitRetryDelaySeconds('financial',['rate_limited'=>true]),'ERP retry override must not affect other tasks.');
 
 echo "erp-api-rate-limit-test: OK\n";
