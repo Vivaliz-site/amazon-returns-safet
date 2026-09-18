@@ -206,8 +206,11 @@ final class SvAmazonErpSalesReturnTask
                 if($type==='ORDER_SYNCED'){
                     $raw=trim((string)($payload['order_at']??''));
                     if($raw!==''){
-                        try{$date=(new DateTimeImmutable($raw,new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');}
-                        catch(Throwable){$date='';}
+                        try{
+                            $date=(new DateTimeImmutable($raw,new DateTimeZone('UTC')))
+                                ->setTimezone(new DateTimeZone('America/Sao_Paulo'))
+                                ->format('Y-m-d');
+                        }catch(Throwable){$date='';}
                         if($date!=='')$dates[$date]=true;
                     }
                 }
