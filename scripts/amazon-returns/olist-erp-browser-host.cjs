@@ -45,21 +45,43 @@ process.once('SIGINT', () => void shutdown(130));
   }
 
   async function maybeReauthenticate(page) {
+    if (stopping) return;
+    if (reauthInFlight) {
+      await reauthInFlight;
+      if (stopping) return;
+    }
     const state = classifyOlistLocation(page.url());
-    if (stopping || reauthInFlight || !['AUTH', 'ERP_ENTRY'].includes(state)) return;
-    reauthInFlight = ensureOlistAuthenticated(page, credentials)
-      .catch(() => ({ status: 'AUTH_REQUIRED', reason: 'LOGIN_FAILED' }));
-    const result = await reauthInFlight;
-    if (result?.status === 'AUTHENTICATED') await pruneDuplicateOlistPages(page);
-    reauthInFlight = null;
+    if (!['AUTH', 'ERP_ENTRY'].includes(state)) return;
+    if (reauthInFlight) return reauthInFlight;
+
+    const current = (async () => {
+      const result = await ensureOlistAuthenticated(page, credentials)
+        .catch(() => ({ status: 'AUTH_REQUIRED', reason: 'LOGIN_FAILED' }));
+      if (result?.status === 'AUTHENTICATED') {
+        primaryPage = page;
+        await pruneDuplicateOlistPages(page);
+      }
+      return result;
+    })();
+    reauthInFlight = current;
+    try {
+      return await current;
+    } finally {
+      if (reauthInFlight === current) reauthInFlight = null;
+    }
+  }
+
+  function triggerPageReauth(page) {
+    if (['AUTH', 'ERP_ENTRY'].includes(classifyOlistLocation(page.url()))) {
+      void maybeReauthenticate(page);
+    }
   }
 
   function wirePage(page) {
     page.on('framenavigated', frame => {
-      if (frame === page.mainFrame() && ['AUTH', 'ERP_ENTRY'].includes(classifyOlistLocation(page.url()))) {
-        void maybeReauthenticate(page);
-      }
+      if (frame === page.mainFrame()) triggerPageReauth(page);
     });
+    page.on('domcontentloaded', () => triggerPageReauth(page));
   }
 
   context = await chromium.launchPersistentContext(profileDir, {
