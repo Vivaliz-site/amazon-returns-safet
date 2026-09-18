@@ -158,6 +158,7 @@ export function classifyOlistPageState(url, ready) {
   let parsed;
   try { parsed = new URL(String(url ?? '')); } catch { return 'UI_DRIFT'; }
   if (parsed.hostname === 'erp.olist.com' && parsed.pathname.startsWith('/devolucoes_vendas') && ready === true) return 'READY';
+  if (parsed.hostname === 'erp.olist.com' && parsed.pathname === '/') return 'AUTH_REQUIRED';
   if (parsed.hostname === 'accounts.tiny.com.br' || parsed.hostname === 'id.olist.com') return 'AUTH_REQUIRED';
   return 'UI_DRIFT';
 }
@@ -382,6 +383,7 @@ async function getOlistTargets(cdpBase) {
   let targets = await fetchCdpJson(`${base}/json`);
   let candidates = targets.filter(row => row?.type === 'page' && (
     /^https:\/\/erp\.olist\.com\/devolucoes_vendas/.test(text(row.url))
+    || /^https:\/\/erp\.olist\.com\/$/.test(text(row.url))
     || /^(https:\/\/accounts\.tiny\.com\.br\/|https:\/\/id\.olist\.com\/)/.test(text(row.url))
   ) && row?.webSocketDebuggerUrl);
   if (candidates.length === 0) {

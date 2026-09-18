@@ -6,7 +6,7 @@ export function classifyOlistLocation(rawUrl) {
   try {
     const url = new URL(String(rawUrl || ''));
     const host = url.hostname.toLowerCase();
-    if (host === ERP_HOST && /^\/login(?:\/|$)/i.test(url.pathname)) return 'AUTH';
+    if (host === ERP_HOST && (url.pathname === '/' || /^\/login(?:\/|$)/i.test(url.pathname))) return 'AUTH';
     if (host === ERP_HOST) return 'ERP';
     if (AUTH_HOSTS.has(host)) return 'AUTH';
     return 'OTHER';
