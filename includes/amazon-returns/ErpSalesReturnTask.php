@@ -80,9 +80,13 @@ final class SvAmazonErpSalesReturnTask
         }while((($page-1)*$perPage)<$total && $page<=1000);
         $ids=array_keys($orders);
         usort($ids,static function(string $left,string $right) use ($p): int {
-            $lp=self::workflowPriority($p->erpSalesReturns->findByOrder($left));
-            $rp=self::workflowPriority($p->erpSalesReturns->findByOrder($right));
-            return [$lp,$left]<=>[$rp,$right];
+            $lw=$p->erpSalesReturns->findByOrder($left);
+            $rw=$p->erpSalesReturns->findByOrder($right);
+            $lp=self::workflowPriority($lw);
+            $rp=self::workflowPriority($rw);
+            $lt=self::workflowLastCheckedAt($lw);
+            $rt=self::workflowLastCheckedAt($rw);
+            return [$lp,$lt,$left]<=>[$rp,$rt,$right];
         });
         return $ids;
     }
@@ -104,14 +108,31 @@ final class SvAmazonErpSalesReturnTask
     public static function workflowPriority(?array $workflow): int
     {
         $status=strtoupper(trim((string)($workflow['status']??'PENDING')));
+        if($status==='BLOCKED'){
+            $code=strtoupper(trim((string)($workflow['last_error_code']??'')));
+            if(in_array($code,[
+                'ERP_ORIGINAL_SALE_NOT_FOUND',
+                'ERP_SALES_RETURN_WRITE_NOT_VERIFIED',
+                'ERP_SALES_RETURN_AUTH_REQUIRED',
+                'ERP_SALES_RETURN_BROWSER_UNAVAILABLE',
+                'ERP_SALES_RETURN_UI_DRIFT',
+            ],true))return 1;
+            return 4;
+        }
         return match($status){
             'PENDING'=>0,
-            'READY_TO_CREATE'=>1,
-            'RETURN_CREATED_WAITING_INVOICE'=>2,
-            'BLOCKED'=>3,
-            'RETURN_INVOICE_EXISTS'=>4,
+            'READY_TO_CREATE'=>2,
+            'RETURN_CREATED_WAITING_INVOICE'=>3,
+            'RETURN_INVOICE_EXISTS'=>5,
             default=>0,
         };
+    }
+
+    /** @param array<string,mixed>|null $workflow */
+    public static function workflowLastCheckedAt(?array $workflow): string
+    {
+        $value=trim((string)($workflow['last_checked_at']??''));
+        return $value===''?'0000-00-00 00:00:00':$value;
     }
 
     /** @param list<array<string,mixed>> $rows @return array<string,mixed> */
