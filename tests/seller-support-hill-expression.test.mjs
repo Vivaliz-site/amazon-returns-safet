@@ -33,26 +33,48 @@ test('Hill chat popup URL yields authoritative case ID', () => {
   assert.equal(parse('https://sellercentral.amazon.com.br/help/center?caseID=22144687151'), '');
 });
 
-test('Chat write reads popup case ID before secondary support search', () => {
-  const fnStart = source.indexOf('async function contactSupportAndReadBack(cdp, job)');
-  assert.notEqual(fnStart, -1, 'contactSupportAndReadBack must exist');
-  const fnEnd = source.indexOf('\nasync function fillGeneralSupportIssue', fnStart);
-  assert.notEqual(fnEnd, -1, 'contactSupportAndReadBack must terminate');
-  const fnSource = source.slice(fnStart, fnEnd);
-  const popupReadback = fnSource.indexOf('hillPopupSupportCaseId()');
-  const secondarySearch = fnSource.indexOf('findSupportCase');
-  assert.notEqual(popupReadback, -1, 'popup readback must be used');
-  assert.notEqual(secondarySearch, -1, 'secondary search fallback must remain');
-  assert.ok(popupReadback < secondarySearch, 'popup case ID must be trusted before delayed search');
+test('Hill popup baseline captures all existing case IDs and excludes them after write', () => {
+  assert.ok(source.includes('async function hillPopupSupportCaseIds()'));
+  assert.ok(source.includes('const ids = await hillPopupSupportCaseIds()'));
+  assert.ok(source.includes('if (!excluded.has(caseId)) return caseId'));
 });
 
-test('Chat popup readback excludes a popup that already existed before the write', () => {
+test('Chat readback baselines every popup and verifies job identity before accepting a case ID', () => {
   const fnStart = source.indexOf('async function contactSupportAndReadBack(cdp, job)');
   assert.notEqual(fnStart, -1);
   const fnEnd = source.indexOf('\nasync function fillGeneralSupportIssue', fnStart);
+  assert.notEqual(fnEnd, -1);
   const fnSource = source.slice(fnStart, fnEnd);
-  const before = fnSource.indexOf('const popupCaseIdBeforeWrite = await hillPopupSupportCaseId()');
+  const before = fnSource.indexOf('const popupCaseIdsBeforeWrite = await hillPopupSupportCaseIds()');
   const write = fnSource.indexOf('submitHillEmail');
-  const after = fnSource.indexOf('hillPopupSupportCaseId(popupCaseIdBeforeWrite ? [popupCaseIdBeforeWrite] : [])');
-  assert.ok(before >= 0 && write > before && after > write, 'pre-existing popup must be captured before write and excluded after write');
+  const popup = fnSource.indexOf('hillPopupSupportCaseId(excludedPopupCaseIds)');
+  const identity = fnSource.indexOf('supportCaseMatchesJob(cdp, job, popupCaseId)');
+  const fallback = fnSource.indexOf('findSupportCase');
+  assert.ok(before >= 0 && write > before, 'all pre-write popup case IDs must be captured before write');
+  assert.ok(popup > write, 'popup readback must happen after write');
+  assert.ok(identity > popup, 'popup case ID must match current job identity');
+  assert.ok(fallback > identity, 'deterministic history lookup remains the final fallback');
+});
+
+test('Support case identity verifier reads ViewCase and checks order and SAFE-T identity', () => {
+  const start = source.indexOf('async function supportCaseMatchesJob(cdp, job, caseId)');
+  const end = source.indexOf('\nasync function contactSupportAndReadBack', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const fnSource = source.slice(start, end);
+  for (const needle of ['ViewCase?caseId=', 'job.case?.order_id', 'job.case?.safe_t_id', 'needles.some']) {
+    assert.ok(fnSource.includes(needle), 'missing identity guard: ' + needle);
+  }
+});
+
+test('Direct case creation rejects a readback ID that does not match the current job', () => {
+  const start = source.indexOf('async function submitDirectSupportCaseAndReadBack(cdp, job, narrative)');
+  const end = source.indexOf('\nasync function openGeneralSupportRoute', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const fnSource = source.slice(start, end);
+  const current = fnSource.indexOf('currentSupportCaseId(cdp)');
+  const identity = fnSource.indexOf('supportCaseMatchesJob(cdp, job, caseId)');
+  const fallback = fnSource.indexOf('findSupportCase');
+  assert.ok(current >= 0 && identity > current && fallback > identity);
 });
