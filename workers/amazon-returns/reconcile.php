@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialReconciler.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialObservations.php';
+require_once __DIR__ . '/../../includes/amazon-returns/Projector.php';
 
 final class SvAmazonReturnsReconcileWorker
 {
@@ -11,6 +12,74 @@ final class SvAmazonReturnsReconcileWorker
     public function shouldUpdateCase(array $case, array $transactions): bool
     {
         return $transactions !== [] || ($case['state'] ?? '') === SvAmazonReturnStates::RECOVERED;
+    }
+
+    /** @param list<array<string,mixed>> $events @return array<string,mixed> */
+    public static function caseUpdate(
+        array $case,
+        array $result,
+        array $events = [],
+        ?DateTimeImmutable $now = null
+    ): array {
+        $state = trim((string)($result['state'] ?? $case['state'] ?? ''));
+        if (!SvAmazonReturnStates::isValid($state)) {
+            throw new InvalidArgumentException('Financial reconciliation produced an invalid case state.');
+        }
+        $credit = (string)($result['credit_amount'] ?? $case['reconciled_credit_amount'] ?? '0.00');
+        $now ??= new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $existingClosedAt = self::nonEmptyText($case['closed_at'] ?? null);
+        $existingReason = self::nonEmptyText($case['terminal_reason'] ?? null);
+
+        if ($state === SvAmazonReturnStates::RECOVERED) {
+            return [
+                'reconciled_credit_amount'=>$credit,
+                'state'=>$state,
+                'terminal_reason'=>'FINANCIAL_RECOVERED',
+                'closed_at'=>$existingClosedAt ?? $now->format('Y-m-d H:i:s'),
+                'next_action_at'=>null,
+            ];
+        }
+
+        if (in_array($state, [SvAmazonReturnStates::RECEIVED_OK, SvAmazonReturnStates::CLOSED_LOSS], true)) {
+            $projected = null;
+            if ($state === SvAmazonReturnStates::RECEIVED_OK && $events !== []
+                && ($existingClosedAt === null || $existingReason === null)) {
+                $candidate = SvAmazonReturnProjector::projectFrom($case, $events);
+                if (($candidate['state'] ?? null) === SvAmazonReturnStates::RECEIVED_OK) {
+                    $projected = $candidate;
+                }
+            }
+            $closedAt = $existingClosedAt
+                ?? self::nonEmptyText($projected['closed_at'] ?? null)
+                ?? $now->format('Y-m-d H:i:s');
+            $reason = $existingReason
+                ?? self::nonEmptyText($projected['terminal_reason'] ?? null)
+                ?? ($state === SvAmazonReturnStates::RECEIVED_OK
+                    ? 'PHYSICAL_RETURN_RECEIVED'
+                    : 'EMAIL_REVIEW_FINAL_DENIAL');
+            return [
+                'reconciled_credit_amount'=>$credit,
+                'state'=>$state,
+                'terminal_reason'=>$reason,
+                'closed_at'=>$closedAt,
+                'next_action_at'=>null,
+            ];
+        }
+
+        return [
+            'reconciled_credit_amount'=>$credit,
+            'state'=>$state,
+            'terminal_reason'=>null,
+            'closed_at'=>null,
+            'next_action_at'=>$case['next_action_at'] ?? null,
+        ];
+    }
+
+    private static function nonEmptyText(mixed $value): ?string
+    {
+        if (!is_scalar($value)) return null;
+        $text = trim((string)$value);
+        return $text === '' ? null : $text;
     }
 
     /** @param list<array<string,mixed>> $events @return list<array<string,mixed>> */

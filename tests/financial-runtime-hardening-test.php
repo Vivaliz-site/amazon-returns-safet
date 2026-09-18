@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/amazon-returns-tenant-runtime-repositories-test.php';
 require_once __DIR__.'/../includes/amazon-returns/FinancialRefresh.php';
+require_once __DIR__.'/../workers/amazon-returns/reconcile.php';
 function frhSame(mixed $want,mixed $got,string $why):void{if($want!==$got)throw new RuntimeException($why.' expected='.json_encode($want).' actual='.json_encode($got));}
 if(!method_exists(SvAmazonFinancialRefresh::class,'safeSchedule')){fwrite(STDERR,"Missing safe financial scheduling boundary\n");exit(1);}
 if(!method_exists(SvAmazonReturnCaseRepository::class,'financialCasesAfter')){fwrite(STDERR,"Missing keyset financial reconciliation paging\n");exit(1);}
@@ -43,6 +44,14 @@ frhSame(true,str_contains($daemon,'SvAmazonFinancialRefresh::safeSchedule('),'da
 frhSame(true,str_contains($daemon,'SvAmazonFinancialRefresh::nextReconciliationBatch('),'daemon reconciliation must use bounded persisted case rotation');
 frhSame(false,str_contains($daemon,'SvAmazonFinancialRefresh::financialCases('),'unbounded full-scan helper must not remain in daemon');
 frhSame(false,str_contains($daemon,'casesWithExpectedReimbursement(250)'),'fixed LIMIT 250 path must not remain in daemon');
-frhSame(true,str_contains($daemon,"'next_action_at'=>\$terminal?null:(\$case['next_action_at']??null)"),'financial recovery must clear any obsolete next-action date');
+frhSame(true,str_contains($daemon,'$worker->caseUpdate('),'daemon must delegate financial persistence to the audited worker boundary');
+$recoveredUpdate=SvAmazonReturnsReconcileWorker::caseUpdate(
+    ['state'=>SvAmazonReturnStates::CREDIT_PENDING,'next_action_at'=>'2026-09-30 12:00:00'],
+    ['state'=>SvAmazonReturnStates::RECOVERED,'credit_amount'=>'10.00'],
+    [],
+    new DateTimeImmutable('2026-09-18 03:30:00',new DateTimeZone('UTC'))
+);
+frhSame(true,array_key_exists('next_action_at',$recoveredUpdate),'financial recovery update must explicitly control next-action state');
+frhSame(null,$recoveredUpdate['next_action_at'],'financial recovery must clear any obsolete next-action date');
 frhSame(true,str_contains($daemon,'$task===\'financial\' && $this->config->enabled()'),'disabled runtime must bypass financial acceptance gate');
 echo "financial-runtime-hardening-test: OK\n";
