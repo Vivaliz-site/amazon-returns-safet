@@ -12,8 +12,10 @@ qw_processing_count() {
 }
 
 qw_release_stale_read_jobs() {
-    local target_db="$1" tenant_id="$2" connection_id="$3"
-    qw_scalar "$target_db" "UPDATE amazon_return_outbox SET status='PENDING',attempt_count=GREATEST(attempt_count-1,0),locked_at=NULL,last_error='LEASE_EXPIRED_DURING_QUIESCE',updated_at=UTC_TIMESTAMP() WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND (locked_at IS NULL OR locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND)) AND kind IN ('SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'); SELECT ROW_COUNT();"
+    local target_db="$1" tenant_id="$2" connection_id="$3" stale_seconds="${4:-300}"
+    [[ "$stale_seconds" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid stale read lease threshold' >&2; return 2; }
+    (( stale_seconds <= 300 )) || { echo 'stale read lease threshold exceeds normal lease' >&2; return 2; }
+    qw_scalar "$target_db" "UPDATE amazon_return_outbox SET status='PENDING',attempt_count=GREATEST(attempt_count-1,0),locked_at=NULL,last_error='LEASE_EXPIRED_DURING_QUIESCE',updated_at=UTC_TIMESTAMP() WHERE tenant_id=$tenant_id AND amazon_connection_id=$connection_id AND status='PROCESSING' AND (locked_at IS NULL OR locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL $stale_seconds SECOND)) AND kind IN ('SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'); SELECT ROW_COUNT();"
 }
 
 qw_release_stale_write_jobs() {
@@ -42,6 +44,7 @@ quiesce_workers() {
     local target_db="$1" tenant_slug="$2" connection_key="$3"
     local timeout_seconds="${AMAZON_RETURNS_QUIESCE_TIMEOUT_SECONDS:-180}"
     local poll_seconds="${AMAZON_RETURNS_QUIESCE_POLL_SECONDS:-1}"
+    local read_reclaim_seconds
     local browser_timer='amazon-returns-seller-central-browser.timer'
     local quiesce_marker="${AMAZON_RETURNS_QUIESCE_MARKER:-/run/amazon-returns-seller-central.quiesce}"
     local browser_service='amazon-returns-seller-central-browser.service'
@@ -51,6 +54,10 @@ quiesce_workers() {
     [[ "$connection_key" =~ ^[a-z0-9][a-z0-9-]{0,95}$ ]] || { echo 'invalid connection key' >&2; return 2; }
     [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid quiesce timeout' >&2; return 2; }
     [[ "$poll_seconds" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid quiesce poll interval' >&2; return 2; }
+    read_reclaim_seconds="${AMAZON_RETURNS_QUIESCE_READ_RECLAIM_SECONDS:-$(( timeout_seconds / 2 ))}"
+    (( read_reclaim_seconds < 1 )) && read_reclaim_seconds=1
+    (( read_reclaim_seconds > 120 )) && read_reclaim_seconds=120
+    [[ "$read_reclaim_seconds" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid quiesce read reclaim threshold' >&2; return 2; }
     [[ "$quiesce_marker" == /* ]] || { echo 'invalid quiesce marker path' >&2; return 2; }
 
     local tenant_id connection_id count deadline unit timer_was_active=0 released=0 released_writes=0
@@ -76,7 +83,7 @@ quiesce_workers() {
             released=0
             released_writes=0
             if ! qw_unit_running "$browser_service"; then
-                released="$(qw_release_stale_read_jobs "$target_db" "$tenant_id" "$connection_id")"
+                released="$(qw_release_stale_read_jobs "$target_db" "$tenant_id" "$connection_id" "$read_reclaim_seconds")"
                 [[ "$released" =~ ^[0-9]+$ ]] || { echo 'invalid stale read release count' >&2; ((timer_was_active)) && systemctl start "$browser_timer"; return 1; }
                 if (( released > 0 )); then
                     printf 'worker_quiesce_released_stale_reads=%s\n' "$released"
