@@ -234,6 +234,13 @@ final class SvAmazonReturnsRuntime
     }
 
     /** @param array<string,mixed> $result */
+    public static function erpRateLimitRetryDelaySeconds(string $task,array $result): ?int
+    {
+        if($task!=='erp_sales_returns')return null;
+        return ($result['rate_limited'] ?? false)===true ? 300 : null;
+    }
+
+    /** @param array<string,mixed> $result */
     public static function gmailCatchupRetryDelaySeconds(string $task,array $result): ?int
     {
         if($task!=='gmail')return null;
