@@ -13,6 +13,9 @@ const PROFILE = process.env.SELLER_CENTRAL_PROFILE || '';
 const BROWSER = process.env.SELLER_CENTRAL_BROWSER || process.env.SELLER_CENTRAL_OPERA || '';
 const STATUS_WORKER_ID = process.env.SELLER_CENTRAL_STATUS_WORKER_ID || 'seller-central-status';
 const POLL_MS = Math.max(15000, Number(process.env.SELLER_CENTRAL_STATUS_POLL_MS || 30000));
+const resultRetryRaw = Number(process.env.SELLER_CENTRAL_STATUS_RESULT_RETRY_MS || 1000);
+const RESULT_RETRY_MS = Number.isFinite(resultRetryRaw) ? Math.max(10, Math.min(5000, Math.trunc(resultRetryRaw))) : 1000;
+const RESULT_RETRY_ATTEMPTS = 3;
 const QUIESCE_MARKER = process.env.AMAZON_RETURNS_QUIESCE_MARKER || '/run/amazon-returns-seller-central.quiesce';
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
 const CASE_LOBBY = 'https://sellercentral.amazon.com.br/cu/case-lobby';
@@ -369,7 +372,20 @@ async function runOnce() {
   } catch (error) {
     readResult = result('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: false });
   }
-  await bridge('result', { job_id: job.job_id, idempotency_key: job.idempotency_key, result: readResult });
+  let acknowledged = false;
+  let lastResultError = null;
+  for (let attempt = 1; attempt <= RESULT_RETRY_ATTEMPTS; attempt++) {
+    try {
+      await bridge('result', { job_id: job.job_id, idempotency_key: job.idempotency_key, result: readResult });
+      acknowledged = true;
+      break;
+    } catch (error) {
+      lastResultError = error;
+      log('result_retry', { ...job, status: error?.name || 'Error' });
+      if (attempt < RESULT_RETRY_ATTEMPTS) await sleep(RESULT_RETRY_MS * attempt);
+    }
+  }
+  if (!acknowledged) throw lastResultError || new Error('read result acknowledgement failed');
   log('job_result', { ...job, ...readResult });
   return true;
 }
