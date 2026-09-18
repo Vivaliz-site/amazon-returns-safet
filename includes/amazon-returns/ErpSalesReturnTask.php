@@ -12,11 +12,25 @@ require_once __DIR__.'/CaseConsultation.php';
 
 final class SvAmazonErpSalesReturnTask
 {
+    private const RESUME_SOURCE='ERP_SALES_RETURNS';
+    private const RESUME_KEY='quota_resume_v1';
+
     /** @return array<string,mixed> */
     public static function run(SvAmazonTenantPersistence $p,SvAmazonReturnsConfig $config): array
     {
-        $orders=self::refundedOrders($p);
-        if($orders===[])return self::result([],false,false);
+        $resumeCursor=$p->cursors->load(self::RESUME_SOURCE,self::RESUME_KEY);
+        $processed=self::quotaResumeProcessed($resumeCursor);
+        $allOrders=self::refundedOrders($p);
+        $orders=self::filterQuotaResumeOrders($allOrders,$processed);
+        $skippedProcessed=count($allOrders)-count($orders);
+        if($orders===[]){
+            if($resumeCursor!==null)$p->cursors->clear(self::RESUME_SOURCE,self::RESUME_KEY);
+            $result=self::result([],false,false);
+            $result['resumed']=$resumeCursor!==null;
+            $result['skipped_processed']=$skippedProcessed;
+            $result['resume_pending']=false;
+            return $result;
+        }
 
         $credentialPath=$config->get('AMAZON_RETURNS_ERP_ENV_FILE',SvAmazonErpInvoiceLookup::defaultCredentialPath());
         if($credentialPath==='' || !is_readable($credentialPath)){
@@ -34,6 +48,7 @@ final class SvAmazonErpSalesReturnTask
         $gateway=new SvAmazonOlistBrowserErpSalesReturnGateway(null,$config->get('OLIST_ERP_CDP_URL','http://127.0.0.1:9226'));
 
         $rows=[];$rateLimited=false;
+        $processedSet=array_fill_keys($processed,true);
         foreach($orders as $orderId){
             $limiter->beforeRequest();
             try{
@@ -65,15 +80,30 @@ final class SvAmazonErpSalesReturnTask
                 );
                 $row=$service->reconcileOrder($orderId);
                 $rows[]=['order_id'=>$orderId,'status'=>(string)($row['status']??'UNKNOWN')];
+                $processedSet[$orderId]=true;
             }catch(Throwable $e){
                 $rows[]=['order_id'=>$orderId,'status'=>'ERROR','error_class'=>$e::class];
                 if(str_contains($e->getMessage(),'HTTP 429')){
                     $rateLimited=true;
+                    $p->cursors->save(
+                        self::RESUME_SOURCE,self::RESUME_KEY,'active',
+                        ['processed_order_ids'=>array_keys($processedSet)]
+                    );
                     break;
                 }
+                $processedSet[$orderId]=true;
             }
         }
-        return self::result($rows,$config->erpSalesReturnCreateEnabled(),$rateLimited);
+        if(!$rateLimited && $resumeCursor!==null){
+            $p->cursors->clear(self::RESUME_SOURCE,self::RESUME_KEY);
+        }
+        $result=self::result($rows,$config->erpSalesReturnCreateEnabled(),$rateLimited);
+        $result['resumed']=$resumeCursor!==null;
+        $result['skipped_processed']=$skippedProcessed;
+        $result['resume_pending']=$rateLimited;
+        $result['incomplete_workflows']=$p->erpSalesReturns->countIncomplete();
+        if($result['incomplete_workflows']>0)$result['status']='PARTIAL';
+        return $result;
     }
 
     /** @return list<string> */
@@ -90,10 +120,16 @@ final class SvAmazonErpSalesReturnTask
             }
             $total=(int)($found['total']??0);$page++;
         }while((($page-1)*$perPage)<$total && $page<=1000);
-        $ids=array_keys($orders);
-        usort($ids,static function(string $left,string $right) use ($p): int {
-            $lw=$p->erpSalesReturns->findByOrder($left);
-            $rw=$p->erpSalesReturns->findByOrder($right);
+        $workflows=[];
+        foreach(array_keys($orders) as $orderId){
+            $workflow=$p->erpSalesReturns->findByOrder($orderId);
+            if(!self::workflowProcessable($workflow))continue;
+            $workflows[$orderId]=$workflow;
+        }
+        $ids=array_keys($workflows);
+        usort($ids,static function(string $left,string $right) use ($workflows): int {
+            $lw=$workflows[$left]??null;
+            $rw=$workflows[$right]??null;
             $lp=self::workflowPriority($lw);
             $rp=self::workflowPriority($rw);
             $lt=self::workflowLastCheckedAt($lw);
@@ -132,6 +168,37 @@ final class SvAmazonErpSalesReturnTask
         }
         if(count($numbers)!==1)return null;
         return (string)array_values($numbers)[0];
+    }
+
+    /** @param array<string,mixed>|null $workflow */
+    public static function workflowProcessable(?array $workflow): bool
+    {
+        $status=strtoupper(trim((string)($workflow['status']??'PENDING')));
+        return $status!=='RETURN_INVOICE_EXISTS';
+    }
+
+    /** @param array<string,mixed>|null $cursor @return list<string> */
+    public static function quotaResumeProcessed(?array $cursor): array
+    {
+        $metadata=is_array($cursor['metadata']??null)?$cursor['metadata']:[];
+        $raw=is_array($metadata['processed_order_ids']??null)?$metadata['processed_order_ids']:[];
+        $orders=[];
+        foreach($raw as $orderId){
+            if(!is_string($orderId) || preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$orderId)!==1)continue;
+            $orders[$orderId]=true;
+        }
+        return array_keys($orders);
+    }
+
+    /** @param list<string> $orders @param list<string> $processed @return list<string> */
+    public static function filterQuotaResumeOrders(array $orders,array $processed): array
+    {
+        if($processed===[])return array_values($orders);
+        $seen=array_fill_keys($processed,true);
+        return array_values(array_filter(
+            $orders,
+            static fn(string $orderId):bool=>!isset($seen[$orderId])
+        ));
     }
 
     /** @param array<string,mixed>|null $workflow */

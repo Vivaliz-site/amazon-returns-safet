@@ -213,4 +213,26 @@ erpWorkflowSame(0,$saleCalls,'Recovered uncertain create must reuse persisted or
 erpWorkflowSame(1,$gateway->probeExistingCalls,'Recovery must execute exactly one target probe.');
 erpWorkflowSame(0,$gateway->createCalls,'Existing target return must suppress duplicate write.');
 
+// A fully linked return invoice is terminal: do not spend ERP quota re-reading it.
+$store=new FakeErpSalesReturnStore();
+$store->rows[$order]=[
+    'amazon_order_id'=>$order,'status'=>'RETURN_INVOICE_EXISTS',
+    'original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001',
+    'erp_sales_return_id'=>'RET-EXIST','return_invoice_id'=>'901',
+    'last_error_code'=>null,'last_error_message'=>null,
+];
+$gateway=new FakeErpSalesReturnGateway();$returnCalls=0;$saleCalls=0;
+$result=(new SvAmazonErpSalesReturnService(
+    $store,$gateway,
+    static fn(string $id):array=>workflowCases($id),
+    static function(string $id) use (&$saleCalls):?array {$saleCalls++;return workflowSale($id);},
+    static function(string $id) use (&$returnCalls):?array {$returnCalls++;return null;},
+    true
+))->reconcileOrder($order);
+erpWorkflowSame('RETURN_INVOICE_EXISTS',$result['status']??null,'Linked return invoice must remain terminal.');
+erpWorkflowSame(0,$saleCalls,'Terminal return invoice must not re-read the original ERP sale.');
+erpWorkflowSame(0,$returnCalls,'Terminal return invoice must not consume return-invoice lookup quota.');
+erpWorkflowSame(0,$gateway->createCalls,'Terminal return invoice must never create another ERP return.');
+erpWorkflowSame(0,$gateway->probeExistingCalls,'Terminal return invoice must not probe for another sales return.');
+
 echo "erp-sales-return-workflow-test: OK\n";
