@@ -222,6 +222,7 @@ final class SvAmazonErpSalesReturnService
             'ERP_SALES_RETURN_AUTH_REQUIRED',
             'ERP_SALES_RETURN_BROWSER_UNAVAILABLE',
             'ERP_SALES_RETURN_UI_DRIFT',
+            'ERP_SALES_RETURN_ADDRESS_NUMBER_REQUIRED',
             'ERP_ORIGINAL_SALE_NOT_FOUND',
         ],true);
     }
