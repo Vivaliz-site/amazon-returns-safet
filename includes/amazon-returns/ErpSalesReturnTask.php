@@ -174,8 +174,9 @@ final class SvAmazonErpSalesReturnTask
             $status=strtoupper(trim((string)($row['status']??'')));
             if(isset($counts[$status]))$counts[$status]++;else $counts['OTHER']++;
         }
+        $incomplete=$counts['READY_TO_CREATE']+$counts['BLOCKED']+$counts['ERROR']+$counts['OTHER'];
         return [
-            'status'=>$counts['ERROR']>0?'PARTIAL':'OK',
+            'status'=>$incomplete>0?'PARTIAL':'OK',
             'orders'=>count($rows),
             'ready'=>$counts['READY_TO_CREATE'],
             'created_waiting_invoice'=>$counts['RETURN_CREATED_WAITING_INVOICE'],
