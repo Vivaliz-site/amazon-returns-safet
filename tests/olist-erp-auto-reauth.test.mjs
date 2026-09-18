@@ -55,6 +55,8 @@ test('persistent browser host wires reauth from protected environment without pr
   assert.match(host, /OLIST_ERP_LOGIN_PASSWORD/);
   assert.match(host, /ensureOlistAuthenticated/);
   assert.match(host, /framenavigated/);
+  assert.match(host, /domcontentloaded/);
+  assert.match(host, /if\s*\(reauthInFlight\)\s*\{\s*await reauthInFlight/);
   assert.match(host, /ERP_ENTRY/);
   assert.match(host, /pruneDuplicateOlistPages/);
   assert.match(host, /candidate\.close/);
