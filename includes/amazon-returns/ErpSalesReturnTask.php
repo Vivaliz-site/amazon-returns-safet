@@ -177,7 +177,7 @@ final class SvAmazonErpSalesReturnTask
             catch(Throwable){return true;}
             if($refundAt >= $cutoff)return true;
         }
-        return !$hasRefundedCase;
+        return false;
     }
 
     /** @param list<array<string,mixed>> $cases */
