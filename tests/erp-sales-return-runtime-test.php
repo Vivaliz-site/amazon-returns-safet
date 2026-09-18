@@ -30,4 +30,19 @@ if(method_exists(SvAmazonErpSalesReturnTask::class,'writeAllowedForOrderCases'))
     erpRuntimeSame(true,SvAmazonErpSalesReturnTask::writeAllowedForOrderCases($open,[['id'=>15,'quantity_refunded'=>1],['id'=>31,'quantity_refunded'=>1]]),'open production mode must preserve existing all-order behavior.');
 }
 
+
+$erpRevision=SvAmazonReturnsRuntime::erpSalesReturnStackRevision();
+erpRuntimeAssert(preg_match('/^[a-f0-9]{64}$/',$erpRevision)===1,'ERP sales return stack revision must be SHA-256.');
+$now=new DateTimeImmutable('2026-09-18T01:45:00Z');
+$recent=$now->modify('-60 seconds')->format(DATE_ATOM);
+$state=[];
+foreach(SvAmazonReturnsRuntime::cadences() as $task=>$seconds)$state[$task]=$recent;
+$state['erp_sales_return_stack_revision']='stale';
+$due=SvAmazonReturnsRuntime::dueTasks($state,$now,null,null,null,null,$erpRevision);
+erpRuntimeAssert(in_array('erp_sales_returns',$due,true),'Changed ERP stack must force one immediate reconciliation.');
+$state['erp_sales_return_stack_revision']=$erpRevision;
+$dueCurrent=SvAmazonReturnsRuntime::dueTasks($state,$now,null,null,null,null,$erpRevision);
+erpRuntimeAssert(!in_array('erp_sales_returns',$dueCurrent,true),'Current ERP stack revision must not force duplicate reconciliation.');
+erpRuntimeAssert(str_contains($daemon,'erp_sales_return_stack_revision'),'Daemon must persist applied ERP stack revision.');
+
 echo "erp-sales-return-runtime-test: OK\n";
