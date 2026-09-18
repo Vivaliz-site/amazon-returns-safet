@@ -890,7 +890,7 @@ function supportCaseIdFromHillTargetUrl(value) {
   }
 }
 
-async function hillPopupSupportCaseId() {
+async function hillPopupSupportCaseId(excludedCaseIds = []) {
   let targets;
   try {
     const response = await fetch(`${CDP_BASE}/json/list`, { signal: AbortSignal.timeout(2500) });
@@ -900,10 +900,11 @@ async function hillPopupSupportCaseId() {
     return '';
   }
   if (!Array.isArray(targets)) return '';
+  const excluded = new Set((Array.isArray(excludedCaseIds) ? excludedCaseIds : []).map(text).filter(Boolean));
   for (const row of [...targets].reverse()) {
     if (row?.type !== 'page') continue;
     const caseId = supportCaseIdFromHillTargetUrl(row?.url);
-    if (caseId) return caseId;
+    if (caseId && !excluded.has(caseId)) return caseId;
   }
   return '';
 }
@@ -961,6 +962,7 @@ async function currentSupportCaseId(cdp) {
 }
 
 async function contactSupportAndReadBack(cdp, job) {
+  const popupCaseIdBeforeWrite = await hillPopupSupportCaseId();
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline && !(await hillContactReady(cdp))) await sleep(750);
   if (!(await hillContactReady(cdp))) {
@@ -986,7 +988,7 @@ async function contactSupportAndReadBack(cdp, job) {
   }
   await sleep(4500);
   let caseId = await currentSupportCaseId(cdp);
-  if (!caseId) caseId = await hillPopupSupportCaseId();
+  if (!caseId) caseId = await hillPopupSupportCaseId(popupCaseIdBeforeWrite ? [popupCaseIdBeforeWrite] : []);
   for (let attempt = 0; !caseId && attempt < 5; attempt++) {
     try {
       caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
