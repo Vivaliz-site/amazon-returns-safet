@@ -116,7 +116,7 @@ profile_value() {
 }
 write_profile_version="$(profile_value version)"
 [[ "$write_profile_version" == 'safet-full-recovery-v2' ]] || { echo "write_profile_invalid version=$write_profile_version" >&2; exit 1; }
-for spec in SAFE_T_SUBMIT:1 SAFE_T_APPEAL:1 SAFE_T_EMAIL_REVIEW:1 SAFE_T_EMAIL_REPLY:1 SELLER_SUPPORT_OPEN:1 SELLER_SUPPORT_UPDATE:1; do
+for spec in SAFE_T_SUBMIT:1 SAFE_T_APPEAL:1 SAFE_T_EMAIL_REVIEW:1 SAFE_T_EMAIL_REPLY:1 SELLER_SUPPORT_OPEN:1 SELLER_SUPPORT_UPDATE:1 ERP_SALES_RETURN_CREATE:1; do
     action="${spec%%:*}"; expected="${spec##*:}"; actual="$(profile_value "$action")"
     [[ "$actual" == "$expected" ]] || { echo "write_profile_flag_mismatch action=$action expected=$expected actual=$actual" >&2; exit 1; }
 done
@@ -138,6 +138,7 @@ emit "review_notification_ready=$review_notification_ready"
 emit "write_profile_version=$write_profile_version"
 emit "safe_t_submit_write_enabled=$(profile_value SAFE_T_SUBMIT)"
 emit "safe_t_appeal_write_enabled=$(profile_value SAFE_T_APPEAL)"
+emit "erp_sales_return_write_enabled=$(profile_value ERP_SALES_RETURN_CREATE)"
 emit 'live_tenant_verification=ok'
 
 if [[ -n "$output_file" ]]; then
