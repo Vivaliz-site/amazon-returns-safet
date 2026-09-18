@@ -11,7 +11,7 @@ if($envFile!=='' && is_readable($envFile)){
  foreach(file($envFile,FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES)?:[] as $line){
   if($line==='' || $line[0]==='#' || !str_contains($line,'='))continue;
   [$key,$value]=explode('=',$line,2);
-  if(in_array($key,['AMAZON_RETURNS_ENABLED','AMAZON_RETURNS_MODE','AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH','AMAZON_RETURNS_WRITE_PROFILE_FILE'],true))$override[$key]=$value;
+  if(in_array($key,['AMAZON_RETURNS_ENABLED','AMAZON_RETURNS_MODE','AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH','AMAZON_RETURNS_WRITE_PROFILE_FILE','AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED'],true))$override[$key]=$value;
  }
 }
 if(!isset($override['AMAZON_RETURNS_ENABLED']))$override['AMAZON_RETURNS_ENABLED']='1';
