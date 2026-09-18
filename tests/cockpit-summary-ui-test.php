@@ -25,4 +25,7 @@ foreach(['Prazo para recurso','Próxima providência automática','Data de elegi
 csuAssert(str_contains($page,'id="operations-detail"'),'Secondary operational telemetry must be collapsible.');
 csuAssert(strpos($page,'class="panel cockpit"')<strpos($page,'id="automation-work"'),'Cases workspace must appear before background automation telemetry.');
 csuAssert(str_contains($page,'class="operator-glance"'),'Top operator glance summary required.');
+csuAssert(str_contains($summary,'response.status===401'),'Summary loader must detect an expired admin session explicitly.');
+csuAssert(str_contains($summary,"throw new Error('SESSION_EXPIRED')"),'Summary loader must propagate the session-expired sentinel.');
+csuAssert(str_contains($page,'cockpit.js?v='),'Base cockpit session recovery must be loaded with the summary module.');
 echo "cockpit-summary-ui-test: OK\n";
