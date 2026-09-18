@@ -76,7 +76,7 @@ coaAssert(str_contains($ui,"source!=='Informação não disponível'"),'Unknown 
 // Initial legacy rendering is replaced once the operational layer is loaded and case-only controls do not leak into other tabs.
 coaAssert(str_contains($baseUi,'casesRequestGeneration'),'Base list requests must be invalidated when the operational renderer starts later.');
 coaAssert(str_contains($ui,'++casesRequestGeneration'),'Operational list requests must advance the shared request generation.');
-coaAssert(str_contains($page,'cockpit.js?v=refund-consultation-2'),'Base cockpit asset must be cache-busted for this delivery.');
+coaAssert(str_contains($page,'cockpit.js?v=admin-session-expiry-1'),'Base cockpit asset must be cache-busted for the session-expiry fix.');
 coaAssert(str_contains($page,'cockpit-operational.js?v=refund-consultation-2'),'Operational cockpit asset must be cache-busted for this delivery.');
 coaAssert(!str_contains($page,'cockpit-operational-bootstrap.js'),'Legacy operational bootstrap must not be loaded.');
 coaAssert(str_contains($ui,"if(state.view==='cases')loadCases()"),'Operational list must rerender after deferred scripts load.');

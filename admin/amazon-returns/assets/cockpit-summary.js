@@ -103,10 +103,12 @@
   async function load(){
     try{
       const response=await fetch('/admin/amazon-returns/api/summary.php',{credentials:'same-origin',cache:'no-store'});
+      if(response.status===401)throw new Error('SESSION_EXPIRED');
       const data=await response.json().catch(()=>({}));
       if(!response.ok||data.success===false)throw new Error('summary unavailable');
       render(data,false);saveLastGood(data);return data;
     }catch(error){
+      if(error?.message==='SESSION_EXPIRED')throw error;
       const cached=readLastGood();if(cached){render(cached,true);return cached;}
       renderUnavailable();throw error;
     }
