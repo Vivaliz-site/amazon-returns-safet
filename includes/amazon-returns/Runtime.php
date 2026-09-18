@@ -127,6 +127,24 @@ final class SvAmazonReturnsRuntime
         return hash('sha256',implode('|',$parts));
     }
 
+    public static function erpSalesReturnStackRevision(): string
+    {
+        $files=[
+            __DIR__.'/ErpSalesReturnTask.php',
+            __DIR__.'/ErpSalesReturnService.php',
+            __DIR__.'/ErpInvoiceLookup.php',
+            __DIR__.'/ErpReturnInvoiceLookup.php',
+            __DIR__.'/ErpSalesReturnGateway.php',
+        ];
+        $parts=[];
+        foreach($files as $file){
+            $hash=@hash_file('sha256',$file);
+            if(!is_string($hash) || $hash==='')throw new RuntimeException('Unable to fingerprint ERP sales return stack.');
+            $parts[]=basename($file).':'.$hash;
+        }
+        return hash('sha256',implode('|',$parts));
+    }
+
     public static function outboxStackRevision(): string
     {
         $files=[
@@ -297,7 +315,8 @@ final class SvAmazonReturnsRuntime
         ?string $decisionStackRevision=null,
         ?string $gmailEvidenceRevision=null,
         ?string $outboxStackRevision=null,
-        ?string $gmailClientRevision=null
+        ?string $gmailClientRevision=null,
+        ?string $erpSalesReturnStackRevision=null
     ): array {
         $now=$now->setTimezone(new DateTimeZone('UTC'));
         $due=['bootstrap'];
@@ -352,6 +371,13 @@ final class SvAmazonReturnsRuntime
         ){
             $due[]='gmail';
             $due[]='gmail_history_probe';
+        }
+        if(
+            is_string($erpSalesReturnStackRevision)
+            && $erpSalesReturnStackRevision!==''
+            && ($state['erp_sales_return_stack_revision'] ?? null)!==$erpSalesReturnStackRevision
+        ){
+            $due[]='erp_sales_returns';
         }
         return array_values(array_unique($due));
     }
