@@ -6,7 +6,7 @@ import { classifyOlistLocation, ensureOlistAuthenticated } from '../scripts/amaz
 test('classifies ERP and Tiny identity locations without exposing credentials', () => {
   assert.equal(classifyOlistLocation('https://erp.olist.com/devolucoes_vendas#list'), 'ERP');
   assert.equal(classifyOlistLocation('https://erp.olist.com/login/'), 'AUTH');
-  assert.equal(classifyOlistLocation('https://erp.olist.com/'), 'AUTH');
+  assert.equal(classifyOlistLocation('https://erp.olist.com/'), 'ERP_ENTRY');
   assert.equal(classifyOlistLocation('https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/auth'), 'AUTH');
   assert.equal(classifyOlistLocation('https://id.olist.com/login'), 'AUTH');
   assert.equal(classifyOlistLocation('https://example.com/'), 'OTHER');
@@ -19,6 +19,27 @@ test('does not touch credentials when an ERP session is already authenticated', 
   assert.equal(result.status, 'AUTHENTICATED');
   assert.equal(result.reason, 'SESSION_REUSED');
   assert.deepEqual(calls, []);
+});
+
+test('confirms the ERP concurrent-session entry without consuming Tiny fallback credentials', async () => {
+  const calls = [];
+  const login = {
+    isVisible: async () => true,
+    click: async () => calls.push(['click', 'login']),
+  };
+  const page = {
+    current: 'https://erp.olist.com/',
+    url() { return this.current; },
+    getByRole: () => ({ first: () => login }),
+    waitForURL: async predicate => {
+      page.current = 'https://erp.olist.com/devolucoes_vendas#list';
+      assert.equal(predicate(page.current), true);
+    },
+    goto: async (...args) => calls.push(['goto', ...args]),
+  };
+  const result = await ensureOlistAuthenticated(page, { email: '', password: '' });
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'CONCURRENT_SESSION_CONFIRMED' });
+  assert.deepEqual(calls, [['click', 'login']]);
 });
 
 test('fails closed when Tiny login is visible but fallback credentials are unavailable', async () => {
@@ -34,5 +55,8 @@ test('persistent browser host wires reauth from protected environment without pr
   assert.match(host, /OLIST_ERP_LOGIN_PASSWORD/);
   assert.match(host, /ensureOlistAuthenticated/);
   assert.match(host, /framenavigated/);
+  assert.match(host, /ERP_ENTRY/);
+  assert.match(host, /pruneDuplicateOlistPages/);
+  assert.match(host, /candidate\.close/);
   assert.doesNotMatch(host, /console\.(log|error).*OLIST_ERP_LOGIN_(EMAIL|PASSWORD)/);
 });
