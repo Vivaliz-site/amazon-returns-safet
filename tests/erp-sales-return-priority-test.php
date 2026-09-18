@@ -21,4 +21,13 @@ erpPrioritySame('002214',SvAmazonErpSalesReturnTask::salesInvoiceNumberFromCases
 $events[12]=[['event_type'=>'SALES_INVOICE_LINKED','source'=>'ERP_OLIST_INVOICE','payload'=>['invoice_number'=>'9999']]];
 erpPrioritySame(null,SvAmazonErpSalesReturnTask::salesInvoiceNumberFromCases($cases,static fn(int $id):array=>$events[$id]??[]),'Conflicting invoice numbers must disable fallback lookup.');
 
+erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'RETURN_INVOICE_EXISTS']),'Linked return invoices are terminal and must not spend ERP quota again.');
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'RETURN_CREATED_WAITING_INVOICE']),'Created returns must remain eligible for return-invoice reconciliation.');
+$resume=['metadata'=>['processed_order_ids'=>['702-1111111-2222222','702-3333333-4444444','invalid','702-1111111-2222222']]];
+erpPrioritySame(['702-1111111-2222222','702-3333333-4444444'],SvAmazonErpSalesReturnTask::quotaResumeProcessed($resume),'Quota resume must restore only valid unique processed order IDs.');
+erpPrioritySame(['702-5555555-6666666'],SvAmazonErpSalesReturnTask::filterQuotaResumeOrders(
+    ['702-1111111-2222222','702-5555555-6666666','702-3333333-4444444'],
+    ['702-1111111-2222222','702-3333333-4444444']
+),'Quota continuation must skip orders already persisted as processed.');
+
 echo "erp-sales-return-priority-test: OK\n";

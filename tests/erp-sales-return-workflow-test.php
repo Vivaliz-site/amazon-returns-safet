@@ -243,4 +243,51 @@ erpWorkflowSame('BLOCKED',$result['status']??null,'Growing refunded quantity bey
 erpWorkflowSame('ERP_SALES_RETURN_ADDITIONAL_QUANTITY_PENDING',$result['last_error_code']??null,'Additional unreconciled quantity must be named explicitly.');
 erpWorkflowSame(1,$gateway->createCalls,'Additional quantity must never trigger a blind duplicate ERP write.');
 
+// A fully linked return invoice is terminal: do not spend ERP quota re-reading it,
+// once its reconciled quantity is known to cover what is currently refunded.
+$store=new FakeErpSalesReturnStore();
+$store->rows[$order]=[
+    'amazon_order_id'=>$order,'status'=>'RETURN_INVOICE_EXISTS',
+    'original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001',
+    'erp_sales_return_id'=>'RET-EXIST','return_invoice_id'=>'901',
+    'reconciled_quantity_refunded'=>1,
+    'last_error_code'=>null,'last_error_message'=>null,
+];
+$gateway=new FakeErpSalesReturnGateway();$returnCalls=0;$saleCalls=0;
+$result=(new SvAmazonErpSalesReturnService(
+    $store,$gateway,
+    static fn(string $id):array=>workflowCases($id),
+    static function(string $id) use (&$saleCalls):?array {$saleCalls++;return workflowSale($id);},
+    static function(string $id) use (&$returnCalls):?array {$returnCalls++;return null;},
+    true
+))->reconcileOrder($order);
+erpWorkflowSame('RETURN_INVOICE_EXISTS',$result['status']??null,'Linked return invoice must remain terminal.');
+erpWorkflowSame(0,$saleCalls,'Terminal return invoice must not re-read the original ERP sale.');
+erpWorkflowSame(0,$returnCalls,'Terminal return invoice must not consume return-invoice lookup quota.');
+erpWorkflowSame(0,$gateway->createCalls,'Terminal return invoice must never create another ERP return.');
+erpWorkflowSame(0,$gateway->probeExistingCalls,'Terminal return invoice must not probe for another sales return.');
+
+// A legacy terminal row predating quantity tracking must be baselined locally
+// (no ERP quota spent) instead of being treated as stale or re-verified externally.
+$store=new FakeErpSalesReturnStore();
+$store->rows[$order]=[
+    'amazon_order_id'=>$order,'status'=>'RETURN_INVOICE_EXISTS',
+    'original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001',
+    'erp_sales_return_id'=>'RET-EXIST','return_invoice_id'=>'901',
+    'last_error_code'=>null,'last_error_message'=>null,
+];
+$gateway=new FakeErpSalesReturnGateway();$returnCalls=0;$saleCalls=0;
+$result=(new SvAmazonErpSalesReturnService(
+    $store,$gateway,
+    static fn(string $id):array=>workflowCases($id),
+    static function(string $id) use (&$saleCalls):?array {$saleCalls++;return workflowSale($id);},
+    static function(string $id) use (&$returnCalls):?array {$returnCalls++;return null;},
+    true
+))->reconcileOrder($order);
+erpWorkflowSame('RETURN_INVOICE_EXISTS',$result['status']??null,'Legacy terminal row must remain terminal after baselining.');
+erpWorkflowSame(1,$result['reconciled_quantity_refunded']??null,'Legacy terminal row must be baselined to the currently refunded quantity.');
+erpWorkflowSame(0,$saleCalls,'Baselining a legacy terminal row must not re-read the original ERP sale.');
+erpWorkflowSame(0,$returnCalls,'Baselining a legacy terminal row must not consume return-invoice lookup quota.');
+erpWorkflowSame(0,$gateway->createCalls,'Baselining a legacy terminal row must never create another ERP return.');
+
 echo "erp-sales-return-workflow-test: OK\n";

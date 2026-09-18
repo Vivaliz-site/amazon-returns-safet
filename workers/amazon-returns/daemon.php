@@ -721,16 +721,15 @@ class SvAmazonReturnsDaemon
                 continue;
             }
             if($transactions!==[])$withTransactions++;
-            $terminal=$result['state']===SvAmazonReturnStates::RECOVERED;
-            $this->persistence->cases->update($caseId,[
-                'reconciled_credit_amount'=>$result['credit_amount'],
-                'state'=>$result['state'],
-                'terminal_reason'=>$terminal?'FINANCIAL_RECOVERED':null,
-                'closed_at'=>$terminal
-                    ? ($case['closed_at'] ?? gmdate('Y-m-d H:i:s'))
-                    : null,
-                'next_action_at'=>$terminal?null:($case['next_action_at']??null),
-            ]);
+            $this->persistence->cases->update(
+                $caseId,
+                $worker->caseUpdate(
+                    $case,
+                    $result,
+                    $events,
+                    new DateTimeImmutable('now',new DateTimeZone('UTC'))
+                )
+            );
             if($confirmation!==null)$this->persistence->events->append($confirmation);
             $updated++;
             }catch(Throwable $e){

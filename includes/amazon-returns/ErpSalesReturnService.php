@@ -47,10 +47,25 @@ final class SvAmazonErpSalesReturnService
         // return invoice is authoritative and must suppress creation even when the
         // original sale lookup is temporarily unavailable.
         $workflow=$this->store->ensureWorkflow(['amazon_order_id'=>$orderId]);
-        $existingInvoice=($this->returnInvoiceLookup)($orderId);
-        if(is_array($existingInvoice)){
-            $workflow=$this->store->linkReturnInvoice($orderId,$existingInvoice);
-            return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
+        $persistedStatus=strtoupper(trim((string)($workflow['status']??'')));
+        if($persistedStatus==='RETURN_INVOICE_EXISTS'){
+            $reconciledRaw=$workflow['reconciled_quantity_refunded']??null;
+            if($reconciledRaw===null){
+                // Legacy row predating quantity tracking: baseline it locally
+                // (no ERP quota spent) instead of assuming it is stale.
+                return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
+            }
+            if((int)$reconciledRaw>=$refundedQuantity)return $workflow;
+            // Fall through: quantity grew past what this terminal return/NF
+            // covers, so the full reconciliation path below must re-evaluate
+            // and, ultimately, surface it as a blocker rather than trust the
+            // quota-saving shortcut blindly.
+        }else{
+            $existingInvoice=($this->returnInvoiceLookup)($orderId);
+            if(is_array($existingInvoice)){
+                $workflow=$this->store->linkReturnInvoice($orderId,$existingInvoice);
+                return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
+            }
         }
 
         // Reuse the already-persisted sale identity before spending ERP API quota.
