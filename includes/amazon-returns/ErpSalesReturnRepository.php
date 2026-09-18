@@ -47,6 +47,26 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
         return max(0,(int)$stmt->fetchColumn());
     }
 
+    /** @return list<array{amazon_order_id:string,status:string,last_error_code:?string}> */
+    public function incompleteAuditRows(): array
+    {
+        $stmt=$this->sql(
+            "SELECT amazon_order_id,status,last_error_code FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS') ORDER BY amazon_order_id"
+        );
+        $rows=[];
+        while($row=$stmt->fetch(PDO::FETCH_ASSOC)){
+            if(!is_array($row))continue;
+            $rows[]=[
+                'amazon_order_id'=>(string)($row['amazon_order_id']??''),
+                'status'=>strtoupper(trim((string)($row['status']??''))),
+                'last_error_code'=>($row['last_error_code']??null)!==null
+                    ? strtoupper(trim((string)$row['last_error_code']))
+                    : null,
+            ];
+        }
+        return $rows;
+    }
+
     /** @param array<string,mixed> $data @return array<string,mixed> */
     public function ensureWorkflow(array $data): array
     {
