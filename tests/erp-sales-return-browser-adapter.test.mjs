@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildOpenReturnForm, buildOlistReadinessExpression, buildXajaxExpression, classifyOlistPageState, createCdpRpc, createOlistXajaxClient, evaluateExistingReturn, decideOlistTargetState, fetchCdpJson, runAdapterCommand, withTimeout, verifyCreatedReturn } from '../scripts/amazon-returns/erp-sales-return-browser.mjs';
+import { buildOpenReturnForm, buildOlistReadinessExpression, buildXajaxExpression, classifyOlistPageState, createCdpRpc, createOlistXajaxClient, evaluateExistingReturn, decideOlistTargetState, executeSalesReturn, fetchCdpJson, runAdapterCommand, withTimeout, verifyCreatedReturn } from '../scripts/amazon-returns/erp-sales-return-browser.mjs';
 
 const origin = {
   id: 0,
@@ -87,6 +87,68 @@ test('blocks a mismatched refunded SKU when the ERP sale has more than one posit
     refund_at: '2026-09-12',
     items: [{ sku: 'SKU-X', quantity_refunded: 1 }],
   }), /refunded SKU/i);
+});
+
+test('classifies an ambiguous refunded SKU before save so the workflow cannot retry an unsafe item mapping', async () => {
+  const ambiguousOrigin = structuredClone(origin);
+  ambiguousOrigin.itens.push({ id: 0, idProduto: '708', codigo: 'SKU-2', quantidadeOrigem: '1.0000', valorUnitario: '5.00', unidade: 'UN' });
+  let saves = 0;
+  const client = {
+    async findExistingReturn() { return null; },
+    async loadOrigin() { return ambiguousOrigin; },
+    async validate() { throw new Error('validate must not run after item-mapping failure'); },
+    async save() { saves += 1; return { id: '999' }; },
+    async readBack() { return null; },
+  };
+  const result = await executeSalesReturn(client, {
+    amazon_order_id: '702-1234567-1234567',
+    original_invoice_id: '202',
+    refund_at: '2026-09-12',
+    items: [{ sku: 'SKU-X', quantity_refunded: 1 }],
+  });
+  assert.deepEqual(result, { status: 'ITEM_MAPPING_FAILED', submitted: false, external_id: null, retry_safe: true });
+  assert.equal(saves, 0);
+});
+
+test('classifies the observed Olist missing-address-number validation before save', async () => {
+  let saves = 0;
+  const client = {
+    async findExistingReturn() { return null; },
+    async loadOrigin() { return origin; },
+    async validate() { throw new Error('Número do endereço do cliente não informado.'); },
+    async save() { saves += 1; return { id: '999' }; },
+    async readBack() { return null; },
+  };
+  const result = await executeSalesReturn(client, {
+    amazon_order_id: '702-1234567-1234567',
+    original_invoice_id: '202',
+    refund_at: '2026-09-12',
+    items: [{ sku: 'SKU-1', quantity_refunded: 1 }],
+  });
+  assert.deepEqual(result, { status: 'ADDRESS_NUMBER_REQUIRED', submitted: false, external_id: null, retry_safe: true });
+  assert.equal(saves, 0);
+});
+
+test('Olist validar preserves the browser-side validation message instead of collapsing it to an opaque CDP exception', async () => {
+  const window = {
+    xajax: {
+      venda: {
+        devolucaoVenda: {
+          async validar() {
+            const error = new Error('Número do endereço do cliente não informado.');
+            error.name = 'ValidationException';
+            throw error;
+          },
+        },
+      },
+    },
+  };
+  const expr = buildXajaxExpression('validar', [{ id: 0 }]);
+  const raw = await Function('window', 'return ' + expr)(window);
+  assert.equal(raw?.__olist_validation_error?.name, 'ValidationException');
+  assert.equal(raw?.__olist_validation_error?.message, 'Número do endereço do cliente não informado.');
+  const client = createOlistXajaxClient(async () => raw);
+  await assert.rejects(() => client.validate({ id: 0 }), /Número do endereço do cliente não informado/);
 });
 
 test('treats an existing ERP return as authoritative and never requests another create', () => {

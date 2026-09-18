@@ -2,6 +2,7 @@ const ORDER_RE = /^\d{3}-\d{7}-\d{7}$/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const text = value => String(value ?? '').trim();
+const normalizedText = value => text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const numericId = value => /^\d+$/.test(text(value)) ? text(value) : '';
 
 export function buildOpenReturnForm(origin, command = {}) {
@@ -105,7 +106,11 @@ export function buildXajaxExpression(method, args = []) {
   const encodedArgs = JSON.stringify(args);
   const xajaxName = `xajax_venda_devolucaoVenda_${method}`;
   const dottedName = `venda.devolucaoVenda.${method}`;
-  return `(async()=>{const args=${encodedArgs};const nested=window.xajax?.venda?.devolucaoVenda?.${method};if(typeof nested==='function')return await nested(...args);const generated=window[${JSON.stringify(xajaxName)}];if(typeof generated==='function')return await generated(...args);const call=window.xajax?.call;if(typeof call==='function')return await call.call(window.xajax,${JSON.stringify(dottedName)},{parameters:args});throw new Error('Olist XAJAX method ${method} is unavailable.');})()`;
+  const body = `const args=${encodedArgs};const nested=window.xajax?.venda?.devolucaoVenda?.${method};if(typeof nested==='function')return await nested(...args);const generated=window[${JSON.stringify(xajaxName)}];if(typeof generated==='function')return await generated(...args);const call=window.xajax?.call;if(typeof call==='function')return await call.call(window.xajax,${JSON.stringify(dottedName)},{parameters:args});throw new Error('Olist XAJAX method ${method} is unavailable.');`;
+  if (method === 'validar') {
+    return `(async()=>{try{${body}}catch(error){return {__olist_validation_error:{name:String(error?.name||''),message:String(error?.message||error||'').slice(0,300)}};}})()`;
+  }
+  return `(async()=>{${body}})()`;
 }
 
 export function buildOlistReadinessExpression() {
@@ -143,7 +148,14 @@ export function createOlistXajaxClient(rpc) {
       if (!invoiceId) throw new TypeError('ERP original sale invoice ID is required.');
       return rpc('obterDadosOrigemInclusao', [2, Number(invoiceId)]);
     },
-    async validate(form) { return rpc('validar', [form]); },
+    async validate(form) {
+      const result = await rpc('validar', [form]);
+      if (result?.__olist_validation_error) {
+        const message = text(result.__olist_validation_error?.message) || 'Olist sales-return validation failed.';
+        throw new Error(message);
+      }
+      return result;
+    },
     async save(id, form) { return rpc('salvar', [Number(id), form]); },
     async readBack(id) {
       const returnId = numericId(id);
@@ -182,8 +194,24 @@ export async function executeSalesReturn(client, command = {}) {
   if (existing) return { ...existing, submitted: false, retry_safe: true };
 
   const origin = await client.loadOrigin(originalInvoiceId);
-  const form = buildOpenReturnForm(origin, command);
-  await client.validate(form);
+  let form;
+  try {
+    form = buildOpenReturnForm(origin, command);
+  } catch (error) {
+    const message = text(error?.message);
+    if (message.includes('cannot be matched exactly') || message.includes('quantity exceeds')) {
+      return { status: 'ITEM_MAPPING_FAILED', submitted: false, external_id: null, retry_safe: true };
+    }
+    throw error;
+  }
+  try {
+    await client.validate(form);
+  } catch (error) {
+    if (normalizedText(error?.message).includes('numero do endereco do cliente nao informado')) {
+      return { status: 'ADDRESS_NUMBER_REQUIRED', submitted: false, external_id: null, retry_safe: true };
+    }
+    throw error;
+  }
 
   const raceExisting = evaluateExistingReturn(await client.findExistingReturn(originalInvoiceId, command.original_invoice_number), originalInvoiceId);
   if (raceExisting) return { ...raceExisting, submitted: false, retry_safe: true };
