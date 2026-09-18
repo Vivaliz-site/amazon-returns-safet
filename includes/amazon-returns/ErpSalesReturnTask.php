@@ -41,8 +41,14 @@ final class SvAmazonErpSalesReturnTask
                     $p->erpSalesReturns,
                     $gateway,
                     static fn(string $candidateOrderId): array=>$p->cases->forOrder($candidateOrderId),
-                    static fn(string $candidateOrderId): ?array=>$saleLookup->findSaleForOrder($candidateOrderId),
-                    static fn(string $candidateOrderId): ?array=>$returnLookup->findForOrder($candidateOrderId),
+                    static function(string $candidateOrderId) use ($limiter,$saleLookup): ?array {
+                        $limiter->beforeRequest();
+                        return $saleLookup->findSaleForOrder($candidateOrderId);
+                    },
+                    static function(string $candidateOrderId) use ($limiter,$returnLookup): ?array {
+                        $limiter->beforeRequest();
+                        return $returnLookup->findForOrder($candidateOrderId);
+                    },
                     $config->erpSalesReturnCreateEnabled() && self::writeAllowedForOrderCases($config,$cases)
                 );
                 $row=$service->reconcileOrder($orderId);
