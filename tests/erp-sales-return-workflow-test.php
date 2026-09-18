@@ -215,6 +215,51 @@ erpWorkflowSame(0,$saleCalls,'Recovered uncertain create must reuse persisted or
 erpWorkflowSame(1,$gateway->probeExistingCalls,'Recovery must execute exactly one target probe.');
 erpWorkflowSame(0,$gateway->createCalls,'Existing target return must suppress duplicate write.');
 
+// A legacy created return predating quantity tracking may be baselined locally
+// only when the current refund evidence predates the verified ERP creation.
+$store=new FakeErpSalesReturnStore();
+$store->rows[$order]=[
+    'amazon_order_id'=>$order,'status'=>'RETURN_CREATED_WAITING_INVOICE',
+    'original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001',
+    'erp_sales_return_id'=>'RET-LEGACY','created_in_erp_at'=>'2026-09-13 00:00:00',
+    'last_error_code'=>null,'last_error_message'=>null,
+];
+$gateway=new FakeErpSalesReturnGateway();$returnCalls=0;$saleCalls=0;
+$result=(new SvAmazonErpSalesReturnService(
+    $store,$gateway,
+    static fn(string $id):array=>workflowCases($id),
+    static function(string $id) use (&$saleCalls):?array {$saleCalls++;return workflowSale($id);},
+    static function(string $id) use (&$returnCalls):?array {$returnCalls++;return null;},
+    true
+))->reconcileOrder($order);
+erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'Legacy created return must remain created after safe local baselining.');
+erpWorkflowSame(1,$result['reconciled_quantity_refunded']??null,'Legacy created return must baseline the currently refunded quantity.');
+erpWorkflowSame(0,$saleCalls,'Safe legacy created-return baselining must not re-read the original ERP sale.');
+erpWorkflowSame(0,$returnCalls,'Safe legacy created-return baselining must not consume return-invoice API quota.');
+erpWorkflowSame(0,$gateway->createCalls,'Safe legacy created-return baselining must never create another ERP return.');
+erpWorkflowSame(0,$gateway->probeExistingCalls,'Safe legacy created-return baselining must not probe another ERP return.');
+
+// A legacy created return with a later refund must stay conservative: do not
+// baseline the larger current quantity onto an older ERP return.
+$store=new FakeErpSalesReturnStore();
+$store->rows[$order]=[
+    'amazon_order_id'=>$order,'status'=>'RETURN_CREATED_WAITING_INVOICE',
+    'original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001',
+    'erp_sales_return_id'=>'RET-OLDER','created_in_erp_at'=>'2026-09-12 11:00:00',
+    'last_error_code'=>null,'last_error_message'=>null,
+];
+$gateway=new FakeErpSalesReturnGateway();$returnCalls=0;$saleCalls=0;
+$result=(new SvAmazonErpSalesReturnService(
+    $store,$gateway,
+    static fn(string $id):array=>workflowCases($id),
+    static function(string $id) use (&$saleCalls):?array {$saleCalls++;return workflowSale($id);},
+    static function(string $id) use (&$returnCalls):?array {$returnCalls++;return null;},
+    true
+))->reconcileOrder($order);
+erpWorkflowSame('BLOCKED',$result['status']??null,'A refund newer than the legacy ERP return must not be baselined.');
+erpWorkflowSame('ERP_SALES_RETURN_ADDITIONAL_QUANTITY_PENDING',$result['last_error_code']??null,'A later refund must remain an explicit additional-quantity blocker.');
+erpWorkflowSame(0,$gateway->createCalls,'A later refund on a legacy return must never trigger a blind duplicate write.');
+
 // A refund that grows after the ERP return/NF is already on file must never be
 // silently treated as fully reconciled, and must never trigger a blind duplicate write.
 $refundedQuantity=1;
