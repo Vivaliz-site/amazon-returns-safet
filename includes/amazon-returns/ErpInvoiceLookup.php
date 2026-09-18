@@ -9,13 +9,16 @@ final class SvAmazonErpInvoiceLookup
     private array $credentials;
     /** @var callable(string,string,array<string,string>,?string):array<string,mixed> */
     private $http;
+    /** @var callable():void|null */
+    private $beforeRequest;
     private string $apiBase='https://api.tiny.com.br/public-api/v3';
 
     /** @param array<string,string>|null $credentials */
-    public function __construct(?array $credentials=null,?callable $http=null,?SvAmazonReturnsConfig $config=null)
+    public function __construct(?array $credentials=null,?callable $http=null,?SvAmazonReturnsConfig $config=null,?callable $beforeRequest=null)
     {
         $this->credentials=$credentials ?? self::loadCredentials($config ?? new SvAmazonReturnsConfig());
         $this->http=$http ?? [$this,'httpRequest'];
+        $this->beforeRequest=$beforeRequest;
     }
 
     public static function defaultCredentialPath(): string
@@ -76,23 +79,70 @@ final class SvAmazonErpInvoiceLookup
             if($id==='')continue;
             $matches[$id]=$row;
         }
+        if($matches!==[]){
+            if(count($matches)!==1)throw new UnexpectedValueException('Amazon order maps to multiple ERP sale invoices.');
+            return $this->saleProjection(array_values($matches)[0],$amazonOrderId,null);
+        }
+        return $this->findSaleViaSalesOrder($amazonOrderId);
+    }
+
+    /** @return array<string,mixed>|null */
+    private function findSaleViaSalesOrder(string $amazonOrderId): ?array
+    {
+        $query=http_build_query([
+            'numeroPedidoEcommerce'=>$amazonOrderId,
+            'origemPedido'=>0,
+            'limit'=>100,
+            'offset'=>0,
+        ],'','&',PHP_QUERY_RFC3986);
+        $list=$this->requestJson('GET',$this->apiBase.'/pedidos?'.$query,'ERP sales order lookup');
+        $rows=is_array($list['itens']??null)?$list['itens']:[];
+        $matches=[];
+        foreach($rows as $row){
+            if(!is_array($row))continue;
+            $ecommerce=is_array($row['ecommerce']??null)?$row['ecommerce']:[];
+            if(trim((string)($ecommerce['numeroPedidoEcommerce']??''))!==$amazonOrderId)continue;
+            $id=trim((string)($row['id']??''));
+            if(preg_match('/^[0-9]+$/D',$id)!==1)continue;
+            $matches[$id]=true;
+        }
         if($matches===[])return null;
-        if(count($matches)!==1)throw new UnexpectedValueException('Amazon order maps to multiple ERP sale invoices.');
-        return $this->saleProjection(array_values($matches)[0],$amazonOrderId,null);
+        if(count($matches)!==1)throw new UnexpectedValueException('Amazon order maps to multiple ERP sales orders.');
+        $orderId=(string)array_key_first($matches);
+        $detail=$this->requestJson('GET',$this->apiBase.'/pedidos/'.rawurlencode($orderId),'ERP sales order detail lookup');
+        $ecommerce=is_array($detail['ecommerce']??null)?$detail['ecommerce']:[];
+        if(trim((string)($ecommerce['numeroPedidoEcommerce']??''))!==$amazonOrderId){
+            throw new UnexpectedValueException('ERP sales order detail does not match Amazon order.');
+        }
+        $invoiceId=trim((string)($detail['idNotaFiscal']??''));
+        if(preg_match('/^[0-9]+$/D',$invoiceId)!==1)return null;
+        $invoice=$this->requestJson('GET',$this->apiBase.'/notas/'.rawurlencode($invoiceId),'ERP sale invoice detail lookup');
+        if(trim((string)($invoice['id']??''))!==$invoiceId){
+            throw new UnexpectedValueException('ERP sale invoice detail ID mismatch.');
+        }
+        if(strtoupper(trim((string)($invoice['tipo']??'S')))!=='S')return null;
+        return $this->saleProjection($invoice,$amazonOrderId,null);
     }
 
     /** @return list<array<string,mixed>> */
     private function listInvoices(string $query,string $label): array
     {
-        $response=($this->http)(
-            'GET',$this->apiBase.'/notas?'.$query,
-            ['Authorization'=>'Bearer '.$this->accessToken(),'Accept'=>'application/json'],null
-        );
-        $status=(int)($response['status'] ?? 0);
-        if($status!==200)throw new RuntimeException($label.' failed with HTTP '.$status.'.');
-        $json=is_array($response['json'] ?? null)?$response['json']:[];
+        $json=$this->requestJson('GET',$this->apiBase.'/notas?'.$query,$label);
         $rows=is_array($json['itens'] ?? null)?$json['itens']:[];
         return array_values(array_filter($rows,'is_array'));
+    }
+
+    /** @return array<string,mixed> */
+    private function requestJson(string $method,string $url,string $label): array
+    {
+        if(is_callable($this->beforeRequest))($this->beforeRequest)();
+        $response=($this->http)(
+            $method,$url,
+            ['Authorization'=>'Bearer '.$this->accessToken(),'Accept'=>'application/json'],null
+        );
+        $status=(int)($response['status']??0);
+        if($status!==200)throw new RuntimeException($label.' failed with HTTP '.$status.'.');
+        return is_array($response['json']??null)?$response['json']:[];
     }
 
     /** @param array<string,mixed> $row @return array<string,mixed> */

@@ -28,10 +28,10 @@ final class SvAmazonErpSalesReturnTask
             ];
         }
 
-        $saleLookup=new SvAmazonErpInvoiceLookup(null,null,$config);
+        $limiter=SvAmazonErpApiRateLimiter::fromConfig($config);
+        $saleLookup=new SvAmazonErpInvoiceLookup(null,null,$config,static fn()=>$limiter->beforeRequest());
         $returnLookup=new SvAmazonErpReturnInvoiceLookup(null,null,$config);
         $gateway=new SvAmazonOlistBrowserErpSalesReturnGateway(null,$config->get('OLIST_ERP_CDP_URL','http://127.0.0.1:9226'));
-        $limiter=SvAmazonErpApiRateLimiter::fromConfig($config);
 
         $rows=[];$rateLimited=false;
         foreach($orders as $orderId){
@@ -43,7 +43,6 @@ final class SvAmazonErpSalesReturnTask
                     $gateway,
                     static fn(string $candidateOrderId): array=>$p->cases->forOrder($candidateOrderId),
                     static function(string $candidateOrderId) use ($limiter,$saleLookup,$p,$cases): ?array {
-                        $limiter->beforeRequest();
                         $sale=$saleLookup->findSaleForOrder($candidateOrderId);
                         if(is_array($sale))return $sale;
                         $invoiceNumber=self::salesInvoiceNumberFromCases(
@@ -51,7 +50,6 @@ final class SvAmazonErpSalesReturnTask
                             static fn(int $caseId): array=>$p->events->eventsForCase($caseId)
                         );
                         if($invoiceNumber===null)return null;
-                        $limiter->beforeRequest();
                         return $saleLookup->findOrderByInvoiceNumber($invoiceNumber);
                     },
                     static function(string $candidateOrderId) use ($limiter,$returnLookup): ?array {
