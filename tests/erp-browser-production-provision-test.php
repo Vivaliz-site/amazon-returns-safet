@@ -10,4 +10,5 @@ ebpAssert($provisionPos!==false,'Production provision must invoke the Olist ERP 
 ebpAssert($swapPos!==false && $provisionPos>$swapPos,'ERP browser must be provisioned against the activated release.');
 ebpAssert(str_contains($script,'--enable-service'),'Production provisioning must enable the persistent ERP browser service.');
 ebpAssert(str_contains($script,'systemctl is-active --quiet amazon-returns-olist-erp-browser.service'),'Provisioning must verify ERP browser service is actually active.');
+ebpAssert(str_contains($script,"set_env_key 'AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED' '1'"),'Production provisioning must persist the dedicated ERP sales-return gate after proven canary.');
 echo "erp-browser-production-provision-test: OK\n";
