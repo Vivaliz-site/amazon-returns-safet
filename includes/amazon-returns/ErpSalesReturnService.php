@@ -38,6 +38,10 @@ final class SvAmazonErpSalesReturnService
         if($items===[]){
             throw new RuntimeException('Amazon order has no refunded quantity to reconcile with ERP.');
         }
+        $refundedQuantity=array_sum(array_map(
+            static fn(array $item): int=>max(0,(int)($item['quantity_refunded']??0)),
+            $items
+        ));
 
         // Persist the order identity before any ERP resolution. An already-issued
         // return invoice is authoritative and must suppress creation even when the
@@ -45,7 +49,8 @@ final class SvAmazonErpSalesReturnService
         $workflow=$this->store->ensureWorkflow(['amazon_order_id'=>$orderId]);
         $existingInvoice=($this->returnInvoiceLookup)($orderId);
         if(is_array($existingInvoice)){
-            return $this->store->linkReturnInvoice($orderId,$existingInvoice);
+            $workflow=$this->store->linkReturnInvoice($orderId,$existingInvoice);
+            return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
         }
 
         // Reuse the already-persisted sale identity before spending ERP API quota.
@@ -70,7 +75,17 @@ final class SvAmazonErpSalesReturnService
         $workflow=$this->store->findByOrder($orderId)??$workflow;
         $status=strtoupper(trim((string)($workflow['status']??'')));
         if(in_array($status,['RETURN_INVOICE_EXISTS','RETURN_CREATED_WAITING_INVOICE'],true)){
-            return $workflow;
+            $reconciled=(int)($workflow['reconciled_quantity_refunded']??0);
+            if($reconciled>=$refundedQuantity)return $workflow;
+            // More was refunded on this order after the devolucao/NF already on file was
+            // created for a smaller quantity. Automatic amendment/second-document
+            // creation in the ERP is not verified, so surface this as an explicit
+            // blocker instead of silently treating the order as fully reconciled.
+            return $this->store->markBlocked(
+                $orderId,
+                'ERP_SALES_RETURN_ADDITIONAL_QUANTITY_PENDING',
+                'Quantidade reembolsada aumentou apos a devolucao/NF existente no Olist/Tiny; reconciliacao adicional exige acao manual.'
+            );
         }
 
         // Generic CREATE_FAILED is intentionally uncertain: never retry it blindly.
@@ -88,7 +103,8 @@ final class SvAmazonErpSalesReturnService
             if($existingSalesReturnId!==null){
                 $readBack=$this->gateway->readBack($existingSalesReturnId,$orderId);
                 if($this->validReadBack($readBack,$existingSalesReturnId,$orderId)){
-                    return $this->store->markReturnCreated($orderId,$existingSalesReturnId);
+                    $this->store->markReturnCreated($orderId,$existingSalesReturnId);
+                    return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
                 }
                 return $this->store->markBlocked(
                     $orderId,
@@ -115,7 +131,8 @@ final class SvAmazonErpSalesReturnService
         // Mandatory second preflight immediately before the external write.
         $raceInvoice=($this->returnInvoiceLookup)($orderId);
         if(is_array($raceInvoice)){
-            return $this->store->linkReturnInvoice($orderId,$raceInvoice);
+            $this->store->linkReturnInvoice($orderId,$raceInvoice);
+            return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
         }
 
         $result=$this->gateway->create([
@@ -141,7 +158,8 @@ final class SvAmazonErpSalesReturnService
             }
             $readBack=$this->gateway->readBack($candidateId,$orderId);
             if($this->validReadBack($readBack,$candidateId,$orderId)){
-                return $this->store->markReturnCreated($orderId,$candidateId);
+                $this->store->markReturnCreated($orderId,$candidateId);
+                return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
             }
             return $this->store->markBlocked(
                 $orderId,

@@ -107,6 +107,11 @@ final class AmazonReturnsMemoryStatement extends PDOStatement
             return true;
         }
 
+        if (str_contains($normalized, 'INFORMATION_SCHEMA.COLUMNS')) {
+            $this->result = [[0 => 0]];
+            return true;
+        }
+
         if (str_contains($normalized, 'WHERE `CASE_ID` =')) {
             $this->result = array_values(array_filter(
                 $this->db->events,
@@ -131,6 +136,12 @@ final class AmazonReturnsMemoryStatement extends PDOStatement
     public function fetchAll(int $mode = PDO::FETCH_DEFAULT, mixed ...$args): array
     {
         return $this->result;
+    }
+
+    public function fetchColumn(int $column = 0): mixed
+    {
+        $row = $this->result[$this->cursor++] ?? false;
+        return $row === false ? false : ($row[$column] ?? false);
     }
 }
 
@@ -271,10 +282,10 @@ assertTrue(substr_count($ddl, 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf
 $schemaDb = new AmazonReturnsMemoryPdo();
 SvAmazonReturnsSchema::ensure($schemaDb);
 SvAmazonReturnsSchema::ensure($schemaDb);
-assertSameValue(32, count($schemaDb->ddlExecutions), 'Calling ensure twice must safely replay all CREATE TABLE IF NOT EXISTS statements.');
+assertSameValue(34, count($schemaDb->ddlExecutions), 'Calling ensure twice must safely replay all CREATE TABLE IF NOT EXISTS statements plus the conditional column migration.');
 assertSameValue(
     $schemaDb->ddlExecutions[0],
-    $schemaDb->ddlExecutions[16],
+    $schemaDb->ddlExecutions[17],
     'Repeated schema generation must be deterministic.'
 );
 

@@ -17,6 +17,8 @@ interface SvAmazonErpSalesReturnStore
     public function linkReturnInvoice(string $orderId,array $invoice): array;
     /** @return array<string,mixed> */
     public function markBlocked(string $orderId,string $code,string $message): array;
+    /** Records the total refunded quantity actually covered by the ERP return/invoice so far. */
+    public function recordReconciledQuantity(string $orderId,int $quantity): array;
 }
 
 final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnStore
@@ -124,6 +126,16 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
         ]);
     }
 
+    /** Records the total refunded quantity actually covered by the ERP return/invoice so far. */
+    public function recordReconciledQuantity(string $orderId,int $quantity): array
+    {
+        if($quantity<0)throw new InvalidArgumentException('Reconciled refunded quantity cannot be negative.');
+        return $this->transition($orderId,[
+            'reconciled_quantity_refunded'=>$quantity,
+            'last_checked_at'=>self::now(),
+        ]);
+    }
+
     /** @param array<string,mixed> $values @return array<string,mixed> */
     private function transition(string $orderId,array $values): array
     {
@@ -131,7 +143,7 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
         $sets=[];
         $params=[':amazon_order_id'=>$orderId];
         foreach($values as $field=>$value){
-            if(!in_array($field,['status','erp_sales_return_id','return_invoice_id','return_invoice_number','return_invoice_key','return_invoice_status','return_invoice_issued_at','last_checked_at','created_in_erp_at','last_error_code','last_error_message'],true)){
+            if(!in_array($field,['status','erp_sales_return_id','return_invoice_id','return_invoice_number','return_invoice_key','return_invoice_status','return_invoice_issued_at','reconciled_quantity_refunded','last_checked_at','created_in_erp_at','last_error_code','last_error_message'],true)){
                 throw new InvalidArgumentException('Unsupported ERP sales return field.');
             }
             $key=':set_'.$field;

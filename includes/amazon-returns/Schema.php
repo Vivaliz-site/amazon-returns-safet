@@ -6,6 +6,23 @@ final class SvAmazonReturnsSchema
     public static function ensure(PDO $db): void
     {
         foreach (self::statements() as $statement) $db->exec($statement);
+        self::ensureColumn(
+            $db,
+            'amazon_return_erp_sales_returns',
+            'reconciled_quantity_refunded',
+            'ALTER TABLE `amazon_return_erp_sales_returns` ADD COLUMN `reconciled_quantity_refunded` INT UNSIGNED NULL AFTER `return_invoice_issued_at`'
+        );
+    }
+
+    private static function ensureColumn(PDO $db,string $table,string $column,string $alterStatement): void
+    {
+        $stmt=$db->prepare(
+            'SELECT COUNT(*) FROM information_schema.columns '
+            . 'WHERE table_schema=DATABASE() AND table_name=:table AND column_name=:column'
+        );
+        $stmt->execute([':table'=>$table,':column'=>$column]);
+        if((int)$stmt->fetchColumn()>0)return;
+        $db->exec($alterStatement);
     }
 
     /** @return list<string> */
@@ -359,6 +376,7 @@ CREATE TABLE IF NOT EXISTS `amazon_return_erp_sales_returns` (
     `return_invoice_key` VARCHAR(64) NULL,
     `return_invoice_status` VARCHAR(64) NULL,
     `return_invoice_issued_at` DATETIME NULL,
+    `reconciled_quantity_refunded` INT UNSIGNED NULL,
     `idempotency_key` CHAR(64) NOT NULL,
     `last_checked_at` DATETIME NULL,
     `created_in_erp_at` DATETIME NULL,

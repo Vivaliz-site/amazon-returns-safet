@@ -44,6 +44,7 @@ final class FakeErpSalesReturnStore implements SvAmazonErpSalesReturnStore
     public function markReturnCreated(string $orderId,string $erpSalesReturnId): array { $this->rows[$orderId]['status']='RETURN_CREATED_WAITING_INVOICE';$this->rows[$orderId]['erp_sales_return_id']=$erpSalesReturnId;return $this->rows[$orderId]; }
     public function linkReturnInvoice(string $orderId,array $invoice): array { $this->rows[$orderId]['status']='RETURN_INVOICE_EXISTS';$this->rows[$orderId]['return_invoice_id']=$invoice['invoice_id']??null;$this->rows[$orderId]['return_invoice_number']=$invoice['invoice_number']??null;return $this->rows[$orderId]; }
     public function markBlocked(string $orderId,string $code,string $message): array { $this->rows[$orderId]['status']='BLOCKED';$this->rows[$orderId]['last_error_code']=$code;$this->rows[$orderId]['last_error_message']=$message;return $this->rows[$orderId]; }
+    public function recordReconciledQuantity(string $orderId,int $quantity): array { $this->rows[$orderId]['reconciled_quantity_refunded']=$quantity;return $this->rows[$orderId]; }
 }
 
 final class FakeErpSalesReturnGateway implements SvAmazonErpSalesReturnGateway
@@ -212,5 +213,34 @@ erpWorkflowSame('RET-EXIST',$result['erp_sales_return_id']??null,'Recovered exte
 erpWorkflowSame(0,$saleCalls,'Recovered uncertain create must reuse persisted original sale identity.');
 erpWorkflowSame(1,$gateway->probeExistingCalls,'Recovery must execute exactly one target probe.');
 erpWorkflowSame(0,$gateway->createCalls,'Existing target return must suppress duplicate write.');
+
+// A refund that grows after the ERP return/NF is already on file must never be
+// silently treated as fully reconciled, and must never trigger a blind duplicate write.
+$refundedQuantity=1;
+$growingCases=static function(string $id) use (&$refundedQuantity): array {
+    return [[
+        'id'=>11,'amazon_order_id'=>$id,'amazon_order_item_id'=>'item-1','sku'=>'SKU-1',
+        'quantity_ordered'=>5,'quantity_refunded'=>$refundedQuantity,'refund_at'=>'2026-09-12 12:00:00',
+    ]];
+};
+$store=new FakeErpSalesReturnStore();$gateway=new FakeErpSalesReturnGateway(['ok'=>true,'id'=>'RET-90'],['id'=>'RET-90','order_id'=>$order]);
+$returnQueue=[null,null,null];$returnCalls=0;
+$service=new SvAmazonErpSalesReturnService(
+    $store,$gateway,
+    $growingCases,
+    static fn(string $id):array=>workflowSale($id),
+    static function(string $id) use (&$returnQueue,&$returnCalls):?array {$returnCalls++;return array_shift($returnQueue);},
+    true
+);
+$result=$service->reconcileOrder($order);
+erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'Initial refunded quantity must be reconciled normally.');
+erpWorkflowSame(1,$result['reconciled_quantity_refunded']??null,'Reconciled quantity must be recorded after a verified create.');
+erpWorkflowSame(1,$gateway->createCalls,'Exactly one ERP sales-return write for the initial quantity.');
+
+$refundedQuantity=3;
+$result=$service->reconcileOrder($order);
+erpWorkflowSame('BLOCKED',$result['status']??null,'Growing refunded quantity beyond what is reconciled must not stay silently accepted.');
+erpWorkflowSame('ERP_SALES_RETURN_ADDITIONAL_QUANTITY_PENDING',$result['last_error_code']??null,'Additional unreconciled quantity must be named explicitly.');
+erpWorkflowSame(1,$gateway->createCalls,'Additional quantity must never trigger a blind duplicate ERP write.');
 
 echo "erp-sales-return-workflow-test: OK\n";

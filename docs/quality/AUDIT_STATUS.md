@@ -57,6 +57,13 @@ Moderado/alto. A proveniência está correta e a camada de lookup melhorou, mas 
 ## Regra de validade
 Esta auditoria cobre `6edd00cfb41b3e92722fd00404829fa2b66587b0` e o runtime observado em 2026-09-16. Mudança em bridges, write profile, OAuth, políticas, workers, filas ou regras de decisão exige reauditoria.
 
+## Achado de código — 2026-09-18 — reembolso adicional sem devolução/NF (WRITE-07)
+- **Classe:** invariante de negócio (`todo reembolso deve possuir devolução gerada ou NF de devolução`) violável silenciosamente.
+- **Evidência (código, não live):** `amazon_return_erp_sales_returns` tem uma linha por pedido (`UNIQUE KEY` em `amazon_order_id`); `SvAmazonErpSalesReturnService::reconcileOrder()` retornava a workflow existente imediatamente quando o status já era `RETURN_CREATED_WAITING_INVOICE`/`RETURN_INVOICE_EXISTS`, sem comparar a quantidade reembolsada atual com a quantidade efetivamente coberta pela devolução/NF já criada. Um segundo reembolso no mesmo pedido após a primeira devolução nunca era reconciliado, e `countIncomplete()` não detectava o caso porque a linha já estava em um status "completo".
+- **Correção:** nova coluna `reconciled_quantity_refunded` (migração condicional em `SvAmazonReturnsSchema::ensure()`); o serviço agora registra a quantidade reconciliada a cada criação/vinculação bem-sucedida e, ao encontrar quantidade reembolsada maior que a reconciliada em um workflow já "completo", bloqueia com `ERP_SALES_RETURN_ADDITIONAL_QUANTITY_PENDING` em vez de aceitar silenciosamente — nunca tenta uma escrita adicional às cegas, pois a capacidade de emenda/segundo documento no Olist/Tiny não está verificada.
+- **Guarda permanente:** `tests/erp-sales-return-workflow-test.php` (cenário de quantidade crescente) e `tests/operational-health-test.php`/`tests/erp-health-blocker-test.php`/`tests/erp-health-live-state-test.php` para a classe de health-false-green relacionada corrigida na mesma auditoria.
+- **Escopo desta entrada:** auditoria estática de código nesta sessão, sem acesso à VM de produção (não solicitado/autorizado nesta rodada). Não altera o veredito `NÃO APTO` abaixo, que continua exigindo a validação live descrita na Saída do NO-GO; esta correção deve ser incluída na próxima auditoria live antes de qualquer reclassificação para `APTO`.
+
 ## AUDIT_ESCAPE — 2026-09-17 — quiescência do Seller Central
 - **Classe:** deploy/runtime parity; worker com drain contínuo mantendo `PROCESSING` vivo durante a janela de quiescência.
 - **Evidência live:** o auto-deploy abortou com `worker_quiesce_timeout=180s`; o Seller Central concluiu um job longo e reivindicou imediatamente os jobs seguintes, sem janela `PROCESSING=0`.
