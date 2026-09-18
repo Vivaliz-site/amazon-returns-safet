@@ -1,10 +1,17 @@
 name: Olist Login Envelope
+run-name: Olist Login Envelope ${{ inputs.request_id }}
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/olist-login-envelope.yml
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Non-secret correlation identifier
+        required: true
+        type: string
+      recipient_cert_b64:
+        description: Base64-encoded short-lived X.509 recipient certificate
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,26 +23,40 @@ jobs:
     env:
       OLIST_ERP_LOGIN_EMAIL: ${{ secrets.OLIST_ERP_LOGIN_EMAIL }}
       OLIST_ERP_LOGIN_PASSWORD: ${{ secrets.OLIST_ERP_LOGIN_PASSWORD }}
-      OLIST_ENV_SYNC_KEY: ${{ secrets.OLIST_ENV_SYNC_KEY }}
+      RECIPIENT_CERT_B64: ${{ inputs.recipient_cert_b64 }}
     steps:
-      - name: Create encrypted login envelope
+      - name: Create recipient-encrypted login envelope
         shell: bash
         run: |
           set -euo pipefail
           umask 077
           test -n "$OLIST_ERP_LOGIN_EMAIL"
           test -n "$OLIST_ERP_LOGIN_PASSWORD"
-          test -n "$OLIST_ENV_SYNC_KEY"
+          test -n "$RECIPIENT_CERT_B64"
+
+          printf '%s' "$RECIPIENT_CERT_B64" | base64 --decode > recipient.crt
+          openssl x509 -in recipient.crt -noout -checkend 3600
+          bits="$(openssl x509 -in recipient.crt -noout -pubkey \
+            | openssl pkey -pubin -text -noout 2>/dev/null \
+            | awk '/Public-Key:/{gsub(/[()]/,"",$2); print $2; exit}')"
+          test "${bits:-0}" -ge 3072
+
           printf 'OLIST_ERP_LOGIN_EMAIL=%s\nOLIST_ERP_LOGIN_PASSWORD=%s\n' \
             "$OLIST_ERP_LOGIN_EMAIL" "$OLIST_ERP_LOGIN_PASSWORD" > olist-login.env
-          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -md sha256 \
-            -pass env:OLIST_ENV_SYNC_KEY \
-            -in olist-login.env -out olist-login.env.enc
-          rm -f olist-login.env
-      - name: Upload encrypted envelope
+
+          openssl cms -encrypt -binary -aes256 \
+            -in olist-login.env \
+            -out olist-login.cms \
+            -outform DER \
+            recipient.crt
+
+          rm -f olist-login.env recipient.crt
+          test -s olist-login.cms
+
+      - name: Upload encrypted envelope only
         uses: actions/upload-artifact@v4
         with:
           name: olist-login-envelope
-          path: olist-login.env.enc
+          path: olist-login.cms
           if-no-files-found: error
           retention-days: 1
