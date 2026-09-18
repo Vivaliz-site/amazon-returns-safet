@@ -129,6 +129,7 @@ erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'Verifi
 erpWorkflowSame(1,$gateway->createCalls,'Exactly one ERP sales-return write is allowed.');
 erpWorkflowSame(1,$gateway->readBackCalls,'Successful create must be read back before persistence.');
 erpWorkflowSame('2026-09-12 12:00:00',$gateway->lastCommand['refund_at']??null,'ERP sales return must use the actual Amazon refund timestamp.');
+erpWorkflowSame(2,$gateway->lastCommand['items'][0]['quantity_ordered']??null,'ERP sales return payload must preserve the Amazon ordered quantity for safe bundle decomposition.');
 $result=$service->reconcileOrder($order);
 erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'Repeated reconciliation must keep the created state while NF is absent.');
 erpWorkflowSame(1,$gateway->createCalls,'Repeated reconciliation must not duplicate the ERP sales return.');

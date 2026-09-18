@@ -99,6 +99,37 @@ test('falls back to the only positive ERP sale item when exactly one refunded it
   assert.equal(form.itens[0].quantidade, 1);
 });
 
+test('maps one Amazon kit item into multiple ERP component lines only when integer component ratios are exact', () => {
+  const kitOrigin = structuredClone(origin);
+  kitOrigin.itens = [
+    { id: 0, idProduto: 'A', codigo: 'COMP-A', quantidadeOrigem: '4.0000', valorUnitario: '10.00', unidade: 'UN' },
+    { id: 0, idProduto: 'B', codigo: 'COMP-B', quantidadeOrigem: '4.0000', valorUnitario: '10.00', unidade: 'UN' },
+  ];
+  const full = buildOpenReturnForm(kitOrigin, {
+    amazon_order_id: '702-1234567-1234567',
+    refund_at: '2026-09-12',
+    items: [{ sku: 'KIT-X', quantity_ordered: 2, quantity_refunded: 2 }],
+  });
+  assert.deepEqual(full.itens.map(i => [i.codigo, i.quantidade]), [['COMP-A', 4], ['COMP-B', 4]]);
+  assert.equal(full.ehDevolucaoParcial, 'N');
+
+  const partial = buildOpenReturnForm(kitOrigin, {
+    amazon_order_id: '702-1234567-1234567',
+    refund_at: '2026-09-12',
+    items: [{ sku: 'KIT-X', quantity_ordered: 2, quantity_refunded: 1 }],
+  });
+  assert.deepEqual(partial.itens.map(i => [i.codigo, i.quantidade]), [['COMP-A', 2], ['COMP-B', 2]]);
+  assert.equal(partial.ehDevolucaoParcial, 'S');
+
+  const unsafe = structuredClone(kitOrigin);
+  unsafe.itens[1].quantidadeOrigem = '3.0000';
+  assert.throws(() => buildOpenReturnForm(unsafe, {
+    amazon_order_id: '702-1234567-1234567',
+    refund_at: '2026-09-12',
+    items: [{ sku: 'KIT-X', quantity_ordered: 2, quantity_refunded: 1 }],
+  }), /refunded SKU/i);
+});
+
 test('blocks a mismatched refunded SKU when the ERP sale has more than one positive item', () => {
   const ambiguousOrigin = structuredClone(origin);
   ambiguousOrigin.itens.push({ id: 0, idProduto: '708', codigo: 'SKU-2', quantidadeOrigem: '1.0000', valorUnitario: '5.00', unidade: 'UN' });

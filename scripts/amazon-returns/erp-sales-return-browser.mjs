@@ -19,17 +19,49 @@ export function buildOpenReturnForm(origin, command = {}) {
   const requestedItems = Array.isArray(command.items) ? command.items : [];
   if (requestedItems.length === 0) throw new TypeError('ERP sales return requires refunded items.');
   const requestedBySku = new Map();
+  const orderedBySku = new Map();
   for (const item of requestedItems) {
     const sku = text(item?.sku);
     const quantity = Number(item?.quantity_refunded ?? 0);
+    const ordered = Number(item?.quantity_ordered ?? 0);
     if (!sku || !Number.isFinite(quantity) || quantity <= 0) throw new TypeError('ERP sales return refunded SKU/quantity is invalid.');
     requestedBySku.set(sku, (requestedBySku.get(sku) ?? 0) + quantity);
+    if (Number.isFinite(ordered) && ordered > 0) orderedBySku.set(sku, (orderedBySku.get(sku) ?? 0) + ordered);
   }
   const originItems = Array.isArray(origin.itens) ? origin.itens : [];
   const positiveOriginItems = originItems.filter(item => Number(item?.quantidadeOrigem ?? 0) > 0);
   const items = [];
   let partial = false;
-  for (const [sku, quantity] of requestedBySku) {
+  let bundleMapped = false;
+
+  if (requestedBySku.size === 1 && positiveOriginItems.length > 1) {
+    const [[sku, quantity]] = requestedBySku.entries();
+    const exactMatches = originItems.filter(item => text(item?.codigo) === sku);
+    const ordered = Number(orderedBySku.get(sku) ?? 0);
+    if (exactMatches.length === 0 && Number.isInteger(ordered) && ordered > 0 && Number.isInteger(quantity) && quantity > 0 && quantity <= ordered) {
+      const mapped = [];
+      let safe = true;
+      for (const source of positiveOriginItems) {
+        const available = Number(source?.quantidadeOrigem ?? 0);
+        const perAmazonUnit = available / ordered;
+        const componentUnits = Math.round(perAmazonUnit);
+        if (!Number.isFinite(available) || available <= 0 || componentUnits <= 0 || Math.abs(perAmazonUnit - componentUnits) > 1e-9) {
+          safe = false;
+          break;
+        }
+        const returned = componentUnits * quantity;
+        if (returned <= 0 || returned > available) { safe = false; break; }
+        mapped.push({ ...source, quantidade: returned });
+      }
+      if (safe && mapped.length === positiveOriginItems.length) {
+        items.push(...mapped);
+        partial = quantity < ordered;
+        bundleMapped = true;
+      }
+    }
+  }
+
+  if (!bundleMapped) for (const [sku, quantity] of requestedBySku) {
     const matches = originItems.filter(item => text(item?.codigo) === sku);
     const source = matches.length === 1
       ? matches[0]
