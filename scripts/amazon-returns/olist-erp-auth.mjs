@@ -6,7 +6,8 @@ export function classifyOlistLocation(rawUrl) {
   try {
     const url = new URL(String(rawUrl || ''));
     const host = url.hostname.toLowerCase();
-    if (host === ERP_HOST && (url.pathname === '/' || /^\/login(?:\/|$)/i.test(url.pathname))) return 'AUTH';
+    if (host === ERP_HOST && /^\/login(?:\/|$)/i.test(url.pathname)) return 'AUTH';
+    if (host === ERP_HOST && (url.pathname === '/' || url.pathname === '')) return 'ERP_ENTRY';
     if (host === ERP_HOST) return 'ERP';
     if (AUTH_HOSTS.has(host)) return 'AUTH';
     return 'OTHER';
@@ -33,6 +34,23 @@ async function submitVisibleForm(page) {
 export async function ensureOlistAuthenticated(page, credentials = {}, options = {}) {
   const state = classifyOlistLocation(page.url());
   if (state === 'ERP') return { status: 'AUTHENTICATED', reason: 'SESSION_REUSED' };
+  if (state === 'ERP_ENTRY') {
+    try {
+      const login = page.getByRole('button', { name: /^login$/i }).first();
+      if (!await login.isVisible().catch(() => false)) {
+        return { status: 'AUTH_REQUIRED', reason: 'ERP_ENTRY_UNSUPPORTED' };
+      }
+      await login.click();
+      const timeout = Number(options.timeoutMs || 15000);
+      await page.waitForURL(url => classifyOlistLocation(String(url)) === 'ERP', { timeout });
+      if (!page.url().startsWith(TARGET_URL)) {
+        await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout });
+      }
+      return { status: 'AUTHENTICATED', reason: 'CONCURRENT_SESSION_CONFIRMED' };
+    } catch {
+      return { status: 'AUTH_REQUIRED', reason: 'ERP_ENTRY_FAILED' };
+    }
+  }
   if (state !== 'AUTH') return { status: 'AUTH_REQUIRED', reason: 'UNEXPECTED_LOCATION' };
 
   const email = String(credentials.email || '').trim();

@@ -17,6 +17,7 @@ const { chromium } = require(modulePath);
 let context;
 let stopping = false;
 let reauthInFlight = null;
+let primaryPage = null;
 async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
@@ -33,17 +34,29 @@ process.once('SIGINT', () => void shutdown(130));
     password: process.env.OLIST_ERP_LOGIN_PASSWORD || '',
   };
 
+  async function pruneDuplicateOlistPages(primary) {
+    for (const candidate of context?.pages?.() || []) {
+      if (candidate === primary) continue;
+      const state = classifyOlistLocation(candidate.url());
+      if (['AUTH', 'ERP_ENTRY', 'ERP'].includes(state)) {
+        await candidate.close().catch(() => {});
+      }
+    }
+  }
+
   async function maybeReauthenticate(page) {
-    if (stopping || reauthInFlight || classifyOlistLocation(page.url()) !== 'AUTH') return;
+    const state = classifyOlistLocation(page.url());
+    if (stopping || reauthInFlight || !['AUTH', 'ERP_ENTRY'].includes(state)) return;
     reauthInFlight = ensureOlistAuthenticated(page, credentials)
-      .catch(() => ({ status: 'AUTH_REQUIRED', reason: 'LOGIN_FAILED' }))
-      .finally(() => { reauthInFlight = null; });
-    await reauthInFlight;
+      .catch(() => ({ status: 'AUTH_REQUIRED', reason: 'LOGIN_FAILED' }));
+    const result = await reauthInFlight;
+    if (result?.status === 'AUTHENTICATED') await pruneDuplicateOlistPages(page);
+    reauthInFlight = null;
   }
 
   function wirePage(page) {
     page.on('framenavigated', frame => {
-      if (frame === page.mainFrame() && classifyOlistLocation(page.url()) === 'AUTH') {
+      if (frame === page.mainFrame() && ['AUTH', 'ERP_ENTRY'].includes(classifyOlistLocation(page.url()))) {
         void maybeReauthenticate(page);
       }
     });
@@ -58,12 +71,17 @@ process.once('SIGINT', () => void shutdown(130));
       `--remote-debugging-port=${cdpPort}`,
     ],
   });
+  const existingPages = context.pages();
+  primaryPage = existingPages.find(candidate => candidate.url().startsWith(targetUrl))
+    || existingPages[0]
+    || await context.newPage();
+  for (const existingPage of existingPages) wirePage(existingPage);
+  if (!existingPages.includes(primaryPage)) wirePage(primaryPage);
+  await pruneDuplicateOlistPages(primaryPage);
   context.on('page', wirePage);
-  for (const existingPage of context.pages()) wirePage(existingPage);
 
-  const page = context.pages()[0] || await context.newPage();
-  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-  if (classifyOlistLocation(page.url()) === 'AUTH') await maybeReauthenticate(page);
+  await primaryPage.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+  if (['AUTH', 'ERP_ENTRY'].includes(classifyOlistLocation(primaryPage.url()))) await maybeReauthenticate(primaryPage);
   await new Promise(() => {});
 })().catch(error => {
   console.error('Olist ERP browser host failed:', error?.name || 'Error', String(error?.message || '').split('\n')[0].slice(0, 300));
