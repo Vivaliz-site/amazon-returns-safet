@@ -20,22 +20,22 @@ $detailed = [
     'readiness'=>['sp_api'=>['ready'=>true,'missing'=>[]]],'write_flags'=>['SAFE_T_SUBMIT'=>true],
 ];
 phrSame(
-    ['service'=>'amazon-returns-safet','status'=>'OK'],
+    ['service'=>'amazon-returns-safet','status'=>'OK','blockers'=>[]],
     SvAmazonReturnsPublicHealthResponse::fromRuntime($detailed),
     'Unauthenticated health response must expose availability only.'
 );
 phrSame(
-    ['service'=>'amazon-returns-safet','status'=>'DEGRADED'],
-    SvAmazonReturnsPublicHealthResponse::fromRuntime(['status'=>'DEGRADED','tenant_id'=>99]),
+    ['service'=>'amazon-returns-safet','status'=>'DEGRADED','blockers'=>['TASK_ERP_SALES_RETURNS_PARTIAL']],
+    SvAmazonReturnsPublicHealthResponse::fromRuntime(['status'=>'DEGRADED','tenant_id'=>99,'health_blockers'=>['TASK_ERP_SALES_RETURNS_PARTIAL']]),
     'Degraded dependencies must not be misreported as a total service failure.'
 );
 phrSame(
-    ['service'=>'amazon-returns-safet','status'=>'FAILED'],
+    ['service'=>'amazon-returns-safet','status'=>'FAILED','blockers'=>[]],
     SvAmazonReturnsPublicHealthResponse::fromRuntime(['status'=>'FAILED','tenant_id'=>99]),
     'Failure health response must not leak tenant or operational internals.'
 );
 phrSame(
-    ['service'=>'amazon-returns-safet','status'=>'FAILED'],
+    ['service'=>'amazon-returns-safet','status'=>'FAILED','blockers'=>[]],
     SvAmazonReturnsPublicHealthResponse::fromRuntime(['status'=>'unexpected']),
     'Unknown internal health states must fail closed.'
 );
