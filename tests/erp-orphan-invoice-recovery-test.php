@@ -95,6 +95,11 @@ $events=[
 ];
 $facts=SvAmazonErpSalesReturnTask::orphanSaleFacts($cases,static fn(int $id):array=>$events[$id]??[]);
 orphanSame('2026-03-24',$facts['order_date']??null,'Local facts must preserve unique order date.');
+$utcBoundaryEvents=$events;
+$utcBoundaryEvents[11][0]=['event_type'=>'ORDER_SYNCED','payload'=>['order_at'=>'2026-04-02T00:30:00Z']];
+$utcBoundaryEvents[12][0]=['event_type'=>'ORDER_SYNCED','payload'=>['order_at'=>'2026-04-02T00:30:00Z']];
+$boundaryFacts=SvAmazonErpSalesReturnTask::orphanSaleFacts($cases,static fn(int $id):array=>$utcBoundaryEvents[$id]??[]);
+orphanSame('2026-04-01',$boundaryFacts['order_date']??null,'ERP orphan matching must use the Brazil-local sale date, not the UTC calendar date.');
 orphanSame('45.80',$facts['sales_amount']??null,'Duplicate shipment observations must collapse to one distinct Sales amount.');
 orphanSame(['abc'=>2,'ved-80t'=>1],$facts['items']??null,'Case SKU quantities must form a normalized exact multiset.');
 

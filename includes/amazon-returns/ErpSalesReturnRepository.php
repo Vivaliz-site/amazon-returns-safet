@@ -67,6 +67,34 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
         return $rows;
     }
 
+    /** @return array{statuses:array<string,int>,errors:array<string,int>,duplicate_groups:array<string,int>} */
+    public function healthBreakdown(): array
+    {
+        $statuses=[];$errors=[];
+        $stmt=$this->sql(
+            "SELECT status,COALESCE(last_error_code,'') error_code,COUNT(*) total FROM ".self::TABLE.
+            " WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id GROUP BY status,error_code"
+        );
+        while($row=$stmt->fetch(PDO::FETCH_ASSOC)){
+            if(!is_array($row))continue;
+            $status=strtoupper(trim((string)($row['status']??'')));
+            $error=strtoupper(trim((string)($row['error_code']??'')));
+            $count=max(0,(int)($row['total']??0));
+            if($status!=='')$statuses[$status]=($statuses[$status]??0)+$count;
+            if($error!=='')$errors[$error]=($errors[$error]??0)+$count;
+        }
+        ksort($statuses,SORT_STRING);ksort($errors,SORT_STRING);
+        $duplicates=[];
+        foreach(['amazon_order_id','idempotency_key','erp_sales_return_id','return_invoice_id'] as $field){
+            $stmt=$this->sql(
+                'SELECT COUNT(*) FROM (SELECT '.$field.' FROM '.self::TABLE.
+                ' WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND '.$field." IS NOT NULL AND ".$field."<>'' GROUP BY ".$field.' HAVING COUNT(*)>1) duplicate_groups'
+            );
+            $duplicates[$field]=max(0,(int)$stmt->fetchColumn());
+        }
+        return ['statuses'=>$statuses,'errors'=>$errors,'duplicate_groups'=>$duplicates];
+    }
+
     /** @param array<string,mixed> $data @return array<string,mixed> */
     public function ensureWorkflow(array $data): array
     {
