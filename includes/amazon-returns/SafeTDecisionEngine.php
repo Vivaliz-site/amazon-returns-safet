@@ -43,6 +43,7 @@ final class SvAmazonSafeTDecisionEngine
         $supportReason=(string)($supportResolution['reason']??'');
         if($supportResolution!==null && in_array($supportReason,[
             'SUPPORT_REIMBURSEMENT_PROCESSING','SUPPORT_REIMBURSEMENT_PROMISE_DUE','SUPPORT_REIMBURSEMENT_PROMISE_MISSED',
+            'SUPPORT_BUYER_REFUND_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT',
         ],true))return $supportResolution;
         if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($supportResolution!==null)return $supportResolution;
@@ -551,6 +552,18 @@ final class SvAmazonSafeTDecisionEngine
         if($resolution==='ACTIVE')return null;
         $caseId=(int)($case['id']??0);
         $safeTId=trim((string)($case['safe_t_id']??''));
+        if($resolution==='BUYER_REFUND_ONLY'){
+            if(!$this->hasFreshConfirmedResidual($case,$timeline,$now)){
+                return $this->decision('CHECK_FINANCES','SUPPORT_BUYER_REFUND_REQUIRES_SELLER_CREDIT_CHECK',$caseId);
+            }
+            return [
+                'action'=>'SELLER_SUPPORT_UPDATE',
+                'reason'=>'SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT',
+                'case_id'=>$caseId,
+                'support_case_id'=>$support['case_id'],
+                'idempotency_key'=>hash('sha256','support-buyer-refund-seller-reimbursement|'.$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
+            ];
+        }
         if($resolution==='REIMBURSEMENT_PROCESSING'){
             try{$observed=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){return $this->decision('BLOCKED_REVIEW','SUPPORT_REIMBURSEMENT_OBSERVED_AT_INVALID',$caseId);}
             $due=SvAmazonSellerSupportStatus::reimbursementDueAt($observed,5);
