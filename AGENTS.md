@@ -76,3 +76,6 @@ Antes de qualquer operacao em terminal/CLI, leia e cumpra a secao `Isolamento ob
 - Salve sessao/PID, inicio, HEAD/base, artefatos esperados e ultimo progresso verificavel em arquivo/ledger do projeto.
 - Mensagem de espera, spinner, reconexao ou `verificacoes adicionais` no ChatGPT nao prova progresso do executor.
 - Se a resposta do chat interromper, recupere o estado persistido e continue o monitoramento/takeover sem depender de novo comando do usuario.
+
+## Auditoria Extrema — governança global
+Nos gatilhos de `AUDIT_POLICY.md`, execute também `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md` e `docs/quality/ARCHITECTURE_DEPLOY_AUDIT_V1.md`, além do protocolo/runtime parity/overlay/self-test aplicável. O gate global é fail-closed e a política deve permanecer alinhada ao manifesto canônico.
