@@ -12,7 +12,7 @@
 
 ## Global Constraints
 - ShopVivaliz first SAFE-T opening trigger is D+45 from the Amazon-issued customer refund, with live eligibility and documented blockers only.
-- Cases older than 90 days from refund are outside active operational scope unless a newer authoritative repository rule says otherwise.
+- ERP sales-return creation is active only for refunds within the latest 30 days, measured from refund_at. Older refunds are outside the active ERP-return scope. Other recovery workflows keep their own explicit policy windows.
 - `RECOVERED` requires real reconciled financial credit; promise/approval/submission is insufficient.
 - Damaged/discrepant returns require the user's initial SAFE-T opening; automation may continue once a SAFE-T ID exists.
 - Normal production must not depend on Fred-Win or KOCEPSV; they are fallback/admin paths only.

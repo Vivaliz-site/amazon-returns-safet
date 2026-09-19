@@ -137,13 +137,13 @@ final class SvAmazonErpSalesReturnTask
             if(!self::refundWithinOperationalWindow($cases,$now)){
                 if(is_array($workflow)){
                     $status=strtoupper(trim((string)($workflow['status']??'')));
-                    if(in_array($status,['PENDING','READY_TO_CREATE','BLOCKED','IGNORED_REFUND_OLDER_THAN_90D'],true)){
-                        $p->erpSalesReturns->markIgnoredRefundOlderThan90Days($orderId);
+                    if(in_array($status,['PENDING','READY_TO_CREATE','BLOCKED','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW'],true)){
+                        $p->erpSalesReturns->markIgnoredRefundOutsideOperationalWindow($orderId);
                     }
                 }
                 continue;
             }
-            if(is_array($workflow) && strtoupper(trim((string)($workflow['status']??'')))==='IGNORED_REFUND_OLDER_THAN_90D'){
+            if(is_array($workflow) && in_array(strtoupper(trim((string)($workflow['status']??''))),['IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW'],true)){
                 $workflow=$p->erpSalesReturns->reactivateIgnoredRefund($orderId);
             }
             if(!self::workflowProcessable($workflow))continue;
@@ -166,7 +166,7 @@ final class SvAmazonErpSalesReturnTask
     public static function refundWithinOperationalWindow(array $cases,?DateTimeImmutable $now=null): bool
     {
         $now=($now??new DateTimeImmutable('now',new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));
-        $cutoff=$now->sub(new DateInterval('P90D'));
+        $cutoff=$now->sub(new DateInterval('P30D'));
         $hasRefundedCase=false;
         foreach($cases as $case){
             if(!is_array($case) || (int)($case['quantity_refunded']??0)<1)continue;
@@ -280,7 +280,7 @@ final class SvAmazonErpSalesReturnTask
     public static function workflowProcessable(?array $workflow): bool
     {
         $status=strtoupper(trim((string)($workflow['status']??'PENDING')));
-        return !in_array($status,['RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D'],true);
+        return !in_array($status,['RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW'],true);
     }
 
     /** @param array<string,mixed>|null $cursor @return list<string> */
