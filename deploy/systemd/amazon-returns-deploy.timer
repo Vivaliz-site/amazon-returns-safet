@@ -3,7 +3,7 @@ Description=Check Amazon Returns SAFE-T deploy hourly
 
 [Timer]
 OnBootSec=120
-OnUnitActiveSec=3600
+OnUnitActiveSec=300
 AccuracySec=30
 Persistent=true
 Unit=amazon-returns-deploy.service
