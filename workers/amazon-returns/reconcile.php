@@ -14,6 +14,23 @@ final class SvAmazonReturnsReconcileWorker
         return $transactions !== [] || ($case['state'] ?? '') === SvAmazonReturnStates::RECOVERED;
     }
 
+    /** @param array<string,mixed> $patch */
+    public static function casePatchChanges(array $case,array $patch): bool
+    {
+        foreach($patch as $field=>$value){
+            $current=$case[$field]??null;
+            if(in_array($field,['terminal_reason','closed_at','next_action_at'],true)){
+                $current=self::nullableScalar($current);
+                $value=self::nullableScalar($value);
+            }else{
+                $current=is_scalar($current)?trim((string)$current):$current;
+                $value=is_scalar($value)?trim((string)$value):$value;
+            }
+            if($current!==$value)return true;
+        }
+        return false;
+    }
+
     /** @param list<array<string,mixed>> $events @return array<string,mixed> */
     public static function caseUpdate(
         array $case,
@@ -80,6 +97,13 @@ final class SvAmazonReturnsReconcileWorker
         if (!is_scalar($value)) return null;
         $text = trim((string)$value);
         return $text === '' ? null : $text;
+    }
+
+    private static function nullableScalar(mixed $value): ?string
+    {
+        if($value===null || !is_scalar($value))return null;
+        $text=trim((string)$value);
+        return $text===''?null:$text;
     }
 
     /** @param list<array<string,mixed>> $events @return list<array<string,mixed>> */

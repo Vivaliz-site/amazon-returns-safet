@@ -19,6 +19,13 @@ if(!method_exists($worker,'shouldUpdateCase')){fwrite(STDERR,"Missing unsupporte
 rcaSame(false,$worker->shouldUpdateCase($case,[]),'no evidence should not mutate a normal pending case');
 $case['state']='RECOVERED';rcaSame(true,$worker->shouldUpdateCase($case,[]),'recovered without evidence must be revalidated');
 rcaSame('CREDIT_PENDING',$worker->reconcileCase($case,[])['state'],'unsupported recovery must reopen');
+$samePatch=['reconciled_credit_amount'=>'0.00','state'=>'RECOVERED','terminal_reason'=>null,'closed_at'=>null,'next_action_at'=>null];
+$sameCase=['reconciled_credit_amount'=>'0.00','state'=>'RECOVERED','terminal_reason'=>null,'closed_at'=>null,'next_action_at'=>null];
+rcaSame(false,SvAmazonReturnsReconcileWorker::casePatchChanges($sameCase,$samePatch),'identical financial projection must not churn case updated_at');
+$changedPatch=$samePatch;$changedPatch['reconciled_credit_amount']='10.00';
+rcaSame(true,SvAmazonReturnsReconcileWorker::casePatchChanges($sameCase,$changedPatch),'real credit change must remain writable');
+$reopenPatch=$samePatch;$reopenPatch['state']='CREDIT_PENDING';
+rcaSame(true,SvAmazonReturnsReconcileWorker::casePatchChanges($sameCase,$reopenPatch),'reversal must reopen recovered case');
 
 $stale=$case;$stale['eligibility_at']='2026-09-30 12:00:00';$stale['next_action_at']='2026-09-30 12:00:00';
 $row=SvAmazonReturnsRuntimeAudit::decision($stale,[],['eligibility_at'=>'2026-08-31 12:00:00'],['action'=>'HUMAN_REVIEW','next_action_at'=>null]);

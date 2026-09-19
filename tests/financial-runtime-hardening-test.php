@@ -46,6 +46,7 @@ frhSame(true,str_contains($daemon,'SvAmazonFinancialRefresh::nextReconciliationB
 frhSame(false,str_contains($daemon,'SvAmazonFinancialRefresh::financialCases('),'unbounded full-scan helper must not remain in daemon');
 frhSame(false,str_contains($daemon,'casesWithExpectedReimbursement(250)'),'fixed LIMIT 250 path must not remain in daemon');
 frhSame(true,str_contains($daemon,'$worker->caseUpdate('),'daemon must delegate financial persistence to the audited worker boundary');
+frhSame(true,str_contains($daemon,'casePatchChanges('),'daemon must suppress no-op financial writes before touching updated_at');
 $recoveredUpdate=SvAmazonReturnsReconcileWorker::caseUpdate(
     ['state'=>SvAmazonReturnStates::CREDIT_PENDING,'next_action_at'=>'2026-09-30 12:00:00'],
     ['state'=>SvAmazonReturnStates::RECOVERED,'credit_amount'=>'10.00'],
