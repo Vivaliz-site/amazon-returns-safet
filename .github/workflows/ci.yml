@@ -51,6 +51,13 @@ jobs:
           bash -n scripts/install-continuity-controller.sh
           bash -n scripts/provision-continuity-gemini-env.sh
           bash -n scripts/provision-continuity-publisher-key.sh
+      - name: Global audit governance parity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/validate-audit-governance.py --output-dir artifacts/audit-governance-self-test
+          python3 scripts/validate-global-audit-policy.py --output-dir artifacts/global-audit-policy
+
       - name: Syntax and security contracts
         run: |
           set -e
