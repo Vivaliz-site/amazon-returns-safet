@@ -119,9 +119,17 @@ final class SvAmazonOlistBrowserErpSalesReturnGateway implements SvAmazonErpSale
 
     public function readBack(string $erpSalesReturnId,string $amazonOrderId): ?array
     {
-        if(preg_match('/^[0-9]+$/D',trim($erpSalesReturnId))!==1)return null;
-        $result=$this->run(['action'=>'READBACK','external_id'=>trim($erpSalesReturnId),'amazon_order_id'=>trim($amazonOrderId)]);
-        return strtoupper(trim((string)($result['status']??'')))==='FOUND' && is_array($result['record']??null)?$result['record']:null;
+        $erpSalesReturnId=trim($erpSalesReturnId);
+        if(preg_match('/^[0-9]+$/D',$erpSalesReturnId)!==1){
+            throw new InvalidArgumentException('ERP sales return ID is invalid.');
+        }
+        $result=$this->run(['action'=>'READBACK','external_id'=>$erpSalesReturnId,'amazon_order_id'=>trim($amazonOrderId)]);
+        $status=strtoupper(trim((string)($result['status']??'')));
+        if($status==='NOT_FOUND')return null;
+        if($status==='FOUND' && is_array($result['record']??null))return $result['record'];
+        throw new RuntimeException(
+            'ERP sales return read-back was not confirmed: '.($status!==''?$status:'UNKNOWN').'.'
+        );
     }
 
     /** @param array<string,mixed> $payload @return array<string,mixed> */
