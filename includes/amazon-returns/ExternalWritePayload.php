@@ -42,6 +42,20 @@ final class SvAmazonExternalWritePayload
                 .'O comprador recebeu reembolso e a conciliação financeira mais recente confirma que o vendedor ainda não recebeu '
                 .'o ressarcimento correspondente. Solicito o ressarcimento devido ao vendedor.';
         }
+        if($action==='SELLER_SUPPORT_UPDATE'
+            && $reason==='SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT'){
+            $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
+            $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
+            $outstanding=max(0.0,$expected-$credited);
+            return 'Temos ciência de que o comprador já foi reembolsado no pedido '.$order.'. '
+                .'Nossa solicitação não se refere ao reembolso realizado ao comprador. '
+                .'Estamos solicitando o nosso ressarcimento como vendedores. '
+                .'Até o momento, não identificamos em nossa conta de vendedor o crédito de '.self::brl($outstanding).' correspondente a esse ressarcimento. '
+                .'O reembolso ao comprador confirma apenas o estorno ao cliente e não comprova que recebemos o ressarcimento devido. '
+                .'Caso a Amazon considere que esse ressarcimento já foi efetuado, solicitamos que informe o valor creditado em nossa conta de vendedor, '
+                .'a data do crédito, o ID da transação financeira e/ou o ID do ressarcimento, além do relatório ou evento financeiro em que esse crédito aparece. '
+                .'Enquanto não houver a identificação e conciliação desse crédito em nossa conta de vendedor, consideramos o ressarcimento pendente.';
+        }
         if(in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
             && $reason==='CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION'){
             $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
