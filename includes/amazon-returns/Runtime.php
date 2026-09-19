@@ -511,8 +511,12 @@ final class SvAmazonReturnsRuntime
         }
         $deadLetters=$p->outbox->countDeadLetters();
         $uiDriftPending=$p->outbox->countUiDriftPending();
+        $uiDriftReasonCodes=$p->outbox->pendingUiDriftReasonCodes();
         $operationalHealth=SvAmazonOperationalHealth::evaluate(self::cadences(),$operationalObservations,$now,$deadLetters);
         if($uiDriftPending>0)$operationalHealth['blockers'][]='OUTBOX_UI_DRIFT_PENDING';
+        foreach($uiDriftReasonCodes as $reasonCode){
+            $operationalHealth['blockers'][]='OUTBOX_UI_DRIFT_REASON_'.$reasonCode;
+        }
         $erpIncomplete=$p->erpSalesReturns->countIncomplete();
         $erpBreakdown=$p->erpSalesReturns->healthBreakdown();
         $supportIdentityCollisions=$p->cases->countSupportCaseCrossOrderDuplicateGroups();
@@ -537,6 +541,7 @@ final class SvAmazonReturnsRuntime
             'pending_outbox'=>$p->outbox->countPendingProcessing(),
             'dead_letters'=>$deadLetters,
             'ui_drift_pending'=>$uiDriftPending,
+            'ui_drift_reason_codes'=>$uiDriftReasonCodes,
             'pending_reviews'=>$p->reviews->countOpen(),
             'erp_sales_return_incomplete'=>$erpIncomplete,
             'erp_sales_return_breakdown'=>$erpBreakdown,
