@@ -32,7 +32,7 @@ $outbox=new SvAmazonTenantReturnsOutbox($db,new SvAmazonTenantContext(1,10));
 ssdrAssert(method_exists($outbox,'reactivateSafeDeferredExternalWrites'),
     'Outbox must expose a scoped recovery for known-safe deferred external pre-write failures.');
 $db->queue(['row_count'=>13]);
-$reactivated=$outbox->reactivateSafeDeferredSellerSupportWrites();
+$reactivated=$outbox->reactivateSafeDeferredExternalWrites();
 ssdrSame(13,$reactivated,'Recovery must report the rows made immediately available.');
 $exec=$db->executed[array_key_last($db->executed)]??[];
 $sql=(string)($exec['sql']??'');$params=$exec['params']??[];
