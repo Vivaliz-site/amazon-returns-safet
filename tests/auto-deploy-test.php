@@ -25,5 +25,10 @@ adAssert(str_contains($s,'retry_seller_central_browser_if_failed'),'Already-curr
 adAssert(str_contains($s,'systemctl is-failed --quiet amazon-returns-seller-central-auth-check.service'),'Seller Central retry must be conditional on a failed auth-check unit.');
 $alreadyCurrentBlock='if [[ "$target_sha" == "$deployed_sha" ]]; then'."\n".'    retry_seller_central_browser_if_failed'."\n"."    echo 'auto_deploy_skipped=already_current'";
 adAssert(str_contains($s,$alreadyCurrentBlock),'Failed Seller Central recovery must run before the already-current early exit.');
+$ciGateStart=strpos($s,'if ! jq -e');
+$ciSkip=strpos($s,"echo 'auto_deploy_skipped=ci_not_green'",$ciGateStart===false?0:$ciGateStart);
+adAssert($ciGateStart!==false && $ciSkip!==false,'CI-not-green gate must remain auditable.');
+$ciGate=substr($s,(int)$ciGateStart,(int)$ciSkip-(int)$ciGateStart);
+adAssert(str_contains($ciGate,'retry_seller_central_browser_if_failed'),'A failed current Seller Central runtime must recover even when the candidate main SHA is not CI-green.');
 
 echo "auto-deploy-test: OK\n";
