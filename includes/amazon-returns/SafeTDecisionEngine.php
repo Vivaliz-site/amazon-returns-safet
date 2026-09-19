@@ -303,6 +303,9 @@ final class SvAmazonSafeTDecisionEngine
         $refundAt=SvAmazonRequestedWait::timestamp($case['refund_at']??null);
         if($refundAt===null){
             if($freshAt instanceof DateTimeImmutable)return $this->financialRecheckCooldown($caseId,$freshAt);
+            $refresh=$this->latestFinancialRefresh($timeline,$caseId);
+            $refreshAt=is_array($refresh)?$this->freshCompletedFinancialCheckAt($refresh,$now):null;
+            if($refreshAt instanceof DateTimeImmutable)return $this->financialRecheckCooldown($caseId,$refreshAt);
             return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
         }
         $eligibilityAt=$refundAt->modify('+45 days');
@@ -358,6 +361,19 @@ final class SvAmazonSafeTDecisionEngine
         foreach($timeline as $event){
             if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
             if(($event['event_type']??'')!=='FINANCIAL_RECONCILIATION_CHECKED' || ($event['source']??'')!=='SP_API_FINANCES')continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            $candidate=[$at->getTimestamp(),(int)($event['id']??0)];
+            if($candidate>$rank){$rank=$candidate;$latest=$event;}
+        }
+        return $latest;
+    }
+
+    private function latestFinancialRefresh(array $timeline,int $caseId): ?array
+    {
+        $latest=null;$rank=[0,0];
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='FINANCIAL_REFRESH_CONFIRMED' || ($event['source']??'')!=='SP_API_FINANCES')continue;
             try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
             $candidate=[$at->getTimestamp(),(int)($event['id']??0)];
             if($candidate>$rank){$rank=$candidate;$latest=$event;}

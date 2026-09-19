@@ -58,6 +58,19 @@ $noRefundStale=$noRefundFinance;$noRefundStale['occurred_at']='2026-09-08 11:00:
 cffrSame('CHECK_FINANCES',$engine->nextAction($noRefund,[$noRefundStale],$policy,$now)['action']??null,'A no-refund FBA order must resume finance checks after the cooldown expires');
 cffrSame('CHECK_FINANCES',$engine->nextAction($noRefund,[],$policy,$now)['action']??null,'A no-refund FBA order with no finance evidence still requires an initial finance check');
 
+$noRefundRefresh=[
+    'id'=>301,'case_id'=>901,'event_type'=>'FINANCIAL_REFRESH_CONFIRMED','source'=>'SP_API_FINANCES',
+    'occurred_at'=>'2026-09-08 14:05:00','payload'=>['refresh_complete'=>true,'financial_truth'=>false],
+];
+$noRefundRefreshDecision=$engine->nextAction($noRefund,[$noRefundRefresh],$policy,$now);
+cffrSame('WAIT',$noRefundRefreshDecision['action']??null,'A completed SP-API refresh must cool down a no-refund FBA case even when there is no monetary reconciliation row');
+cffrSame('CLASSIC_FBA_FINANCE_RECENTLY_CHECKED',$noRefundRefreshDecision['reason']??null,'SP-API freshness is a cooldown receipt, not a payment decision');
+cffrSame('2026-09-08 16:05:00',$noRefundRefreshDecision['next_action_at']??null,'No-refund cooldown must wake exactly two hours after the source refresh');
+$staleNoRefundRefresh=$noRefundRefresh;$staleNoRefundRefresh['occurred_at']='2026-09-08 11:00:00';
+cffrSame('CHECK_FINANCES',$engine->nextAction($noRefund,[$staleNoRefundRefresh],$policy,$now)['action']??null,'A stale source refresh must not suppress the next finance check');
+$failedNoRefundRefresh=$noRefundRefresh;$failedNoRefundRefresh['payload']['refresh_complete']=false;
+cffrSame('CHECK_FINANCES',$engine->nextAction($noRefund,[$failedNoRefundRefresh],$policy,$now)['action']??null,'An incomplete source refresh must not suppress the next finance check');
+
 $ambiguous=$base;$ambiguous['id']=902;$ambiguous['amazon_order_id']='701-0000000-0000902';
 $ambiguousFinance=$finance;$ambiguousFinance['case_id']=902;$ambiguousFinance['payload']['ambiguous_reimbursement_transactions']=1;$ambiguousFinance['payload']['unsettled_financial_evidence']=true;
 $ambiguousDecision=$engine->nextAction($ambiguous,[$ambiguousFinance],$policy,$now);
