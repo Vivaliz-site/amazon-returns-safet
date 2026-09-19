@@ -111,6 +111,7 @@ fi
 
 checks="$(runuser -u ubuntu -- gh api -H 'Accept: application/vnd.github+json' "/repos/$repo_name/commits/$target_sha/check-runs")"
 if ! jq -e '.total_count > 0 and ([.check_runs[] | select(.status != "completed" or .conclusion != "success")] | length == 0)' >/dev/null <<<"$checks"; then
+    retry_seller_central_browser_if_failed
     echo 'auto_deploy_skipped=ci_not_green'
     exit 0
 fi
