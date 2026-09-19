@@ -9,3 +9,6 @@ Ele complementa as regras específicas do projeto. Nenhuma alteração válida d
 ## Auditoria Extrema — leitura obrigatória
 
 Em qualquer Auditoria Extrema, leia primeiro `AUDIT_POLICY.md` e todo o conjunto em `docs/quality/`: `EXTREME_AUDIT_PROTOCOL.md`, `AUDIT_RUNTIME_PARITY_V1.md`, `AUDIT_UNIVERSAL_COVERAGE_V1.md`, `AUDIT_SELF_TEST_V1.md` quando aplicável e `AUDIT_OVERLAY.md`. A regra vale para investigação, correção, melhorias, reauditoria e caça a unknown unknowns.
+
+<!-- EXECUTION_PROVENANCE_POLICY_V1 -->
+Leia e cumpra EXECUTION-PROVENANCE-POLICY.md antes de qualquer execucao material.
