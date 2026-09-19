@@ -487,7 +487,9 @@ async function safeTSubmit(cdp, job) {
   if (!orderInputReady) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ORDER_INPUT_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
-  if (!(await cdp.clickKat('kat-button[label="Verificar Elegibilidade"]'))) {
+  const eligibilityLabels=['Verificar Elegibilidade','Verificar elegibilidade','Check Eligibility','Check eligibility'];
+  const eligibilityClicked = await cdp.evaluate(`(()=>{const labels=${JSON.stringify(eligibilityLabels)}.map(v=>v.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase());const docs=[document,...[...document.querySelectorAll('iframe')].map(f=>f.contentDocument).filter(Boolean)];const matches=[];for(const d of docs){for(const host of d.querySelectorAll('kat-button,button')){const raw=(host.getAttribute('label')||host.getAttribute('aria-label')||host.innerText||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();if(!labels.includes(raw))continue;const button=host.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(button&&!button.disabled)matches.push(button)}}if(matches.length!==1)return false;matches[0].click();return true})()`) === true;
+  if (!eligibilityClicked) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ELIGIBILITY_BUTTON_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(6000);
