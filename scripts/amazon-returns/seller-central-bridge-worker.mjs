@@ -494,6 +494,30 @@ async function clickSafeTEligibilityButton(cdp) {
   return false;
 }
 
+const SAFE_T_NEXT_RETRY_ATTEMPTS = 12;
+
+async function setSafeTItemQuantity(cdp, quantity) {
+  const value = String(quantity);
+  for (let attempt = 0; attempt < SAFE_T_NEXT_RETRY_ATTEMPTS; attempt++) {
+    if (await cdp.setKat('kat-input[type="number"]', value)) return true;
+    if (await cdp.setFrameKat('kat-input[type="number"]', value)) return true;
+    const semanticReady = (await cdp.evaluate(`(()=>{const value=${JSON.stringify(value)};const docs=[];const visitDocument=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visitDocument(frame.contentDocument)}catch{}}};visitDocument(document);const matches=[];const seen=new Set();for(const d of docs){for(const host of d.querySelectorAll('kat-input,input[type="number"]')){const input=host.tagName==='KAT-INPUT'?host.shadowRoot?.querySelector('input[type="number"],input,textarea'):host;if(!input||input.disabled||input.readOnly||seen.has(input))continue;const type=String(host.getAttribute('type')||input.getAttribute('type')||'').toLowerCase();if(type!=='number')continue;seen.add(input);matches.push({host,input})}}if(matches.length!==1)return false;const {host,input}=matches[0];const proto=input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;if(typeof setter!=='function')return false;setter.call(input,value);input.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:value}));input.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return input.value===value||host.value===value})()`)) === true;
+    if (semanticReady) return true;
+    if (attempt + 1 < SAFE_T_NEXT_RETRY_ATTEMPTS) await sleep(500);
+  }
+  return false;
+}
+
+async function clickSafeTNextButton(cdp) {
+  const nextLabels=['Próximo','Proximo','Next'];
+  for (let attempt = 0; attempt < SAFE_T_NEXT_RETRY_ATTEMPTS; attempt++) {
+    const clicked = (await cdp.evaluate(`(()=>{const labels=${JSON.stringify(['Próximo','Proximo','Next'])}.map(v=>v.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase());const docs=[];const visitDocument=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visitDocument(frame.contentDocument)}catch{}}};visitDocument(document);const matches=[];const seen=new Set();for(const d of docs){for(const host of d.querySelectorAll('kat-button,button')){const button=host.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(!button||button.disabled||seen.has(button))continue;const style=getComputedStyle(button);const rect=button.getBoundingClientRect();if(style.display==='none'||style.visibility==='hidden'||rect.width<=0||rect.height<=0)continue;const hostLabel=host.getAttribute('label')||host.getAttribute('aria-label')||host.innerText||'';const buttonLabel=button.getAttribute('label')||button.getAttribute('aria-label')||button.innerText||'';const rawValues=[hostLabel,buttonLabel].map(v=>v.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase()).filter(Boolean);if(!rawValues.some(raw=>labels.includes(raw)))continue;seen.add(button);matches.push(button)}}if(matches.length!==1)return false;matches[0].click();return true})()`)) === true;
+    if (clicked) return true;
+    if (attempt + 1 < SAFE_T_NEXT_RETRY_ATTEMPTS) await sleep(500);
+  }
+  return false;
+}
+
 async function safeTSubmit(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -528,15 +552,16 @@ async function safeTSubmit(cdp, job) {
   }
 
   const quantity = Math.max(1, Number(job.case?.quantity_refunded || 1) - Number(job.case?.quantity_received || 0));
-  const qtySelector = 'kat-input[type="number"]';
-  await cdp.setKat(qtySelector, String(quantity));
+  const quantityReady = await setSafeTItemQuantity(cdp, String(quantity));
+  if (!quantityReady) {
+    return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ITEM_QUANTITY_NOT_WRITABLE', evidence: await evidence(cdp, 'safet-v1') });
+  }
   if (!(await cdp.clickKat('kat-checkbox.QuantityCheckbox'))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ITEM_CHECKBOX_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(500);
-  const nextEnabled = await cdp.evaluate(`!document.querySelector('kat-button[label="Próximo"]')?.hasAttribute('disabled')`);
-  if (!nextEnabled || !(await cdp.clickKat('kat-button[label="Próximo"]'))) {
-    return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ITEM_SELECTION_NOT_ACCEPTED', evidence: await evidence(cdp, 'safet-v1') });
+  if (!(await clickSafeTNextButton(cdp))) {
+    return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ITEM_NEXT_UNAVAILABLE', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(2500);
   const reason = reasonFor(job);
@@ -551,7 +576,7 @@ async function safeTSubmit(cdp, job) {
     }
   }
   await sleep(500);
-  if (!(await cdp.clickKat('kat-button[label="Próximo"]'))) {
+  if (!(await clickSafeTNextButton(cdp))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_REASON_NEXT_DISABLED', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(2200);
@@ -569,7 +594,7 @@ async function safeTSubmit(cdp, job) {
       return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_EVIDENCE_UPLOAD_FAILED', retry_safe: true, evidence: withTrackingEvidence(await evidence(cdp, 'safet-v1'), trackingEvidence, uploadResult) });
     }
   }
-  if (!(await cdp.clickKat('kat-button[label="Próximo"]'))) {
+  if (!(await clickSafeTNextButton(cdp))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_EVIDENCE_NEXT_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(2200);
