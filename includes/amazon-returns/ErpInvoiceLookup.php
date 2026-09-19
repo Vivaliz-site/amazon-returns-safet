@@ -157,8 +157,40 @@ final class SvAmazonErpInvoiceLookup
             throw new InvalidArgumentException('ERP orphan recovery item signature is empty.');
         }
 
+        $exact=$this->matchOrphanSaleInvoices(
+            $this->invoicesForPeriod($orderDate,$orderDate),
+            $orderDate,$orderDate,$money,$expected
+        );
+        if(count($exact)>1)return null;
+        if(count($exact)===1){
+            $sale=$this->saleProjection(array_values($exact)[0],$amazonOrderId,null);
+            $sale['match_method']='ORPHAN_INVOICE_EXACT_DATE_AMOUNT_ITEMS';
+            return $sale;
+        }
+
+        $windowEnd=(new DateTimeImmutable($orderDate,new DateTimeZone('America/Sao_Paulo')))
+            ->modify('+14 days')->format('Y-m-d');
+        $window=$this->matchOrphanSaleInvoices(
+            $this->invoicesForPeriod($orderDate,$windowEnd),
+            $orderDate,$windowEnd,$money,$expected
+        );
+        if(count($window)!==1)return null;
+        $sale=$this->saleProjection(array_values($window)[0],$amazonOrderId,null);
+        $sale['match_method']='ORPHAN_INVOICE_EXACT_AMOUNT_ITEMS_DATE_WINDOW_14D';
+        return $sale;
+    }
+
+
+    /**
+     * @param list<array<string,mixed>> $rows
+     * @param array<string,int> $expected
+     * @return array<string,array<string,mixed>>
+     */
+    private function matchOrphanSaleInvoices(
+        array $rows,string $startDate,string $endDate,string $money,array $expected
+    ): array {
         $candidateIds=[];
-        foreach($this->invoicesForDate($orderDate) as $row){
+        foreach($rows as $row){
             if(strtoupper(trim((string)($row['tipo']??'')))!=='S')continue;
             if(trim((string)($row['situacao']??''))!=='6')continue;
             if(self::moneyKey($row['valor']??null)!==$money)continue;
@@ -168,8 +200,6 @@ final class SvAmazonErpInvoiceLookup
             if(preg_match('/^[0-9]+$/D',$id)!==1)continue;
             $candidateIds[$id]=true;
         }
-        if($candidateIds===[])return null;
-
         $matches=[];
         foreach(array_keys($candidateIds) as $invoiceId){
             $invoiceId=(string)$invoiceId;
@@ -178,7 +208,9 @@ final class SvAmazonErpInvoiceLookup
             if(strtoupper(trim((string)($detail['tipo']??'')))!=='S')continue;
             if(trim((string)($detail['situacao']??''))!=='6')continue;
             if(trim((string)($detail['finalidade']??''))!=='1')continue;
-            if(trim((string)($detail['dataEmissao']??''))!==$orderDate)continue;
+            try{$issuedDate=self::dateKey((string)($detail['dataEmissao']??''));}
+            catch(InvalidArgumentException){continue;}
+            if($issuedDate<$startDate || $issuedDate>$endDate)continue;
             if(self::moneyKey($detail['valor']??null)!==$money)continue;
             $ecommerce=is_array($detail['ecommerce']??null)?$detail['ecommerce']:[];
             if(!self::isOrphanEcommerce($ecommerce))continue;
@@ -186,20 +218,21 @@ final class SvAmazonErpInvoiceLookup
             if(self::invoiceItemMap($items)!==$expected)continue;
             $matches[$invoiceId]=$detail;
         }
-        if(count($matches)!==1)return null;
-        $sale=$this->saleProjection(array_values($matches)[0],$amazonOrderId,null);
-        $sale['match_method']='ORPHAN_INVOICE_EXACT_DATE_AMOUNT_ITEMS';
-        return $sale;
+        return $matches;
     }
 
     /** @return list<array<string,mixed>> */
-    private function invoicesForDate(string $date): array
+    private function invoicesForPeriod(string $startDate,string $endDate): array
     {
-        if(isset($this->invoiceDateCache[$date]))return $this->invoiceDateCache[$date];
+        $startDate=self::dateKey($startDate);
+        $endDate=self::dateKey($endDate);
+        if($endDate<$startDate)throw new InvalidArgumentException('ERP orphan invoice period is invalid.');
+        $cacheKey=$startDate.'|'.$endDate;
+        if(isset($this->invoiceDateCache[$cacheKey]))return $this->invoiceDateCache[$cacheKey];
         $all=[];$offset=0;$limit=100;$pages=0;
         do{
             $query=http_build_query([
-                'tipo'=>'S','dataInicial'=>$date,'dataFinal'=>$date,
+                'tipo'=>'S','dataInicial'=>$startDate,'dataFinal'=>$endDate,
                 'limit'=>$limit,'offset'=>$offset,
             ],'','&',PHP_QUERY_RFC3986);
             $json=$this->requestJson('GET',$this->apiBase.'/notas?'.$query,'ERP orphan invoice list lookup');
@@ -214,7 +247,7 @@ final class SvAmazonErpInvoiceLookup
                 throw new RuntimeException('ERP orphan invoice pagination exceeded safety limit.');
             }
         }while(count($rows)===$limit && $offset<$total);
-        return $this->invoiceDateCache[$date]=array_values($all);
+        return $this->invoiceDateCache[$cacheKey]=array_values($all);
     }
 
     /** @return array<string,mixed> */
