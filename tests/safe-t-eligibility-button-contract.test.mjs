@@ -16,6 +16,18 @@ assert.ok(
   'SAFE-T eligibility discovery must use bounded semantic button text rather than an arbitrary DOM click.',
 );
 assert.ok(
+  worker.includes("button.getAttribute('aria-label')"),
+  'SAFE-T eligibility discovery must inspect the real button attributes inside a kat-button shadow root.',
+);
+assert.ok(
+  worker.includes('SAFE_T_ELIGIBILITY_RETRY_ATTEMPTS'),
+  'SAFE-T eligibility discovery must use a bounded retry window for asynchronously rendered controls.',
+);
+assert.ok(
+  worker.includes('visitDocument(document)'),
+  'SAFE-T eligibility discovery must traverse same-origin nested iframe documents deterministically.',
+);
+assert.ok(
   worker.includes('if(matches.length!==1)return false'),
   'SAFE-T eligibility fallback must fail closed unless exactly one enabled candidate exists.',
 );
