@@ -41,4 +41,17 @@ cfsSame('SELLER_SUPPORT_OPEN',$nextEpisode['action']??null,'A closed prior suppo
 cfsSame('FBA_RETURNS_REIMBURSEMENT',$nextEpisode['support_route']??null,'A later FBA recovery episode must keep the FBA reimbursement route.');
 cfsAssert(($nextEpisode['idempotency_key']??'')!==($first['idempotency_key']??''),'A new support episode after a closed case must receive a new idempotency key.');
 
+$mismatch=[
+    'id'=>2001,'case_id'=>496,'event_type'=>'SELLER_SUPPORT_IDENTITY_MISMATCH','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-09 10:35:00','payload'=>[
+        'support_case_id'=>'22144700811','order_id'=>'702-2751217-8386605',
+        'reason'=>'SELLER_SUPPORT_CASE_IDENTITY_MISMATCH','binding_cleared'=>true,
+    ],
+];
+$afterMismatch=$engine->nextAction($case,[$finance2,$mismatch],$policy,new DateTimeImmutable('2026-09-09 10:40:00',new DateTimeZone('UTC')));
+cfsSame('SELLER_SUPPORT_OPEN',$afterMismatch['action']??null,'A proven cleared Seller Support identity collision must allow a replacement support opening.');
+cfsAssert(($afterMismatch['idempotency_key']??'')!==($first['idempotency_key']??''),'Identity mismatch recovery must start a new deterministic support episode instead of reusing a previously succeeded poisoned key.');
+$afterMismatchRepeat=$engine->nextAction($case,[$finance1,$finance2,$mismatch],$policy,new DateTimeImmutable('2026-09-09 10:45:00',new DateTimeZone('UTC')));
+cfsSame($afterMismatch['idempotency_key']??null,$afterMismatchRepeat['idempotency_key']??null,'The same mismatch episode must remain idempotent across repeated finance refreshes.');
+
 echo "classic-fba-support-open-idempotency-test: OK\n";
