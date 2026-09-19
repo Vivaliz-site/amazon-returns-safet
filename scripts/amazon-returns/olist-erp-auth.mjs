@@ -57,13 +57,13 @@ export async function ensureOlistAuthenticated(page, credentials = {}, options =
   const state = classifyOlistLocation(page.url());
   if (state === 'ERP') return { status: 'AUTHENTICATED', reason: 'SESSION_REUSED' };
   if (state === 'ERP_ENTRY') {
+    const timeout = Number(options.timeoutMs || 15000);
     try {
       const login = page.getByRole('button', { name: /^login$/i }).first();
       if (!await login.isVisible().catch(() => false)) {
         return { status: 'AUTH_REQUIRED', reason: 'ERP_ENTRY_UNSUPPORTED' };
       }
       await login.click();
-      const timeout = Number(options.timeoutMs || 15000);
       await page.waitForURL(url => classifyOlistLocation(String(url)) === 'ERP', { timeout });
       if (!page.url().startsWith(TARGET_URL)) {
         await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout });
