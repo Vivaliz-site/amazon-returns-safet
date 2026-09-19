@@ -29,14 +29,14 @@ final class SsdrStatement extends PDOStatement{
 
 $db=new SsdrPdo();
 $outbox=new SvAmazonTenantReturnsOutbox($db,new SvAmazonTenantContext(1,10));
-ssdrAssert(method_exists($outbox,'reactivateSafeDeferredSellerSupportWrites'),
-    'Outbox must expose a scoped recovery for safe deferred Seller Support pre-write failures.');
+ssdrAssert(method_exists($outbox,'reactivateSafeDeferredExternalWrites'),
+    'Outbox must expose a scoped recovery for known-safe deferred external pre-write failures.');
 $db->queue(['row_count'=>13]);
-$reactivated=$outbox->reactivateSafeDeferredSellerSupportWrites();
+$reactivated=$outbox->reactivateSafeDeferredExternalWrites();
 ssdrSame(13,$reactivated,'Recovery must report the rows made immediately available.');
 $exec=$db->executed[array_key_last($db->executed)]??[];
 $sql=(string)($exec['sql']??'');$params=$exec['params']??[];
-foreach(['tenant_id','amazon_connection_id',"status='PENDING'",'available_at>UTC_TIMESTAMP()',"kind='SELLER_SUPPORT_OPEN'","kind='SELLER_SUPPORT_UPDATE'"] as $needle){
+foreach(['tenant_id','amazon_connection_id',"status='PENDING'",'available_at>UTC_TIMESTAMP()',"kind='SAFE_T_SUBMIT'","kind='SELLER_SUPPORT_OPEN'","kind='SELLER_SUPPORT_UPDATE'"] as $needle){
     ssdrAssert(str_contains($sql,$needle),'Recovery SQL missing guard: '.$needle);
 }
 ssdrAssert(str_contains($sql,'available_at=UTC_TIMESTAMP()'),'Recovery must wake the existing deferred row.');
@@ -44,6 +44,8 @@ $wherePos=strpos($sql,' WHERE ');$setClause=$wherePos===false?$sql:substr($sql,0
 foreach(['attempt_count','payload_json','last_error','status='] as $forbidden){
     ssdrAssert(!str_contains($setClause,$forbidden),'Recovery SET clause must preserve idempotency state: '.$forbidden);
 }
+ssdrSame('UI_DRIFT: SAFE_T_ORDER_INPUT_MISSING',$params[':safe_t_order_input_missing']??null,
+    'SAFE-T submit recovery may rearm only the observed pre-write order-field drift.');
 ssdrSame('UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE',$params[':lookup_error']??null,
     'Only the known pre-write lookup failure may be rearmed for SELLER_SUPPORT_OPEN.');
 foreach([
@@ -58,7 +60,7 @@ foreach([
 ssdrAssert(str_contains($sql,'last_error IN'),
     'Seller Support update recovery must enumerate safe pre-send UI drift reasons.');
 ssdrAssert(!str_contains($sql,"last_error LIKE 'UI_DRIFT:%'"),
-    'Recovery must not broadly rearm post-write or otherwise uncertain UI drift failures.');
+    'Recovery must not broadly rearm post-write or otherwise uncertain UI drift failures, including SAFE-T.');
 
 $runtimeSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
 foreach(['TenantOutbox.php','BridgeService.php','RemoteBridge.php','seller-central-bridge-worker.mjs'] as $file){
@@ -66,8 +68,8 @@ foreach(['TenantOutbox.php','BridgeService.php','RemoteBridge.php','seller-centr
 }
 $daemonSource=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 ssdrAssert(str_contains($daemonSource,'outboxStackChanged'),'Daemon must detect an outbox execution-stack revision change.');
-ssdrAssert(str_contains($daemonSource,'reactivateSafeDeferredSellerSupportWrites'),
-    'Daemon must rearm only safe deferred Seller Support rows after a fixed write stack is deployed.');
+ssdrAssert(str_contains($daemonSource,'reactivateSafeDeferredExternalWrites'),
+    'Daemon must rearm only enumerated safe deferred external-write rows after a fixed write stack is deployed.');
 ssdrAssert(str_contains($daemonSource,"'outbox_recovery'"),'Daemon must expose recovery evidence in runtime results.');
 ssdrAssert(str_contains($daemonSource,'($results[\'outbox_recovery\'][\'status\'] ?? null)===\'OK\''),
     'Daemon must not acknowledge the new outbox revision when recovery failed.');
