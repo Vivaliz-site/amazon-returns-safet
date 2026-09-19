@@ -135,6 +135,29 @@ erpWorkflowSame('RETURN_CREATED_WAITING_INVOICE',$result['status']??null,'Repeat
 erpWorkflowSame(1,$gateway->createCalls,'Repeated reconciliation must not duplicate the ERP sales return.');
 
 
+// If the return-invoice API cannot correlate the NF but the persisted ERP return
+// read-back exposes its linked idNotaFiscalEntrada, reconcile that target-side fact
+// instead of leaving a false RETURN_CREATED_WAITING_INVOICE state.
+$store=new FakeErpSalesReturnStore();
+$store->rows[$order]=[
+    'amazon_order_id'=>$order,'status'=>'RETURN_CREATED_WAITING_INVOICE',
+    'original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001',
+    'erp_sales_return_id'=>'991','return_invoice_id'=>null,
+    'reconciled_quantity_refunded'=>1,
+    'last_error_code'=>null,'last_error_message'=>null,
+];
+$gateway=new FakeErpSalesReturnGateway(
+    ['ok'=>true,'id'=>'SHOULD-NOT-WRITE'],
+    ['id'=>'991','idNotaFiscal'=>'500','idNotaFiscalEntrada'=>'901','situacao'=>'2','dataDevolucao'=>'2026-09-12']
+);
+$queue=[null];$lookupCalls=0;
+$result=makeWorkflowService($store,$gateway,$queue,true,$lookupCalls)->reconcileOrder($order);
+erpWorkflowSame('RETURN_INVOICE_EXISTS',$result['status']??null,'Linked NF from authoritative sales-return readback must finalize the ERP workflow.');
+erpWorkflowSame('901',$result['return_invoice_id']??null,'Readback-linked return invoice ID must be persisted.');
+erpWorkflowSame(1,$lookupCalls,'API return-invoice lookup must remain the first read path.');
+erpWorkflowSame(1,$gateway->readBackCalls,'Browser readback fallback must run exactly once after the API miss.');
+erpWorkflowSame(0,$gateway->createCalls,'Readback-linked return invoice must never trigger another ERP return write.');
+
 // Safe pre-write blockers must resume after the browser writer becomes available.
 $store=new FakeErpSalesReturnStore();
 $store->rows[$order]=['amazon_order_id'=>$order,'status'=>'BLOCKED','original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001','erp_sales_return_id'=>null,'return_invoice_id'=>null,'last_error_code'=>'ERP_SALES_RETURN_WRITE_NOT_VERIFIED','last_error_message'=>'old writer unavailable'];
