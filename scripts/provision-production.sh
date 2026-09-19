@@ -294,6 +294,16 @@ systemctl is-active --quiet amazon-returns-safet.service
 
 browser_root="$shared/seller-central-browser"
 browser_env="$shared/seller-central-browser.env"
+seller_totp_host=""
+if [[ -s "$browser_env" && -s "$browser_root/amazon.username" && -s "$browser_root/amazon.password" ]]; then
+    seller_totp_host="$(awk -F= '$1=="SELLER_CENTRAL_TOTP_HOST"{sub(/^[^=]*=/,""); print; exit}' "$browser_env")"
+    if [[ -n "$seller_totp_host" ]]; then
+        "$root/current/scripts/provision-seller-central-browser-host.sh" \
+            --source-root "$root/current" \
+            --totp-host "$seller_totp_host"
+        echo 'seller_central_browser_runtime=reprovisioned'
+    fi
+fi
 browser_runtime_ready=1
 [[ -s "$browser_env" ]] || browser_runtime_ready=0
 [[ -s "$browser_root/amazon.username" ]] || browser_runtime_ready=0

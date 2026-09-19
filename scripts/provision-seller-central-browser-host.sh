@@ -21,17 +21,7 @@ done
 [[ "$(id -u)" -eq 0 ]] || { echo "root required" >&2; exit 77; }
 [[ -n "$TOTP_HOST" ]] || { echo "--totp-host is required" >&2; exit 64; }
 
-browser=""
-for candidate in /home/ubuntu/.cache/ms-playwright-arm64/chromium-*/chrome-linux-arm64/chrome /usr/bin/google-chrome-stable /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
-  [[ -x "$candidate" ]] || continue
-  resolved="$(readlink -f "$candidate" 2>/dev/null || true)"
-  if [[ "$resolved" == "/usr/bin/snap" || "$resolved" == "/snap/bin/chromium" ]]; then
-    continue
-  fi
-  browser="$candidate"
-  break
-done
-[[ -n "$browser" ]] || { echo "supported non-Snap Chromium browser not installed" >&2; exit 69; }
+browser="$(bash "$SOURCE_ROOT/scripts/ensure-playwright-chromium.sh")"
 
 install -d -o ubuntu -g www-data -m 0750 "$BROWSER_ROOT"
 install -d -o ubuntu -g www-data -m 0700 "$BROWSER_ROOT/profile"
