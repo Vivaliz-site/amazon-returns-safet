@@ -1,7 +1,7 @@
 # Protocolo obrigatório de Auditoria Inteligente Caso a Caso
 
-**Status:** regra permanente do repositório  
-**Escopo:** Amazon Returns / SAFE-T  
+**Status:** regra permanente do repositório
+**Escopo:** Amazon Returns / SAFE-T
 **Ativação:** qualquer pedido de auditoria dos casos, análise caso a caso, validação das decisões tomadas, investigação individual das devoluções/SAFE-T ou equivalente semântico.
 
 Este protocolo complementa `AUDIT_POLICY.md`, `AGENTS.md`, `docs/REGRAS-DE-ENTREGA.md`, `docs/MEMORIA-DO-PROJETO.md` e os demais documentos de qualidade. Ele não reduz nenhuma regra de segurança, elegibilidade, idempotência, tenant isolation, write gate, autenticação ou deploy.
