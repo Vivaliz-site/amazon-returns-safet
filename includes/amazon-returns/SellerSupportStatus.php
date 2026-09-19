@@ -93,21 +93,30 @@ final class SvAmazonSellerSupportStatus
     {
         $support=self::normalize($support);
         $terminal=self::isTerminalStatus($support['case_status']);
+        $sellerAction=self::sellerActionPending($support['case_status']);
         $text=mb_strtolower($support['latest_text'],'UTF-8');
+        if($terminal && str_contains($text,'safe-t-review@amazon.com'))return 'EMAIL_REVIEW';
+        if(($terminal || $sellerAction) && self::directsSafeTSubmission($text))return 'SAFE_T_SUBMIT';
         if(!$terminal){
-            if(self::sellerActionPending($support['case_status']) && self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
+            if($sellerAction && self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
             return 'ACTIVE';
         }
-        if(str_contains($text,'safe-t-review@amazon.com'))return 'EMAIL_REVIEW';
         $money=preg_match('/(?:reembols|reimbursement|cr[eé]dito|credit)/u',$text)===1;
         $processed=preg_match('/(?:processad|processed|successful|sucesso|emitid|issued)/u',$text)===1;
         $delay=preg_match('/(?:4\s*(?:a|to|[-–])\s*5\s*(?:dias\s*[uú]teis|business\s*days)|reimbursement\s*id|id\s*(?:do|de)?\s*reembolso)/u',$text)===1;
         if($money && $processed && $delay)return 'REIMBURSEMENT_PROCESSING';
-        if(self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
         $safeT=str_contains($text,'safe-t') || str_contains($text,'safet');
         $appeal=preg_match('/(?:appeal|recurso|recorr)/u',$text)===1;
         if($safeT && $appeal)return 'SAFE_T_APPEAL';
+        if(self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
         return 'TERMINAL_AMBIGUOUS';
+    }
+
+    private static function directsSafeTSubmission(string $text): bool
+    {
+        if(!str_contains($text,'safe-t') && !str_contains($text,'safet'))return false;
+        return preg_match('/(?:necess[aá]ri[oa]|deve(?:mos)?|precisa(?:mos)?|orientad[oa]s?|instru[ií]d[oa]s?).{0,140}(?:registr|abrir|criar|protocol|enviar|submit|file|open).{0,180}(?:safe-?t|safet)/u',$text)===1
+            || preg_match('/(?:registr|abrir|criar|protocol|enviar|submit|file|open).{0,100}(?:nova?\s+)?(?:reivindica[cç][aã]o|claim).{0,100}(?:safe-?t|safet)/u',$text)===1;
     }
 
     private static function sellerActionPending(string $status): bool

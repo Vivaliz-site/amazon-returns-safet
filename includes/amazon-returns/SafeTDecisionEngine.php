@@ -44,6 +44,8 @@ final class SvAmazonSafeTDecisionEngine
         if($supportResolution!==null && in_array($supportReason,[
             'SUPPORT_REIMBURSEMENT_PROCESSING','SUPPORT_REIMBURSEMENT_PROMISE_DUE','SUPPORT_REIMBURSEMENT_PROMISE_MISSED',
             'SUPPORT_BUYER_REFUND_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT',
+            'SUPPORT_DIRECTED_SAFE_T_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_RESOLUTION_DIRECTS_SAFE_T_SUBMISSION',
+            'SUPPORT_DIRECTED_SAFE_T_PHYSICAL_STATUS_CONFLICT',
         ],true))return $supportResolution;
         if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($supportResolution!==null)return $supportResolution;
@@ -552,6 +554,24 @@ final class SvAmazonSafeTDecisionEngine
         if($resolution==='ACTIVE')return null;
         $caseId=(int)($case['id']??0);
         $safeTId=trim((string)($case['safe_t_id']??''));
+        if($resolution==='SAFE_T_SUBMIT'){
+            if($safeTId!=='')return null;
+            if((string)($case['physical_status']??'')!==SvAmazonReturnPhysicalStatuses::NOT_RECEIVED){
+                return $this->decision('BLOCKED_REVIEW','SUPPORT_DIRECTED_SAFE_T_PHYSICAL_STATUS_CONFLICT',$caseId);
+            }
+            if(!$this->hasFreshConfirmedResidual($case,$timeline,$now)){
+                return $this->decision('CHECK_FINANCES','SUPPORT_DIRECTED_SAFE_T_REQUIRES_SELLER_CREDIT_CHECK',$caseId);
+            }
+            return [
+                'action'=>'SAFE_T_SUBMIT',
+                'reason'=>'SUPPORT_RESOLUTION_DIRECTS_SAFE_T_SUBMISSION',
+                'reason_code'=>'RNOTR',
+                'reason_subcategory'=>'RNOTR-a',
+                'case_id'=>$caseId,
+                'support_case_id'=>$support['case_id'],
+                'idempotency_key'=>hash('sha256','support-directed-safe-t-submit|'.$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
+            ];
+        }
         if($resolution==='BUYER_REFUND_ONLY'){
             if(!$this->hasFreshConfirmedResidual($case,$timeline,$now)){
                 return $this->decision('CHECK_FINANCES','SUPPORT_BUYER_REFUND_REQUIRES_SELLER_CREDIT_CHECK',$caseId);
