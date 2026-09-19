@@ -332,8 +332,28 @@ final class SvAmazonSafeTDecisionEngine
             'reason'=>'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION',
             'support_route'=>'FBA_RETURNS_REIMBURSEMENT',
             'case_id'=>$caseId,
-            'idempotency_key'=>hash('sha256','classic-fba-support-open|'.$caseId.'|'.(trim((string)($case['support_case_id']??'')) ?: 'initial')),
+            'idempotency_key'=>hash('sha256','classic-fba-support-open|'.$caseId.'|'.$this->classicFbaSupportEpisodeScope($case,$timeline)),
         ];
+    }
+
+    private function classicFbaSupportEpisodeScope(array $case,array $timeline): string
+    {
+        $supportId=trim((string)($case['support_case_id']??''));
+        if($supportId!=='')return 'support:'.$supportId;
+        $caseId=(int)($case['id']??0);$latest=null;$rank=[0,0];
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='SELLER_SUPPORT_IDENTITY_MISMATCH' || ($event['source']??'')!=='SELLER_CENTRAL')continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if(($payload['binding_cleared']??false)!==true)continue;
+            $staleId=trim((string)($payload['support_case_id']??''));
+            if(preg_match('/^\d{8,14}$/D',$staleId)!==1)continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            $candidate=[$at->getTimestamp(),(int)($event['id']??0)];
+            if($candidate>$rank){$rank=$candidate;$latest=['id'=>(int)($event['id']??0),'support_case_id'=>$staleId];}
+        }
+        if(is_array($latest))return 'identity-mismatch:'.$latest['id'].':'.$latest['support_case_id'];
+        return 'initial';
     }
 
     private function sellerAppConfirmedPhysicalReceipt(array $case,array $timeline): bool
