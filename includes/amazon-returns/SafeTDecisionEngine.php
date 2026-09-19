@@ -298,17 +298,14 @@ final class SvAmazonSafeTDecisionEngine
     private function classicFbaRecovery(array $case,array $timeline,DateTimeImmutable $now): array
     {
         $caseId=(int)($case['id']??0);
+        $latest=$this->latestFinancialCheck($timeline,$caseId);
+        $freshAt=is_array($latest)?$this->freshCompletedFinancialCheckAt($latest,$now):null;
         $refundAt=SvAmazonRequestedWait::timestamp($case['refund_at']??null);
-        if($refundAt===null)return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
-        $eligibilityAt=$refundAt->modify('+45 days');
-        $latest=null;$rank=[0,0];
-        foreach($timeline as $event){
-            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
-            if(($event['event_type']??'')!=='FINANCIAL_RECONCILIATION_CHECKED' || ($event['source']??'')!=='SP_API_FINANCES')continue;
-            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
-            $r=[$at->getTimestamp(),(int)($event['id']??0)];
-            if($r>$rank){$latest=$event;$rank=$r;}
+        if($refundAt===null){
+            if($freshAt instanceof DateTimeImmutable)return $this->financialRecheckCooldown($caseId,$freshAt);
+            return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
         }
+        $eligibilityAt=$refundAt->modify('+45 days');
         if(($case['physical_status']??'')!==SvAmazonReturnPhysicalStatuses::RECEIVED_DISCREPANT && $now<$eligibilityAt){
             if($latest===null)return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
             return [
@@ -316,16 +313,15 @@ final class SvAmazonSafeTDecisionEngine
                 'next_action_at'=>$eligibilityAt->format('Y-m-d H:i:s'),
             ];
         }
-        if($latest===null)return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
-        $at=(new DateTimeImmutable((string)$latest['occurred_at'],new DateTimeZone('UTC')));
+        if($latest===null || !$freshAt instanceof DateTimeImmutable){
+            return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
+        }
         $payload=is_array($latest['payload']??null)?$latest['payload']:[];
-        $fresh=$at<=$now && $at>=$now->modify('-2 hours')
-            && ($payload['refresh_complete']??false)===true
-            && ($payload['ambiguous_reimbursement_transactions']??null)===0
+        $actionableUnpaid=($payload['ambiguous_reimbursement_transactions']??null)===0
             && ($payload['unsettled_financial_evidence']??null)===false
             && is_numeric($payload['outstanding_amount']??null)
             && (float)$payload['outstanding_amount']>0;
-        if(!$fresh || trim((string)($case['refund_at']??''))==='')return $this->decision('CHECK_FINANCES','CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$caseId);
+        if(!$actionableUnpaid)return $this->financialRecheckCooldown($caseId,$freshAt);
         if($this->hasActiveSupportCase($case,$timeline))return $this->decision('WAIT','SUPPORT_ESCALATION_ALREADY_ACTIVE',$caseId);
         return [
             'action'=>'SELLER_SUPPORT_OPEN',
@@ -354,6 +350,35 @@ final class SvAmazonSafeTDecisionEngine
         }
         if(is_array($latest))return 'identity-mismatch:'.$latest['id'].':'.$latest['support_case_id'];
         return 'initial';
+    }
+
+    private function latestFinancialCheck(array $timeline,int $caseId): ?array
+    {
+        $latest=null;$rank=[0,0];
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='FINANCIAL_RECONCILIATION_CHECKED' || ($event['source']??'')!=='SP_API_FINANCES')continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            $candidate=[$at->getTimestamp(),(int)($event['id']??0)];
+            if($candidate>$rank){$rank=$candidate;$latest=$event;}
+        }
+        return $latest;
+    }
+
+    private function freshCompletedFinancialCheckAt(array $event,DateTimeImmutable $now): ?DateTimeImmutable
+    {
+        try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){return null;}
+        $payload=is_array($event['payload']??null)?$event['payload']:[];
+        if($at>$now || $at<$now->modify('-2 hours') || ($payload['refresh_complete']??false)!==true)return null;
+        return $at;
+    }
+
+    private function financialRecheckCooldown(int $caseId,DateTimeImmutable $checkedAt): array
+    {
+        return [
+            'action'=>'WAIT','reason'=>'CLASSIC_FBA_FINANCE_RECENTLY_CHECKED','case_id'=>$caseId,
+            'next_action_at'=>$checkedAt->modify('+2 hours')->format('Y-m-d H:i:s'),
+        ];
     }
 
     private function sellerAppConfirmedPhysicalReceipt(array $case,array $timeline): bool
