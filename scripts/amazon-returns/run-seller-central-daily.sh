@@ -105,7 +105,10 @@ if [[ "$prune_ok" -ne 1 ]]; then
   echo "CDP_PRUNE_FAILED" >&2
   exit 75
 fi
-"$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check
+if ! "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check; then
+  record_auth_failure "AUTH_CHECK_FAILED"
+  exit 75
+fi
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-support-lookup-probe.mjs" || true
 if [[ " ${*:-} " == *" --auth-check-only "* ]]; then
   exit 0
@@ -114,5 +117,11 @@ bridge_mode="--drain"
 if [[ " ${*:-} " == *" --bridge-once "* ]]; then
   bridge_mode="--once"
 fi
-"$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" "$bridge_mode"
-"$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --drain
+if ! "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" "$bridge_mode"; then
+  record_auth_failure "BRIDGE_DRAIN_FAILED"
+  exit 75
+fi
+if ! "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --drain; then
+  record_auth_failure "READ_DRAIN_FAILED"
+  exit 75
+fi

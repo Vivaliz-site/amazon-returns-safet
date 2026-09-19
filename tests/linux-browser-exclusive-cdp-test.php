@@ -19,6 +19,11 @@ if(!str_contains($runner,'record_auth_failure "CDP_PRUNE_FAILED"')){
 if(!preg_match('/for attempt in 1 2 3; do.*prune-seller-central-cdp-targets\.mjs.*CDP_PRUNE_FAILED/s',$runner)){
     throw new RuntimeException('CDP target pruning must use bounded retries before failing the browser cycle.');
 }
+foreach(['AUTH_CHECK_FAILED','BRIDGE_DRAIN_FAILED','READ_DRAIN_FAILED'] as $status){
+    if(!str_contains($runner,'record_auth_failure "'.$status.'"')){
+        throw new RuntimeException('Fatal Seller Central stage must publish failed health heartbeat: '.$status);
+    }
+}
 $worker=(string)file_get_contents(__DIR__.'/../scripts/amazon-returns/seller-central-safe-t-read-worker.mjs');
 if(!str_contains($worker,'--heartbeat-auth-status') || !str_contains($worker,'auth_status: authStatus')){
     throw new RuntimeException('Status worker must support publishing explicit failed auth heartbeats.');
