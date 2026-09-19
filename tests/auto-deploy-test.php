@@ -21,5 +21,9 @@ adAssert(!str_contains($svc,'/home/ubuntu/amazon-returns-safet/scripts/auto-depl
 adAssert(str_contains($t,'OnUnitActiveSec=3600'),'Deploy cadence must be hourly.');
 adAssert(!str_contains($t,'OnUnitActiveSec=300'),'Deploy cadence must never regress to five minutes.');
 adAssert(!str_contains($svc,'shopvivaliz'),'Deploy service cannot own website lifecycle.');
+adAssert(str_contains($s,'retry_seller_central_browser_if_failed'),'Already-current deploy cycles must retry a previously failed Seller Central unit.');
+adAssert(str_contains($s,'systemctl is-failed --quiet amazon-returns-seller-central-auth-check.service'),'Seller Central retry must be conditional on a failed auth-check unit.');
+$alreadyCurrentBlock='if [[ "$target_sha" == "$deployed_sha" ]]; then'."\n".'    retry_seller_central_browser_if_failed'."\n"."    echo 'auto_deploy_skipped=already_current'";
+adAssert(str_contains($s,$alreadyCurrentBlock),'Failed Seller Central recovery must run before the already-current early exit.');
 
 echo "auto-deploy-test: OK\n";
