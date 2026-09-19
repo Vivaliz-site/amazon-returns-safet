@@ -42,7 +42,7 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
     public function countIncomplete(): int
     {
         $stmt=$this->sql(
-            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW')"
+            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW','IGNORED_BY_USER')"
         );
         return max(0,(int)$stmt->fetchColumn());
     }
@@ -51,7 +51,7 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
     public function incompleteAuditRows(): array
     {
         $stmt=$this->sql(
-            "SELECT amazon_order_id,status,last_error_code FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW') ORDER BY amazon_order_id"
+            "SELECT amazon_order_id,status,last_error_code FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW','IGNORED_BY_USER') ORDER BY amazon_order_id"
         );
         $rows=[];
         while($row=$stmt->fetch(PDO::FETCH_ASSOC)){
@@ -179,6 +179,17 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
     {
         return $this->transition($orderId,[
             'status'=>'IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW',
+            'last_checked_at'=>self::now(),
+            'last_error_code'=>null,
+            'last_error_message'=>null,
+        ]);
+    }
+
+    /** @return array<string,mixed> */
+    public function markIgnoredByUser(string $orderId): array
+    {
+        return $this->transition($orderId,[
+            'status'=>'IGNORED_BY_USER',
             'last_checked_at'=>self::now(),
             'last_error_code'=>null,
             'last_error_message'=>null,

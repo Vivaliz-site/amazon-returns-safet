@@ -134,6 +134,10 @@ final class SvAmazonErpSalesReturnTask
         $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
         foreach($orderCases as $orderId=>$cases){
             $workflow=$p->erpSalesReturns->findByOrder($orderId);
+            if(self::erpReturnExplicitlyIgnored($orderId)){
+                if(is_array($workflow))$p->erpSalesReturns->markIgnoredByUser($orderId);
+                continue;
+            }
             if(!self::refundWithinOperationalWindow($cases,$now)){
                 if(is_array($workflow)){
                     $status=strtoupper(trim((string)($workflow['status']??'')));
@@ -160,6 +164,14 @@ final class SvAmazonErpSalesReturnTask
             return [$lp,$lt,$left]<=>[$rp,$rt,$right];
         });
         return $ids;
+    }
+
+    public static function erpReturnExplicitlyIgnored(string $orderId): bool
+    {
+        return in_array(trim($orderId),[
+            '701-5644155-5071463',
+            '702-8564629-9301052',
+        ],true);
     }
 
     /** @param list<array<string,mixed>> $cases */
@@ -280,7 +292,7 @@ final class SvAmazonErpSalesReturnTask
     public static function workflowProcessable(?array $workflow): bool
     {
         $status=strtoupper(trim((string)($workflow['status']??'PENDING')));
-        return !in_array($status,['RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW'],true);
+        return !in_array($status,['RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW','IGNORED_BY_USER'],true);
     }
 
     /** @param array<string,mixed>|null $cursor @return list<string> */
