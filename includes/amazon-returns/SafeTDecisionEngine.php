@@ -339,7 +339,7 @@ final class SvAmazonSafeTDecisionEngine
     private function classicFbaSupportEpisodeScope(array $case,array $timeline): string
     {
         $supportId=trim((string)($case['support_case_id']??''));
-        if($supportId!=='')return 'support:'.$supportId;
+        if($supportId!=='')return $supportId;
         $caseId=(int)($case['id']??0);$latest=null;$rank=[0,0];
         foreach($timeline as $event){
             if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
