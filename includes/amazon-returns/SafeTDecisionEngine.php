@@ -534,6 +534,7 @@ final class SvAmazonSafeTDecisionEngine
             }
             return $this->decision('BLOCKED_REVIEW','SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE',$caseId);
         }
+        if(($case['program']??'')==='FBA' && $safeTId==='')return null;
         return $this->decision('BLOCKED_REVIEW','SELLER_SUPPORT_RESOLUTION_AMBIGUOUS',$caseId);
     }
 
