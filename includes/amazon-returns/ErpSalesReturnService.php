@@ -76,7 +76,10 @@ final class SvAmazonErpSalesReturnService
                 $workflow=$this->store->linkReturnInvoice($orderId,$existingInvoice);
                 return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
             }
-            if($persistedStatus==='RETURN_CREATED_WAITING_INVOICE'){
+            if(
+                $persistedStatus==='RETURN_CREATED_WAITING_INVOICE'
+                && ($workflow['reconciled_quantity_refunded']??null)!==null
+            ){
                 $readBackInvoice=$this->returnInvoiceFromSalesReturnReadBack($workflow,$orderId);
                 if(is_array($readBackInvoice)){
                     $workflow=$this->store->linkReturnInvoice($orderId,$readBackInvoice);
