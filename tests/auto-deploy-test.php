@@ -18,8 +18,9 @@ adAssert(str_contains($s,'AMAZON_RETURNS_IMPORT_SOURCE=0'),'Routine deploy must 
 adAssert(str_contains($svc,'/home/ubuntu/amazon-returns-deploy-source/scripts/auto-deploy.sh'),'Deploy service must be owned by isolated deploy checkout.');
 adAssert(str_contains($svc,'Environment=AMAZON_RETURNS_REPO=/home/ubuntu/amazon-returns-deploy-source'),'Deploy service must pin isolated checkout through the environment.');
 adAssert(!str_contains($svc,'/home/ubuntu/amazon-returns-safet/scripts/auto-deploy.sh'),'Deploy service must not depend on the agent work checkout.');
-adAssert(str_contains($t,'OnUnitActiveSec=3600'),'Deploy cadence must be hourly.');
-adAssert(!str_contains($t,'OnUnitActiveSec=300'),'Deploy cadence must never regress to five minutes.');
+adAssert(str_contains($t,'OnUnitActiveSec=300'),'Deploy cadence must poll every five minutes after CI-safe architecture hardening.');
+adAssert(!str_contains($t,'OnUnitActiveSec=3600'),'Legacy hourly deploy cadence must not return.');
+adAssert(str_contains($t,'Persistent=true'),'Deploy timer must remain persistent across downtime.');
 adAssert(!str_contains($svc,'shopvivaliz'),'Deploy service cannot own website lifecycle.');
 adAssert(str_contains($s,'retry_seller_central_browser_if_failed'),'Already-current deploy cycles must retry a previously failed Seller Central unit.');
 adAssert(str_contains($s,'systemctl is-failed --quiet amazon-returns-seller-central-auth-check.service'),'Seller Central retry must be conditional on a failed auth-check unit.');
