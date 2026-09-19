@@ -1,5 +1,9 @@
 # Amazon Returns / SAFE-T operating constraints
 
+
+<!-- SUPERPOWERS_EVERY_STAGE_V1 -->
+> **@Superpowers CONTÍNUO E OBRIGATÓRIO:** toda conversa, sessão, agente e retomada de tarefa ShopVivaliz deve usar @Superpowers **em cada etapa material**, não apenas no início. Reaplique a disciplina adequada ao passar por bootstrap/contexto, planejamento, investigação, coleta de evidências, implementação, debugging, TDD/testes, revisão, correção, PR/checks/merge, deploy, pós-deploy, auditoria e encerramento. Em `retome/continue/prossiga`, continue do último checkpoint comprovado sob @Superpowers. Se o runtime não expuser @Superpowers, registre `SUPERPOWERS_UNAVAILABLE` e aplique a metodologia equivalente sem fingir a chamada. Fonte local: `REGRAS-AGENTES-CENTRALIZADAS.md`; fonte canônica: `Vivaliz-site/site-shopvivaliz`.
+
 ## Acesso a infraestrutura e VMs
 Antes de executar qualquer comando em VM Oracle Cloud, leia e siga obrigatoriamente `AGENTS-VM-ACCESS.md`. O runbook define as duas VMs atuais, Remote Desktop Commander, SSH administrativo, OCI Run Command via perfil `AGENTS`, a ordem de fallback e as regras para nao expor secrets. Nunca presuma root no OCI Run Command.
 
