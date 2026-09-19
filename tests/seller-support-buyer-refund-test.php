@@ -66,6 +66,7 @@ $decision=$engine->nextAction(
 brsrSame('SELLER_SUPPORT_UPDATE',$decision['action']??null,'Buyer refund evidence must trigger a reply in the existing Seller Support case while seller credit is still unpaid.');
 brsrSame('SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT',$decision['reason']??null,'Buyer refund and seller reimbursement must be distinguished explicitly.');
 brsrSame('22144771981',$decision['support_case_id']??null,'The app must reply in the same Seller Support case.');
+brsrSame('FBA_RETURNS_REIMBURSEMENT',$decision['support_route']??null,'FBA buyer-refund clarification must preserve a route for safe fresh-case fallback if the old thread cannot reopen.');
 brsrAssert(preg_match('/^[a-f0-9]{64}$/',(string)($decision['idempotency_key']??''))===1,'Seller Support clarification must be idempotent.');
 
 $snapshot=SvAmazonExternalWritePayload::build($decision,$case,[$finance,$support])['write_snapshot']??[];
@@ -117,5 +118,27 @@ brsrSame(
     SvAmazonSellerSupportStatus::resolution($pendingAmazonSupport['payload']),
     'A case still pending Amazon action must not be auto-replied merely because the thread mentions a buyer refund.'
 );
+
+$needsFinance=$engine->nextAction(
+    $case,
+    [$support],
+    ['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'],
+    new DateTimeImmutable('2026-09-19T18:40:00Z')
+);
+brsrSame('CHECK_FINANCES',$needsFinance['action']??null,'Buyer-refund wording without fresh seller-credit reconciliation must recheck finances before contacting Amazon.');
+brsrSame('SUPPORT_BUYER_REFUND_REQUIRES_SELLER_CREDIT_CHECK',$needsFinance['reason']??null,'Finance recheck reason must remain explicit.');
+
+foreach([
+    'O comprador foi reembolsado e o vendedor já foi ressarcido integralmente.',
+    'O cliente recebeu o estorno e sua conta de vendedor foi creditada com o valor correspondente.',
+    'The buyer was refunded and the seller account has been credited for the reimbursement.',
+] as $sellerPaidText){
+    $resolution=SvAmazonSellerSupportStatus::resolution([
+        'case_id'=>'22144771981',
+        'case_status'=>'RESOLVED',
+        'latest_text'=>$sellerPaidText,
+    ]);
+    brsrAssert($resolution!=='BUYER_REFUND_ONLY','Explicit seller-credit proof must never be classified as buyer-only refund evidence: '.$sellerPaidText);
+}
 
 echo "seller-support-buyer-refund-test: OK\n";

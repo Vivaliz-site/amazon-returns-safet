@@ -1209,7 +1209,7 @@ async function openFbaSupportCardWithRetry(cdp) {
   }
   return { opened: false, auth: null };
 }
-async function supportOpen(cdp, job) {
+async function supportOpen(cdp, job, options = {}) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
   const supportRoute = supportRouteFor(job);
@@ -1219,7 +1219,7 @@ async function supportOpen(cdp, job) {
   if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION' && physicalStatus === 'RECEIVED_OK') {
     return bridgeResult('SUPERSEDED', { reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN', retry_safe: false });
   }
-  const retryReconciliation = Number(job.attempt_count || 0) > 1;
+  const retryReconciliation = Number(job.attempt_count || 0) > 1 && options.forceFreshCase !== true;
   let existing;
   try {
     existing = await findSupportCase(cdp, job, retryReconciliation ? { includeTerminal: true } : {});
@@ -1401,6 +1401,9 @@ async function supportUpdate(cdp, job) {
   if (supportBody.includes('answered cases cannot be reopened after 5 days with no activity')
       || supportBody.includes('casos respondidos não podem ser reabertos após 5 dias sem atividade')
       || supportBody.includes('casos respondidos nao podem ser reabertos apos 5 dias sem atividade')) {
+    if (supportRouteFor(job)) {
+      return await supportOpen(cdp, job, { forceFreshCase: true });
+    }
     return bridgeResult('SUPERSEDED', { reason: 'SUPPORT_CASE_NOT_REOPENABLE', retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
   }
   const narrative = narrativeFor(job, 9000);

@@ -561,6 +561,9 @@ final class SvAmazonSafeTDecisionEngine
                 'reason'=>'SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT',
                 'case_id'=>$caseId,
                 'support_case_id'=>$support['case_id'],
+                'support_route'=>strtoupper(trim((string)($case['program']??'')))==='FBA'
+                    ? 'FBA_RETURNS_REIMBURSEMENT'
+                    : 'GENERAL_ORDER_SUPPORT',
                 'idempotency_key'=>hash('sha256','support-buyer-refund-seller-reimbursement|'.$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
             ];
         }
