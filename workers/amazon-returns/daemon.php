@@ -693,7 +693,6 @@ class SvAmazonReturnsDaemon
         foreach($cases as $case){
             $caseId=(int)$case['id'];
             $this->persistence->events->append(SvAmazonFinancialRevalidation::sourceEvent($caseId,$complete && $unambiguous,$at));
-            if($complete && $unambiguous)$this->persistence->events->append(SvAmazonFinancialCheckEvidence::refresh($caseId,$orderId,new DateTimeImmutable($at,new DateTimeZone('UTC'))));
         }
     }
 

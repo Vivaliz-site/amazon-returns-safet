@@ -47,6 +47,23 @@ cffrSame('SELLER_SUPPORT_OPEN',$partialDecision['action']??null,'Classic FBA par
 $stale=$finance;$stale['occurred_at']='2026-09-08 10:00:00';
 cffrSame('CHECK_FINANCES',$engine->nextAction($base,[$stale],$policy,$now)['action']??null,'Classic FBA requires a fresh finance receipt before escalation');
 
+$noRefund=$base;
+$noRefund['id']=901;$noRefund['amazon_order_id']='701-0000000-0000901';$noRefund['refund_at']=null;$noRefund['seller_debit_at']=null;
+$noRefundFinance=$finance;$noRefundFinance['case_id']=901;
+$noRefundDecision=$engine->nextAction($noRefund,[$noRefundFinance],$policy,$now);
+cffrSame('WAIT',$noRefundDecision['action']??null,'A just-checked FBA order without refund must not immediately request another full finance scan');
+cffrSame('CLASSIC_FBA_FINANCE_RECENTLY_CHECKED',$noRefundDecision['reason']??null,'Fresh no-refund finance evidence must enter a bounded cooldown');
+cffrSame('2026-09-08 16:01:33',$noRefundDecision['next_action_at']??null,'The next finance recheck must be scheduled exactly two hours after the fresh receipt');
+$noRefundStale=$noRefundFinance;$noRefundStale['occurred_at']='2026-09-08 11:00:00';
+cffrSame('CHECK_FINANCES',$engine->nextAction($noRefund,[$noRefundStale],$policy,$now)['action']??null,'A no-refund FBA order must resume finance checks after the cooldown expires');
+cffrSame('CHECK_FINANCES',$engine->nextAction($noRefund,[],$policy,$now)['action']??null,'A no-refund FBA order with no finance evidence still requires an initial finance check');
+
+$ambiguous=$base;$ambiguous['id']=902;$ambiguous['amazon_order_id']='701-0000000-0000902';
+$ambiguousFinance=$finance;$ambiguousFinance['case_id']=902;$ambiguousFinance['payload']['ambiguous_reimbursement_transactions']=1;$ambiguousFinance['payload']['unsettled_financial_evidence']=true;
+$ambiguousDecision=$engine->nextAction($ambiguous,[$ambiguousFinance],$policy,$now);
+cffrSame('WAIT',$ambiguousDecision['action']??null,'Fresh but non-actionable finance evidence must not trigger a tight rescan loop');
+cffrSame('CLASSIC_FBA_FINANCE_RECENTLY_CHECKED',$ambiguousDecision['reason']??null,'Ambiguous fresh finance evidence must cool down before retry');
+
 $active=$base;$active['support_case_id']='12345678901';$active['support_case_status']='OPEN';
 $wait=$engine->nextAction($active,[$finance],$policy,$now);
 cffrSame('WAIT',$wait['action']??null,'Existing Seller Support case must suppress duplicate FBA escalation');
