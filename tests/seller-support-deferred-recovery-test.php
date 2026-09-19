@@ -46,8 +46,19 @@ foreach(['attempt_count','payload_json','last_error','status='] as $forbidden){
 }
 ssdrSame('UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE',$params[':lookup_error']??null,
     'Only the known pre-write lookup failure may be rearmed for SELLER_SUPPORT_OPEN.');
-ssdrSame('UI_DRIFT: SUPPORT_REPLY_SEND_MISSING',$params[':reply_error']??null,
-    'Only the known pre-send reply failure may be rearmed for SELLER_SUPPORT_UPDATE.');
+foreach([
+    ':reply_send_missing'=>'UI_DRIFT: SUPPORT_REPLY_SEND_MISSING',
+    ':reply_field_missing'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_MISSING',
+    ':reply_field_not_writable'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_NOT_WRITABLE',
+    ':native_reply_not_writable'=>'UI_DRIFT: SUPPORT_NATIVE_REPLY_NOT_WRITABLE',
+] as $parameter=>$error){
+    ssdrSame($error,$params[$parameter]??null,
+        'Only known pre-send Seller Support reply failures may be rearmed immediately after a fixed write stack deploy.');
+}
+ssdrAssert(str_contains($sql,'last_error IN'),
+    'Seller Support update recovery must enumerate safe pre-send UI drift reasons.');
+ssdrAssert(!str_contains($sql,"last_error LIKE 'UI_DRIFT:%'"),
+    'Recovery must not broadly rearm post-write or otherwise uncertain UI drift failures.');
 
 $runtimeSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
 foreach(['TenantOutbox.php','BridgeService.php','RemoteBridge.php','seller-central-bridge-worker.mjs'] as $file){
