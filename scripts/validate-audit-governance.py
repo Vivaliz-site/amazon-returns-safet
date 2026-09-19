@@ -13,9 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 REQUIRED_MARKERS = {
     "AUDIT_POLICY.md": [
-        "2026-09-19-universal-error-coverage-v4",
+        "2026-09-19-universal-architecture-v5",
         "AUDIT_UNIVERSAL_COVERAGE_V1",
         "AUDIT_SELF_TEST_V1",
+        "ARCHITECTURE_DEPLOY_AUDIT_V1",
         "AUDIT_DEFINITION_OF_DONE_V1",
     ],
     "docs/quality/EXTREME_AUDIT_PROTOCOL.md": [
@@ -35,6 +36,14 @@ REQUIRED_MARKERS = {
         "AUDIT_DIFFERENTIAL_METAMORPHIC_V1",
         "AUDIT_EVIDENCE_ARTIFACT_V1",
         "AUDIT_SELF_TEST_V1",
+    ],
+    "docs/quality/ARCHITECTURE_DEPLOY_AUDIT_V1.md": [
+        "RUNNER_ISOLATION_V1",
+        "BUILD_ONCE_PROMOTE_V1",
+        "WORKFLOW_SPRAWL_BUDGET_V1",
+        "CROSS_REPO_CONTRACTS_V1",
+        "DEPLOYMENT_PERFORMANCE_BUDGET_V1",
+        "ARCHITECTURE_UNKNOWN_UNKNOWNS_V1",
     ],
     "docs/quality/AUDIT_SELF_TEST_V1.md": [
         "Teste de sensibilidade",
@@ -80,6 +89,9 @@ class AuditState:
     baseline_regression_uninvestigated: bool = False
     pending_without_owner_or_deadline: bool = False
     self_test_required_and_failed: bool = False
+    architecture_material_not_validated: bool = False
+    deployment_provenance_missing: bool = False
+    production_runner_pure_ci_bottleneck: bool = False
 
 
 def allows_apto(state: AuditState) -> bool:
@@ -109,6 +121,9 @@ def allows_apto(state: AuditState) -> bool:
             state.baseline_regression_uninvestigated,
             state.pending_without_owner_or_deadline,
             state.self_test_required_and_failed,
+            state.architecture_material_not_validated,
+            state.deployment_provenance_missing,
+            state.production_runner_pure_ci_bottleneck,
         ]
     )
 
@@ -125,9 +140,8 @@ def validate_markers() -> list[dict[str, object]]:
         results.append({"file": relative, "ok": not missing, "missing": missing})
 
     optional_entrypoints = {
-        "AGENTS.md": "AUDIT_UNIVERSAL_COVERAGE_V1.md",
-        "CLAUDE.md": "AUDIT_UNIVERSAL_COVERAGE_V1.md",
-        "GEMINI.md": "AUDIT_UNIVERSAL_COVERAGE_V1.md",
+        "AGENTS.md": "ARCHITECTURE_DEPLOY_AUDIT_V1.md",
+        "CLAUDE.md": "ARCHITECTURE_DEPLOY_AUDIT_V1.md",
         "REGRAS-AGENTES-CENTRALIZADAS.md": "AUDITORIA_EXTREMA_UNIVERSAL_V4",
     }
     for relative, marker in optional_entrypoints.items():
@@ -171,6 +185,9 @@ def self_test_gate() -> list[dict[str, object]]:
         "baseline_regression_uninvestigated": {"baseline_regression_uninvestigated": True},
         "pending_without_owner_or_deadline": {"pending_without_owner_or_deadline": True},
         "self_test_required_and_failed": {"self_test_required_and_failed": True},
+        "architecture_material_not_validated": {"architecture_material_not_validated": True},
+        "deployment_provenance_missing": {"deployment_provenance_missing": True},
+        "production_runner_pure_ci_bottleneck": {"production_runner_pure_ci_bottleneck": True},
     }
     for name, mutation in blockers.items():
         state = replace(baseline, **mutation)
@@ -199,7 +216,7 @@ def write_report(output_dir: Path, marker_results: list[dict[str, object]], gate
     output_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema": "AUDIT_SELF_TEST_V1",
-        "policy_version": "2026-09-19-universal-error-coverage-v4",
+        "policy_version": "2026-09-19-universal-architecture-v5",
         "marker_results": marker_results,
         "gate_results": gate_results,
     }

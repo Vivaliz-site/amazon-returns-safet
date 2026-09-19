@@ -8,7 +8,7 @@ Atue sob três lentes obrigatórias: **Auditor** (conformidade, segurança, inte
 - Classifique evidência como `COMPROVADO`, `FORTE EVIDÊNCIA`, `HIPÓTESE A VALIDAR` ou `NÃO VALIDADO`.
 - Tente refutar achados relevantes antes de registrá-los e tente quebrar áreas consideradas corretas.
 - Este protocolo é piso mínimo, nunca teto.
-- Execute também `AUDIT_RUNTIME_PARITY_V1`, `AUDIT_UNIVERSAL_COVERAGE_V1`, o overlay do projeto e `AUDIT_SELF_TEST_V1` quando aplicável.
+- Execute também `AUDIT_RUNTIME_PARITY_V1`, `AUDIT_UNIVERSAL_COVERAGE_V1`, `ARCHITECTURE_DEPLOY_AUDIT_V1`, o overlay do projeto e `AUDIT_SELF_TEST_V1` quando aplicável.
 - A taxonomia de erros nunca é lista fechada: toda auditoria deve reservar investigação exploratória para falhas não previstas.
 
 ## Reconstrução do sistema real
@@ -89,8 +89,13 @@ Nova classe descoberta deve virar teste/regra/registro para que deixe de ser des
 ## Reauditoria contraditória e cobertura
 Após correções, execute regressão e nova rodada tentando provar que as conclusões estão erradas. Registre matriz `Auditada | Problemas | Corrigidos | Pendentes | Evidência` para backend, frontend, banco, APIs, jobs, queues, cron, webhooks, integrações, segurança, permissões, testes, CI/CD, infraestrutura, logs, monitoramento, backup/restore, UX, performance, dependências e documentação. Área não auditada deve aparecer com motivo.
 
+## Auditoria de arquitetura, código e deploy
+Execute `ARCHITECTURE_DEPLOY_AUDIT_V1`. Reconstrua limites entre projetos, ownership de dados, runners, workflows, dependências e release path; meça o caminho crítico de CI/deploy; procure serialização desnecessária, reinstalação de dependências no host, provisionamento/restart sem impacto, workflow sprawl, pontos únicos de falha, contratos cross-repo implícitos, hotspots e config drift.
+
+Melhoria segura que reduza fila/risco sem enfraquecer gates deve ser aplicada na própria auditoria e medida antes/depois. Otimização que remove evidência ou cobertura crítica é regressão, não melhoria.
+
 ## Gate Final de Completude
-Não use “100%”, “pronto” ou “apto” apenas por build/test/health verde. Antes do veredito, confirme o `AUDIT_DEFINITION_OF_DONE_V1` e o `AUDIT_UNIVERSAL_COVERAGE_V1`: release e evidência fresca identificados; mapa de impacto; taxonomia universal; negativos e boundaries; classes históricas; reconciliação de dados; órfãos; falhas silenciosas; correções SAFE; busca por equivalentes; testes confiáveis; runtime parity; efeitos externos; observabilidade; automações assíncronas; baseline material; ownership/deadlines; recuperação/rollback; legado/duplicidade; evidence artifact; self-test quando aplicável; reauditoria contraditória e meta-auditoria.
+Não use “100%”, “pronto” ou “apto” apenas por build/test/health verde. Antes do veredito, confirme o `AUDIT_DEFINITION_OF_DONE_V1` e o `AUDIT_UNIVERSAL_COVERAGE_V1`: release e evidência fresca identificados; mapa de impacto; taxonomia universal; arquitetura/deploy e caminho crítico; negativos e boundaries; classes históricas; reconciliação de dados; órfãos; falhas silenciosas; correções SAFE; busca por equivalentes; testes confiáveis; runtime parity; efeitos externos; observabilidade; automações assíncronas; baseline material; ownership/deadlines; recuperação/rollback; legado/duplicidade; evidence artifact; self-test quando aplicável; reauditoria contraditória e meta-auditoria.
 
 Veredito: `NÃO APTO`, `APTO COM RESSALVAS` ou `APTO`, acompanhado de **confiança 0–100%**, **risco residual** e **dívida de evidência**. Nunca use 100% de confiança com área crítica não validada e nunca emita `APTO` com P0/P1, P2 crítico, AUDIT_ESCAPE pendente ou IMPROVEMENT_REQUIRED crítico.
 
