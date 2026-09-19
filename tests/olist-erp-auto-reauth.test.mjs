@@ -56,7 +56,7 @@ test('recovers the observed Olist concurrent-session callback without exposing f
     current: 'https://erp.olist.com/',
     url() { return this.current; },
     getByRole: (role, options) => ({
-      first: () => /^voltar para o login$/i.test(String(options?.name?.source || '')) ? back : login,
+      first: () => String(options?.name?.source || '').includes('voltar para o login') ? back : login,
     }),
     waitForURL: async () => { throw new Error('observed concurrent-session takeover failure'); },
     waitForTimeout: async ms => calls.push(['wait', ms]),
