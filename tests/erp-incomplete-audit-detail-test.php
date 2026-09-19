@@ -9,7 +9,7 @@ eiadAssert(method_exists(SvAmazonErpSalesReturnRepository::class,'incompleteAudi
 
 $repo=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/ErpSalesReturnRepository.php');
 eiadAssert(str_contains($repo,'amazon_order_id,status,last_error_code'),'Incomplete workflow audit must expose only sanitized operational fields.');
-eiadAssert(str_contains($repo,"status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW')"),'Incomplete audit must use the same completion boundary as countIncomplete(), including the legacy and current ignored terminal states.');
+eiadAssert(str_contains($repo,"status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW','IGNORED_BY_USER')"),'Incomplete audit must use the same completion boundary as countIncomplete(), including the legacy and current ignored terminal states.');
 
 $task=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/ErpSalesReturnTask.php');
 eiadAssert(str_contains($task,"['incomplete_workflows_detail']"),'ERP task must publish sanitized incomplete workflow detail.');
