@@ -23,11 +23,14 @@ if(!str_contains($daemon,"'next_action_at'=>null")){
     throw new RuntimeException('Scheduler must clear a consumed next-action timestamp to avoid repeated due-trigger execution.');
 }
 $deployTimer=(string)file_get_contents(__DIR__.'/../deploy/systemd/amazon-returns-deploy.timer');
-if(str_contains($deployTimer,'OnUnitActiveSec=300') || str_contains($deployTimer,'every five minutes')){
-    throw new RuntimeException('No deploy poll may run every five minutes.');
+if(!str_contains($deployTimer,'OnUnitActiveSec=300')){
+    throw new RuntimeException('Automatic deploy polling must run every five minutes after CI-safe deploy hardening.');
 }
-if(!str_contains($deployTimer,'OnUnitActiveSec=3600')){
-    throw new RuntimeException('Automatic deploy polling must run hourly.');
+if(str_contains($deployTimer,'OnUnitActiveSec=3600')){
+    throw new RuntimeException('Legacy hourly deploy polling must not return.');
+}
+if(!str_contains($deployTimer,'Persistent=true')){
+    throw new RuntimeException('Automatic deploy polling must remain persistent across downtime.');
 }
 $script=(string)file_get_contents(__DIR__.'/../scripts/provision-production.sh');
 if(!str_contains($script,"set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '1'")){
