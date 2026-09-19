@@ -105,7 +105,7 @@ class SvAmazonReturnsDaemon
             try{
                 $results['outbox_recovery']=[
                     'status'=>'OK',
-                    'reactivated'=>$this->persistence->outbox->reactivateSafeDeferredSellerSupportWrites(),
+                    'reactivated'=>$this->persistence->outbox->reactivateSafeDeferredExternalWrites(),
                 ];
             }catch(Throwable $e){
                 $results['outbox_recovery']=[
