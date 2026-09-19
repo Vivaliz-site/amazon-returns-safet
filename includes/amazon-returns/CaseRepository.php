@@ -266,7 +266,7 @@ final class SvAmazonReturnCaseRepository
         if ($after !== '') $after = $this->requiredText($after, 'Financial order cursor', 32);
         $stmt = $this->prepare(
             'SELECT DISTINCT amazon_order_id FROM amazon_return_cases '
-            . 'WHERE (closed_at IS NULL OR expected_reimbursement_amount>0) '
+            . "WHERE (closed_at IS NULL OR state='RECOVERED') "
             . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
             . 'AND amazon_order_id>:after_order_id ORDER BY amazon_order_id LIMIT ' . $limit
         );
@@ -303,7 +303,8 @@ final class SvAmazonReturnCaseRepository
         $afterId=max(0,$afterId);
         $limit=max(1,min(1000,$limit));
         $stmt=$this->prepare(
-            'SELECT * FROM amazon_return_cases WHERE expected_reimbursement_amount>0 AND id>:after_id '
+            "SELECT * FROM amazon_return_cases WHERE expected_reimbursement_amount>0 "
+            . "AND (closed_at IS NULL OR state='RECOVERED') AND id>:after_id "
             . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
             . 'ORDER BY id LIMIT '.$limit
         );

@@ -31,6 +31,7 @@ frhSame([251,252],array_map(fn($r)=>(int)$r['id'],$batch2['cases']),'next tick m
 frhSame(false,$batch2['has_more'],'final page closes continuation');
 $queries=array_values(array_filter($db->executed,fn(array $e):bool=>str_contains($e['sql'],'expected_reimbursement_amount>0')));
 frhSame(2,count($queries),'two bounded pages queried');
+foreach($queries as $query){frhSame(true,str_contains($query['sql'],"state='RECOVERED'"),'reconciliation must retain recovered cases for reversal detection');frhSame(true,str_contains($query['sql'],'closed_at IS NULL'),'reconciliation must retain open cases');}
 frhSame(3,$queries[0]['params'][':tenant_id']??null,'financial keyset query tenant scope');
 frhSame(30,$queries[0]['params'][':amazon_connection_id']??null,'financial keyset query connection scope');
 frhSame(0,(int)($queries[0]['params'][':after_id']??-1),'first page starts at zero');
