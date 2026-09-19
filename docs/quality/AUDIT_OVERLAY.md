@@ -5,6 +5,16 @@ Este arquivo complementa o protocolo universal. Ele não substitui `AGENTS.md`, 
 ## Regra de uso
 Antes de iniciar uma auditoria extrema, o agente deve reconstruir as regras específicas deste repositório a partir das fontes autoritativas existentes e transformar essas regras em **invariantes verificáveis**. Não é permitido auditar apenas contra boas práticas genéricas.
 
+## Auditoria inteligente caso a caso
+
+Quando a solicitação envolver auditoria dos casos, análise caso a caso, verificação de todos os casos, revisão da correção das decisões tomadas, investigação individual de devoluções/SAFE-Ts ou intenção equivalente, execute obrigatoriamente `docs/quality/CASE_BY_CASE_AUDIT_PROTOCOL.md` em conjunto com as demais regras aplicáveis.
+
+A auditoria deve cobrir 100% dos casos elegíveis no escopo, sem amostragem. Cada caso precisa ser reconstruído individualmente a partir de evidências reais, com derivação independente da `DECISÃO ESPERADA`, comparação com a `DECISÃO REAL` e confirmação do `EFEITO REAL`.
+
+Contagem agregada, status do motor, REVIEW/BLOCKED genérico, job concluído, fila vazia, HTTP 200, aprovação ou mensagem de reembolso não substituem a auditoria individual. Falha encontrada em um caso exige causa raiz, busca por equivalentes, remediação segura quando aplicável, reprocessamento/reavaliação e validação no sistema de destino.
+
+Se a solicitação também ativar Auditoria Extrema conforme `AUDIT_POLICY.md`, os dois protocolos são cumulativos.
+
 ## Fontes obrigatórias quando existirem
 1. `AGENTS.md` e arquivos referenciados por ele;
 2. README e documentação de arquitetura;
