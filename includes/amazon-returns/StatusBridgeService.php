@@ -72,7 +72,7 @@ final class SvAmazonReturnsStatusBridgeService
             $supportCaseId=trim((string)($case['support_case_id'] ?? ''));
             if($caseId<1 || preg_match('/^\d{8,14}$/',$supportCaseId)!==1)continue;
             if($this->p->outbox->hasActive($caseId,'SELLER_SUPPORT_READ'))continue;
-            $key=SvAmazonSellerSupportStatus::readKey($caseId,$supportCaseId,$now);
+            $key=SvAmazonSellerSupportStatus::readKeyForTimeline($caseId,$supportCaseId,$now,$this->p->events->eventsForCase($caseId));
             $this->p->outbox->enqueue('SELLER_SUPPORT_READ',$caseId,[
                 'case_id'=>$caseId,
                 'order_id'=>(string)($case['amazon_order_id'] ?? ''),
