@@ -428,6 +428,13 @@ async function runAuthCheck() {
   }
 }
 async function main() {
+  const authHeartbeatIndex = process.argv.indexOf('--heartbeat-auth-status');
+  if (authHeartbeatIndex >= 0) {
+    const authStatus = clean(process.argv[authHeartbeatIndex + 1]).toUpperCase();
+    if (!/^[A-Z0-9_:-]{2,64}$/.test(authStatus)) throw new Error('InvalidAuthHeartbeatStatus');
+    process.stdout.write(`${JSON.stringify(await bridge('heartbeat', { worker_id: STATUS_WORKER_ID, auth_status: authStatus }))}\n`);
+    return;
+  }
   if (process.argv.includes('--auth-check')) {
     await runAuthCheck();
     return;

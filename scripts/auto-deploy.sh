@@ -77,10 +77,34 @@ sync_olist_login_inbox() {
 
 sync_olist_login_inbox
 
+kick_seller_central_browser() {
+    if systemctl is-enabled --quiet amazon-returns-seller-central-browser.timer 2>/dev/null; then
+        systemctl reset-failed amazon-returns-seller-central-browser.service >/dev/null 2>&1 || true
+        systemctl reset-failed amazon-returns-seller-central-auth-check.service >/dev/null 2>&1 || true
+        if systemctl start amazon-returns-seller-central-auth-check.service; then
+            systemctl start --no-block amazon-returns-seller-central-browser.service
+            echo 'seller_central_browser_deploy_kick=started'
+        else
+            echo 'seller_central_browser_deploy_kick=auth_check_failed' >&2
+        fi
+    else
+        echo 'seller_central_browser_deploy_kick=timer_disabled'
+    fi
+}
+
+retry_seller_central_browser_if_failed() {
+    if systemctl is-failed --quiet amazon-returns-seller-central-auth-check.service 2>/dev/null \
+        || systemctl is-failed --quiet amazon-returns-seller-central-browser.service 2>/dev/null; then
+        echo 'seller_central_browser_recovery_retry=failed_unit_detected'
+        kick_seller_central_browser
+    fi
+}
+
 runuser -u ubuntu -- git -C "$repo" fetch --quiet origin main
 target_sha="$(runuser -u ubuntu -- git -C "$repo" rev-parse origin/main)"
 deployed_sha="$(cat "$deploy_root/current/.release-sha" 2>/dev/null || true)"
 if [[ "$target_sha" == "$deployed_sha" ]]; then
+    retry_seller_central_browser_if_failed
     echo 'auto_deploy_skipped=already_current'
     exit 0
 fi
@@ -98,17 +122,6 @@ AMAZON_RETURNS_IMPORT_SOURCE=0 \
 
 bootstrap_continuity
 
-if systemctl is-enabled --quiet amazon-returns-seller-central-browser.timer 2>/dev/null; then
-    systemctl reset-failed amazon-returns-seller-central-browser.service >/dev/null 2>&1 || true
-    systemctl reset-failed amazon-returns-seller-central-auth-check.service >/dev/null 2>&1 || true
-    if systemctl start amazon-returns-seller-central-auth-check.service; then
-        systemctl start --no-block amazon-returns-seller-central-browser.service
-        echo 'seller_central_browser_deploy_kick=started'
-    else
-        echo 'seller_central_browser_deploy_kick=auth_check_failed' >&2
-    fi
-else
-    echo 'seller_central_browser_deploy_kick=timer_disabled'
-fi
+kick_seller_central_browser
 
 echo "auto_deploy_sha=$target_sha"

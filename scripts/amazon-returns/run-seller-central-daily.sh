@@ -57,7 +57,14 @@ trap 'exit 143' TERM
 
 mkdir -p "$SELLER_CENTRAL_PROFILE"
 
+record_auth_failure() {
+  local status="$1"
+  "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" \
+    --heartbeat-auth-status "$status" >/dev/null 2>&1 || true
+}
+
 if curl -fsS --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then
+  record_auth_failure "PREEXISTING_CDP_UNOWNED"
   echo "PREEXISTING_CDP_UNOWNED" >&2
   exit 76
 fi
@@ -78,7 +85,11 @@ for _ in $(seq 1 40); do
   if curl -fsS --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then ready=1; break; fi
   sleep 0.5
 done
-[[ "$ready" -eq 1 ]] || { echo "Seller Central CDP did not become ready" >&2; exit 75; }
+if [[ "$ready" -ne 1 ]]; then
+  record_auth_failure "BROWSER_STARTUP_FAILED"
+  echo "Seller Central CDP did not become ready" >&2
+  exit 75
+fi
 
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/prune-seller-central-cdp-targets.mjs"
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check
