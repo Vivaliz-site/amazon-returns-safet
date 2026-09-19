@@ -14,15 +14,26 @@ Toda auditoria formal deve executar como conjunto obrigatório:
 - `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md`;
 - `docs/quality/ARCHITECTURE_DEPLOY_AUDIT_V1.md`;
 - `docs/quality/AUDIT_SELF_TEST_V1.md` quando houver mudança material no mecanismo/gate de auditoria ou quando o projeto possuir gates automatizados a certificar;
-- `docs/quality/AUDIT_OVERLAY.md`.
+- `docs/quality/AUDIT_OVERLAY.md`;
+- `docs/quality/CASE_BY_CASE_AUDIT_PROTOCOL.md` quando a auditoria envolver casos individuais, correção das decisões do motor, devoluções, SAFE-Ts ou intenção equivalente.
 
-Nenhum desses documentos isoladamente substitui os demais.
+Nenhum desses documentos isoladamente substitui os demais. Quando o escopo envolver auditoria de casos, o protocolo caso a caso é adicional e obrigatório; a matriz agregada não substitui as linhas individuais.
 
 É proibido declarar `APTO` com fluxo crítico validado apenas localmente ou apenas por carregamento de página/healthcheck. Quando houver UI, operações críticas e mutações devem ser executadas pela UI real contra o mesmo release/ambiente certificado, com reload/revisita e confirmação da persistência/efeito. Quando não houver UI, use a interface operacional canônica publicada.
 
 Em homologação web, `5xx`, `pageerror`, `requestfailed`, `console.error` ou tela de erro inesperados são gate de falha até investigação, salvo allowlist estreita, versionada e justificada. A suíte local e a suíte executada no ambiente publicado devem ser comparadas; fluxo crítico local sem evidência equivalente publicada é dívida de evidência e bloqueia `APTO`.
 
 Defeito descoberto após auditoria que deveria estar no escopo é `AUDIT_ESCAPE`: além de corrigir o defeito, investigue por que a auditoria não o detectou, identifique a classe de falha, procure equivalentes e reaudite essa classe nos demais projetos onde for aplicável. Uma lacuna sistêmica deve atualizar a regra global, não apenas o caso isolado.
+
+## CASE_BY_CASE_AUDIT_V1 — auditoria individual obrigatória de casos
+
+Pedidos de "auditoria dos casos", "análise caso a caso", "verificar todos os casos", "verificar se as decisões foram corretas", investigação individual de devoluções/SAFE-Ts ou intenção semanticamente equivalente ativam obrigatoriamente `docs/quality/CASE_BY_CASE_AUDIT_PROTOCOL.md`.
+
+O agente deve auditar 100% dos casos elegíveis no escopo, sem amostragem, reconstruindo evidências e linha do tempo de cada caso antes de julgar o resultado. Para cada ponto decisório material, derive uma `DECISÃO ESPERADA` independente das saídas do próprio sistema e compare-a com `DECISÃO REAL` e `EFEITO REAL`.
+
+É proibido usar contagem agregada, status do decision engine, fila vazia, job concluído, REVIEW/BLOCKED genérico, HTTP 200, aprovação da Amazon ou mensagem de "reembolso" como substituto da prova individual. Reembolso ao comprador e ressarcimento financeiro ao seller são fatos distintos e devem ser reconciliados separadamente.
+
+Falha encontrada em um caso exige investigação de causa raiz e busca por equivalentes nos demais casos. Achado seguro/corrigível deve ser remediado, testado, implantado pelo fluxo oficial quando aplicável, reprocessado/reavaliado e validado no destino antes de a auditoria ser concluída.
 
 ## Matriz de transições de estado e dados históricos
 A **matriz de transições de estado e dados históricos** é obrigatória para qualquer fluxo persistido ou stateful. A auditoria deve cruzar, conforme aplicável:
