@@ -1192,6 +1192,23 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
   if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_PRODUCT_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   return null;
 }
+async function openFbaSupportCardWithRetry(cdp) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const englishWait = attempt === 0 ? 60000 : 45000;
+    const fbaEnglish = await waitFrameHas(cdp, 'FBA Returns Reimbursement', englishWait);
+    const fbaPortuguese = fbaEnglish ? false : await waitFrameHas(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon', 10000);
+    const opened = fbaEnglish
+      ? await clickFrameIncludes(cdp, 'FBA Returns Reimbursement')
+      : (fbaPortuguese ? await clickFrameIncludes(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon') : false);
+    if (opened) return { opened: true, auth: null };
+    if (attempt === 0) {
+      await cdp.navigate(HELP_URL, 6000);
+      const auth = await authGate(cdp, 'help-v1', HELP_URL, 6000);
+      if (auth) return { opened: false, auth };
+    }
+  }
+  return { opened: false, auth: null };
+}
 async function supportOpen(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -1235,12 +1252,9 @@ async function supportOpen(cdp, job) {
     return await contactSupportAndReadBack(cdp, job);
   }
 
-  const fbaEnglish = await waitFrameHas(cdp, 'FBA Returns Reimbursement', 60000);
-  const fbaPortuguese = fbaEnglish ? false : await waitFrameHas(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon', 10000);
-  const fbaRouteOpened = fbaEnglish
-    ? await clickFrameIncludes(cdp, 'FBA Returns Reimbursement')
-    : (fbaPortuguese ? await clickFrameIncludes(cdp, 'Reembolso de devoluções com FBA - Logística da Amazon') : false);
-  if (!fbaRouteOpened) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_FBA_CARD_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  const fbaRoute = await openFbaSupportCardWithRetry(cdp);
+  if (fbaRoute.auth) return fbaRoute.auth;
+  if (!fbaRoute.opened) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_FBA_CARD_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   const orderInputReady = await cdp.waitFor(`(()=>{for(const f of document.querySelectorAll('iframe')){const h=f.contentDocument?.querySelector('kat-input[placeholder*="112-"]');if(h&&!h.hasAttribute('disabled'))return true}return false})()`, 30000);
   if (!orderInputReady || !(await cdp.setFrameKat('kat-input[placeholder*="112-"]', orderId))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ORDER_INPUT_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   if (!(await clickFrameTextWhenReady(cdp, 'Continue', 20000)) && !(await clickFrameTextWhenReady(cdp, 'Continuar', 10000))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_ORDER_CONTINUE_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
