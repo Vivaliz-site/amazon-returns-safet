@@ -220,11 +220,15 @@ final class SvAmazonTenantReturnsOutbox
             . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
             . "AND status='PENDING' AND available_at>UTC_TIMESTAMP() AND locked_at IS NULL AND ("
             . "(kind='SELLER_SUPPORT_OPEN' AND last_error=:lookup_error) OR "
-            . "(kind='SELLER_SUPPORT_UPDATE' AND last_error=:reply_error))"
+            . "(kind='SELLER_SUPPORT_UPDATE' AND last_error IN "
+            . "(:reply_send_missing,:reply_field_missing,:reply_field_not_writable,:native_reply_not_writable)))"
         );
         $stmt->execute($this->scopeParams([
             ':lookup_error'=>'UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE',
-            ':reply_error'=>'UI_DRIFT: SUPPORT_REPLY_SEND_MISSING',
+            ':reply_send_missing'=>'UI_DRIFT: SUPPORT_REPLY_SEND_MISSING',
+            ':reply_field_missing'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_MISSING',
+            ':reply_field_not_writable'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_NOT_WRITABLE',
+            ':native_reply_not_writable'=>'UI_DRIFT: SUPPORT_NATIVE_REPLY_NOT_WRITABLE',
         ]));
         return max(0,$stmt->rowCount());
     }
