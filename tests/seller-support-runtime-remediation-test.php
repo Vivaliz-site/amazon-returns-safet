@@ -31,6 +31,9 @@ ssrrAssert($contactPos!==false && $requestPos!==false && $contactPos<$requestPos
 ssrrAssert(str_contains($worker,'async frameButtonReadyByText(label)'),'Seller Support must distinguish an actionable button from stale body text.');
 ssrrAssert(str_contains($worker,'async frameOptionSelectedByText(label)'),'Seller Support must recognize a selected contact option while waiting for the next actionable control.');
 ssrrAssert(str_contains($fba,'SUPPORT_CONTACT_SELECTED_CONTINUE_MISSING'),'FBA recovery must explicitly advance the selected contact option through Continue.');
+ssrrAssert(str_contains($worker,'async function supportOpen(cdp, job, options = {})'),'Seller Support open flow must accept bounded fallback options.');
+ssrrAssert(str_contains($worker,'options.forceFreshCase !== true'),'Fresh-case fallback must not reconcile the terminal case that just proved non-reopenable.');
+ssrrAssert(str_contains($worker,"return await supportOpen(cdp, job, { forceFreshCase: true });"),'A non-reopenable support update with a valid route must continue recovery in a fresh case instead of stopping as superseded.');
 ssrrAssert(str_contains($fba,'SUPPORT_CONTACT_ADDITIONAL_INFO_NOT_WRITABLE'),'FBA recovery must fill the observed required additional-information field before Continue.');
 ssrrAssert(str_contains($worker,'async fillFrameTextareaTrusted(selector, value)'),'Required Seller Support textarea input must use trusted browser input rather than synthetic DOM-only events.');
 ssrrAssert(str_contains($fba,'if (!additionalInfoReady)'),'FBA recovery must wait for the asynchronous additional-information field before attempting Continue.');
