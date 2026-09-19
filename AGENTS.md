@@ -77,6 +77,25 @@ Antes de qualquer operacao em terminal/CLI, leia e cumpra a secao `Isolamento ob
 - Mensagem de espera, spinner, reconexao ou `verificacoes adicionais` no ChatGPT nao prova progresso do executor.
 - Se a resposta do chat interromper, recupere o estado persistido e continue o monitoramento/takeover sem depender de novo comando do usuario.
 
+## Auditoria dos casos — protocolo individual obrigatório
+
+Quando o usuário solicitar "auditoria dos casos", "análise caso a caso", "verificar todos os casos", "investigar cada devolução/SAFE-T", "verificar se as decisões foram corretas" ou intenção equivalente, leia e execute integralmente `docs/quality/CASE_BY_CASE_AUDIT_PROTOCOL.md`.
+
+Regras vinculantes:
+- auditar 100% dos casos elegíveis no escopo, individualmente e sem amostragem;
+- reconstruir a linha do tempo a partir das evidências reais e fontes primárias;
+- derivar a `DECISÃO ESPERADA` independentemente do motor e compará-la com `DECISÃO REAL` e `EFEITO REAL`;
+- não aceitar status agregado, REVIEW/BLOCKED genérico, HTTP 200, fila vazia, aprovação ou job executado como prova final;
+- distinguir sempre reembolso ao comprador de ressarcimento financeiro ao seller;
+- validar logística/rastreamento, financeiro, ciclo SAFE-T, comunicações e devolução ERP/readback quando aplicáveis;
+- verificar se cada decisão ocorreu no momento correto e dentro do prazo aplicável;
+- investigar causa raiz de divergências, procurar casos equivalentes e corrigir/remediar achados seguros durante a própria auditoria;
+- reprocessar/reavaliar somente o necessário e confirmar o efeito no sistema de destino;
+- comunicações externas da ShopVivaliz devem ser escritas em primeira pessoa;
+- a matriz agregada final deve reconciliar exatamente com as linhas individuais; agregado nunca substitui auditoria individual.
+
+Se o pedido também cair nos gatilhos de Auditoria Extrema de `AUDIT_POLICY.md`, ambos os protocolos são obrigatórios e complementares.
+
 ## Auditoria Extrema — cobertura universal obrigatória
 
 Quando houver auditoria completa/extrema, validação de release/apto ou qualquer gatilho de `AUDIT_POLICY.md`, todos os agentes devem executar integralmente `AUDIT_POLICY.md`, `docs/quality/EXTREME_AUDIT_PROTOCOL.md`, `docs/quality/AUDIT_RUNTIME_PARITY_V1.md`, `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md`, `docs/quality/AUDIT_SELF_TEST_V1.md` quando aplicável e `docs/quality/AUDIT_OVERLAY.md`. A auditoria inclui melhorias, remediação de achados SAFE, reconciliação de dados, negativos/boundaries, falhas silenciosas, órfãos, flaky/false-green e rodada adversarial de unknown unknowns. Relatório sem remediação não conclui a auditoria.
