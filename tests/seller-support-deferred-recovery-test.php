@@ -68,7 +68,7 @@ foreach(['TenantOutbox.php','BridgeService.php','RemoteBridge.php','seller-centr
 }
 $daemonSource=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 ssdrAssert(str_contains($daemonSource,'outboxStackChanged'),'Daemon must detect an outbox execution-stack revision change.');
-ssdrAssert(str_contains($daemonSource,'reactivateSafeDeferredSellerSupportWrites'),
+ssdrAssert(str_contains($daemonSource,'reactivateSafeDeferredExternalWrites'),
     'Daemon must rearm only enumerated safe deferred external-write rows after a fixed write stack is deployed.');
 ssdrAssert(str_contains($daemonSource,"'outbox_recovery'"),'Daemon must expose recovery evidence in runtime results.');
 ssdrAssert(str_contains($daemonSource,'($results[\'outbox_recovery\'][\'status\'] ?? null)===\'OK\''),
