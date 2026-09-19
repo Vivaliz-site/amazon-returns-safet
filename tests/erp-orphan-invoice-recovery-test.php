@@ -50,6 +50,58 @@ $cached=$lookup->findOrphanSaleForOrder('702-9999999-8888888','2026-03-24','22.9
 orphanSame('101',$cached['invoice_id']??null,'Cached date data may recover another exact SKU.');
 orphanSame(3,$paced,'Same-date list and invoice details must be cached within a cycle.');
 
+$windowCalls=[];
+$windowHttp=static function(string $method,string $url,array $headers,?string $body) use (&$windowCalls): array {
+    $windowCalls[]=$url;
+    $path=(string)parse_url($url,PHP_URL_PATH);
+    $query=[];parse_str((string)parse_url($url,PHP_URL_QUERY),$query);
+    if($path==='/public-api/v3/notas'){
+        if(($query['dataInicial']??'')==='2026-03-24' && ($query['dataFinal']??'')==='2026-03-24'){
+            return ['status'=>200,'json'=>['itens'=>[],'paginacao'=>['total'=>0]]];
+        }
+        orphanSame('2026-03-24',$query['dataInicial']??null,'Window fallback must start at the Amazon order date.');
+        orphanSame('2026-04-07',$query['dataFinal']??null,'Window fallback must be bounded to fourteen days after the order date.');
+        return ['status'=>200,'json'=>['itens'=>[
+            ['id'=>150,'numero'=>'019550','tipo'=>'S','situacao'=>'6','dataEmissao'=>'2026-03-27','valor'=>22.90,'ecommerce'=>['id'=>0]],
+        ],'paginacao'=>['total'=>1]]];
+    }
+    if($path==='/public-api/v3/notas/150')return ['status'=>200,'json'=>[
+        'id'=>150,'numero'=>'019550','serie'=>'1','tipo'=>'S','situacao'=>'6','finalidade'=>'1','dataEmissao'=>'2026-03-27','valor'=>22.90,
+        'chaveAcesso'=>'31260349903300000170550010000195501253955799','ecommerce'=>['id'=>0],
+        'itens'=>[['codigo'=>'Ved-80t','quantidade'=>1,'valorUnitario'=>22.90]],
+    ]];
+    throw new RuntimeException('Unexpected ERP window test URL: '.$url);
+};
+$windowLookup=new SvAmazonErpInvoiceLookup(['TINY_ACCESS_TOKEN'=>'test-token'],$windowHttp);
+$windowMatch=$windowLookup->findOrphanSaleForOrder('702-2046200-4661854','2026-03-24','22.90',['VED-80T'=>1]);
+orphanSame('150',$windowMatch['invoice_id']??null,'Unique orphan invoice emitted shortly after the order must be recoverable.');
+orphanSame('ORPHAN_INVOICE_EXACT_AMOUNT_ITEMS_DATE_WINDOW_14D',$windowMatch['match_method']??null,'Window recovery must be explicitly observable.');
+orphanSame(3,count($windowCalls),'Window recovery must perform exact probe, bounded range probe, and one detail lookup.');
+
+$windowAmbiguousHttp=static function(string $method,string $url,array $headers,?string $body): array {
+    $path=(string)parse_url($url,PHP_URL_PATH);
+    $query=[];parse_str((string)parse_url($url,PHP_URL_QUERY),$query);
+    if($path==='/public-api/v3/notas'){
+        if(($query['dataInicial']??'')===($query['dataFinal']??''))return ['status'=>200,'json'=>['itens'=>[],'paginacao'=>['total'=>0]]];
+        return ['status'=>200,'json'=>['itens'=>[
+            ['id'=>160,'tipo'=>'S','situacao'=>'6','dataEmissao'=>'2026-03-26','valor'=>22.90,'ecommerce'=>['id'=>0]],
+            ['id'=>161,'tipo'=>'S','situacao'=>'6','dataEmissao'=>'2026-03-28','valor'=>22.90,'ecommerce'=>['id'=>0]],
+        ],'paginacao'=>['total'=>2]]];
+    }
+    if(in_array($path,['/public-api/v3/notas/160','/public-api/v3/notas/161'],true)){
+        $id=str_ends_with($path,'160')?160:161;
+        return ['status'=>200,'json'=>[
+            'id'=>$id,'numero'=>(string)$id,'tipo'=>'S','situacao'=>'6','finalidade'=>'1',
+            'dataEmissao'=>$id===160?'2026-03-26':'2026-03-28','valor'=>22.90,'ecommerce'=>['id'=>0],
+            'itens'=>[['codigo'=>'Ved-80t','quantidade'=>1]],
+        ]];
+    }
+    throw new RuntimeException('Unexpected ERP ambiguous-window URL.');
+};
+$windowAmbiguous=(new SvAmazonErpInvoiceLookup(['TINY_ACCESS_TOKEN'=>'test-token'],$windowAmbiguousHttp))
+    ->findOrphanSaleForOrder('702-2046200-4661854','2026-03-24','22.90',['VED-80T'=>1]);
+orphanSame(null,$windowAmbiguous,'Multiple exact matches inside the bounded date window must fail closed.');
+
 $ambiguousHttp=static function(string $method,string $url,array $headers,?string $body): array {
     $path=(string)parse_url($url,PHP_URL_PATH);
     if($path==='/public-api/v3/notas')return ['status'=>200,'json'=>['itens'=>[
