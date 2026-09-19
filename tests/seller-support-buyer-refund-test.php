@@ -73,7 +73,7 @@ $narrative=(string)($snapshot['narrative']??'');
 foreach([
     'Temos ciência de que o comprador já foi reembolsado',
     'nossa solicitação não se refere ao reembolso realizado ao comprador',
-    'ressarcimento devido à ShopVivaLiz, na condição de vendedor',
+    'Estamos solicitando o nosso ressarcimento como vendedores',
     'R$ 68,57',
     'data do crédito',
     'ID da transação financeira',

@@ -49,7 +49,7 @@ final class SvAmazonExternalWritePayload
             $outstanding=max(0.0,$expected-$credited);
             return 'Temos ciência de que o comprador já foi reembolsado no pedido '.$order.'. '
                 .'Nossa solicitação não se refere ao reembolso realizado ao comprador. '
-                .'Estamos solicitando o ressarcimento devido à ShopVivaLiz, na condição de vendedor. '
+                .'Estamos solicitando o nosso ressarcimento como vendedores. '
                 .'Até o momento, não identificamos em nossa conta de vendedor o crédito de '.self::brl($outstanding).' correspondente a esse ressarcimento. '
                 .'O reembolso ao comprador confirma apenas o estorno ao cliente e não comprova que recebemos o ressarcimento devido. '
                 .'Caso a Amazon considere que esse ressarcimento já foi efetuado, solicitamos que informe o valor creditado em nossa conta de vendedor, '
