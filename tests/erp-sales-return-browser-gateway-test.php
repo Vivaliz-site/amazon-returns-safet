@@ -28,6 +28,21 @@ $existing=$gateway->probeExisting('202','303');
 bgSame('880',$existing,'Gateway preflight must expose an existing internal ERP return without writing.');
 $read=$gateway->readBack('991','702-1234567-1234567');
 bgSame(991,$read['id']??null,'Gateway read-back must return the ERP record.');
+$missingGateway=new SvAmazonOlistBrowserErpSalesReturnGateway(
+    static fn(array $p): array=>['status'=>'NOT_FOUND','submitted'=>false,'external_id'=>'991','record'=>null]
+);
+bgSame(null,$missingGateway->readBack('991','702-1234567-1234567'),'Confirmed target absence must remain a null read-back.');
+
+$authReadGateway=new SvAmazonOlistBrowserErpSalesReturnGateway(
+    static fn(array $p): array=>['status'=>'AUTH_REQUIRED','submitted'=>false,'external_id'=>null,'retry_safe'=>true]
+);
+$authReadFailedClosed=false;
+try{
+    $authReadGateway->readBack('991','702-1234567-1234567');
+}catch(RuntimeException $e){
+    $authReadFailedClosed=str_contains($e->getMessage(),'AUTH_REQUIRED');
+}
+bgSame(true,$authReadFailedClosed,'Authentication failure must never be collapsed into a false NOT_FOUND read-back.');
 $authGateway=new SvAmazonOlistBrowserErpSalesReturnGateway(static fn(array $p): array=>['status'=>'AUTH_REQUIRED','submitted'=>false,'external_id'=>null,'retry_safe'=>true]);
 $blocked=$authGateway->create(['amazon_order_id'=>'702-1234567-1234567','refund_at'=>'2026-09-12 10:00:00','original_sale'=>['invoice_id'=>'202'],'items'=>[['sku'=>'SKU-1','quantity_refunded'=>1]]]);
 bgSame(false,$blocked['ok']??null,'Authentication failure must not be treated as success.');
