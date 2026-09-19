@@ -17,14 +17,7 @@ done
 LOGIN_SYNC_SCRIPT="$SOURCE_ROOT/scripts/sync-olist-erp-login-env.sh"
 [[ "$(id -u)" -eq 0 ]] || { echo "root required" >&2; exit 77; }
 
-browser=""
-for candidate in /home/ubuntu/.cache/ms-playwright-arm64/chromium-*/chrome-linux-arm64/chrome /usr/bin/google-chrome-stable /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
-  [[ -x "$candidate" ]] || continue
-  resolved="$(readlink -f "$candidate" 2>/dev/null || true)"
-  [[ "$resolved" == "/usr/bin/snap" || "$resolved" == "/snap/bin/chromium" ]] && continue
-  browser="$candidate"; break
-done
-[[ -n "$browser" ]] || { echo "supported non-Snap Chromium browser not installed" >&2; exit 69; }
+browser="$(bash "$SOURCE_ROOT/scripts/ensure-playwright-chromium.sh")"
 
 PLAYWRIGHT_CORE_VERSION='1.63.0'
 PERSISTED_PLAYWRIGHT="$BROWSER_ROOT/runtime/node_modules/playwright-core"
