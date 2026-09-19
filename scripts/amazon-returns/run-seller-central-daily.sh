@@ -91,7 +91,20 @@ if [[ "$ready" -ne 1 ]]; then
   exit 75
 fi
 
-"$NODE_BIN" "$ROOT/scripts/amazon-returns/prune-seller-central-cdp-targets.mjs"
+prune_ok=0
+for attempt in 1 2 3; do
+  if "$NODE_BIN" "$ROOT/scripts/amazon-returns/prune-seller-central-cdp-targets.mjs"; then
+    prune_ok=1
+    break
+  fi
+  echo "Seller Central CDP prune attempt ${attempt} failed" >&2
+  [[ "$attempt" -lt 3 ]] && sleep 2
+done
+if [[ "$prune_ok" -ne 1 ]]; then
+  record_auth_failure "CDP_PRUNE_FAILED"
+  echo "CDP_PRUNE_FAILED" >&2
+  exit 75
+fi
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --auth-check
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-support-lookup-probe.mjs" || true
 if [[ " ${*:-} " == *" --auth-check-only "* ]]; then

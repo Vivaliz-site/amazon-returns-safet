@@ -2,9 +2,13 @@
 Description=ShopVivaliz Amazon Returns Seller Central daily browser cycle
 After=network-online.target amazon-returns-safet.service
 Wants=network-online.target
+StartLimitIntervalSec=10min
+StartLimitBurst=3
 
 [Service]
 Type=oneshot
+Restart=on-failure
+RestartSec=30s
 User=ubuntu
 Group=www-data
 CPUWeight=20
