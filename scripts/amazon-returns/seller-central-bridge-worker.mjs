@@ -482,6 +482,18 @@ async function setSafeTOrderInput(cdp, orderId) {
   return false;
 }
 
+const SAFE_T_ELIGIBILITY_RETRY_ATTEMPTS = 12;
+
+async function clickSafeTEligibilityButton(cdp) {
+  const eligibilityLabels=['Verificar Elegibilidade','Verificar elegibilidade','Check Eligibility','Check eligibility'];
+  for (let attempt = 0; attempt < SAFE_T_ELIGIBILITY_RETRY_ATTEMPTS; attempt++) {
+    const clicked = (await cdp.evaluate(`(()=>{const labels=${JSON.stringify(eligibilityLabels)}.map(v=>v.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase());const docs=[];const visitDocument=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visitDocument(frame.contentDocument)}catch{}}};visitDocument(document);const matches=[];const seen=new Set();for(const d of docs){for(const host of d.querySelectorAll('kat-button,button')){const button=host.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(!button||button.disabled||seen.has(button))continue;const hostLabel=host.getAttribute('label')||host.getAttribute('aria-label')||host.innerText||'';const buttonLabel=button.getAttribute('label')||button.getAttribute('aria-label')||button.innerText||'';const raw=(hostLabel||buttonLabel).normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();if(!labels.includes(raw))continue;seen.add(button);matches.push(button)}}if(matches.length!==1)return false;matches[0].click();return true})()`)) === true;
+    if (clicked) return true;
+    if (attempt + 1 < SAFE_T_ELIGIBILITY_RETRY_ATTEMPTS) await sleep(500);
+  }
+  return false;
+}
+
 async function safeTSubmit(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -495,8 +507,7 @@ async function safeTSubmit(cdp, job) {
   if (!orderInputReady) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ORDER_INPUT_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
-  const eligibilityLabels=['Verificar Elegibilidade','Verificar elegibilidade','Check Eligibility','Check eligibility'];
-  const eligibilityClicked = await cdp.evaluate(`(()=>{const labels=${JSON.stringify(eligibilityLabels)}.map(v=>v.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase());const docs=[document,...[...document.querySelectorAll('iframe')].map(f=>f.contentDocument).filter(Boolean)];const matches=[];for(const d of docs){for(const host of d.querySelectorAll('kat-button,button')){const raw=(host.getAttribute('label')||host.getAttribute('aria-label')||host.innerText||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();if(!labels.includes(raw))continue;const button=host.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(button&&!button.disabled)matches.push(button)}}if(matches.length!==1)return false;matches[0].click();return true})()`) === true;
+  const eligibilityClicked = await clickSafeTEligibilityButton(cdp);
   if (!eligibilityClicked) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ELIGIBILITY_BUTTON_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
