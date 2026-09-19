@@ -24,6 +24,18 @@ assert.ok(
   'SAFE-T fallback discovery must be restricted to pedido/order field hints.',
 );
 assert.ok(
+  worker.includes("input.getAttribute('placeholder')"),
+  'SAFE-T fallback must inspect the real input attributes inside a kat-input shadow root.',
+);
+assert.ok(
+  worker.includes('SAFE_T_ORDER_INPUT_RETRY_ATTEMPTS'),
+  'SAFE-T order input discovery must use a bounded retry window for asynchronously rendered fields.',
+);
+assert.ok(
+  worker.includes('visitDocument(document)'),
+  'SAFE-T order input discovery must traverse same-origin nested iframe documents deterministically.',
+);
+assert.ok(
   worker.includes('if(matches.length!==1)return false'),
   'SAFE-T semantic fallback must fail closed unless exactly one candidate exists.',
 );
