@@ -76,6 +76,13 @@ final class SvAmazonErpSalesReturnService
                 $workflow=$this->store->linkReturnInvoice($orderId,$existingInvoice);
                 return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
             }
+            if($persistedStatus==='RETURN_CREATED_WAITING_INVOICE'){
+                $readBackInvoice=$this->returnInvoiceFromSalesReturnReadBack($workflow,$orderId);
+                if(is_array($readBackInvoice)){
+                    $workflow=$this->store->linkReturnInvoice($orderId,$readBackInvoice);
+                    return $this->store->recordReconciledQuantity($orderId,$refundedQuantity);
+                }
+            }
         }
 
         // Reuse the already-persisted sale identity before spending ERP API quota.
@@ -196,6 +203,41 @@ final class SvAmazonErpSalesReturnService
         $code=self::safeCode($result['error_code']??null,'ERP_SALES_RETURN_CREATE_FAILED');
         $message=self::safeMessage($result['error_message']??null,'Nao foi possivel criar a devolucao automaticamente no Olist/Tiny.');
         return $this->store->markBlocked($orderId,$code,$message);
+    }
+
+    /** @param array<string,mixed> $workflow @return array<string,mixed>|null */
+    private function returnInvoiceFromSalesReturnReadBack(array $workflow,string $orderId): ?array
+    {
+        $returnId=trim((string)($workflow['erp_sales_return_id']??''));
+        if($returnId==='')return null;
+        $readBack=$this->gateway->readBack($returnId,$orderId);
+        if(!$this->validReadBack($readBack,$returnId,$orderId)){
+            throw new RuntimeException('Persisted ERP sales return could not be confirmed by target read-back.');
+        }
+
+        $expectedOriginalInvoiceId=trim((string)($workflow['original_invoice_id']??''));
+        $readOriginalInvoiceId=trim((string)($readBack['idNotaFiscal']??''));
+        if(
+            $expectedOriginalInvoiceId!=='' && $readOriginalInvoiceId!==''
+            && $expectedOriginalInvoiceId!==$readOriginalInvoiceId
+        ){
+            throw new UnexpectedValueException('ERP sales return read-back belongs to a different original invoice.');
+        }
+
+        $returnInvoiceId=trim((string)($readBack['idNotaFiscalEntrada']??''));
+        if(preg_match('/^[1-9][0-9]*$/D',$returnInvoiceId)!==1)return null;
+
+        return [
+            'source'=>'ERP_OLIST_SALES_RETURN_READBACK',
+            'invoice_id'=>$returnInvoiceId,
+            'invoice_number'=>self::nullable($readBack['numeroNotaFiscalEntrada']??null),
+            'series'=>self::nullable($readBack['serieNotaFiscalEntrada']??null),
+            'access_key'=>self::nullable($readBack['chaveAcessoNotaFiscalEntrada']??null),
+            'status'=>self::nullable($readBack['situacao']??null),
+            'purpose'=>4,
+            'order_id'=>$orderId,
+            'issued_at'=>self::nullable($readBack['dataDevolucao']??null),
+        ];
     }
 
     /** @param array<string,mixed> $workflow @return array<string,mixed>|null */
