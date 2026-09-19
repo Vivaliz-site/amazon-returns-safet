@@ -51,7 +51,7 @@ $support=[
     'payload'=>[
         'case_id'=>'22144771981',
         'case_status'=>'RESOLVED',
-        'latest_text'=>'Após consultar o relatório de pagamentos, confirmamos que o valor referente a esse pedido já foi reembolsado diretamente ao comprador. Isso significa que a transação de devolução foi processada e o cliente final já recebeu o estorno correspondente.',
+        'latest_text'=>'Entendemos que ao verificar a conciliação financeira da sua conta, você identificou um saldo pendente de R$ 68,57 sem nenhum crédito registrado até o momento. Após consultar o relatório de pagamentos na sua conta Seller Central, confirmamos que o valor referente a esse pedido já foi reembolsado diretamente ao comprador. Isso significa que a transação de devolução foi processada e o cliente final já recebeu o estorno correspondente. Recomendamos consultar periodicamente seus relatórios de pagamentos para ter visibilidade sobre reembolsos, créditos e eventuais ressarcimentos.',
     ],
 ];
 
