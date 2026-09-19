@@ -84,4 +84,38 @@ foreach([
 }
 brsrAssert(!str_contains($narrative,'SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT'),'Internal reason codes must never leak into the external Seller Support message.');
 
+$pendingSellerSupport=$support;
+$pendingSellerSupport['id']=3;
+$pendingSellerSupport['payload']['case_status']='PENDINGSELLERACTION';
+brsrSame(
+    'BUYER_REFUND_ONLY',
+    SvAmazonSellerSupportStatus::resolution($pendingSellerSupport['payload']),
+    'A Seller Support response waiting for seller action must still classify buyer refund separately from seller reimbursement.'
+);
+$pendingSellerDecision=$engine->nextAction(
+    $case,
+    [$finance,$pendingSellerSupport],
+    ['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'],
+    new DateTimeImmutable('2026-09-19T18:40:00Z')
+);
+brsrSame(
+    'SELLER_SUPPORT_UPDATE',
+    $pendingSellerDecision['action']??null,
+    'PENDINGSELLERACTION must trigger the seller-reimbursement clarification when finance proves the seller is unpaid.'
+);
+brsrSame(
+    'SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT',
+    $pendingSellerDecision['reason']??null,
+    'Seller-action status must preserve the buyer-vs-seller reimbursement distinction.'
+);
+
+$pendingAmazonSupport=$support;
+$pendingAmazonSupport['id']=4;
+$pendingAmazonSupport['payload']['case_status']='PENDINGAMAZONACTION';
+brsrSame(
+    'ACTIVE',
+    SvAmazonSellerSupportStatus::resolution($pendingAmazonSupport['payload']),
+    'A case still pending Amazon action must not be auto-replied merely because the thread mentions a buyer refund.'
+);
+
 echo "seller-support-buyer-refund-test: OK\n";

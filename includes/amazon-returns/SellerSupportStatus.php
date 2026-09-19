@@ -92,8 +92,12 @@ final class SvAmazonSellerSupportStatus
     public static function resolution(array $support): string
     {
         $support=self::normalize($support);
-        if(!self::isTerminalStatus($support['case_status']))return 'ACTIVE';
+        $terminal=self::isTerminalStatus($support['case_status']);
         $text=mb_strtolower($support['latest_text'],'UTF-8');
+        if(!$terminal){
+            if(self::sellerActionPending($support['case_status']) && self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
+            return 'ACTIVE';
+        }
         if(str_contains($text,'safe-t-review@amazon.com'))return 'EMAIL_REVIEW';
         $money=preg_match('/(?:reembols|reimbursement|cr[eé]dito|credit)/u',$text)===1;
         $processed=preg_match('/(?:processad|processed|successful|sucesso|emitid|issued)/u',$text)===1;
@@ -104,6 +108,12 @@ final class SvAmazonSellerSupportStatus
         $appeal=preg_match('/(?:appeal|recurso|recorr)/u',$text)===1;
         if($safeT && $appeal)return 'SAFE_T_APPEAL';
         return 'TERMINAL_AMBIGUOUS';
+    }
+
+    private static function sellerActionPending(string $status): bool
+    {
+        $normalized=preg_replace('/[^A-Z0-9]+/','',strtoupper(trim($status))) ?? '';
+        return in_array($normalized,['PENDINGSELLERACTION','AWAITINGSELLERACTION'],true);
     }
 
     private static function buyerRefundOnly(string $text): bool
