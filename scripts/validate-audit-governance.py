@@ -127,6 +127,7 @@ def validate_markers() -> list[dict[str, object]]:
     optional_entrypoints = {
         "AGENTS.md": "AUDIT_UNIVERSAL_COVERAGE_V1.md",
         "CLAUDE.md": "AUDIT_UNIVERSAL_COVERAGE_V1.md",
+        "GEMINI.md": "AUDIT_UNIVERSAL_COVERAGE_V1.md",
         "REGRAS-AGENTES-CENTRALIZADAS.md": "AUDITORIA_EXTREMA_UNIVERSAL_V4",
     }
     for relative, marker in optional_entrypoints.items():
