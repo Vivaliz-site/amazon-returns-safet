@@ -25,6 +25,12 @@ ssrcAssert(str_contains($service,'SELLER_SUPPORT_STATUS_OBSERVED'),'Read-only st
 ssrcAssert(str_contains($reader,"job.action === 'SELLER_SUPPORT_READ'"),'Read-only Seller Central worker must execute Seller Support reads.');
 ssrcAssert(str_contains($reader,'SearchForCases'),'Read-only Seller Central worker must use the authenticated support case API for reconciliation.');
 ssrcAssert(str_contains($reader,'ViewCase'),'Read-only Seller Central worker must read authoritative support case details.');
+ssrcAssert(str_contains($reader,"result('NOT_FOUND', {"),'Identity mismatch must be terminal for the stale binding, not retried as UI drift.');
+ssrcAssert(str_contains($reader,'SELLER_SUPPORT_CASE_IDENTITY_MISMATCH'),'Read worker must name deterministic support identity corruption.');
+ssrcAssert(str_contains($reader,'external_id: supportCaseId'),'Mismatch result must carry the exact stale support ID for compare-and-clear recovery.');
+ssrcAssert(str_contains($service,'completeSupportIdentityMismatch'),'Status bridge must repair a proven stale Seller Support binding.');
+ssrcAssert(str_contains($service,'SELLER_SUPPORT_IDENTITY_MISMATCH'),'Recovery must preserve an immutable audit event.');
+ssrcAssert(str_contains($service,"['support_case_id'=>null]"),'Recovery must clear only the proven stale binding.');
 ssrcAssert(!str_contains($reader,'SELLER_SUPPORT_OPEN'),'Read-only Seller Central worker must never contain Seller Support write actions.');
 ssrcAssert(!str_contains($reader,'SELLER_SUPPORT_UPDATE'),'Read-only Seller Central worker must never contain Seller Support update actions.');
 
