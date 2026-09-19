@@ -714,7 +714,15 @@ class SvAmazonReturnsDaemon
             $events=$this->persistence->events->eventsForCase($caseId);
             $transactions=$worker->transactionsFromEvents($events);
             $result=$worker->reconcileCase($case,$transactions);
-            $apply=$worker->shouldUpdateCase($case,$transactions);
+            if($transactions!==[])$withTransactions++;
+            $candidate=$worker->shouldUpdateCase($case,$transactions);
+            $patch=$candidate?$worker->caseUpdate(
+                $case,
+                $result,
+                $events,
+                new DateTimeImmutable('now',new DateTimeZone('UTC'))
+            ):[];
+            $apply=$candidate && SvAmazonReturnsReconcileWorker::casePatchChanges($case,$patch);
             $financialAudit[]=SvAmazonReturnsRuntimeAudit::financial($case,$transactions,$result,$apply);
             $confirmation=SvAmazonFinancialRevalidation::confirmation($case,$events,$result,gmdate('Y-m-d H:i:s'));
             $check=SvAmazonFinancialCheckEvidence::reconciled($caseId,$events,$result,new DateTimeImmutable('now',new DateTimeZone('UTC')));
@@ -723,16 +731,7 @@ class SvAmazonReturnsDaemon
                 if($confirmation!==null)$this->persistence->events->append($confirmation);
                 continue;
             }
-            if($transactions!==[])$withTransactions++;
-            $this->persistence->cases->update(
-                $caseId,
-                $worker->caseUpdate(
-                    $case,
-                    $result,
-                    $events,
-                    new DateTimeImmutable('now',new DateTimeZone('UTC'))
-                )
-            );
+            $this->persistence->cases->update($caseId,$patch);
             if($confirmation!==null)$this->persistence->events->append($confirmation);
             $updated++;
             }catch(Throwable $e){
