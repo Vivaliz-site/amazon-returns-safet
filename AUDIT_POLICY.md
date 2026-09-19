@@ -2,7 +2,7 @@
 
 Esta política é obrigatória para qualquer agente humano ou automatizado que trabalhe neste repositório.
 
-**Versão global:** `2026-09-19-universal-error-coverage-v4`
+**Versão global:** `2026-09-19-universal-architecture-v5`
 
 ## Regra permanente
 Nenhuma implementação, feature, release ou projeto pode ser declarado concluído apenas porque código foi escrito, build passou ou testes ficaram verdes. Antes da conclusão, devem ser validados comportamento, regressões, integrações afetadas, dados, estados, rotinas automáticas e riscos operacionais pertinentes.
@@ -12,6 +12,7 @@ Toda auditoria formal deve executar como conjunto obrigatório:
 - `docs/quality/EXTREME_AUDIT_PROTOCOL.md`;
 - `docs/quality/AUDIT_RUNTIME_PARITY_V1.md`;
 - `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md`;
+- `docs/quality/ARCHITECTURE_DEPLOY_AUDIT_V1.md`;
 - `docs/quality/AUDIT_SELF_TEST_V1.md` quando houver mudança material no mecanismo/gate de auditoria ou quando o projeto possuir gates automatizados a certificar;
 - `docs/quality/AUDIT_OVERLAY.md`.
 
@@ -86,12 +87,13 @@ Antes de encerrar uma auditoria formal, prove conforme aplicável:
 15. evidência fresca/proveniente do release certificado;
 16. mapa de impacto e taxonomia universal revisados;
 17. matriz de negativos/boundaries materiais executada;
-18. reconciliação de dados e detecção de órfãos concluídas;
-19. falhas silenciosas e false-green explicitamente investigados;
-20. baseline/regressão operacional comparado quando material;
-21. owner/deadline/detector definidos para pendências legítimas;
-22. pacote de evidência estruturada produzido/atualizado;
-23. self-test dos gates executado quando aplicável.
+18. auditoria arquitetural/deploy executada, com caminho crítico e gargalos materiais classificados;
+19. reconciliação de dados e detecção de órfãos concluídas;
+20. falhas silenciosas e false-green explicitamente investigados;
+21. baseline/regressão operacional comparado quando material;
+22. owner/deadline/detector definidos para pendências legítimas;
+23. pacote de evidência estruturada produzido/atualizado;
+24. self-test dos gates executado quando aplicável.
 
 Se qualquer item crítico aplicável não tiver evidência, o estado é `NÃO APTO` ou `APTO COM RESSALVAS` conforme esta política, nunca conclusão silenciosa.
 
@@ -100,6 +102,11 @@ A Auditoria Extrema deve executar `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md`.
 
 A taxonomia é deliberadamente aberta. Não é permitido interpretar sua lista como enumeração completa dos erros possíveis. Uma rodada exploratória adversarial deve procurar classes não previstas e promover novas classes descobertas à governança futura.
 
+## ARCHITECTURE_DEPLOY_AUDIT_V1 — arquitetura e velocidade também são qualidade
+Toda Auditoria Extrema deve executar `docs/quality/ARCHITECTURE_DEPLOY_AUDIT_V1.md`. A auditoria deve reconstruir arquitetura real e avaliar deploy/CI, separação de runners, caminho crítico, build-once/promote, cache, provisionamento/restart por impacto, migrations expand/contract, canary/rollback, workflow sprawl, contratos cross-repo, ownership de dados, config/secrets, hotspots de código, blast radius e proveniência do release.
+
+Melhoria arquitetural material identificada deve ser tratada como `IMPROVEMENT_REQUIRED` quando reduzir risco operacional, fila de deploy, ponto único de falha, acoplamento indevido, retrabalho ou custo recorrente. Arquitetura funcional porém desnecessariamente lenta/frágil não é considerada “sem erro”.
+
 ## AUDIT_SELF_TEST_V1 — auditoria que não se testa não certifica
 Sempre que a política ou os gates mudarem materialmente, execute `docs/quality/AUDIT_SELF_TEST_V1.md` nos mecanismos automatizados aplicáveis. Deve existir evidência de que falhas deliberadamente injetadas tornam o gate vermelho e de que casos válidos não são reprovados sem motivo.
 
@@ -107,7 +114,7 @@ Sempre que a política ou os gates mudarem materialmente, execute `docs/quality/
 O objetivo é maximizar cobertura e reduzir pontos cegos, não afirmar onisciência. É proibido declarar que “qualquer erro possível” foi matematicamente excluído. O que pode ser declarado é que todas as classes materiais conhecidas foram exercitadas, que houve caça adversarial a classes desconhecidas e que a dívida de evidência residual foi explicitada.
 
 ## Quando a auditoria extrema é obrigatória
-Execute integralmente o conjunto obrigatório de `docs/quality/EXTREME_AUDIT_PROTOCOL.md`, `docs/quality/AUDIT_RUNTIME_PARITY_V1.md`, `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md`, `docs/quality/AUDIT_SELF_TEST_V1.md` quando aplicável e `docs/quality/AUDIT_OVERLAY.md` quando houver qualquer uma destas condições:
+Execute integralmente o conjunto obrigatório de `docs/quality/EXTREME_AUDIT_PROTOCOL.md`, `docs/quality/AUDIT_RUNTIME_PARITY_V1.md`, `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md`, `docs/quality/ARCHITECTURE_DEPLOY_AUDIT_V1.md`, `docs/quality/AUDIT_SELF_TEST_V1.md` quando aplicável e `docs/quality/AUDIT_OVERLAY.md` quando houver qualquer uma destas condições:
 - projeto, módulo ou release declarado "pronto", "finalizado", "100%", "apto para produção" ou equivalente;
 - solicitação explícita de auditoria, validação completa, revisão extrema ou investigação sistêmica;
 - mudança material em autenticação/autorização, schema, regras financeiras, máquina de estados, multi-tenant, integrações externas, workers, filas, cron/scheduler, infraestrutura, deploy, backup/restore ou regras críticas de negócio;
@@ -131,7 +138,7 @@ Execute integralmente o conjunto obrigatório de `docs/quality/EXTREME_AUDIT_PRO
 ## Prompt curto de ativação
 Use:
 
-> Execute integralmente `docs/quality/EXTREME_AUDIT_PROTOCOL.md`, `docs/quality/AUDIT_RUNTIME_PARITY_V1.md`, `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md`, `docs/quality/AUDIT_SELF_TEST_V1.md` quando aplicável e `docs/quality/AUDIT_OVERLAY.md`. Assuma Auditor + Consultor + Operador. MAPEAR → IMPACTAR → QUESTIONAR → REPRODUZIR → PROVAR → CLASSIFICAR → CORRIGIR → BUSCAR EQUIVALENTES → RECONCILIAR DADOS → TESTAR → DEPLOYAR → OBSERVAR → RECONCILIAR EFEITOS → REGREDIR → REAUDITAR → AUTO-TESTAR A AUDITORIA → META-AUDITAR. Cubra taxonomia universal, negativos, boundaries, falhas silenciosas, órfãos, drift, flakiness e unknown unknowns; corrija todo achado SAFE executável e só conclua após zero pendência crítica, runtime parity e AUDIT_DEFINITION_OF_DONE_V1.
+> Execute integralmente `docs/quality/EXTREME_AUDIT_PROTOCOL.md`, `docs/quality/AUDIT_RUNTIME_PARITY_V1.md`, `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md`, `docs/quality/ARCHITECTURE_DEPLOY_AUDIT_V1.md`, `docs/quality/AUDIT_SELF_TEST_V1.md` quando aplicável e `docs/quality/AUDIT_OVERLAY.md`. Assuma Auditor + Consultor + Operador. MAPEAR → IMPACTAR → QUESTIONAR → REPRODUZIR → PROVAR → CLASSIFICAR → CORRIGIR → BUSCAR EQUIVALENTES → RECONCILIAR DADOS → TESTAR → DEPLOYAR → OBSERVAR → RECONCILIAR EFEITOS → REGREDIR → REAUDITAR → AUTO-TESTAR A AUDITORIA → META-AUDITAR. Cubra taxonomia universal, negativos, boundaries, falhas silenciosas, órfãos, drift, flakiness e unknown unknowns; corrija todo achado SAFE executável e só conclua após zero pendência crítica, runtime parity e AUDIT_DEFINITION_OF_DONE_V1.
 
 ## EXECUTION_OWNERSHIP_FAILOVER_V1 — supervisao global de subagentes
 Toda delegacao para subagente e uma execucao supervisionada. O agente controlador continua sendo o dono da conclusao e deve monitorar a tarefa desde o disparo, registrando identidade da sessao/processo, inicio, estado/commit de base, artefatos esperados e evidencias objetivas de progresso.

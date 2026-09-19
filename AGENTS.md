@@ -80,3 +80,6 @@ Antes de qualquer operacao em terminal/CLI, leia e cumpra a secao `Isolamento ob
 ## Auditoria Extrema — cobertura universal obrigatória
 
 Quando houver auditoria completa/extrema, validação de release/apto ou qualquer gatilho de `AUDIT_POLICY.md`, todos os agentes devem executar integralmente `AUDIT_POLICY.md`, `docs/quality/EXTREME_AUDIT_PROTOCOL.md`, `docs/quality/AUDIT_RUNTIME_PARITY_V1.md`, `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md`, `docs/quality/AUDIT_SELF_TEST_V1.md` quando aplicável e `docs/quality/AUDIT_OVERLAY.md`. A auditoria inclui melhorias, remediação de achados SAFE, reconciliação de dados, negativos/boundaries, falhas silenciosas, órfãos, flaky/false-green e rodada adversarial de unknown unknowns. Relatório sem remediação não conclui a auditoria.
+
+## Auditoria Extrema - governanca global
+Nos gatilhos de `AUDIT_POLICY.md`, execute o conjunto global completo, incluindo `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md` e `docs/quality/ARCHITECTURE_DEPLOY_AUDIT_V1.md`, alem de protocolo/runtime parity/overlay/self-test aplicavel. O gate global e fail-closed e a politica deve permanecer alinhada ao manifesto canonico.

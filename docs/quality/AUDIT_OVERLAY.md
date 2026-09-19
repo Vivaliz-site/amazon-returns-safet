@@ -33,7 +33,12 @@ Além dos invariantes de domínio, o overlay deve identificar:
 - quais reconciliações quantitativas/órfãos precisam ser provados;
 - quais baselines operacionais devem ser comparados;
 - qual evidence artifact/manifest será produzido;
-- como o self-test dos gates será exercitado quando aplicável.
+- como o self-test dos gates será exercitado quando aplicável;
+- mapa de arquitetura/runtime e dependências cross-repo;
+- baseline/budget de CI, deploy e rollback;
+- quais passos podem sair do runner de produção;
+- mapa `path/componente → serviço/restart/provisionamento`;
+- owners de dados/filas/contratos e fitness functions arquiteturais.
 
 Esses itens passam a integrar o Gate Final quando materiais ao domínio.
 
