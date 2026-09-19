@@ -1,0 +1,40 @@
+name: Audit Governance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-governance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Self-test extreme audit governance
+        run: python scripts/validate-audit-governance.py --output-dir artifacts/audit-governance-self-test
+      - name: Verify evidence
+        run: |
+          test -s artifacts/audit-governance-self-test/report.json
+          test -s artifacts/audit-governance-self-test/report.md
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-governance-${{ github.run_id }}
+          path: artifacts/audit-governance-self-test/
+          if-no-files-found: error
+          retention-days: 90

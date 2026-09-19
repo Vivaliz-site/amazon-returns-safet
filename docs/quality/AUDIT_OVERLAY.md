@@ -20,5 +20,22 @@ Se presentes no projeto, trate como área crítica: dinheiro/preço/reembolso; p
 ## Matriz de invariantes específica
 A auditoria deve criar no relatório uma tabela `Invariante | Fonte da regra | Garantia técnica | Teste/evidência | Resultado`. Regras conflitantes devem ser resolvidas pela hierarquia de autoridade já definida no projeto; se não houver hierarquia clara, registre o conflito como achado.
 
+## Extensões obrigatórias do projeto
+Além dos invariantes de domínio, o overlay deve identificar:
+- quais P4 são `IMPROVEMENT_REQUIRED` versus `IMPROVEMENT_OPTIONAL`;
+- quais automações/serviços/processos podem concorrer ou duplicar responsabilidade;
+- quais falhas críticas dependem de alerta/watchdog/dead-letter e como serão exercitadas;
+- quais jobs/workers/webhooks precisam ser observados após deploy;
+- qual estratégia segura de rollback/restore é aplicável;
+- quais classes do `AUDIT_ESCAPE_REGISTER.md` se aplicam ao projeto;
+- quais classes de `AUDIT_ERROR_TAXONOMY_V1` são materiais e quais são `N/A` com justificativa;
+- quais boundaries, negativos e combinações de ambiente alteram o risco;
+- quais reconciliações quantitativas/órfãos precisam ser provados;
+- quais baselines operacionais devem ser comparados;
+- qual evidence artifact/manifest será produzido;
+- como o self-test dos gates será exercitado quando aplicável.
+
+Esses itens passam a integrar o Gate Final quando materiais ao domínio.
+
 ## Mudança deste overlay
 Quando uma auditoria revelar uma regra estrutural e duradoura que não está adequadamente documentada em outra fonte autoritativa, atualize este overlay no mesmo fluxo de PR. Não copie detalhes temporários, secrets ou estado operacional volátil.
