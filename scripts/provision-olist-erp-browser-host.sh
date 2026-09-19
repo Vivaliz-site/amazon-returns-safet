@@ -26,18 +26,33 @@ for candidate in /home/ubuntu/.cache/ms-playwright-arm64/chromium-*/chrome-linux
 done
 [[ -n "$browser" ]] || { echo "supported non-Snap Chromium browser not installed" >&2; exit 69; }
 
-playwright=""
-for candidate in /home/ubuntu/.npm/_npx/*/node_modules/playwright-core /home/ubuntu/.local/lib/node_modules/playwright-core /usr/local/lib/node_modules/playwright-core; do
-  [[ -f "$candidate/package.json" ]] || continue
-  playwright="$candidate"; break
-done
-[[ -n "$playwright" ]] || { echo "playwright-core runtime not installed on host" >&2; exit 69; }
-
+PLAYWRIGHT_CORE_VERSION='1.63.0'
+PERSISTED_PLAYWRIGHT="$BROWSER_ROOT/runtime/node_modules/playwright-core"
 install -d -o ubuntu -g www-data -m 0750 "$BROWSER_ROOT"
 install -d -o ubuntu -g www-data -m 0700 "$BROWSER_ROOT/profile"
 install -d -o ubuntu -g www-data -m 0750 "$BROWSER_ROOT/runtime/node_modules"
-rm -rf "$BROWSER_ROOT/runtime/node_modules/playwright-core"
-cp -a "$playwright" "$BROWSER_ROOT/runtime/node_modules/playwright-core"
+
+playwright=""
+if [[ -f "$PERSISTED_PLAYWRIGHT/package.json" ]]; then
+  playwright="$PERSISTED_PLAYWRIGHT"
+fi
+if [[ -z "$playwright" ]]; then
+  for candidate in /home/ubuntu/.npm/_npx/*/node_modules/playwright-core /home/ubuntu/.local/lib/node_modules/playwright-core /usr/local/lib/node_modules/playwright-core; do
+    [[ -f "$candidate/package.json" ]] || continue
+    playwright="$candidate"; break
+  done
+fi
+if [[ -z "$playwright" ]]; then
+  npm_bin="$(command -v npm 2>/dev/null || true)"
+  [[ -n "$npm_bin" && -x "$npm_bin" ]] || { echo "npm is required to bootstrap playwright-core" >&2; exit 69; }
+  runuser -u ubuntu -- "$npm_bin" install --prefix "$BROWSER_ROOT/runtime" --no-save --omit=dev --ignore-scripts --no-audit --no-fund "playwright-core@$PLAYWRIGHT_CORE_VERSION"
+  playwright="$PERSISTED_PLAYWRIGHT"
+fi
+[[ -f "$playwright/package.json" ]] || { echo "playwright-core runtime bootstrap failed" >&2; exit 69; }
+if [[ "$playwright" != "$PERSISTED_PLAYWRIGHT" ]]; then
+  rm -rf "$PERSISTED_PLAYWRIGHT"
+  cp -a "$playwright" "$PERSISTED_PLAYWRIGHT"
+fi
 chown -R ubuntu:www-data "$BROWSER_ROOT/runtime"
 find "$BROWSER_ROOT/runtime" -type d -exec chmod 0750 {} +
 find "$BROWSER_ROOT/runtime" -type f -exec chmod u=rw,g=r,o= {} +
