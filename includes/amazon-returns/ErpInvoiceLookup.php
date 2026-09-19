@@ -174,9 +174,25 @@ final class SvAmazonErpInvoiceLookup
             $this->invoicesForPeriod($orderDate,$windowEnd),
             $orderDate,$windowEnd,$money,$expected
         );
-        if(count($window)!==1)return null;
-        $sale=$this->saleProjection(array_values($window)[0],$amazonOrderId,null);
-        $sale['match_method']='ORPHAN_INVOICE_EXACT_AMOUNT_ITEMS_DATE_WINDOW_14D';
+        if(count($window)>1)return null;
+        if(count($window)===1){
+            $sale=$this->saleProjection(array_values($window)[0],$amazonOrderId,null);
+            $sale['match_method']='ORPHAN_INVOICE_EXACT_AMOUNT_ITEMS_DATE_WINDOW_14D';
+            return $sale;
+        }
+
+        // Legacy Amazon FBA imports can preserve the fiscal invoice while losing both
+        // the ecommerce link and the historical seller SKU used on that invoice.
+        // Recover only on the exact Amazon order date, and only when amount plus the
+        // complete integer quantity signature identify exactly one authorized orphan
+        // invoice. A second candidate keeps the workflow blocked.
+        $legacy=$this->matchOrphanSaleInvoicesByQuantitySignature(
+            $this->invoicesForPeriod($orderDate,$orderDate),
+            $orderDate,$money,$expected
+        );
+        if(count($legacy)!==1)return null;
+        $sale=$this->saleProjection(array_values($legacy)[0],$amazonOrderId,null);
+        $sale['match_method']='ORPHAN_INVOICE_EXACT_DATE_AMOUNT_QUANTITIES_LEGACY_SKU';
         return $sale;
     }
 
@@ -219,6 +235,67 @@ final class SvAmazonErpInvoiceLookup
             $matches[$invoiceId]=$detail;
         }
         return $matches;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $rows
+     * @param array<string,int> $expected
+     * @return array<string,array<string,mixed>>
+     */
+    private function matchOrphanSaleInvoicesByQuantitySignature(
+        array $rows,string $orderDate,string $money,array $expected
+    ): array {
+        $expectedQuantities=array_values($expected);
+        sort($expectedQuantities,SORT_NUMERIC);
+        if($expectedQuantities===[])return [];
+
+        $candidateIds=[];
+        foreach($rows as $row){
+            if(strtoupper(trim((string)($row['tipo']??'')))!=='S')continue;
+            if(trim((string)($row['situacao']??''))!=='6')continue;
+            if(self::moneyKey($row['valor']??null)!==$money)continue;
+            $ecommerce=is_array($row['ecommerce']??null)?$row['ecommerce']:[];
+            if(!self::isOrphanEcommerce($ecommerce))continue;
+            $id=trim((string)($row['id']??''));
+            if(preg_match('/^[0-9]+$/D',$id)!==1)continue;
+            $candidateIds[$id]=true;
+        }
+
+        $matches=[];
+        foreach(array_keys($candidateIds) as $invoiceId){
+            $invoiceId=(string)$invoiceId;
+            $detail=$this->invoiceDetail($invoiceId);
+            if(trim((string)($detail['id']??''))!==$invoiceId)continue;
+            if(strtoupper(trim((string)($detail['tipo']??'')))!=='S')continue;
+            if(trim((string)($detail['situacao']??''))!=='6')continue;
+            if(trim((string)($detail['finalidade']??''))!=='1')continue;
+            try{$issuedDate=self::dateKey((string)($detail['dataEmissao']??''));}
+            catch(InvalidArgumentException){continue;}
+            if($issuedDate!==$orderDate)continue;
+            if(self::moneyKey($detail['valor']??null)!==$money)continue;
+            $ecommerce=is_array($detail['ecommerce']??null)?$detail['ecommerce']:[];
+            if(!self::isOrphanEcommerce($ecommerce))continue;
+            $items=is_array($detail['itens']??null)?$detail['itens']:[];
+            if(self::invoiceQuantitySignature($items)!==$expectedQuantities)continue;
+            $matches[$invoiceId]=$detail;
+        }
+        return $matches;
+    }
+
+    /** @param list<array<string,mixed>> $items @return list<int> */
+    private static function invoiceQuantitySignature(array $items): array
+    {
+        if($items===[])return [];
+        $quantities=[];
+        foreach($items as $item){
+            if(!is_array($item) || !is_numeric($item['quantidade']??null))return [];
+            $raw=(float)$item['quantidade'];
+            $qty=(int)$raw;
+            if($qty<1 || abs($raw-$qty)>0.000001)return [];
+            $quantities[]=$qty;
+        }
+        sort($quantities,SORT_NUMERIC);
+        return $quantities;
     }
 
     /** @return list<array<string,mixed>> */
