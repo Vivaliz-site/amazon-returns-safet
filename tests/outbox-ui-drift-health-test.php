@@ -5,7 +5,7 @@ $outbox=(string)file_get_contents(dirname(__DIR__).'/includes/amazon-returns/Ten
 $runtime=(string)file_get_contents(dirname(__DIR__).'/includes/amazon-returns/Runtime.php');
 oudAssert(str_contains($outbox,'function countUiDriftPending()'),'Outbox must expose pending UI drift count.');
 oudAssert(str_contains($outbox,"status='PENDING'"),'UI drift count must only cover pending jobs.');
-oudAssert(str_contains($outbox,"last_error LIKE 'UI\\_DRIFT:%'"),'UI drift count must match deferred UI_DRIFT failures only.');
+oudAssert(str_contains($outbox,"LEFT(last_error,9)='UI_DRIFT:'"),'UI drift count must use a MySQL-safe exact UI_DRIFT prefix match.');
 oudAssert(str_contains($runtime,"OUTBOX_UI_DRIFT_PENDING"),'Runtime health must degrade while a deferred UI drift remains pending.');
 oudAssert(str_contains($runtime,"'ui_drift_pending'=>"),'Runtime health must expose UI drift pending count.');
 echo "outbox-ui-drift-health-test: OK\n";

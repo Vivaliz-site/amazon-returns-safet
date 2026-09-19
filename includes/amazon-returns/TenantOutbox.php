@@ -207,7 +207,7 @@ final class SvAmazonTenantReturnsOutbox
         $stmt=$this->prepare(
             "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=:tenant_id "
             . "AND amazon_connection_id=:amazon_connection_id AND status='PENDING' "
-            . "AND last_error LIKE 'UI\_DRIFT:%' ESCAPE '\\'"
+            . "AND LEFT(last_error,9)='UI_DRIFT:'"
         );
         $stmt->execute($this->scopeParams());
         return max(0,(int)$stmt->fetchColumn());
