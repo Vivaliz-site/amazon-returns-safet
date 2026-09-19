@@ -457,6 +457,8 @@ function narrativeFor(job, max = 1000) {
 }
 
 
+const SAFE_T_ORDER_INPUT_RETRY_ATTEMPTS = 12;
+
 async function setSafeTOrderInput(cdp, orderId) {
   const selectors = [
     'kat-input[placeholder="Número do pedido"]',
@@ -464,14 +466,20 @@ async function setSafeTOrderInput(cdp, orderId) {
     'kat-input[placeholder="Order ID"]',
     'kat-input[placeholder="Amazon order ID"]',
   ];
-  for (const selector of selectors) {
-    if (await cdp.setKat(selector, orderId)) return true;
-    if (await cdp.setFrameKat(selector, orderId)) return true;
-  }
-
   const orderHints=['pedido','order'];
   const serializedOrderId = JSON.stringify(String(orderId));
-  return (await cdp.evaluate(`(()=>{const hints=${JSON.stringify(orderHints)};const value=${serializedOrderId};const docs=[document,...[...document.querySelectorAll('iframe')].map(f=>f.contentDocument).filter(Boolean)];const matches=[];for(const d of docs){for(const host of d.querySelectorAll('kat-input,input')){const raw=[host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id].filter(Boolean).join(' ').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase();if(!hints.some(h=>raw.includes(h)))continue;const input=host.tagName==='KAT-INPUT'?host.shadowRoot?.querySelector('input,textarea'):host;if(input&&!input.disabled&&!input.readOnly)matches.push({host,input})}}if(matches.length!==1)return false;const {host,input}=matches[0];const proto=input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;if(typeof setter!=='function')return false;setter.call(input,value);input.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:value}));input.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return host.value===value||input.value===value})()`)) === true;
+
+  for (let attempt = 0; attempt < SAFE_T_ORDER_INPUT_RETRY_ATTEMPTS; attempt++) {
+    for (const selector of selectors) {
+      if (await cdp.setKat(selector, orderId)) return true;
+      if (await cdp.setFrameKat(selector, orderId)) return true;
+    }
+
+    const semanticReady = (await cdp.evaluate(`(()=>{const hints=${JSON.stringify(orderHints)};const value=${serializedOrderId};const docs=[];const visitDocument=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visitDocument(frame.contentDocument)}catch{}}};visitDocument(document);const matches=[];const seen=new Set();for(const d of docs){for(const host of d.querySelectorAll('kat-input,input')){const input=host.tagName==='KAT-INPUT'?host.shadowRoot?.querySelector('input,textarea'):host;if(!input||input.disabled||input.readOnly||seen.has(input))continue;const raw=[host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,input.getAttribute('placeholder'),input.getAttribute('label'),input.getAttribute('aria-label'),input.getAttribute('name'),input.id].filter(Boolean).join(' ').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase();if(!hints.some(h=>raw.includes(h)))continue;seen.add(input);matches.push({host,input})}}if(matches.length!==1)return false;const {host,input}=matches[0];const proto=input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;if(typeof setter!=='function')return false;setter.call(input,value);input.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:value}));input.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return host.value===value||input.value===value})()`)) === true;
+    if (semanticReady) return true;
+    if (attempt + 1 < SAFE_T_ORDER_INPUT_RETRY_ATTEMPTS) await sleep(500);
+  }
+  return false;
 }
 
 async function safeTSubmit(cdp, job) {
