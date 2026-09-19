@@ -33,6 +33,39 @@ final class SvAmazonSellerSupportStatus
         return hash('sha256','seller-support-read|'.$caseId.'|'.trim($supportCaseId).'|'.$day);
     }
 
+    /** @param list<array<string,mixed>> $timeline */
+    public static function readKeyForTimeline(int $caseId,string $supportCaseId,DateTimeInterface $now,array $timeline): string
+    {
+        $daily=self::readKey($caseId,$supportCaseId,$now);
+        $supportCaseId=trim($supportCaseId);
+        $latestObservationRank=[0,0];
+        $latestWrite=null;$latestWriteRank=[0,0];
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            $rank=[$at->getTimestamp(),(int)($event['id']??0)];
+            $type=(string)($event['event_type']??'');
+            $source=(string)($event['source']??'');
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if($type==='SELLER_SUPPORT_STATUS_OBSERVED' && $source==='SELLER_CENTRAL'
+                && trim((string)($payload['case_id']??''))===$supportCaseId && $rank>$latestObservationRank){
+                $latestObservationRank=$rank;
+                continue;
+            }
+            if($type!=='SELLER_CENTRAL_ACTION_RESULT' || $source!=='SELLER_CENTRAL')continue;
+            $action=strtoupper(trim((string)($payload['action']??'')));
+            $status=strtoupper(trim((string)($payload['status']??'')));
+            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
+                || !in_array($status,['ACCEPTED','ALREADY_EXISTS'],true))continue;
+            $external=trim((string)($payload['external_id']??''));
+            if($external!=='' && $external!==$supportCaseId)continue;
+            if($rank>$latestWriteRank){$latestWrite=$event;$latestWriteRank=$rank;}
+        }
+        if($latestWrite===null || $latestWriteRank<=$latestObservationRank)return $daily;
+        $eventId=(int)($latestWrite['id']??0);
+        return hash('sha256','seller-support-read-after-write|'.$caseId.'|'.$supportCaseId.'|'.$eventId);
+    }
+
     /** @return array{append:bool,idempotency_key:string} */
     public static function observationPlan(int $caseId,array $support,array $timeline): array
     {
