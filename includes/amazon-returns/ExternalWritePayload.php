@@ -32,6 +32,12 @@ final class SvAmazonExternalWritePayload
         $order=trim((string)($case['amazon_order_id']??''));
         $safeT=trim((string)($case['safe_t_id']??''));
         $reason=trim((string)($decision['reason']??''));
+        if($action==='SAFE_T_SUBMIT' && $reason==='SUPPORT_RESOLUTION_DIRECTS_SAFE_T_SUBMISSION'){
+            $supportId=trim((string)($decision['support_case_id']??''));
+            return 'Pedido '.$order.'. No chamado de Suporte ao Vendedor '.$supportId.', a Amazon nos orientou expressamente a registrar uma nova reivindicação SAFE-T para este pedido, na categoria "Perdido em trânsito/Itens ausentes". '
+                .'Temos ciência de que o comprador foi reembolsado; porém, o produto não retornou ao nosso estoque e ainda não identificamos em nossa conta de vendedor o ressarcimento correspondente. '
+                .'Estamos registrando esta SAFE-T conforme a orientação recebida e solicitamos o nosso ressarcimento como vendedores.';
+        }
         if($action==='SAFE_T_SUBMIT' && $reason==='DELIVERED_CUSTOMER_REFUNDED_UNPAID'){
             $tracking=[];
             foreach(is_array($case['customer_tracking_ids']??null)?$case['customer_tracking_ids']:[] as $value){

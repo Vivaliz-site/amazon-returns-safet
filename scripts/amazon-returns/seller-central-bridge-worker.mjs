@@ -398,8 +398,8 @@ async function authGate(cdp, uiContract, targetUrl = null, waitMs = 5000) {
 }
 
 function reasonFor(job) {
-  const explicit = text(job.payload?.reason_code).toUpperCase();
-  const explicitSub = text(job.payload?.reason_subcategory);
+  const explicit = text(job.payload?.reason_code || job.payload?.decision?.reason_code).toUpperCase();
+  const explicitSub = text(job.payload?.reason_subcategory || job.payload?.decision?.reason_subcategory);
   if (['ADMGD','NOCOT','MSNG','RNOTR','LBLOT'].includes(explicit)) {
     return { reason: explicit, sub: explicitSub || (explicit === 'RNOTR' ? 'RNOTR-a' : '') };
   }
