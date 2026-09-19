@@ -1388,6 +1388,21 @@ async function supportOpen(cdp, job, options = {}) {
   if (await hillPopupSupportState() === 'UNAVAILABLE') return sellerSupportUnavailableResult();
   return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
 }
+async function ensureSupportReplyComposer(cdp) {
+  const triggerLabels=['Reply','Responder'];
+  const deadline = Date.now() + 15000;
+  let triggered = false;
+  while (Date.now() < deadline) {
+    const selector = text(await cdp.evaluate(`(()=>{const usable=h=>{if(!h||h.disabled===true||h.hasAttribute('disabled'))return false;const placeholder=(h.getAttribute('placeholder')||'').toLowerCase();return !placeholder.includes('feedback')};const kat=[...document.querySelectorAll('kat-textarea')].find(usable);if(kat)return 'kat-textarea';const native=[...document.querySelectorAll('textarea')].find(usable);return native?'textarea':''})()`));
+    if (selector) return selector;
+    if (!triggered) {
+      const opened = text(await cdp.evaluate(`(()=>{const labels=${JSON.stringify(triggerLabels)};for(const h of document.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.getAttribute('aria-label')||h.innerText||'').trim();if(!labels.includes(label))continue;const b=h.tagName==='KAT-BUTTON'?(h.shadowRoot?.querySelector('button')||h):h;if(b&&!b.disabled){b.click();return label}}return ''})()`));
+      if (opened) triggered = true;
+    }
+    await sleep(500);
+  }
+  return '';
+}
 async function supportUpdate(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -1409,12 +1424,12 @@ async function supportUpdate(cdp, job) {
   const narrative = narrativeFor(job, 9000);
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
   if (already) return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-  const selector = await cdp.evaluate(`(()=>{for(const s of ['kat-textarea','textarea']){const h=document.querySelector(s);if(h&&!h.hasAttribute('disabled'))return s}return ''})()`);
+  const selector = await ensureSupportReplyComposer(cdp);
   if (!text(selector)) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
   if (selector === 'kat-textarea') {
     if (!(await cdp.setKat('kat-textarea', narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
   } else {
-    const ok = await cdp.evaluate(`(()=>{const i=document.querySelector('textarea');if(!i)return false;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;setter.call(i,${JSON.stringify(narrative)});i.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:${JSON.stringify(narrative)}}));i.dispatchEvent(new Event('change',{bubbles:true}));return i.value===${JSON.stringify(narrative)}})()`);
+    const ok = await cdp.evaluate(`(()=>{const i=[...document.querySelectorAll('textarea')].find(h=>{if(h.disabled===true||h.hasAttribute('disabled'))return false;const placeholder=(h.getAttribute('placeholder')||'').toLowerCase();return !placeholder.includes('feedback')});if(!i)return false;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;setter.call(i,${JSON.stringify(narrative)});i.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:${JSON.stringify(narrative)}}));i.dispatchEvent(new Event('change',{bubbles:true}));return i.value===${JSON.stringify(narrative)}})()`);
     if (!ok) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_NATIVE_REPLY_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
   }
   const sent = await cdp.evaluate(`(()=>{const labels=['Send','Send message','Reply','Enviar','Enviar mensagem','Responder'];for(const h of document.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.innerText||'').trim();if(!labels.includes(label))continue;const b=h.tagName==='KAT-BUTTON'?h.shadowRoot?.querySelector('button'):h;if(b&&!b.disabled){b.click();return label}}return ''})()`);
