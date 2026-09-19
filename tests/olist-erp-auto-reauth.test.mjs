@@ -42,6 +42,36 @@ test('confirms the ERP concurrent-session entry without consuming Tiny fallback 
   assert.deepEqual(calls, [['click', 'login']]);
 });
 
+test('recovers the observed Olist concurrent-session callback without exposing fallback credentials', async () => {
+  const calls = [];
+  const login = {
+    isVisible: async () => true,
+    click: async () => calls.push(['click', 'login']),
+  };
+  const back = {
+    isVisible: async () => true,
+    click: async () => calls.push(['click', 'back']),
+  };
+  const page = {
+    current: 'https://erp.olist.com/',
+    url() { return this.current; },
+    getByRole: (role, options) => ({
+      first: () => /^voltar para o login$/i.test(String(options?.name?.source || '')) ? back : login,
+    }),
+    waitForURL: async () => { throw new Error('observed concurrent-session takeover failure'); },
+    waitForTimeout: async ms => calls.push(['wait', ms]),
+    goto: async (url) => { calls.push(['goto', url]); page.current = url; },
+  };
+  const result = await ensureOlistAuthenticated(page, { email: 'must-not-be-used', password: 'must-not-be-used' });
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'CONCURRENT_SESSION_CALLBACK_RECOVERED' });
+  assert.deepEqual(calls, [
+    ['click', 'login'],
+    ['click', 'back'],
+    ['wait', 250],
+    ['goto', 'https://erp.olist.com/devolucoes_vendas#list'],
+  ]);
+});
+
 test('fails closed when Tiny login is visible but fallback credentials are unavailable', async () => {
   const page = { url: () => 'https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/auth' };
   const result = await ensureOlistAuthenticated(page, { email: '', password: '' });
