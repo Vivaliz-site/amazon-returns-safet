@@ -6,8 +6,8 @@ Auditoria extrema contraditória concluída em 2026-09-19 conforme `EXTREME_AUDI
 
 ## Última auditoria válida
 - Data: 2026-09-19.
-- Commit/SHA auditado e implantado: `0c37b423eec3a67f2b00f1a52e811537edafa274`.
-- Release: `/home/ubuntu/amazon-returns-deploy/releases/20260919T054547Z-0c37b423eec3`.
+- Baseline funcional auditado: `0c37b423eec3a67f2b00f1a52e811537edafa274`; merges posteriores exclusivamente documentais não alteram a certificação funcional.
+- Release funcional validado originalmente: `/home/ubuntu/amazon-returns-deploy/releases/20260919T054547Z-0c37b423eec3`; o Auto Gate também implantou com sucesso o descendente documental da certificação.
 - Veredito: **APTO**.
 - Confiança: muito alta.
 - Stop-the-line: nenhum blocker interno aberto na conclusão desta auditoria.
@@ -59,4 +59,4 @@ Inventariados. Não há alteração suja exclusiva que precise ser resgatada par
 Baixo e operacional. Estados externos legítimos continuam existindo — por exemplo, devoluções ERP aguardando emissão/associação de NF e casos Amazon já resolvidos/terminais — mas estão representados explicitamente, sob recheck e sem falso-verde de fila ou workflow incompleto.
 
 ## Regra de validade
-Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edafa274` e o runtime observado em 2026-09-19. Mudanças em bridges, write profile, OAuth, políticas, workers, esquema, filas, regras de decisão ou integrações externas críticas exigem nova auditoria contraditória antes de reutilizar o veredito `APTO`.
+Esta certificação cobre o baseline funcional `0c37b423eec3a67f2b00f1a52e811537edafa274` e seus descendentes que alterem somente documentação de auditoria. Qualquer mudança funcional em bridges, write profile, OAuth, políticas, workers, esquema, filas, regras de decisão ou integrações externas críticas exige nova auditoria contraditória antes de reutilizar o veredito `APTO`.
