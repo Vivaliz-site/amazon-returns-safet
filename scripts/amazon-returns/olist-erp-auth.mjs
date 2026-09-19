@@ -31,6 +31,28 @@ async function submitVisibleForm(page) {
   return true;
 }
 
+async function recoverConcurrentSessionEntry(page, timeout) {
+  let back = null;
+  for (const role of ['button', 'link']) {
+    try {
+      const candidate = page.getByRole(role, { name: /^voltar para o login$/i }).first();
+      if (await candidate.isVisible().catch(() => false)) {
+        back = candidate;
+        break;
+      }
+    } catch {}
+  }
+  if (!back) return false;
+  try {
+    await back.click();
+    if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(250);
+    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout });
+    return classifyOlistLocation(page.url()) === 'ERP';
+  } catch {
+    return false;
+  }
+}
+
 export async function ensureOlistAuthenticated(page, credentials = {}, options = {}) {
   const state = classifyOlistLocation(page.url());
   if (state === 'ERP') return { status: 'AUTHENTICATED', reason: 'SESSION_REUSED' };
@@ -48,6 +70,9 @@ export async function ensureOlistAuthenticated(page, credentials = {}, options =
       }
       return { status: 'AUTHENTICATED', reason: 'CONCURRENT_SESSION_CONFIRMED' };
     } catch {
+      if (await recoverConcurrentSessionEntry(page, timeout)) {
+        return { status: 'AUTHENTICATED', reason: 'CONCURRENT_SESSION_CALLBACK_RECOVERED' };
+      }
       return { status: 'AUTH_REQUIRED', reason: 'ERP_ENTRY_FAILED' };
     }
   }
