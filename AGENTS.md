@@ -3,6 +3,14 @@
 ## Acesso a infraestrutura e VMs
 Antes de executar qualquer comando em VM Oracle Cloud, leia e siga obrigatoriamente `AGENTS-VM-ACCESS.md`. O runbook define as duas VMs atuais, Remote Desktop Commander, SSH administrativo, OCI Run Command via perfil `AGENTS`, a ordem de fallback e as regras para nao expor secrets. Nunca presuma root no OCI Run Command.
 
+
+## Credenciais e OTP já provisionados — regra obrigatória para agentes
+- Para rotinas Amazon/Seller Central, **não peça ao usuário credenciais ou OTP como primeira ação**. As credenciais operacionais já foram provisionadas no ambiente seguro autorizado e o TOTP/OTP é fornecido pela infraestrutura de VM.
+- O TOTP do Seller Central fica separado do browser: `shopvivaliz-free-a1` executa o browser/bridge e `always-free-arm-1787907847-26` é o host autenticador restrito. Use o fluxo existente de TOTP remoto; nunca peça para o usuário copiar um código que a VM consegue fornecer.
+- Antes de declarar `AUTH_REQUIRED`, localizar e validar as referências seguras já existentes (env/arquivo protegido/systemd/runbook) **sem imprimir seus valores** e tentar o fluxo automático permitido.
+- Só solicitar intervenção do usuário se houver evidência fresca de que a credencial provisionada está ausente, inválida/revogada, se o TOTP remoto estiver indisponível após diagnóstico, ou se houver CAPTCHA/recovery/novo consentimento que exija ação humana.
+- Senhas, hashes, seeds, OTPs, cookies, tokens e chaves jamais devem ser escritos em documentação, logs, commits, PRs ou respostas de chat. Documente apenas a localização/fonte segura e o procedimento de uso.
+
 ## Latest owner decision: 2026-09-05
 First operational opening for ShopVivaliz is D+45. Do not silently replace this with D+60 or D+75.
 When Amazon requests a wait, preserve its actual requested date and response evidence; resume/reopen in the correct existing channel on that date, after real financial revalidation.
