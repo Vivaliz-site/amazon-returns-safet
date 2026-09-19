@@ -76,3 +76,7 @@ Antes de qualquer operacao em terminal/CLI, leia e cumpra a secao `Isolamento ob
 - Salve sessao/PID, inicio, HEAD/base, artefatos esperados e ultimo progresso verificavel em arquivo/ledger do projeto.
 - Mensagem de espera, spinner, reconexao ou `verificacoes adicionais` no ChatGPT nao prova progresso do executor.
 - Se a resposta do chat interromper, recupere o estado persistido e continue o monitoramento/takeover sem depender de novo comando do usuario.
+
+## Auditoria Extrema — cobertura universal obrigatória
+
+Quando houver auditoria completa/extrema, validação de release/apto ou qualquer gatilho de `AUDIT_POLICY.md`, todos os agentes devem executar integralmente `AUDIT_POLICY.md`, `docs/quality/EXTREME_AUDIT_PROTOCOL.md`, `docs/quality/AUDIT_RUNTIME_PARITY_V1.md`, `docs/quality/AUDIT_UNIVERSAL_COVERAGE_V1.md`, `docs/quality/AUDIT_SELF_TEST_V1.md` quando aplicável e `docs/quality/AUDIT_OVERLAY.md`. A auditoria inclui melhorias, remediação de achados SAFE, reconciliação de dados, negativos/boundaries, falhas silenciosas, órfãos, flaky/false-green e rodada adversarial de unknown unknowns. Relatório sem remediação não conclui a auditoria.
