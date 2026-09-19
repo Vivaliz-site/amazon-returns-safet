@@ -110,7 +110,7 @@ final class SvAmazonSellerSupportStatus
     {
         $buyerRefund=preg_match('/(?:reembolsad[oa]|reembolso|refund(?:ed)?|estorno).{0,120}(?:comprador|cliente(?: final)?|buyer|customer)|(?:comprador|cliente(?: final)?|buyer|customer).{0,120}(?:reembolsad[oa]|reembolso|refund(?:ed)?|estorno)/u',$text)===1;
         if(!$buyerRefund)return false;
-        $sellerPaid=preg_match('/(?:vendedor|seller(?: account)?|conta de vendedor).{0,80}(?:foi|já foi|ja foi|recebeu|recebemos|creditad[oa]|credited|reimbursed|ressarci(?:do|da))|(?:creditad[oa]|credited|reimbursed|ressarci(?:do|da)).{0,80}(?:vendedor|seller(?: account)?|conta de vendedor)/u',$text)===1;
+        $sellerPaid=preg_match('/(?:o\\s+)?vendedor\\s+(?:já\\s+|ja\\s+)?(?:foi\\s+)?(?:ressarci|reembolsad|creditad)|(?:nossa|sua)\\s+conta\\s+de\\s+vendedor.{0,80}(?:creditad|reembolsad|ressarci)|(?:creditad|reembolsad|ressarci).{0,80}(?:nossa|sua)\\s+conta\\s+de\\s+vendedor|(?:the\\s+)?seller(?: account)?\\s+(?:was|has been|is)\\s+(?:credited|reimbursed)|(?:credited|reimbursed).{0,80}(?:the\\s+)?seller account/u',$text)===1;
         return !$sellerPaid;
     }
 
