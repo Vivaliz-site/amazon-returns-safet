@@ -202,6 +202,17 @@ final class SvAmazonTenantReturnsOutbox
         return max(0,(int)$stmt->fetchColumn());
     }
 
+    public function countUiDriftPending(): int
+    {
+        $stmt=$this->prepare(
+            "SELECT COUNT(*) FROM amazon_return_outbox WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id AND status='PENDING' "
+            . "AND last_error LIKE 'UI\_DRIFT:%' ESCAPE '\\'"
+        );
+        $stmt->execute($this->scopeParams());
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
     public function reactivateSafeDeferredSellerSupportWrites(): int
     {
         $stmt=$this->prepare(
