@@ -456,6 +456,24 @@ function narrativeFor(job, max = 1000) {
     + 'Solicito o ressarcimento correspondente, com validação do fluxo de devolução e do débito ao vendedor.').slice(0, max);
 }
 
+
+async function setSafeTOrderInput(cdp, orderId) {
+  const selectors = [
+    'kat-input[placeholder="Número do pedido"]',
+    'kat-input[placeholder="Número do pedido da Amazon"]',
+    'kat-input[placeholder="Order ID"]',
+    'kat-input[placeholder="Amazon order ID"]',
+  ];
+  for (const selector of selectors) {
+    if (await cdp.setKat(selector, orderId)) return true;
+    if (await cdp.setFrameKat(selector, orderId)) return true;
+  }
+
+  const orderHints=['pedido','order'];
+  const serializedOrderId = JSON.stringify(String(orderId));
+  return (await cdp.evaluate(`(()=>{const hints=${JSON.stringify(orderHints)};const value=${serializedOrderId};const docs=[document,...[...document.querySelectorAll('iframe')].map(f=>f.contentDocument).filter(Boolean)];const matches=[];for(const d of docs){for(const host of d.querySelectorAll('kat-input,input')){const raw=[host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id].filter(Boolean).join(' ').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase();if(!hints.some(h=>raw.includes(h)))continue;const input=host.tagName==='KAT-INPUT'?host.shadowRoot?.querySelector('input,textarea'):host;if(input&&!input.disabled&&!input.readOnly)matches.push({host,input})}}if(matches.length!==1)return false;const {host,input}=matches[0];const proto=input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;if(typeof setter!=='function')return false;setter.call(input,value);input.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:value}));input.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return host.value===value||input.value===value})()`)) === true;
+}
+
 async function safeTSubmit(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -465,7 +483,8 @@ async function safeTSubmit(cdp, job) {
   await cdp.navigate(`${SAFE_T_BASE}/create-v2?ref_=ag_sfdcf_cont_safet`, 5000);
   const auth = await authGate(cdp, 'safet-v1', `${SAFE_T_BASE}/create-v2?ref_=ag_sfdcf_cont_safet`, 5000);
   if (auth) return auth;
-  if (!(await cdp.setKat('kat-input[placeholder="Número do pedido"]', orderId))) {
+  const orderInputReady = await setSafeTOrderInput(cdp, orderId);
+  if (!orderInputReady) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ORDER_INPUT_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   if (!(await cdp.clickKat('kat-button[label="Verificar Elegibilidade"]'))) {
