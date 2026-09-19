@@ -62,3 +62,15 @@ Esta decisão supersede a cadência diária e qualquer ciclo periódico curto do
 Uma data oficial já conhecida continua sendo obedecida no momento em que vence, **sem depender de um ciclo periódico de cinco minutos**. Nesse gatilho, o sistema atualiza as evidências necessárias, reavalia a decisão e drena o canal de escrita correspondente no mesmo ciclo. Depois que uma providência é consumida ou enfileirada, a data vencida deve ser limpa ou marcada como processada para evitar repetição em loop.
 
 A redução de polling não muda o comportamento sob demanda: uma **consulta manual** solicitada pelo usuário deve continuar sendo executada **imediatamente**, sem esperar a próxima janela de 12 horas.
+
+
+## Decisão de 19/09/2026: auditoria inteligente caso a caso
+Quando o proprietário solicitar auditoria dos casos, análise caso a caso, verificação de todos os casos, investigação das decisões tomadas ou intenção equivalente, a execução deve seguir obrigatoriamente `docs/quality/CASE_BY_CASE_AUDIT_PROTOCOL.md`.
+
+A análise deve cobrir 100% dos casos elegíveis no escopo, sem amostragem. Cada caso precisa ter sua linha do tempo e evidências reconstruídas de forma independente antes de comparar a **decisão esperada** com a **decisão real** e o **efeito real**. O status agregado do sistema, a saída do motor, REVIEW/BLOCKED genérico, job processado, fila vazia, aprovação, mensagem de reembolso ou HTTP 200 não substituem a prova individual.
+
+A auditoria deve verificar também o momento da decisão, prazos, rastreamento/logística, distinção entre reembolso ao comprador e ressarcimento ao seller, reconciliação financeira, ciclo SAFE-T, comunicações e devolução/readback no ERP quando aplicáveis. Divergência exige causa raiz, busca por casos equivalentes, correção segura quando possível, testes, reprocessamento/reavaliação e confirmação do efeito no destino.
+
+Comunicações externas de contestação, recurso, justificativa ou cobrança da ShopVivaliz devem ser redigidas em primeira pessoa, como a própria empresa falando diretamente com a Amazon.
+
+A matriz consolidada é obrigatória ao final, mas nunca pode substituir as linhas individuais dos casos.
