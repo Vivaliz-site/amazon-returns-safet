@@ -153,6 +153,10 @@ final class SvAmazonReturnsStatusBridgeService
         if($kind==='SELLER_SUPPORT_READ' && $status==='ACCEPTED' && is_array($result['support'] ?? null)){
             return $this->completeSupportObservation($row,$result);
         }
+        if($kind==='SELLER_SUPPORT_READ' && $status==='NOT_FOUND'
+            && (string)($result['reason'] ?? '')==='SELLER_SUPPORT_CASE_IDENTITY_MISMATCH'){
+            return $this->completeSupportIdentityMismatch($row,$result);
+        }
         if($status==='ACCEPTED' && is_array($result['read'] ?? null)){
             return $kind==='SAFE_T_DISCOVERY'
                 ? $this->completeDiscovery($row,$result)
@@ -180,6 +184,56 @@ final class SvAmazonReturnsStatusBridgeService
         return [
             'status'=>'ACK','job_id'=>$jobId,'result_status'=>$status,'completed'=>false,
         ];
+    }
+
+    /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */
+    private function completeSupportIdentityMismatch(array $row,array $result): array
+    {
+        $caseId=(int)$row['case_id'];
+        $mismatchedId=trim((string)($result['external_id'] ?? ''));
+        if(preg_match('/^\d{8,14}$/',$mismatchedId)!==1){
+            throw new RuntimeException('Seller Support identity mismatch requires the observed case ID.');
+        }
+        $snapshot=$result['evidence']['snapshot_sha256'] ?? null;
+        if(!is_string($snapshot) || preg_match('/^[a-f0-9]{64}$/i',$snapshot)!==1)$snapshot=null;
+        $db=$this->p->db();$db->beginTransaction();
+        try{
+            $this->p->cases->assertOwned($caseId);
+            $case=$this->p->cases->find($caseId);
+            if(!is_array($case))throw new RuntimeException('Owned Seller Support case disappeared.');
+            $known=trim((string)($case['support_case_id'] ?? ''));
+            if($known==='' || !hash_equals($known,$mismatchedId)){
+                throw new RuntimeException('Seller Support identity changed during mismatch recovery.');
+            }
+            $this->p->events->append([
+                'case_id'=>$caseId,
+                'event_type'=>'SELLER_SUPPORT_IDENTITY_MISMATCH',
+                'source'=>'SELLER_CENTRAL',
+                'source_event_id'=>$mismatchedId,
+                'idempotency_key'=>SvAmazonTenantReturnEventStore::deterministicKey(
+                    'seller-support-identity-mismatch',(string)$caseId,$mismatchedId
+                ),
+                'occurred_at'=>gmdate('Y-m-d H:i:s'),
+                'payload'=>[
+                    'support_case_id'=>$mismatchedId,
+                    'order_id'=>(string)($case['amazon_order_id'] ?? ''),
+                    'reason'=>'SELLER_SUPPORT_CASE_IDENTITY_MISMATCH',
+                    'binding_cleared'=>true,
+                ],
+                'evidence_sha256'=>$snapshot,
+            ]);
+            $this->p->cases->update($caseId,['support_case_id'=>null]);
+            $this->p->outbox->markSucceeded((int)$row['id']);
+            $db->commit();
+            return [
+                'status'=>'ACK','job_id'=>(int)$row['id'],
+                'result_status'=>'NOT_FOUND','completed'=>true,
+                'support_case_id_cleared'=>$mismatchedId,
+            ];
+        }catch(Throwable $e){
+            if($db->inTransaction())$db->rollBack();
+            throw $e;
+        }
     }
 
     /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */

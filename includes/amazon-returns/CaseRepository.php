@@ -350,6 +350,18 @@ final class SvAmazonReturnCaseRepository
         return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
     }
 
+    public function countSupportCaseCrossOrderDuplicateGroups(): int
+    {
+        $stmt=$this->prepare(
+            "SELECT COUNT(*) FROM (SELECT support_case_id FROM amazon_return_cases "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND closed_at IS NULL AND support_case_id IS NOT NULL AND support_case_id<>'' "
+            . "GROUP BY support_case_id HAVING COUNT(DISTINCT amazon_order_id)>1) support_identity_collisions"
+        );
+        $stmt->execute($this->scopeParams());
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
     /** @return array<string,mixed> */
     public function summary(): array
     {

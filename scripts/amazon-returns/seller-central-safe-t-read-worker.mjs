@@ -332,7 +332,12 @@ async function supportRead(job) {
     let observed;
     try { observed = JSON.parse(raw || '{}'); } catch { observed = {}; }
     if (observed.status === 'NOT_FOUND') return result('NOT_FOUND', { reason: 'SELLER_SUPPORT_CASE_NOT_FOUND', retry_safe: true, evidence: evidence(state) });
-    if (observed.status === 'MISMATCH') return result('UI_DRIFT', { reason: 'SELLER_SUPPORT_CASE_IDENTITY_MISMATCH', retry_safe: true, evidence: evidence(state) });
+    if (observed.status === 'MISMATCH') return result('NOT_FOUND', {
+      external_id: supportCaseId,
+      reason: 'SELLER_SUPPORT_CASE_IDENTITY_MISMATCH',
+      retry_safe: true,
+      evidence: evidence(state),
+    });
     if (observed.status !== 'FOUND') return result('UI_DRIFT', { reason: 'SELLER_SUPPORT_CASE_RESPONSE_INVALID', retry_safe: true, evidence: evidence(state) });
     return result('ACCEPTED', {
       external_id: supportCaseId,

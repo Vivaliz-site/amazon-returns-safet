@@ -513,11 +513,15 @@ final class SvAmazonReturnsRuntime
         $operationalHealth=SvAmazonOperationalHealth::evaluate(self::cadences(),$operationalObservations,$now,$deadLetters);
         $erpIncomplete=$p->erpSalesReturns->countIncomplete();
         $erpBreakdown=$p->erpSalesReturns->healthBreakdown();
+        $supportIdentityCollisions=$p->cases->countSupportCaseCrossOrderDuplicateGroups();
         if($erpIncomplete>0){
             $operationalHealth['blockers'][]='TASK_ERP_SALES_RETURNS_INCOMPLETE';
         }
         if(array_sum($erpBreakdown['duplicate_groups']??[])>0){
             $operationalHealth['blockers'][]='ERP_SALES_RETURN_DUPLICATE_IDENTIFIERS';
+        }
+        if($supportIdentityCollisions>0){
+            $operationalHealth['blockers'][]='SELLER_SUPPORT_CROSS_ORDER_IDENTITY_COLLISION';
         }
         $operationalHealth['blockers']=array_values(array_unique($operationalHealth['blockers']));
         $businessHealth=SvAmazonBusinessHealth::evaluate($config->enabled(),$config->mode(),$readiness,$writeFlags,$browserLiveness,$operationalHealth['blockers']);
@@ -533,6 +537,7 @@ final class SvAmazonReturnsRuntime
             'pending_reviews'=>$p->reviews->countOpen(),
             'erp_sales_return_incomplete'=>$erpIncomplete,
             'erp_sales_return_breakdown'=>$erpBreakdown,
+            'seller_support_cross_order_duplicate_groups'=>$supportIdentityCollisions,
             'rule_conflicts'=>$p->reviews->countOpenByReason('LEARNED_RULE_CONFLICT'),
             'rule_applications'=>$p->ruleApplications->countAll(),
             'ai_suggestion_failures'=>$p->reviews->countAiFailures(),
