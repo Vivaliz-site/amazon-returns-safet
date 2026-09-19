@@ -99,10 +99,19 @@ final class SvAmazonSellerSupportStatus
         $processed=preg_match('/(?:processad|processed|successful|sucesso|emitid|issued)/u',$text)===1;
         $delay=preg_match('/(?:4\s*(?:a|to|[-–])\s*5\s*(?:dias\s*[uú]teis|business\s*days)|reimbursement\s*id|id\s*(?:do|de)?\s*reembolso)/u',$text)===1;
         if($money && $processed && $delay)return 'REIMBURSEMENT_PROCESSING';
+        if(self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
         $safeT=str_contains($text,'safe-t') || str_contains($text,'safet');
         $appeal=preg_match('/(?:appeal|recurso|recorr)/u',$text)===1;
         if($safeT && $appeal)return 'SAFE_T_APPEAL';
         return 'TERMINAL_AMBIGUOUS';
+    }
+
+    private static function buyerRefundOnly(string $text): bool
+    {
+        $buyerRefund=preg_match('/(?:reembolsad[oa]|reembolso|refund(?:ed)?|estorno).{0,120}(?:comprador|cliente(?: final)?|buyer|customer)|(?:comprador|cliente(?: final)?|buyer|customer).{0,120}(?:reembolsad[oa]|reembolso|refund(?:ed)?|estorno)/u',$text)===1;
+        if(!$buyerRefund)return false;
+        $sellerPaid=preg_match('/(?:vendedor|seller(?: account)?|conta de vendedor).{0,80}(?:foi|já foi|ja foi|recebeu|recebemos|creditad[oa]|credited|reimbursed|ressarci(?:do|da))|(?:creditad[oa]|credited|reimbursed|ressarci(?:do|da)).{0,80}(?:vendedor|seller(?: account)?|conta de vendedor)/u',$text)===1;
+        return !$sellerPaid;
     }
 
     public static function reimbursementDueAt(DateTimeImmutable $observedAt,int $businessDays=5): DateTimeImmutable
