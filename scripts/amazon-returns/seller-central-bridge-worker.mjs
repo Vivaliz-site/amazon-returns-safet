@@ -519,17 +519,26 @@ async function selectSafeTSubreason(cdp, value) {
   const expected=String(value||'').trim();
   if (!expected) return false;
   for (let attempt=0; attempt<12; attempt++) {
-    const opened=(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const matches=[];for(const d of docs){for(const host of d.querySelectorAll('kat-dropdown')){const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));if(!hints.some(h=>meta.includes(h)))continue;matches.push(host)}}if(matches.length!==1)return false;const host=matches[0];const trigger=host.shadowRoot?.querySelector('button,[role=button],input')||host;if(trigger.disabled||host.hasAttribute('disabled'))return false;trigger.click();return true})()`))===true;
+    const opened=(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const matches=[];for(const root of roots){for(const host of root.querySelectorAll?.('kat-dropdown')||[]){const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));if(!hints.some(h=>meta.includes(h)))continue;matches.push(host)}}if(matches.length!==1)return false;const host=matches[0];const trigger=host.shadowRoot?.querySelector('button,[role=button],input')||host;if(trigger.disabled||host.hasAttribute('disabled'))return false;trigger.click();return true})()`))===true;
     if (!opened) {
       if (attempt+1<12) await sleep(500);
       continue;
     }
-    await sleep(250);
-    const selected=(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const expected=${JSON.stringify(expected)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const dropdowns=[];for(const d of docs){for(const host of d.querySelectorAll('kat-dropdown')){const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));if(hints.some(h=>meta.includes(h)))dropdowns.push({d,host})}}if(dropdowns.length!==1)return false;const {d,host}=dropdowns[0];const roots=[host.shadowRoot,host,d].filter(Boolean);const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll('kat-option')){if(seen.has(option))continue;seen.add(option);options.push(option)}}const exact=options.filter(option=>String(option.getAttribute('value')||'').trim()===expected);if(exact.length!==1)return false;exact[0].click();return true})()`))===true;
+    await sleep(300);
+    const selected=(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const expected=${JSON.stringify(expected)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const dropdowns=[];for(const root of roots){for(const host of root.querySelectorAll?.('kat-dropdown')||[]){const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));if(hints.some(h=>meta.includes(h)))dropdowns.push(host)}}if(dropdowns.length!==1)return false;const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const optionValue=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>optionValue(option)===expected);if(exact.length!==1)return false;exact[0].click();return true})()`))===true;
     if (selected) return true;
     if (attempt+1<12) await sleep(500);
   }
   return false;
+}
+
+async function safeTSubreasonDiagnostics(cdp, value) {
+  const expected=String(value||'').trim();
+  try {
+    return String(await cdp.evaluate(`(()=>{const expected=${JSON.stringify(expected)};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const dropdowns=roots.flatMap(root=>[...(root.querySelectorAll?.('kat-dropdown')||[])]);const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const valueOf=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const values=[...new Set(options.map(valueOf).filter(v=>/^[A-Za-z0-9_.:-]{1,40}$/.test(v)))].slice(0,12);const exact=options.filter(option=>valueOf(option)===expected).length;return ['d='+dropdowns.length,'r='+roots.length,'o='+options.length,'e='+exact,'v='+values.join(',')].join(';')})()`)).slice(0,220);
+  } catch {
+    return 'SUBREASON_DIAG_UNAVAILABLE';
+  }
 }
 
 async function safeTSubmit(cdp, job) {
@@ -585,7 +594,7 @@ async function safeTSubmit(cdp, job) {
   await sleep(500);
   if (reason.sub) {
     if (!(await selectSafeTSubreason(cdp, reason.sub))) {
-      return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_SUBREASON_OPTION_MISSING', evidence: await evidence(cdp, 'safet-v1') });
+      return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_SUBREASON_OPTION_MISSING', lookup_reason: await safeTSubreasonDiagnostics(cdp, reason.sub), evidence: await evidence(cdp, 'safet-v1') });
     }
   }
   await sleep(500);
