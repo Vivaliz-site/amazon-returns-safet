@@ -11,6 +11,8 @@ assert.ok(worker.includes('async function selectSafeTSubreason(cdp, value)'),
   'SAFE-T subreason selection must use a dedicated guarded helper.');
 assert.ok(worker.includes("const hints=['subcategoria','subcategory','sub category','subreason'];"),
   'SAFE-T subreason dropdown discovery must use an explicit semantic allowlist.');
+assert.ok(!worker.includes("if(!hints.some(h=>meta.includes(h)))continue"),
+  'SAFE-T subreason selection must not discard the correct dropdown solely because translated host metadata changed; exact option value is the authoritative selector.');
 assert.ok(worker.includes('if(matches.length!==1)return false'),
   'SAFE-T subreason discovery must fail closed unless exactly one dropdown matches.');
 assert.ok(worker.includes("String(option.getAttribute('value')||'').trim()===expected"),
