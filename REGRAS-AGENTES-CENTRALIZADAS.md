@@ -589,4 +589,3 @@ Esta politica vale para todos os agentes e prevalece sobre qualquer instrucao an
 - Esta politica nao reduz requisitos de validacao visual: quando o projeto exigir navegador real/visivel, a evidencia deve vir do Browser Worker/VM e da interface autenticada, nao de Windows.
 
 Regra principal: **browser/navegacao sempre na VM backend; Windows nunca e fallback.**
-
