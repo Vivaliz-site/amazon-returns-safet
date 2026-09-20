@@ -239,7 +239,7 @@ final class SvAmazonTenantReturnsOutbox
             "UPDATE amazon_return_outbox SET available_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() "
             . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
             . "AND status='PENDING' AND available_at>UTC_TIMESTAMP() AND locked_at IS NULL AND ("
-            . "(kind='SAFE_T_SUBMIT' AND last_error IN (:safe_t_order_input_missing,:safe_t_eligibility_button_missing,:safe_t_item_selection_not_accepted)) OR "
+            . "(kind='SAFE_T_SUBMIT' AND last_error IN (:safe_t_order_input_missing,:safe_t_eligibility_button_missing,:safe_t_item_selection_not_accepted,:safe_t_subreason_option_missing)) OR "
             . "(kind='SELLER_SUPPORT_OPEN' AND last_error=:lookup_error) OR "
             . "(kind='SELLER_SUPPORT_UPDATE' AND last_error IN "
             . "(:reply_send_missing,:reply_field_missing,:reply_field_not_writable,:native_reply_not_writable)))"
@@ -248,6 +248,7 @@ final class SvAmazonTenantReturnsOutbox
             ':safe_t_order_input_missing'=>'UI_DRIFT: SAFE_T_ORDER_INPUT_MISSING',
             ':safe_t_eligibility_button_missing'=>'UI_DRIFT: SAFE_T_ELIGIBILITY_BUTTON_MISSING',
             ':safe_t_item_selection_not_accepted'=>'UI_DRIFT: SAFE_T_ITEM_SELECTION_NOT_ACCEPTED',
+            ':safe_t_subreason_option_missing'=>'UI_DRIFT: SAFE_T_SUBREASON_OPTION_MISSING',
             ':lookup_error'=>'UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE',
             ':reply_send_missing'=>'UI_DRIFT: SUPPORT_REPLY_SEND_MISSING',
             ':reply_field_missing'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_MISSING',
