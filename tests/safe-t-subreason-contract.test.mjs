@@ -27,6 +27,14 @@ assert.ok(worker.includes('directExact===1') && worker.includes('return true'),
   'One globally unique exact subreason option must be authoritative even when multiple dropdown hosts exist.');
 assert.ok(worker.includes('directExact===-1') && worker.includes('return false'),
   'Ambiguous exact subreason matches must stop without opening or selecting any dropdown.');
+assert.ok(worker.includes('const isInteractive=element=>'),
+  'SAFE-T subreason selection must define a structural interactability guard.');
+assert.ok(worker.includes('interactiveDropdowns.length!==1'),
+  'Direct exact selection must require exactly one interactive semantic subreason dropdown.');
+assert.ok(worker.includes('interactiveExact.length!==1'),
+  'Direct exact selection must require exactly one interactive exact option.');
+assert.ok(worker.includes("'s='+semantic.length") && worker.includes("'i='+interactiveSemantic.length") && worker.includes("'ve='+visibleExact"),
+  'Sanitized diagnostics must expose only structural semantic/interactivity counts for the next production proof.');
 assert.ok(worker.includes("if(exact.length!==1)return false"),
   'SAFE-T subreason selection must fail closed unless exactly one exact expected option exists.');
 assert.ok(worker.includes('async function safeTSubreasonDiagnostics(cdp, value)'),
