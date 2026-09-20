@@ -77,8 +77,18 @@ sync_olist_login_inbox() {
 
 sync_olist_login_inbox
 
+seller_central_browser_is_running() {
+    local state
+    state="$(systemctl show amazon-returns-seller-central-browser.service -p ActiveState --value 2>/dev/null || true)"
+    [[ "$state" == "active" || "$state" == "activating" ]]
+}
+
 kick_seller_central_browser() {
     if systemctl is-enabled --quiet amazon-returns-seller-central-browser.timer 2>/dev/null; then
+        if seller_central_browser_is_running; then
+            echo 'seller_central_browser_deploy_kick=browser_already_running'
+            return 0
+        fi
         systemctl reset-failed amazon-returns-seller-central-browser.service >/dev/null 2>&1 || true
         systemctl reset-failed amazon-returns-seller-central-auth-check.service >/dev/null 2>&1 || true
         if systemctl start amazon-returns-seller-central-auth-check.service; then
