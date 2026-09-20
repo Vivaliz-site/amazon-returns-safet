@@ -514,6 +514,26 @@ async function clickSafeTNextButton(cdp) {
   return false;
 }
 
+function normalizeSafeTSubreasonShape(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const keys=[
+    'documents_total','dropdowns_total','hinted_dropdowns','shadow_dropdowns','trigger_candidates',
+    'expanded_dropdowns','direct_option_nodes','deep_option_nodes','exact_expected_direct_matches',
+    'exact_expected_deep_matches','role_option_nodes',
+  ];
+  const safe={};
+  for (const key of keys) {
+    const value=Number(raw[key]);
+    safe[key]=Number.isFinite(value)&&value>=0?Math.trunc(value):0;
+  }
+  return safe;
+}
+
+async function safeTSubreasonShape(cdp, expected) {
+  const expectedValue=String(expected||'').trim();
+  return await cdp.evaluate(`(()=>{const expected=${JSON.stringify(expectedValue)};const hints=['subcategoria','subcategory','sub category','subreason'];const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const dropdowns=[];for(const d of docs){for(const host of d.querySelectorAll('kat-dropdown'))dropdowns.push({d,host})}const direct=new Set();let hinted=0,shadow=0,triggers=0,expanded=0;for(const {d,host} of dropdowns){const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));if(hints.some(h=>meta.includes(h)))hinted++;if(host.shadowRoot)shadow++;const trigger=host.shadowRoot?.querySelector('button,[role=button],input')||null;if(trigger)triggers++;if(host.getAttribute('aria-expanded')==='true'||trigger?.getAttribute?.('aria-expanded')==='true')expanded++;for(const root of [host.shadowRoot,host,d].filter(Boolean)){for(const option of root.querySelectorAll('kat-option'))direct.add(option)}}const deep=new Set();const roleOptions=new Set();const seenRoots=new Set();const walk=root=>{if(!root||seenRoots.has(root))return;seenRoots.add(root);for(const option of root.querySelectorAll('kat-option'))deep.add(option);for(const option of root.querySelectorAll('[role=option]'))roleOptions.add(option);for(const el of root.querySelectorAll('*')){if(el.shadowRoot)walk(el.shadowRoot)}};for(const d of docs)walk(d);const exactDirect=[...direct].filter(option=>String(option.getAttribute('value')||'').trim()===expected).length;const exactDeep=[...deep].filter(option=>String(option.getAttribute('value')||'').trim()===expected).length;return {documents_total:docs.length,dropdowns_total:dropdowns.length,hinted_dropdowns:hinted,shadow_dropdowns:shadow,trigger_candidates:triggers,expanded_dropdowns:expanded,direct_option_nodes:direct.size,deep_option_nodes:deep.size,exact_expected_direct_matches:exactDirect,exact_expected_deep_matches:exactDeep,role_option_nodes:roleOptions.size}})()`);
+}
+
 async function selectSafeTSubreason(cdp, value) {
   const hints=['subcategoria','subcategory','sub category','subreason'];
   const expected=String(value||'').trim();
@@ -585,7 +605,12 @@ async function safeTSubmit(cdp, job) {
   await sleep(500);
   if (reason.sub) {
     if (!(await selectSafeTSubreason(cdp, reason.sub))) {
-      return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_SUBREASON_OPTION_MISSING', evidence: await evidence(cdp, 'safet-v1') });
+      const safeTSubreasonShapeResult = await safeTSubreasonShape(cdp, reason.sub);
+      return bridgeResult('UI_DRIFT', {
+        reason: 'SAFE_T_SUBREASON_OPTION_MISSING',
+        evidence: await evidence(cdp, 'safet-v1'),
+        safe_t_subreason_shape: normalizeSafeTSubreasonShape(safeTSubreasonShapeResult),
+      });
     }
   }
   await sleep(500);
@@ -1548,6 +1573,7 @@ function log(event, data = {}) {
     external_id: data.external_id ?? null,
     reason: data.reason ?? null,
     lookup_reason: data.lookup_reason ?? null,
+    safe_t_subreason_shape: normalizeSafeTSubreasonShape(data.safe_t_subreason_shape),
   };
   process.stdout.write(`${JSON.stringify(safe)}\n`);
 }
