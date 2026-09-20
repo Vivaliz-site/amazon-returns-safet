@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const worker=fs.readFileSync(
+  new URL('../scripts/amazon-returns/seller-central-bridge-worker.mjs',import.meta.url),
+  'utf8',
+);
+
+assert.ok(worker.includes('async function selectSafeTSubreason(cdp, value)'),
+  'SAFE-T subreason selection must use a dedicated guarded helper.');
+assert.ok(worker.includes("const hints=['subcategoria','subcategory','sub category','subreason'];"),
+  'SAFE-T subreason dropdown discovery must use an explicit semantic allowlist.');
+assert.ok(worker.includes('if(matches.length!==1)return false'),
+  'SAFE-T subreason discovery must fail closed unless exactly one dropdown matches.');
+assert.ok(worker.includes("String(option.getAttribute('value')||'').trim()===expected"),
+  'SAFE-T subreason selection must require the exact expected option value.');
+assert.ok(worker.includes('if(exact.length!==1)return false'),
+  'SAFE-T subreason selection must fail closed unless exactly one option value matches.');
+assert.ok(worker.includes('visit(frame.contentDocument)'),
+  'SAFE-T subreason discovery must traverse same-origin iframe documents.');
+assert.ok(worker.includes('await selectSafeTSubreason(cdp, reason.sub)'),
+  'SAFE-T submit must route subreason selection through the guarded helper.');
+assert.ok(!worker.includes('kat-dropdown[placeholder="Selecione a Subcategoria do Motivo"]'),
+  'SAFE-T submit must not regress to one exact translated placeholder.');
+
+console.log('safe-t-subreason-contract: OK');
