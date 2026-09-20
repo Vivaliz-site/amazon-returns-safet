@@ -50,6 +50,8 @@ ssdrSame('UI_DRIFT: SAFE_T_ELIGIBILITY_BUTTON_MISSING',$params[':safe_t_eligibil
     'SAFE-T submit recovery may rearm the observed pre-write eligibility-button drift.');
 ssdrSame('UI_DRIFT: SAFE_T_ITEM_SELECTION_NOT_ACCEPTED',$params[':safe_t_item_selection_not_accepted']??null,
     'SAFE-T submit recovery may rearm the observed pre-write item-selection drift.');
+ssdrSame('UI_DRIFT: SAFE_T_SUBREASON_OPTION_MISSING',$params[':safe_t_subreason_option_missing']??null,
+    'SAFE-T submit recovery may rearm the observed pre-write subreason-selection drift.');
 ssdrSame('UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE',$params[':lookup_error']??null,
     'Only the known pre-write lookup failure may be rearmed for SELLER_SUPPORT_OPEN.');
 foreach([
