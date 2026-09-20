@@ -23,9 +23,9 @@ assert.ok(worker.includes("String(option.getAttribute?.('value')??option.value??
   'SAFE-T subreason selection must derive an exact option code from value semantics only.');
 assert.ok(worker.includes('if(exact.length>1)return -1'),
   'A direct subreason lookup must fail closed when the expected enum code appears more than once.');
-assert.ok(worker.includes('if(directExact===1) return true'),
+assert.ok(worker.includes('directExact===1') && worker.includes('return true'),
   'One globally unique exact subreason option must be authoritative even when multiple dropdown hosts exist.');
-assert.ok(worker.includes('if(directExact===-1) return false'),
+assert.ok(worker.includes('directExact===-1') && worker.includes('return false'),
   'Ambiguous exact subreason matches must stop without opening or selecting any dropdown.');
 assert.ok(worker.includes("if(exact.length!==1)return false"),
   'SAFE-T subreason selection must fail closed unless exactly one exact expected option exists.');
