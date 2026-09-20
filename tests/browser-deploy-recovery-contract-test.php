@@ -14,5 +14,16 @@ foreach($markers as $marker){
         throw new RuntimeException('A successful production auto-deploy must recover and kick the Seller Central browser cycle: '.$marker);
     }
 }
+if(!str_contains($script,'seller_central_browser_is_running')){
+    throw new RuntimeException('Seller Central deploy kick must detect an already-running owned browser cycle.');
+}
+if(!str_contains($script,"seller_central_browser_deploy_kick=browser_already_running")){
+    throw new RuntimeException('Owned browser overlap must be reported as a safe no-op instead of PREEXISTING_CDP_UNOWNED.');
+}
+$guard=strpos($script,'if seller_central_browser_is_running; then');
+$auth=strpos($script,'systemctl start amazon-returns-seller-central-auth-check.service');
+if($guard===false || $auth===false || $guard>$auth){
+    throw new RuntimeException('Owned browser serialization guard must execute before Seller Central auth-check.');
+}
 
 echo "browser-deploy-recovery-contract-test: OK\n";
