@@ -41,8 +41,8 @@ assert.ok(worker.includes('async function safeTSubreasonDiagnostics(cdp, value)'
   'A sanitized pre-write diagnostic must be available when the exact option still cannot be selected.');
 assert.ok(worker.includes("lookup_reason: await safeTSubreasonDiagnostics(cdp, reason.sub)"),
   'SAFE-T UI drift must expose sanitized subreason diagnostics through the existing lookup_reason channel.');
-assert.ok(worker.includes("return ['d='+dropdowns.length,'r='+roots.length,'o='+options.length,'e='+exact].join(';')"),
-  'Subreason diagnostics must expose only bounded structural counts.');
+assert.ok(worker.includes("return ['d='+dropdowns.length,'s='+semantic.length,'i='+interactiveSemantic.length,'r='+roots.length,'o='+options.length,'e='+exact.length,'ve='+visibleExact].join(';')"),
+  'Subreason diagnostics must expose only bounded structural counts, including semantic and interactivity counts.');
 assert.ok(!worker.includes("'v='+values.join(',')"),
   'Subreason diagnostics must never emit raw DOM option values, even when they look enum-like.');
 assert.ok(worker.includes(".slice(0,220)"),
