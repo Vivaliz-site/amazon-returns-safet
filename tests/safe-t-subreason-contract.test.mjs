@@ -27,14 +27,22 @@ assert.ok(worker.includes('directExact===1') && worker.includes('return true'),
   'One globally unique exact subreason option must be authoritative even when multiple dropdown hosts exist.');
 assert.ok(worker.includes('directExact===-1') && worker.includes('return false'),
   'Ambiguous exact subreason matches must stop without opening or selecting any dropdown.');
+assert.ok(worker.includes('const isInteractive=element=>'),
+  'SAFE-T subreason selection must define a structural interactability guard.');
+assert.ok(worker.includes('interactiveDropdowns.length!==1'),
+  'Direct exact selection must require exactly one interactive semantic subreason dropdown.');
+assert.ok(worker.includes('interactiveExact.length!==1'),
+  'Direct exact selection must require exactly one interactive exact option.');
+assert.ok(worker.includes("'s='+semantic.length") && worker.includes("'i='+interactiveSemantic.length") && worker.includes("'ve='+visibleExact"),
+  'Sanitized diagnostics must expose only structural semantic/interactivity counts for the next production proof.');
 assert.ok(worker.includes("if(exact.length!==1)return false"),
   'SAFE-T subreason selection must fail closed unless exactly one exact expected option exists.');
 assert.ok(worker.includes('async function safeTSubreasonDiagnostics(cdp, value)'),
   'A sanitized pre-write diagnostic must be available when the exact option still cannot be selected.');
 assert.ok(worker.includes("lookup_reason: await safeTSubreasonDiagnostics(cdp, reason.sub)"),
   'SAFE-T UI drift must expose sanitized subreason diagnostics through the existing lookup_reason channel.');
-assert.ok(worker.includes("return ['d='+dropdowns.length,'r='+roots.length,'o='+options.length,'e='+exact].join(';')"),
-  'Subreason diagnostics must expose only bounded structural counts.');
+assert.ok(worker.includes("return ['d='+dropdowns.length,'s='+semantic.length,'i='+interactiveSemantic.length,'r='+roots.length,'o='+options.length,'e='+exact.length,'ve='+visibleExact].join(';')"),
+  'Subreason diagnostics must expose only bounded structural counts, including semantic and interactivity counts.');
 assert.ok(!worker.includes("'v='+values.join(',')"),
   'Subreason diagnostics must never emit raw DOM option values, even when they look enum-like.');
 assert.ok(worker.includes(".slice(0,220)"),
