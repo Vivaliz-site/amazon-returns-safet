@@ -22,7 +22,7 @@ assert.ok(worker.includes("String(option.getAttribute('value')||'').trim()===exp
 assert.ok(worker.includes('if(exact.length>1)return false'),
   'SAFE-T subreason selection must fail closed when one dropdown exposes the expected option value more than once.');
 assert.ok(worker.includes('if(exact.length!==1)continue'),
-  'Dropdowns without the exact expected option value must be ignored instead of causing a false-negative UI drift.');
+  'Dropdowns without the exact expected option value must be skipped; only exact-value candidates participate in the fail-closed uniqueness check.');
 assert.ok(worker.includes('visit(frame.contentDocument)'),
   'SAFE-T subreason discovery must traverse same-origin iframe documents.');
 assert.ok(worker.includes('await selectSafeTSubreason(cdp, reason.sub)'),
