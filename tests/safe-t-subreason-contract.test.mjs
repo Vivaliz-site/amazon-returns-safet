@@ -29,6 +29,8 @@ assert.ok(worker.includes("lookup_reason: await safeTSubreasonDiagnostics(cdp, r
   'SAFE-T UI drift must expose sanitized subreason diagnostics through the existing lookup_reason channel.');
 assert.ok(worker.includes("/^[A-Za-z0-9_.:-]{1,40}$/"),
   'Subreason diagnostics must restrict emitted option values to non-sensitive enum-like tokens.');
+assert.ok(!worker.includes("'v='+values.join(',')"),
+  'Subreason diagnostics must never emit raw DOM option values, even when they look enum-like.');
 assert.ok(worker.includes(".slice(0,220)"),
   'Subreason diagnostics must remain bounded before entering bridge logs or result payloads.');
 assert.ok(worker.includes("SUBREASON_DIAG_UNAVAILABLE"),
