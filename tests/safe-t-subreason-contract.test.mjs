@@ -13,8 +13,12 @@ assert.ok(worker.includes("const hints=['subcategoria','subcategory','sub catego
   'SAFE-T subreason dropdown discovery must use an explicit semantic allowlist.');
 assert.ok(worker.includes('if(matches.length!==1)return false'),
   'SAFE-T subreason discovery must fail closed unless exactly one dropdown matches.');
+assert.ok(worker.includes("trigger.click();return true"),
+  'SAFE-T subreason selection must open the guarded dropdown before looking for lazily rendered options.');
+assert.ok(worker.includes("const roots=[host.shadowRoot,host,d].filter(Boolean)"),
+  'SAFE-T subreason selection must support KAT options rendered in the dropdown shadow root or document portal.');
 assert.ok(worker.includes("String(option.getAttribute('value')||'').trim()===expected"),
-  'SAFE-T subreason selection must require the exact expected option value.');
+  'SAFE-T subreason selection must still require the exact expected option value.');
 assert.ok(worker.includes('if(exact.length!==1)return false'),
   'SAFE-T subreason selection must fail closed unless exactly one option value matches.');
 assert.ok(worker.includes('visit(frame.contentDocument)'),
