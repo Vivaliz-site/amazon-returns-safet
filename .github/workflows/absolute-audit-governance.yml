@@ -14,6 +14,12 @@ on:
       - 'scripts/validate-global-audit-policy.py'
       - 'scripts/certify-audit-manifest.py'
       - 'tests/test_certify_audit_manifest.py'
+      - 'scripts/absolute-audit-governance-validate.sh'
+      - 'scripts/validate-main-merge-provenance.py'
+      - 'scripts/repository-governance-validate.sh'
+      - 'tests/test_validate_main_merge_provenance.py'
+      - '.github/workflows/absolute-audit-main-guard.yml'
+      - '.github/workflows/repository-governance.yml'
       - '.github/workflows/absolute-audit-governance.yml'
   push:
     branches: [main]
@@ -29,6 +35,12 @@ on:
       - 'scripts/validate-global-audit-policy.py'
       - 'scripts/certify-audit-manifest.py'
       - 'tests/test_certify_audit_manifest.py'
+      - 'scripts/absolute-audit-governance-validate.sh'
+      - 'scripts/validate-main-merge-provenance.py'
+      - 'scripts/repository-governance-validate.sh'
+      - 'tests/test_validate_main_merge_provenance.py'
+      - '.github/workflows/absolute-audit-main-guard.yml'
+      - '.github/workflows/repository-governance.yml'
       - '.github/workflows/absolute-audit-governance.yml'
   workflow_dispatch:
 
@@ -50,14 +62,20 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 --version
+      - name: Validate absolute governance bridge
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+          bash scripts/absolute-audit-governance-validate.sh ci
       - name: Compile audit tooling
         run: |
           set -Eeuo pipefail
-          python3 -m py_compile scripts/certify-audit-manifest.py scripts/validate-audit-governance.py scripts/validate-global-audit-policy.py
+          python3 -m py_compile scripts/certify-audit-manifest.py scripts/validate-audit-governance.py scripts/validate-global-audit-policy.py scripts/validate-main-merge-provenance.py
       - name: Self-test absolute certifier
         run: |
           set -Eeuo pipefail
-          python3 -m unittest tests/test_certify_audit_manifest.py
+          python3 -m unittest tests/test_certify_audit_manifest.py tests/test_validate_main_merge_provenance.py
       - name: Self-test audit governance
         run: |
           set -Eeuo pipefail
