@@ -1,0 +1,20 @@
+name: Repository Governance Gate
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  governance-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate governance contract
+        run: bash scripts/repository-governance-validate.sh ci
