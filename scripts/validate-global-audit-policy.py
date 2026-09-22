@@ -53,13 +53,20 @@ def check(manifest: dict) -> dict:
         missing = [marker for marker in markers if marker not in text]
         entrypoints.append({"path": relative, "ok": not missing, "missing": missing})
 
+    current_repo = os.environ.get("GITHUB_REPOSITORY", "")
+    required_repositories = manifest.get("required_repositories", [])
+    repo_covered = (not current_repo) or current_repo in required_repositories
+
     return {
         "schema": manifest.get("schema"),
         "version": manifest.get("version"),
         "canonical_repository": manifest.get("canonical_repository"),
+        "required_repositories": required_repositories,
+        "current_repository": current_repo,
+        "repository_covered": repo_covered,
         "blob_results": results,
         "entrypoint_results": entrypoints,
-        "ok": all(x["ok"] for x in results) and all(x["ok"] for x in entrypoints),
+        "ok": repo_covered and all(x["ok"] for x in results) and all(x["ok"] for x in entrypoints),
     }
 
 
@@ -86,12 +93,14 @@ def main() -> int:
             f"- canonical_repository: {report['canonical_repository']}",
             "",
         ]
+        lines.append(f"- repository_covered: {report['repository_covered']} ({report['current_repository']})")
         for item in report["blob_results"]:
             lines.append(f"- {'PASS' if item['ok'] else 'FAIL'} blob {item['path']}")
         for item in report["entrypoint_results"]:
             lines.append(f"- {'PASS' if item['ok'] else 'FAIL'} entrypoint {item['path']}")
         (args.output_dir / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    print(f"GLOBAL_REPOSITORY {'PASS' if report['repository_covered'] else 'FAIL'} {report['current_repository']}")
     for item in report["blob_results"]:
         print(f"GLOBAL_BLOB {'PASS' if item['ok'] else 'FAIL'} {item['path']}")
     for item in report["entrypoint_results"]:
