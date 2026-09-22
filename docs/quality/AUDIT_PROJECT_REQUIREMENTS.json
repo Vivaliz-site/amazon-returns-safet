@@ -1,0 +1,38 @@
+{
+  "schema": "AUDIT_PROJECT_REQUIREMENTS_V1",
+  "project": "Vivaliz-site/amazon-returns-safet",
+  "policy_version": "2026-09-21-absolute-v5",
+  "required_invariants": [
+    {
+      "id": "AMAZON_CASE_BY_CASE_100_PERCENT_V1",
+      "type": "evidence",
+      "description": "When the audit scope is cases, every eligible case must be individually reconstructed and audited; aggregate status is insufficient."
+    },
+    {
+      "id": "AMAZON_FINANCIAL_CREDIT_RECONCILIATION_V1",
+      "type": "evidence",
+      "description": "Approval or promise is not recovery; seller credit must be independently reconciled before recovery/closure."
+    },
+    {
+      "id": "AMAZON_ERP_READBACK_REQUIRED_V1",
+      "type": "evidence",
+      "description": "Required ERP return/movement must be confirmed by readback for the correct order/items/quantities without duplication."
+    },
+    {
+      "id": "AMAZON_SAFET_LIFECYCLE_REAL_V1",
+      "type": "journey_ids",
+      "description": "Critical SAFE-T lifecycle must be proven from case reconstruction through external action and final reconciliation.",
+      "required_journey_ids": [
+        "amazon-case-reconstruct",
+        "amazon-safet-action",
+        "amazon-financial-reconcile",
+        "amazon-erp-readback"
+      ]
+    },
+    {
+      "id": "AMAZON_TENANT_ISOLATION_V1",
+      "type": "evidence",
+      "description": "Multi-tenant case, event, evidence, outbox, cursor and policy isolation must be proven."
+    }
+  ]
+}
