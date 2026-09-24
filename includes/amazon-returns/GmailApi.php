@@ -406,6 +406,14 @@ final class SvAmazonGmailApiClient
         return $this->accessToken = $token;
     }
 
+    private static function oauthFailureCode(mixed $json): string
+    {
+        if (!is_array($json)) return '';
+        $error = trim((string)($json['error'] ?? ''));
+        $error = preg_replace('/[^A-Za-z0-9_.-]/', '', $error) ?? '';
+        return substr($error, 0, 80);
+    }
+
     /** @return array<string,mixed> */
     private function httpForm(string $url, array $fields): array
     {
@@ -428,7 +436,9 @@ final class SvAmazonGmailApiClient
         if (!is_string($raw)) throw new RuntimeException('Gmail OAuth transport failed: ' . $error);
         $json = json_decode($raw, true);
         if ($status < 200 || $status >= 300 || !is_array($json)) {
-            throw new RuntimeException('Gmail OAuth HTTP ' . $status . '.');
+            $reason = self::oauthFailureCode($json);
+            $suffix = $reason !== '' ? ' error=' . $reason : '';
+            throw new RuntimeException('Gmail OAuth HTTP ' . $status . $suffix . '.');
         }
         return $json;
     }
