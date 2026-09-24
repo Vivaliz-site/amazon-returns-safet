@@ -39,6 +39,9 @@ assert.ok(worker.includes("if(exact.length!==1)return false"),
   'SAFE-T subreason selection must fail closed unless exactly one exact expected option exists.');
 assert.ok(worker.includes('async function safeTSubreasonDiagnostics(cdp, value)'),
   'A sanitized pre-write diagnostic must be available when the exact option still cannot be selected.');
+const diagnosticSource=worker.split('async function safeTSubreasonDiagnostics(cdp, value)')[1]?.split('async function safeTSubmit(cdp, job)')[0]||'';
+assert.ok(diagnosticSource.includes("const hints=['subcategoria','subcategory','sub category','subreason'];"),
+  'SAFE-T subreason diagnostics must define their semantic hints in their own scope.');
 assert.ok(worker.includes("lookup_reason: await safeTSubreasonDiagnostics(cdp, reason.sub)"),
   'SAFE-T UI drift must expose sanitized subreason diagnostics through the existing lookup_reason channel.');
 assert.ok(worker.includes("return ['d='+dropdowns.length,'s='+semantic.length,'i='+interactiveSemantic.length,'r='+roots.length,'o='+options.length,'e='+exact.length,'ve='+visibleExact].join(';')"),
