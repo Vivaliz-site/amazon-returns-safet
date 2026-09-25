@@ -72,6 +72,10 @@ assert.ok(worker.includes("SUBREASON_DIAG_UNAVAILABLE"),
   'Subreason diagnostics must fail closed to a fixed non-sensitive marker if DOM inspection fails.');
 assert.ok(worker.includes('await selectSafeTSubreason(cdp, reason.sub)'),
   'SAFE-T submit must route subreason selection through the guarded helper.');
+assert.ok(worker.includes("const claimMarker='/claim/'"),
+  'SAFE-T post-submit readback must parse the claim URL without a slash-delimited regex that can be corrupted in CDP transport.');
+assert.ok(worker.includes("new RegExp('(?:ID da reivindicação SAFE-T"),
+  'SAFE-T post-submit body readback must construct its regex explicitly inside the browser expression.');
 assert.ok(!worker.includes('kat-dropdown[placeholder="Selecione a Subcategoria do Motivo"]'),
   'SAFE-T submit must not regress to one exact translated placeholder.');
 
