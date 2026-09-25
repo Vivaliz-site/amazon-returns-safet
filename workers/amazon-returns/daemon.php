@@ -983,6 +983,28 @@ class SvAmazonReturnsDaemon
     }
 }
 
+/** @param array<string,mixed> $result @return list<array<string,mixed>> */
+function sv_amazon_returns_decision_audit_chunks(array $result): array
+{
+    $rows=$result['results']['scheduler']['decision_audit'] ?? null;
+    if(!is_array($rows) || $rows===[])return [];
+    $parts=array_chunk(array_values($rows),8);
+    $chunks=[];
+    $total=count($parts);
+    foreach($parts as $index=>$part){
+        $chunks[]=[
+            'at'=>$result['at'] ?? gmdate(DATE_ATOM),
+            'event'=>'decision_audit_chunk',
+            'tenant_id'=>$result['tenant_id'] ?? null,
+            'amazon_connection_id'=>$result['amazon_connection_id'] ?? null,
+            'chunk'=>$index+1,
+            'chunks'=>$total,
+            'rows'=>$part,
+        ];
+    }
+    return $chunks;
+}
+
 function sv_amazon_returns_daemon_main(array $argv): int
 {
     $once=in_array('--once',$argv,true);
@@ -1008,6 +1030,11 @@ function sv_amazon_returns_daemon_main(array $argv): int
     }
     do{
         $result=$daemon->runOnce();
+        foreach(sv_amazon_returns_decision_audit_chunks($result) as $auditChunk){
+            fwrite(STDOUT,json_encode(
+                $auditChunk,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
+            ).PHP_EOL);
+        }
         fwrite(STDOUT,json_encode(
             $result,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
         ).PHP_EOL);

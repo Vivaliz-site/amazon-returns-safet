@@ -33,6 +33,14 @@ assert.ok(worker.includes('interactiveDropdowns.length!==1'),
   'Direct exact selection must require exactly one interactive semantic subreason dropdown.');
 assert.ok(worker.includes('interactiveExact.length!==1'),
   'Direct exact selection must require exactly one interactive exact option.');
+assert.ok(worker.includes('const ownerDropdown=option=>'),
+  'A unique exact subreason option must be able to identify its owning dropdown without translated labels.');
+assert.ok(worker.includes("host.tagName==='KAT-DROPDOWN'"),
+  'Owner discovery must stop only at an explicit KAT dropdown host.');
+assert.ok(worker.includes('if(exact.length!==1)return 0'),
+  'Owner-based fallback must fail closed unless the expected option is globally unique.');
+assert.ok(worker.includes('ownerTrigger.click();return 1'),
+  'Owner-based fallback must open only the dropdown that structurally owns the unique expected option.');
 assert.ok(worker.includes("'s='+semantic.length") && worker.includes("'i='+interactiveSemantic.length") && worker.includes("'ve='+visibleExact"),
   'Sanitized diagnostics must expose only structural semantic/interactivity counts for the next production proof.');
 assert.ok(worker.includes("if(exact.length!==1)return false"),
