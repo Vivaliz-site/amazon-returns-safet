@@ -4,8 +4,8 @@ function ssrrAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeExce
 $worker=(string)file_get_contents(__DIR__.'/../scripts/amazon-returns/seller-central-bridge-worker.mjs');
 foreach([
   "Input.dispatchMouseEvent",
-  "SUPPORT_CASE_OPENED_VIA_CHAT",
-  "SUPPORT_CHAT_START_MISSING",
+  "SUPPORT_CASE_OPENED_VIA_EMAIL",
+  "SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION",
   "SUPPORT_CASE_NOT_REOPENABLE",
   "answered cases cannot be reopened after 5 days with no activity",
 ] as $needle){ssrrAssert(str_contains($worker,$needle),'Runtime Seller Support remediation missing: '.$needle);}
@@ -14,9 +14,9 @@ ssrrAssert(str_contains($worker,"DOM.getBoxModel"),'Trusted iframe clicks must d
 $contactStart=strpos($worker,'async function contactSupportAndReadBack');
 $contactEnd=strpos($worker,'async function fillGeneralSupportIssue',$contactStart);
 $contact=substr($worker,$contactStart,$contactEnd-$contactStart);
-ssrrAssert(str_contains($contact,'channel = await clickHillChat(cdp)'),'Live Phone/Chat-only Hill form must fall back to trusted Chat.');
+ssrrAssert(!str_contains($contact,'clickHillChat(cdp)'),'Unattended Seller Support runtime must never start a live Chat session.');
 ssrrAssert(str_contains($contact,"findSupportCase(cdp, job, { includeTerminal: true })"),'Chat/email writes require authoritative case-ID readback before success.');
-ssrrAssert(!str_contains($contact,'SUPPORT_CHAT_COMPLETION_NOT_IMPLEMENTED'),'Observed Chat-only Hill form can no longer be left unimplemented.');
+ssrrAssert(str_contains($contact,"bridgeResult('BLOCKED_UNTIL'"),'Chat-only Hill form must fail closed instead of being abandoned after opening.');
 $fbaStart=strpos($worker,'async function supportOpen');
 $fba=substr($worker,$fbaStart);
 ssrrAssert(str_contains($fba,"clickFirstFrameTextWhenReady(cdp, ['FBA related','A-to-z Claims'], 15000)"),'FBA route must advance the observed post-contact associate category.');
