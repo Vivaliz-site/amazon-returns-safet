@@ -37,6 +37,8 @@ assert.ok(worker.includes('const ownerDropdown=option=>'),
   'A unique exact subreason option must be able to identify its owning dropdown without translated labels.');
 assert.ok(worker.includes("host.tagName==='KAT-DROPDOWN'"),
   'Owner discovery must stop only at an explicit KAT dropdown host.');
+assert.ok(worker.includes("option.closest?.('kat-dropdown')"),
+  'Owner discovery must first support a KAT option rendered in the dropdown light DOM.');
 assert.ok(worker.includes('if(exact.length!==1)return 0'),
   'Owner-based fallback must fail closed unless the expected option is globally unique.');
 assert.ok(worker.includes('ownerTrigger.click();return 1'),

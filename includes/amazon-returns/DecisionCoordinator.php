@@ -21,11 +21,11 @@ final class SvAmazonDecisionCoordinator
     public function guardProposedEffect(array $effect,array $case,array $timeline,array $policy,?DateTimeImmutable $now=null): array
     {
         $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));$normalized=SvAmazonLearnedRuleEngine::normalizeEffect($effect,SvAmazonReviewContext::build($case,$timeline,$policy,['action'=>'HUMAN_REVIEW','reason'=>'PREVIEW'])['variables']);
-        return $this->base->guardLearnedEffect($normalized,$case,$timeline,$policy,$now);
+        return self::enforceSupportCaseReuse($this->base->guardLearnedEffect($normalized,$case,$timeline,$policy,$now),$case);
     }
     private function decide(array $case,array $timeline,array $policy,?DateTimeImmutable $now,bool $persist):array
     {
-        $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));$base=$this->base->nextAction($case,$timeline,$policy,$now);
+        $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));$base=self::enforceSupportCaseReuse($this->base->nextAction($case,$timeline,$policy,$now),$case);
         if(!in_array($base['action']??'',['HUMAN_REVIEW','BLOCKED_REVIEW'],true)){
             if($persist){
                 if(method_exists($this->persistence->reviews,'resolveOpenForCase'))$this->persistence->reviews->resolveOpenForCase((int)$case['id']);
@@ -37,7 +37,7 @@ final class SvAmazonDecisionCoordinator
         if($match['status']==='MATCH'){
             $executionEnabled=$this->config!==null && method_exists($this->config,'learnedRuleExecutionEnabled') && $this->config->learnedRuleExecutionEnabled();
             if(!$executionEnabled)return $base+['learned_rule_shadow_match'=>$match['rule']['id']??null,'signature_hash'=>$context['signature_hash']];
-            $decision=$this->base->guardLearnedEffect($match['effect'],$case,$timeline,$policy,$now);
+            $decision=self::enforceSupportCaseReuse($this->base->guardLearnedEffect($match['effect'],$case,$timeline,$policy,$now),$case);
             $decision['learned_rule_id']=$match['rule']['id']??null;$decision['learned_rule_version']=$match['rule']['version']??null;$decision['signature_hash']=$context['signature_hash'];
             if($persist){
                 $this->auditMatch($case,$context,$match['rule'],$match['effect'],$decision);
@@ -52,6 +52,23 @@ final class SvAmazonDecisionCoordinator
         if($persist)$this->persistence->reviews->open((int)$case['id'],$reason,$context['signature_hash'],$context);
         return $base+['review_reason'=>$reason,'review_context'=>$context,'learned_rule_conflicts'=>$match['conflicts']??[]];
     }
+    public static function enforceSupportCaseReuse(array $decision,array $case): array
+    {
+        if(strtoupper(trim((string)($decision['action']??'')))!=='SELLER_SUPPORT_OPEN')return $decision;
+        $supportCaseId=trim((string)($case['support_case_id']??''));
+        if(preg_match('/^\d{8,14}$/D',$supportCaseId)!==1)return $decision;
+        $caseId=(int)($case['id']??0);
+        $priorKey=trim((string)($decision['idempotency_key']??''));
+        $reason=trim((string)($decision['reason']??'SELLER_SUPPORT_REUSE'));
+        $decision['action']='SELLER_SUPPORT_UPDATE';
+        $decision['support_case_id']=$supportCaseId;
+        unset($decision['previous_support_case_id']);
+        $decision['idempotency_key']=hash('sha256',implode('|',[
+            'seller-support-update-existing',(string)$caseId,$supportCaseId,$reason,$priorKey,
+        ]));
+        return $decision;
+    }
+
     private function clearResolvedReviewGate(array $case,array $policy,array $decision):void
     {
         if(($case['state']??null)!==SvAmazonReturnStates::POLICY_REVIEW_REQUIRED)return;
