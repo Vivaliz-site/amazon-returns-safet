@@ -43,6 +43,14 @@ assert.ok(worker.includes('if(exact.length!==1)return 0'),
   'Owner-based fallback must fail closed unless the expected option is globally unique.');
 assert.ok(worker.includes('ownerTrigger.click();return 1'),
   'Owner-based fallback must open only the dropdown that structurally owns the unique expected option.');
+assert.ok(worker.includes('const trustedOwnerPoint=await cdp.evaluate'),
+  'SAFE-T subreason selection must have a trusted pointer fallback for KAT dropdown hosts that ignore synthetic click().');
+assert.ok(worker.includes('const trustedOptionPoint=await cdp.evaluate'),
+  'Trusted subreason fallback must locate the exact visible option after opening its owner dropdown.');
+assert.ok(worker.includes("cdp.send('Input.dispatchMouseEvent'"),
+  'Trusted subreason fallback must dispatch real pointer events through CDP.');
+assert.ok(worker.includes('const trustedSelected='),
+  'Trusted subreason fallback must verify the dropdown accepted the exact selection before succeeding.');
 assert.ok(worker.includes("'s='+semantic.length") && worker.includes("'i='+interactiveSemantic.length") && worker.includes("'ve='+visibleExact"),
   'Sanitized diagnostics must expose only structural semantic/interactivity counts for the next production proof.');
 assert.ok(worker.includes("if(exact.length!==1)return false"),
