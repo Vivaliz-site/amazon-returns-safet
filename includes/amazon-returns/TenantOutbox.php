@@ -257,7 +257,7 @@ final class SvAmazonTenantReturnsOutbox
             . "(kind='SAFE_T_SUBMIT' AND last_error IN (:safe_t_order_input_missing,:safe_t_eligibility_button_missing,:safe_t_item_selection_not_accepted,:safe_t_subreason_option_missing)) OR "
             . "(kind='SELLER_SUPPORT_OPEN' AND last_error=:lookup_error) OR "
             . "(kind='SELLER_SUPPORT_UPDATE' AND last_error IN "
-            . "(:reply_send_missing,:reply_field_missing,:reply_field_not_writable,:native_reply_not_writable)))"
+            . "(:reply_send_missing,:reply_field_missing,:reply_field_not_writable,:native_reply_not_writable,:reply_not_confirmed)))"
         );
         $stmt->execute($this->scopeParams([
             ':safe_t_order_input_missing'=>'UI_DRIFT: SAFE_T_ORDER_INPUT_MISSING',
@@ -269,6 +269,7 @@ final class SvAmazonTenantReturnsOutbox
             ':reply_field_missing'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_MISSING',
             ':reply_field_not_writable'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_NOT_WRITABLE',
             ':native_reply_not_writable'=>'UI_DRIFT: SUPPORT_NATIVE_REPLY_NOT_WRITABLE',
+            ':reply_not_confirmed'=>'FAILED: SUPPORT_REPLY_NOT_CONFIRMED',
         ]));
         return max(0,$stmt->rowCount());
     }

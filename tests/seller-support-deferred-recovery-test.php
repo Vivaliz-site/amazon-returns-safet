@@ -59,9 +59,10 @@ foreach([
     ':reply_field_missing'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_MISSING',
     ':reply_field_not_writable'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_NOT_WRITABLE',
     ':native_reply_not_writable'=>'UI_DRIFT: SUPPORT_NATIVE_REPLY_NOT_WRITABLE',
+    ':reply_not_confirmed'=>'FAILED: SUPPORT_REPLY_NOT_CONFIRMED',
 ] as $parameter=>$error){
     ssdrSame($error,$params[$parameter]??null,
-        'Only known pre-send Seller Support reply failures may be rearmed immediately after a fixed write stack deploy.');
+        'Only known retry-safe Seller Support reply failures may be rearmed immediately after a fixed write stack deploy.');
 }
 ssdrAssert(str_contains($sql,'last_error IN'),
     'Seller Support update recovery must enumerate safe pre-send UI drift reasons.');
