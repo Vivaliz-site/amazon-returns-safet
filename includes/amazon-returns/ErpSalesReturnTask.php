@@ -90,7 +90,7 @@ final class SvAmazonErpSalesReturnTask
                 $rows[]=['order_id'=>$orderId,'status'=>(string)($row['status']??'UNKNOWN')];
                 $processedSet[$orderId]=true;
             }catch(Throwable $e){
-                $rows[]=['order_id'=>$orderId,'status'=>'ERROR','error_class'=>$e::class];
+                $rows[]=['order_id'=>$orderId,'status'=>'ERROR','error_class'=>$e::class,'error_code'=>self::safeErrorCode($e)];
                 if(str_contains($e->getMessage(),'HTTP 429')){
                     $rateLimited=true;
                     $p->cursors->save(
@@ -359,6 +359,32 @@ final class SvAmazonErpSalesReturnTask
         return $value===''?'0000-00-00 00:00:00':$value;
     }
 
+    public static function safeErrorCode(Throwable $error): string
+    {
+        $message=$error->getMessage();
+        if(preg_match('/ERP return invoice lookup failed with HTTP ([0-9]{3})\./',$message,$match)===1){
+            return 'ERP_RETURN_INVOICE_HTTP_'.$match[1];
+        }
+        if(preg_match('/ERP return invoice detail lookup failed with HTTP ([0-9]{3})\./',$message,$match)===1){
+            return 'ERP_RETURN_INVOICE_DETAIL_HTTP_'.$match[1];
+        }
+        if(str_contains($message,'ERP access token is not configured.')
+            || str_contains($message,'ERP credential source is not configured.')){
+            return 'ERP_CREDENTIALS_UNAVAILABLE';
+        }
+        if($error instanceof UnexpectedValueException
+            && str_contains($message,'multiple return invoices')){
+            return 'ERP_RETURN_INVOICE_AMBIGUOUS';
+        }
+        if(str_contains($message,'ERP HTTP transport failed:'))return 'ERP_HTTP_TRANSPORT_FAILED';
+        return match(true){
+            $error instanceof InvalidArgumentException=>'ERP_INVALID_ARGUMENT',
+            $error instanceof UnexpectedValueException=>'ERP_UNEXPECTED_VALUE',
+            $error instanceof RuntimeException=>'ERP_RUNTIME_EXCEPTION',
+            default=>'ERP_'.strtoupper(preg_replace('/[^A-Za-z0-9]+/','_',basename(str_replace('\\','/',$error::class))) ?: 'ERROR'),
+        };
+    }
+
     /** @param list<array<string,mixed>> $rows @return array<string,mixed> */
     private static function result(array $rows,bool $writeEnabled,bool $rateLimited): array
     {
@@ -367,6 +393,14 @@ final class SvAmazonErpSalesReturnTask
             $status=strtoupper(trim((string)($row['status']??'')));
             if(isset($counts[$status]))$counts[$status]++;else $counts['OTHER']++;
         }
+        $errorCodes=[];
+        foreach($rows as $row){
+            if(strtoupper(trim((string)($row['status']??'')))!=='ERROR')continue;
+            $code=strtoupper(trim((string)($row['error_code']??'ERP_ERROR')));
+            if(preg_match('/^ERP_[A-Z0-9_]{1,80}$/D',$code)!==1)$code='ERP_ERROR';
+            $errorCodes[$code]=($errorCodes[$code]??0)+1;
+        }
+        ksort($errorCodes,SORT_STRING);
         $incomplete=$counts['READY_TO_CREATE']+$counts['BLOCKED']+$counts['ERROR']+$counts['OTHER'];
         return [
             'status'=>$incomplete>0?'PARTIAL':'OK',
@@ -376,6 +410,7 @@ final class SvAmazonErpSalesReturnTask
             'invoice_exists'=>$counts['RETURN_INVOICE_EXISTS'],
             'blocked'=>$counts['BLOCKED'],
             'errors'=>$counts['ERROR'],
+            'error_codes'=>$errorCodes,
             'other'=>$counts['OTHER'],
             'rate_limited'=>$rateLimited,
             'write_enabled'=>$writeEnabled,

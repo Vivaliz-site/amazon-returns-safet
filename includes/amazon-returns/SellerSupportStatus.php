@@ -29,8 +29,9 @@ final class SvAmazonSellerSupportStatus
     public static function readKey(int $caseId,string $supportCaseId,DateTimeInterface $now): string
     {
         if($caseId<1 || preg_match('/^\d{8,14}$/',trim($supportCaseId))!==1)throw new InvalidArgumentException('Seller Support read key requires case and support case ID.');
-        $day=DateTimeImmutable::createFromInterface($now)->setTimezone(new DateTimeZone('UTC'))->format('Ymd');
-        return hash('sha256','seller-support-read|'.$caseId.'|'.trim($supportCaseId).'|'.$day);
+        $ts=DateTimeImmutable::createFromInterface($now)->setTimezone(new DateTimeZone('UTC'))->getTimestamp();
+        $bucket=intdiv($ts,7200)*7200;
+        return hash('sha256','seller-support-read|'.$caseId.'|'.trim($supportCaseId).'|'.gmdate('YmdHi',$bucket));
     }
 
     /** @param list<array<string,mixed>> $timeline */
