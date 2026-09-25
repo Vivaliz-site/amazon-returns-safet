@@ -1133,13 +1133,22 @@ async function contactSupportAndReadBack(cdp, job) {
     if (await hillPopupSupportState() === 'UNAVAILABLE') return sellerSupportUnavailableResult();
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
-  let channel = await submitHillEmail(cdp, job);
+  const channel = await submitHillEmail(cdp, job);
   if (channel !== 'Email') {
-    if (!(await hillChatReady(cdp))) {
-      return bridgeResult('UI_DRIFT', { reason: channel || 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    if (await hillChatReady(cdp)) {
+      return bridgeResult('BLOCKED_UNTIL', {
+        block_reason: 'SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION',
+        reason: 'SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION',
+        retry_safe: true,
+        next_allowed_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        evidence: await evidence(cdp, 'help-v1'),
+      });
     }
-    channel = await clickHillChat(cdp);
-    if (!channel) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_START_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    return bridgeResult('UI_DRIFT', {
+      reason: channel || 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE',
+      retry_safe: true,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
   }
   await sleep(1500);
   if (await hillSupportUnavailable(cdp)) {
@@ -1179,8 +1188,13 @@ async function contactSupportAndReadBack(cdp, job) {
   if (!/^\d{8,14}$/.test(caseId)) {
     return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
   }
-  const reason = channel === 'Email' ? 'SUPPORT_CASE_OPENED_VIA_EMAIL' : 'SUPPORT_CASE_OPENED_VIA_CHAT';
-  return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason, evidence: await evidence(cdp, 'help-v1') });
+  return bridgeResult('ACCEPTED', {
+    submitted: true,
+    external_id: caseId,
+    retry_safe: true,
+    reason: 'SUPPORT_CASE_OPENED_VIA_EMAIL',
+    evidence: await evidence(cdp, 'help-v1'),
+  });
 }
 async function fillGeneralSupportIssue(cdp, job, narrative) {
   const orderId = text(job.case?.order_id);
