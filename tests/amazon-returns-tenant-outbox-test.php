@@ -130,6 +130,13 @@ foreach(['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'] as $readKind){
 }
 toAssert(!str_contains($terminalSweep,'SAFE_T_SUBMIT'),'Terminal read sweep must never touch external write kinds.');
 toAssert(str_contains($terminalSweep, "o.status='PENDING' OR (o.status='PROCESSING' AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND))"), 'Terminal read sweep must keep a live PROCESSING lease and only supersede stale processing reads.');
+$db->queue(['row_count'=>2]);
+toAssert(method_exists($outbox,'supersedeDiscoveryJobsForKnownSafeT'),'Outbox must clear discovery jobs once SAFE-T identity is known.');
+toSame(2,$outbox->supersedeDiscoveryJobsForKnownSafeT('SAFE_T_ID_ALREADY_KNOWN'),'Known SAFE-T sweep must report superseded stale discovery jobs.');
+$knownSafeTSweep=$db->executed[array_key_last($db->executed)]['sql']??'';
+toAssert(str_contains($knownSafeTSweep, "o.kind='SAFE_T_DISCOVERY'"),'Known SAFE-T sweep must only target discovery jobs.');
+toAssert(str_contains($knownSafeTSweep, "c.safe_t_id IS NOT NULL"),'Known SAFE-T sweep must require a persisted SAFE-T identity.');
+toAssert(!str_contains($knownSafeTSweep,'SAFE_T_READ'),'Known SAFE-T sweep must preserve ordinary claim reads.');
 $key = $outbox->deterministicKey('SAFE_T_SUBMIT', 77, 'policy-12|2026-07-16');
 toSame(
     hash('sha256', 'tenant:1|connection:10|SAFE_T_SUBMIT|77|policy-12|2026-07-16'),
