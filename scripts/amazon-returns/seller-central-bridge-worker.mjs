@@ -227,7 +227,7 @@ class Cdp {
     const wanted=[...new Set((Array.isArray(labels)?labels:[labels]).map(v=>String(v??'').trim()).filter(Boolean))];
     if(wanted.length===0)return '';
     const evaluated=await this.send('Runtime.evaluate',{
-      expression:`(()=>{const wanted=${JSON.stringify(wanted)};const roots=[];const add=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const e of r.querySelectorAll?.('*')||[])if(e.shadowRoot)add(e.shadowRoot)};add(document);for(const root of roots){for(const host of root.querySelectorAll?.('kat-button,button')||[]){const label=(host.getAttribute?.('label')||host.getAttribute?.('aria-label')||host.innerText||'').trim();if(!wanted.includes(label))continue;const button=host.tagName==='KAT-BUTTON'?(host.shadowRoot?.querySelector('button')||host):host;if(!button||button.disabled||host.hasAttribute?.('disabled'))continue;return button}}return null})()`,
+      expression:`(()=>{const wanted=${JSON.stringify(wanted)}.map(v=>v.toLowerCase());const roots=[];const scan=root=>{if(!root||roots.includes(root))return;roots.push(root);for(const frame of root.querySelectorAll?.('iframe')||[]){try{scan(frame.contentDocument)}catch{}}for(const e of root.querySelectorAll?.('*')||[]){if(e.shadowRoot)scan(e.shadowRoot)}};scan(document);const found=[];const seen=new Set();for(const root of roots){for(const host of root.querySelectorAll?.('kat-button,button')||[]){const button=host.tagName==='KAT-BUTTON'?(host.shadowRoot?.querySelector('button')||host):host;if(!button||seen.has(button)||button.disabled||host.hasAttribute?.('disabled'))continue;const labels=[host.getAttribute?.('label'),host.getAttribute?.('aria-label'),host.innerText,button.getAttribute?.('aria-label'),button.innerText].map(v=>String(v||'').trim().toLowerCase()).filter(Boolean);if(!labels.some(label=>wanted.includes(label)))continue;const style=getComputedStyle(button),rect=button.getBoundingClientRect();if(style.display==='none'||style.visibility==='hidden'||rect.width<=0||rect.height<=0)continue;seen.add(button);found.push(button)}}return found.length===1?found[0]:null})()`,
       returnByValue:false,awaitPromise:true,
     });
     const objectId=evaluated?.result?.objectId;
@@ -1583,7 +1583,7 @@ async function supportUpdate(cdp, job) {
     const ok = await cdp.evaluate(`(()=>{const i=[...document.querySelectorAll('textarea')].find(h=>{if(h.disabled===true||h.hasAttribute('disabled'))return false;const placeholder=(h.getAttribute('placeholder')||'').toLowerCase();return !placeholder.includes('feedback')});if(!i)return false;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;setter.call(i,${JSON.stringify(narrative)});i.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:${JSON.stringify(narrative)}}));i.dispatchEvent(new Event('change',{bubbles:true}));return i.value===${JSON.stringify(narrative)}})()`);
     if (!ok) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_NATIVE_REPLY_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
   }
-  const sendLabels=['Send','Send message','Reply','Enviar','Enviar mensagem','Responder'];
+  const sendLabels=['Send','Send message','Submit','Enviar','Enviar mensagem','Enviar resposta'];
   const sent = await cdp.clickButtonTrustedByText(sendLabels);
   if (!text(sent)) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_SEND_MISSING', evidence: await evidence(cdp, 'help-v1') });
   const confirmed = await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240));
