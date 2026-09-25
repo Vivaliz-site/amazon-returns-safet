@@ -660,7 +660,7 @@ async function safeTSubmit(cdp, job) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_SUBMIT_BUTTON_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(7000);
-  const readBack = await cdp.evaluate(`(()=>{const href=location.href;const body=document.body?.innerText||'';const fromUrl=href.match(/\/claim\/(\d{5}-\d{5}-\d{7})/);const fromBody=body.match(/(?:ID da reivindicação SAFE-T[:\s]*|SAFE-T[:\s]+)(\d{5}-\d{5}-\d{7})/i);return fromUrl?.[1]||fromBody?.[1]||''})()`);
+  const readBack = await cdp.evaluate(`(()=>{const href=location.href;const body=document.body?.innerText||'';const claimMarker='/claim/';const claimPos=href.indexOf(claimMarker);const fromUrl=claimPos>=0?href.slice(claimPos+claimMarker.length).split(/[/?#]/,1)[0]:'';const fromBody=(body.match(new RegExp('(?:ID da reivindicação SAFE-T[:\\s]*|SAFE-T[:\\s]+)([0-9]{5}-[0-9]{5}-[0-9]{7})','i'))||[])[1]||'';const valid=v=>/^[0-9]{5}-[0-9]{5}-[0-9]{7}$/.test(String(v||''));return valid(fromUrl)?fromUrl:(valid(fromBody)?fromBody:'')})()`);
   if (!text(readBack)) {
     return bridgeResult('FAILED', { reason: 'SAFE_T_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: await evidence(cdp, 'safet-v1') });
   }
