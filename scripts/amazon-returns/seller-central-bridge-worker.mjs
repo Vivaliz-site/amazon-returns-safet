@@ -1598,7 +1598,7 @@ async function runOnce() {
     result = await executeJob(job);
   } catch (error) {
     log('job_exception', { ...job, status: 'FAILED', reason: `UNHANDLED_${error?.name || 'ERROR'}:${text(error?.message).slice(0, 240)}` });
-    result = bridgeResult('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: false });
+    result = bridgeResult('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: true });
   }
   await bridge('result', { job_id: job.job_id, idempotency_key: job.idempotency_key, result });
   log('job_result', { ...job, ...result });
