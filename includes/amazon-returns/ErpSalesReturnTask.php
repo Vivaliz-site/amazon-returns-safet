@@ -138,7 +138,7 @@ final class SvAmazonErpSalesReturnTask
                 if(is_array($workflow))$p->erpSalesReturns->markIgnoredByUser($orderId);
                 continue;
             }
-            if(!self::refundWithinOperationalWindow($cases,$now)){
+            if(!self::workflowWithinOperationalScope($workflow,$cases,$now)){
                 if(is_array($workflow)){
                     $status=strtoupper(trim((string)($workflow['status']??'')));
                     if(in_array($status,['PENDING','READY_TO_CREATE','BLOCKED','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW'],true)){
@@ -172,6 +172,14 @@ final class SvAmazonErpSalesReturnTask
             '701-5644155-5071463',
             '702-8564629-9301052',
         ],true);
+    }
+
+    /** @param list<array<string,mixed>> $cases */
+    public static function workflowWithinOperationalScope(?array $workflow,array $cases,?DateTimeImmutable $now=null): bool
+    {
+        $status=strtoupper(trim((string)($workflow['status']??'')));
+        if($status==='RETURN_CREATED_WAITING_INVOICE')return true;
+        return self::refundWithinOperationalWindow($cases,$now);
     }
 
     /** @param list<array<string,mixed>> $cases */
