@@ -223,6 +223,29 @@ class Cdp {
     return true;
   }
 
+  async clickButtonTrustedByText(labels) {
+    const wanted=[...new Set((Array.isArray(labels)?labels:[labels]).map(v=>String(v??'').trim()).filter(Boolean))];
+    if(wanted.length===0)return '';
+    const evaluated=await this.send('Runtime.evaluate',{
+      expression:`(()=>{const wanted=${JSON.stringify(wanted)};const roots=[];const add=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const e of r.querySelectorAll?.('*')||[])if(e.shadowRoot)add(e.shadowRoot)};add(document);for(const root of roots){for(const host of root.querySelectorAll?.('kat-button,button')||[]){const label=(host.getAttribute?.('label')||host.getAttribute?.('aria-label')||host.innerText||'').trim();if(!wanted.includes(label))continue;const button=host.tagName==='KAT-BUTTON'?(host.shadowRoot?.querySelector('button')||host):host;if(!button||button.disabled||host.hasAttribute?.('disabled'))continue;return button}}return null})()`,
+      returnByValue:false,awaitPromise:true,
+    });
+    const objectId=evaluated?.result?.objectId;
+    if(!objectId)return '';
+    try{
+      await this.send('DOM.scrollIntoViewIfNeeded',{objectId});await sleep(120);
+      const box=await this.send('DOM.getBoxModel',{objectId});const q=box?.model?.content;
+      if(!Array.isArray(q)||q.length<8)return '';
+      const x=(Number(q[0])+Number(q[2])+Number(q[4])+Number(q[6]))/4;
+      const y=(Number(q[1])+Number(q[3])+Number(q[5])+Number(q[7]))/4;
+      if(!Number.isFinite(x)||!Number.isFinite(y))return '';
+      await this.send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y,button:'none'});
+      await this.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});
+      await this.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});
+      return 'CLICKED';
+    }catch{return ''}finally{await this.send('Runtime.releaseObject',{objectId}).catch(()=>{});}
+  }
+
   async frameButtonReadyByText(label) {
     return (await this.evaluate(`(()=>{const label=${JSON.stringify(label)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const host of d.querySelectorAll('kat-button,button')){const text=(host.getAttribute('label')||host.innerText||'').trim();if(text!==label)continue;const button=host.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(button&&!button.disabled)return true}}return false})()`)) === true;
   }
@@ -1083,6 +1106,18 @@ async function currentSupportCaseId(cdp) {
   return text(await cdp.evaluate(`(()=>{const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){for(const a of d.querySelectorAll('a[href*="caseID="]')){const m=(a.href||'').match(/[?&]caseID=(\\d{8,14})/);if(m)return m[1]}const body=d.body?.innerText||'';const m=body.match(/(?:ID do caso|Case ID)[:\\s#-]*(\\d{8,14})/i);if(m)return m[1]}return ''})()`));
 }
 
+async function supportCaseContainsText(cdp, caseId, needle) {
+  const candidate=text(caseId), expected=text(needle);
+  if(!/^\d{8,14}$/.test(candidate)||!expected)return false;
+  return (await cdp.evaluate(`(async()=>{try{const response=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(${JSON.stringify(candidate)})+'&timeZone=UTC&pageSize=50',{credentials:'include'});if(!response.ok)return false;const detail=await response.json();return JSON.stringify(detail||{}).includes(${JSON.stringify(expected)})}catch{return false}})()`))===true;
+}
+
+async function waitForSupportCaseText(cdp, caseId, needle, timeoutMs=20000) {
+  const deadline=Date.now()+Math.max(1000,Number(timeoutMs)||20000);
+  do{if(await supportCaseContainsText(cdp,caseId,needle))return true;await sleep(1000)}while(Date.now()<deadline);
+  return false;
+}
+
 async function supportCaseMatchesJob(cdp, job, caseId) {
   const candidate = text(caseId);
   const needles = [text(job.case?.order_id), text(job.case?.safe_t_id)].filter(Boolean);
@@ -1535,6 +1570,9 @@ async function supportUpdate(cdp, job) {
     return bridgeResult('SUPERSEDED', { reason: 'SUPPORT_CASE_NOT_REOPENABLE', retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
   }
   const narrative = narrativeFor(job, 9000);
+  if (await supportCaseContainsText(cdp, caseId, narrative.slice(0, 240))) {
+    return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
   if (already) return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   const selector = await ensureSupportReplyComposer(cdp);
@@ -1545,11 +1583,11 @@ async function supportUpdate(cdp, job) {
     const ok = await cdp.evaluate(`(()=>{const i=[...document.querySelectorAll('textarea')].find(h=>{if(h.disabled===true||h.hasAttribute('disabled'))return false;const placeholder=(h.getAttribute('placeholder')||'').toLowerCase();return !placeholder.includes('feedback')});if(!i)return false;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;setter.call(i,${JSON.stringify(narrative)});i.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:${JSON.stringify(narrative)}}));i.dispatchEvent(new Event('change',{bubbles:true}));return i.value===${JSON.stringify(narrative)}})()`);
     if (!ok) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_NATIVE_REPLY_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
   }
-  const sent = await cdp.evaluate(`(()=>{const labels=['Send','Send message','Reply','Enviar','Enviar mensagem','Responder'];for(const h of document.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.innerText||'').trim();if(!labels.includes(label))continue;const b=h.tagName==='KAT-BUTTON'?h.shadowRoot?.querySelector('button'):h;if(b&&!b.disabled){b.click();return label}}return ''})()`);
+  const sendLabels=['Send','Send message','Reply','Enviar','Enviar mensagem','Responder'];
+  const sent = await cdp.clickButtonTrustedByText(sendLabels);
   if (!text(sent)) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_SEND_MISSING', evidence: await evidence(cdp, 'help-v1') });
-  await sleep(5000);
-  const confirmed = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
-  if (!confirmed) return bridgeResult('FAILED', { reason: 'SUPPORT_REPLY_NOT_CONFIRMED', retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
+  const confirmed = await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240));
+  if (!confirmed) return bridgeResult('FAILED', { reason: 'SUPPORT_REPLY_NOT_CONFIRMED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   return bridgeResult('ACCEPTED', {
     submitted: true,
     external_id: caseId,

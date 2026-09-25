@@ -14,7 +14,12 @@ for (const label of ['Send', 'Send message', 'Reply', 'Enviar', 'Enviar mensagem
     `supportUpdate must recognize Seller Central reply action label: ${label}`,
   );
 }
-assert.match(supportUpdate, /querySelectorAll\('kat-button,button'\)/, 'reply action must continue to use trusted visible button hosts');
+assert.ok(worker.includes("querySelectorAll?.('kat-button,button')"), 'trusted reply click helper must inspect visible button hosts across shadow roots.');
+assert.ok(worker.includes('async function supportCaseContainsText(cdp, caseId, needle)'), 'Seller Support updates must verify existing replies through authenticated ViewCase readback.');
+assert.ok(worker.includes('async clickButtonTrustedByText(labels)'), 'Seller Support send must use a trusted top-level pointer helper.');
+assert.ok(supportUpdate.includes('await supportCaseContainsText(cdp, caseId, narrative.slice(0, 240))'), 'supportUpdate must dedupe against authoritative case content before sending.');
+assert.ok(supportUpdate.includes('await cdp.clickButtonTrustedByText(sendLabels)'), 'supportUpdate must send with a trusted CDP pointer click.');
+assert.ok(supportUpdate.includes('await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240))'), 'supportUpdate must confirm the reply through ViewCase after sending.');
 assert.ok(
   supportUpdate.includes('const selector = await ensureSupportReplyComposer(cdp);'),
   'supportUpdate must open/locate the real reply composer before writing text.',
