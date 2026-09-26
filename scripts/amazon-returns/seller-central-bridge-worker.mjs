@@ -223,6 +223,28 @@ class Cdp {
     return true;
   }
 
+  async fillDeepSupportTextarea(value) {
+    const expected=String(value??'');
+    if(expected==='')return false;
+    const evaluated=await this.send('Runtime.evaluate',{
+      expression:`(()=>{const roots=[];const scan=root=>{if(!root||roots.includes(root))return;roots.push(root);for(const frame of root.querySelectorAll?.('iframe')||[]){try{scan(frame.contentDocument)}catch{}}for(const e of root.querySelectorAll?.('*')||[]){if(e.shadowRoot)scan(e.shadowRoot)}};scan(document);const usable=h=>{if(!h||h.disabled===true||h.hasAttribute?.('disabled')||h.getAttribute?.('aria-disabled')==='true')return false;const placeholder=(h.getAttribute?.('placeholder')||h.getAttribute?.('aria-label')||'').toLowerCase();return !placeholder.includes('feedback')};for(const root of roots){for(const host of root.querySelectorAll?.('kat-textarea')||[]){if(!usable(host))continue;const textarea=host.shadowRoot?.querySelector('textarea');if(usable(textarea))return textarea}for(const textarea of root.querySelectorAll?.('textarea')||[]){if(usable(textarea))return textarea}}return null})()`,
+      returnByValue:false,
+      awaitPromise:true,
+    });
+    const objectId=evaluated?.result?.objectId;
+    if(!objectId)return false;
+    try{
+      const result=await this.send('Runtime.callFunctionOn',{
+        objectId,
+        functionDeclaration:`function(expected){if(!this||this.tagName!=='TEXTAREA'||this.disabled)return false;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')?.set;if(typeof setter!=='function')return false;setter.call(this,expected);this.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:expected}));this.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return this.value===expected}`,
+        arguments:[{value:expected}],
+        returnByValue:true,
+        awaitPromise:true,
+      });
+      return result?.result?.value===true;
+    }catch{return false}finally{await this.send('Runtime.releaseObject',{objectId}).catch(()=>{});}
+  }
+
   async clickButtonTrustedByText(labels) {
     const wanted=[...new Set((Array.isArray(labels)?labels:[labels]).map(v=>String(v??'').trim()).filter(Boolean))];
     if(wanted.length===0)return '';
@@ -1555,15 +1577,15 @@ async function ensureSupportReplyComposer(cdp) {
   const deadline = Date.now() + 15000;
   let triggered = false;
   while (Date.now() < deadline) {
-    const selector = text(await cdp.evaluate(`(()=>{const usable=h=>{if(!h||h.disabled===true||h.hasAttribute('disabled'))return false;const placeholder=(h.getAttribute('placeholder')||'').toLowerCase();return !placeholder.includes('feedback')};const kat=[...document.querySelectorAll('kat-textarea')].find(usable);if(kat)return 'kat-textarea';const native=[...document.querySelectorAll('textarea')].find(usable);return native?'textarea':''})()`));
-    if (selector) return selector;
+    const ready = (await cdp.evaluate(`(()=>{const roots=[];const scan=root=>{if(!root||roots.includes(root))return;roots.push(root);for(const frame of root.querySelectorAll?.('iframe')||[]){try{scan(frame.contentDocument)}catch{}}for(const e of root.querySelectorAll?.('*')||[]){if(e.shadowRoot)scan(e.shadowRoot)}};scan(document);const usable=h=>{if(!h||h.disabled===true||h.hasAttribute?.('disabled')||h.getAttribute?.('aria-disabled')==='true')return false;const placeholder=(h.getAttribute?.('placeholder')||h.getAttribute?.('aria-label')||'').toLowerCase();return !placeholder.includes('feedback')};for(const root of roots){for(const host of root.querySelectorAll?.('kat-textarea')||[]){if(!usable(host))continue;const textarea=host.shadowRoot?.querySelector('textarea');if(usable(textarea))return true}for(const textarea of root.querySelectorAll?.('textarea')||[]){if(usable(textarea))return true}}return false})()`))===true;
+    if (ready) return true;
     if (!triggered) {
-      const opened = text(await cdp.evaluate(`(()=>{const labels=${JSON.stringify(triggerLabels)};for(const h of document.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.getAttribute('aria-label')||h.innerText||'').trim();if(!labels.includes(label))continue;const b=h.tagName==='KAT-BUTTON'?(h.shadowRoot?.querySelector('button')||h):h;if(b&&!b.disabled){b.click();return label}}return ''})()`));
+      const opened = text(await cdp.clickButtonTrustedByText(triggerLabels));
       if (opened) triggered = true;
     }
     await sleep(500);
   }
-  return '';
+  return false;
 }
 async function supportUpdate(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
@@ -1589,14 +1611,9 @@ async function supportUpdate(cdp, job) {
   }
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
   if (already) return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-  const selector = await ensureSupportReplyComposer(cdp);
-  if (!text(selector)) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
-  if (selector === 'kat-textarea') {
-    if (!(await cdp.setKat('kat-textarea', narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
-  } else {
-    const ok = await cdp.evaluate(`(()=>{const i=[...document.querySelectorAll('textarea')].find(h=>{if(h.disabled===true||h.hasAttribute('disabled'))return false;const placeholder=(h.getAttribute('placeholder')||'').toLowerCase();return !placeholder.includes('feedback')});if(!i)return false;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;setter.call(i,${JSON.stringify(narrative)});i.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:${JSON.stringify(narrative)}}));i.dispatchEvent(new Event('change',{bubbles:true}));return i.value===${JSON.stringify(narrative)}})()`);
-    if (!ok) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_NATIVE_REPLY_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
-  }
+  const composerReady = await ensureSupportReplyComposer(cdp);
+  if (!composerReady) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
+  if (!(await cdp.fillDeepSupportTextarea(narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
   const sendLabels=['Send','Send message','Submit','Enviar','Enviar mensagem','Enviar resposta'];
   const sent = await cdp.clickButtonTrustedByText(sendLabels);
   if (!text(sent)) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_SEND_MISSING', evidence: await evidence(cdp, 'help-v1') });
