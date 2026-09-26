@@ -1437,7 +1437,7 @@ async function openFbaSupportCardWithRetry(cdp) {
 async function supportOpen(cdp, job, options = {}) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
-  const supportRoute = supportRouteFor(job);
+  const supportRoute = text(options.supportRoute || supportRouteFor(job)).toUpperCase();
   if (!supportRoute) return bridgeResult('FAILED', { reason: 'SUPPORT_ROUTE_UNSUPPORTED', retry_safe: false });
   const decisionReason = text(job.payload?.decision?.reason).toUpperCase();
   const physicalStatus = text(job.case?.physical_status).toUpperCase();
@@ -1705,7 +1705,7 @@ async function supportUpdate(cdp, job) {
   }
   const channels = Array.isArray(apiReply.channels) ? apiReply.channels : [];
   if (apiReply.status === 'LIVE_ONLY' && (channels.includes('Chat') || channels.includes('Phone'))) {
-    return await supportOpen(cdp, job, { forceFreshCase: true });
+    return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'GENERAL_ORDER_SUPPORT' });
   }
   const composerReady = await ensureSupportReplyComposer(cdp);
   if (!composerReady) {
