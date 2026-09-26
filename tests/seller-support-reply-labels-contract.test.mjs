@@ -17,7 +17,7 @@ for (const label of ['Send', 'Send message', 'Submit', 'Enviar', 'Enviar mensage
 assert.ok(!supportUpdate.includes("sendLabels=['Send','Send message','Reply'"), 'Reply/Responder composer triggers must never count as final send actions.');
 assert.ok(worker.includes("querySelectorAll?.('kat-button,button')"), 'trusted reply click helper must inspect button hosts across deep roots.');
 assert.ok(worker.includes("querySelectorAll?.('iframe')") && worker.includes('scan(frame.contentDocument)'), 'trusted reply click helper must traverse same-origin iframes, including those nested under shadow DOM.');
-assert.ok(worker.includes('found.length===1'), 'trusted reply click helper must fail closed unless exactly one send target is visible.');
+assert.ok(worker.includes('visible.length===1'), 'trusted reply click helper must fail closed unless exactly one send target is visible.');
 assert.ok(worker.includes('async function supportCaseContainsText(cdp, caseId, needle)'), 'Seller Support updates must verify existing replies through authenticated ViewCase readback.');
 assert.ok(worker.includes('async clickButtonTrustedByText(labels)'), 'Seller Support send must use a trusted top-level pointer helper.');
 assert.ok(supportUpdate.includes('await supportCaseContainsText(cdp, caseId, narrative.slice(0, 240))'), 'supportUpdate must dedupe against authoritative case content before sending.');
