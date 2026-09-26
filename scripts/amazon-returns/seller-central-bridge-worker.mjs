@@ -226,24 +226,74 @@ class Cdp {
   async clickButtonTrustedByText(labels) {
     const wanted=[...new Set((Array.isArray(labels)?labels:[labels]).map(v=>String(v??'').trim()).filter(Boolean))];
     if(wanted.length===0)return '';
-    const evaluated=await this.send('Runtime.evaluate',{
-      expression:`(()=>{const wanted=${JSON.stringify(wanted)}.map(v=>v.toLowerCase());const roots=[];const scan=root=>{if(!root||roots.includes(root))return;roots.push(root);for(const frame of root.querySelectorAll?.('iframe')||[]){try{scan(frame.contentDocument)}catch{}}for(const e of root.querySelectorAll?.('*')||[]){if(e.shadowRoot)scan(e.shadowRoot)}};scan(document);const found=[];const seen=new Set();for(const root of roots){for(const host of root.querySelectorAll?.('kat-button,button')||[]){const button=host.tagName==='KAT-BUTTON'?(host.shadowRoot?.querySelector('button')||host):host;if(!button||seen.has(button)||button.disabled||host.hasAttribute?.('disabled'))continue;const labels=[host.getAttribute?.('label'),host.getAttribute?.('aria-label'),host.innerText,button.getAttribute?.('aria-label'),button.innerText].map(v=>String(v||'').trim().toLowerCase()).filter(Boolean);if(!labels.some(label=>wanted.includes(label)))continue;const style=getComputedStyle(button),rect=button.getBoundingClientRect();if(style.display==='none'||style.visibility==='hidden'||rect.width<=0||rect.height<=0)continue;seen.add(button);found.push(button)}}return found.length===1?found[0]:null})()`,
-      returnByValue:false,awaitPromise:true,
-    });
-    const objectId=evaluated?.result?.objectId;
-    if(!objectId)return '';
+    const wantedNames=new Set(wanted.map(v=>v.toLowerCase()));
+    const visible=[];
     try{
-      await this.send('DOM.scrollIntoViewIfNeeded',{objectId});await sleep(120);
-      const box=await this.send('DOM.getBoxModel',{objectId});const q=box?.model?.content;
-      if(!Array.isArray(q)||q.length<8)return '';
-      const x=(Number(q[0])+Number(q[2])+Number(q[4])+Number(q[6]))/4;
-      const y=(Number(q[1])+Number(q[3])+Number(q[5])+Number(q[7]))/4;
-      if(!Number.isFinite(x)||!Number.isFinite(y))return '';
-      await this.send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y,button:'none'});
-      await this.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});
-      await this.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});
-      return 'CLICKED';
-    }catch{return ''}finally{await this.send('Runtime.releaseObject',{objectId}).catch(()=>{});}
+      const frameTree=await this.send('Page.getFrameTree');
+      const frameIds=[];
+      const addFrame=entry=>{
+        const frameId=text(entry?.frame?.id);
+        if(frameId)frameIds.push(frameId);
+        for(const child of entry?.childFrames||[])addFrame(child);
+      };
+      addFrame(frameTree?.frameTree);
+      const seenBackendNodes=new Set();
+      for(const frameId of frameIds){
+        let tree;
+        try{tree=await this.send('Accessibility.getFullAXTree',{frameId});}catch{continue;}
+        for(const node of tree?.nodes||[]){
+          if(node?.ignored===true || text(node?.role?.value).toLowerCase()!=='button')continue;
+          if(!wantedNames.has(text(node?.name?.value).toLowerCase()))continue;
+          if((node?.properties||[]).some(p=>p?.name==='disabled' && p?.value?.value===true))continue;
+          const backendDOMNodeId=Number(node?.backendDOMNodeId||0);
+          if(!Number.isInteger(backendDOMNodeId)||backendDOMNodeId<1||seenBackendNodes.has(backendDOMNodeId))continue;
+          seenBackendNodes.add(backendDOMNodeId);
+          let objectId='';
+          try{
+            const resolved=await this.send('DOM.resolveNode',{backendNodeId:backendDOMNodeId});
+            objectId=text(resolved?.object?.objectId);
+            if(!objectId)continue;
+            const state=await this.send('Runtime.callFunctionOn',{
+              objectId,
+              functionDeclaration:'function(){const s=getComputedStyle(this),r=this.getBoundingClientRect();return {visible:s.display!=="none"&&s.visibility!=="hidden"&&r.width>0&&r.height>0,disabled:this.disabled===true||this.hasAttribute?.("disabled")===true}}',
+              returnByValue:true,
+            });
+            const value=state?.result?.value;
+            if(value?.visible===true && value?.disabled!==true){
+              visible.push(objectId);
+              objectId='';
+            }
+          }catch{
+          }finally{
+            if(objectId)await this.send('Runtime.releaseObject',{objectId}).catch(()=>{});
+          }
+          if(visible.length>1)break;
+        }
+        if(visible.length>1)break;
+      }
+      if(visible.length===1){
+        const objectId=visible[0];
+        await this.send('DOM.scrollIntoViewIfNeeded',{objectId});
+        await sleep(120);
+        const box=await this.send('DOM.getBoxModel',{objectId});
+        const q=box?.model?.content;
+        if(!Array.isArray(q)||q.length<8)return '';
+        const x=(Number(q[0])+Number(q[2])+Number(q[4])+Number(q[6]))/4;
+        const y=(Number(q[1])+Number(q[3])+Number(q[5])+Number(q[7]))/4;
+        if(!Number.isFinite(x)||!Number.isFinite(y))return '';
+        await this.send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y,button:'none'});
+        await this.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});
+        await this.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});
+        return 'CLICKED';
+      }
+      return '';
+    }catch{
+      return '';
+    }finally{
+      for(const objectId of visible){
+        await this.send('Runtime.releaseObject',{objectId}).catch(()=>{});
+      }
+    }
   }
 
   async frameButtonReadyByText(label) {
