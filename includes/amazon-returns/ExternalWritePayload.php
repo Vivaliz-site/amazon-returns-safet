@@ -62,6 +62,16 @@ final class SvAmazonExternalWritePayload
                 .'a data do crédito, o ID da transação financeira e/ou o ID do ressarcimento, além do relatório ou evento financeiro em que esse crédito aparece. '
                 .'Enquanto não houver a identificação e conciliação desse crédito em nossa conta de vendedor, consideramos o ressarcimento pendente.';
         }
+        if($action==='SELLER_SUPPORT_UPDATE'
+            && $reason==='SUPPORT_RETURN_NOT_RECEIVED_REBUTTAL'){
+            return 'Pedido '.$order.', SAFE-T '.$safeT.'. Nós não recebemos fisicamente o produto. '
+                .'A resposta da Amazon afirma que o item foi devolvido e usa essa suposta devolução para aplicar o prazo de 7 dias, '
+                .'mas essa informação não comprova que o item foi entregue a nós, vendedores. '
+                .'O próprio histórico deste caso registra que o produto não retornou ao nosso estoque. '
+                .'Solicitamos a revisão da decisão. Caso a Amazon considere que houve entrega ao vendedor, favor apresentar '
+                .'a data e hora da entrega, a transportadora, o rastreio, o endereço de entrega, a identificação do recebedor e o comprovante de entrega. '
+                .'Um evento de retorno à Amazon ou à transportadora não equivale a entrega ao vendedor.';
+        }
         if(in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
             && $reason==='CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION'){
             $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
