@@ -1628,6 +1628,42 @@ async function ensureSupportReplyComposer(cdp) {
   }
   return false;
 }
+async function supportReplyChannels(cdp, caseId) {
+  const candidate = text(caseId);
+  if (!/^\d{8,14}$/.test(candidate)) return { status: 'INVALID', channels: [] };
+  const raw = await cdp.evaluate(`(async()=>{try{const caseId=${JSON.stringify(candidate)};const response=await fetch('/hill/hillservice/mons-api/GetReplyChannels?caseId='+encodeURIComponent(caseId),{credentials:'include'});if(!response.ok)return JSON.stringify({status:'HTTP_ERROR',http_status:response.status,channels:[]});const body=await response.json();return JSON.stringify({status:'OK',channels:Array.isArray(body?.channels)?body.channels.map(channel=>String(channel?.type||'').trim()).filter(Boolean):[],cis_enabled:body?.cisEnabled===true,can_reply:body?.partnerInformation?.canReplyCase===true})}catch{return JSON.stringify({status:'UNAVAILABLE',channels:[]})}})()`);
+  try {
+    const result = JSON.parse(String(raw || '{}'));
+    return {
+      status: text(result.status || 'UNAVAILABLE'),
+      channels: Array.isArray(result.channels) ? result.channels.map(text).filter(Boolean) : [],
+      cis_enabled: result.cis_enabled === true,
+      can_reply: result.can_reply === true,
+      http_status: Number(result.http_status || 0),
+    };
+  } catch {
+    return { status: 'UNAVAILABLE', channels: [] };
+  }
+}
+
+async function submitSupportEmailReplyApi(cdp, caseId, narrative) {
+  const channels = await supportReplyChannels(cdp, caseId);
+  if (channels.status !== 'OK' || channels.can_reply !== true) {
+    return { status: 'UNAVAILABLE', channels: channels.channels || [], attempted: false };
+  }
+  if (!channels.channels.includes('Email')) {
+    const liveOnly = channels.channels.length > 0
+      && channels.channels.every(channel => channel === 'Chat' || channel === 'Phone');
+    return { status: liveOnly ? 'LIVE_ONLY' : 'UNAVAILABLE', channels: channels.channels, attempted: false };
+  }
+  const resultRaw = await cdp.evaluate(`(async()=>{try{const caseId=${JSON.stringify(text(caseId))};const narrative=${JSON.stringify(text(narrative))};const cisEnabled=${channels.cis_enabled === true ? 'true' : 'false'};const response=await fetch('/hill/hillservice/mons-api/ReplyCase',{method:'POST',credentials:'include',headers:{'content-type':'application/json','client-id':'viewCase','enforce-waf-captcha-for-bot':'true','origin-referrer':location.origin},body:JSON.stringify({caseId,channelType:'Email',formData:{formFields:{describeIssue:narrative},emailData:{attachments:[]}},enforceWafCaptcha:false,cisEnabled})});return JSON.stringify({status:response.ok?'ACCEPTED':'HTTP_ERROR',http_status:response.status})}catch{return JSON.stringify({status:'UNAVAILABLE',http_status:0})}})()`);
+  let result;
+  try { result = JSON.parse(String(resultRaw || '{}')); } catch { result = { status: 'UNAVAILABLE', http_status: 0 }; }
+  if (result.status !== 'ACCEPTED') return { status: result.status || 'UNAVAILABLE', channels: channels.channels, http_status: Number(result.http_status || 0), attempted: true };
+  const confirmed = await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240));
+  return { status: confirmed ? 'ACCEPTED' : 'UNCONFIRMED', channels: channels.channels, http_status: Number(result.http_status || 0), attempted: true };
+}
+
 async function supportUpdate(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -1653,6 +1689,24 @@ async function supportUpdate(cdp, job) {
   }
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
   if (already) return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  const apiReply = await submitSupportEmailReplyApi(cdp, caseId, narrative);
+  if (apiReply.status === 'ACCEPTED') {
+    return bridgeResult('ACCEPTED', {
+      submitted: true,
+      external_id: caseId,
+      retry_safe: true,
+      reason: 'SUPPORT_CASE_UPDATED_VIA_REPLY_API_AND_READ_BACK',
+      evidence: await evidence(cdp, 'help-v1'),
+    });
+  }
+  if (apiReply.attempted === true) {
+    const reason = apiReply.status === 'UNCONFIRMED' ? 'SUPPORT_REPLY_NOT_CONFIRMED' : 'SUPPORT_REPLY_API_FAILED';
+    return bridgeResult('FAILED', { reason, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
+  const channels = Array.isArray(apiReply.channels) ? apiReply.channels : [];
+  if (apiReply.status === 'LIVE_ONLY' && (channels.includes('Chat') || channels.includes('Phone'))) {
+    return await supportOpen(cdp, job, { forceFreshCase: true });
+  }
   const composerReady = await ensureSupportReplyComposer(cdp);
   if (!composerReady) {
     const latestSupportPage = await cdp.pageState(18000);
