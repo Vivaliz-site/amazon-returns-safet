@@ -1028,6 +1028,13 @@ async function supportCaseReadbackSnapshot(cdp) {
   return await cdp.evaluate(`(()=>{const out=[];const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){out.push({url:d.location?.href||'',links:[...d.querySelectorAll('a[href]')].map(a=>({href:a.href||'',text:(a.innerText||'').trim().slice(0,120)})).filter(x=>/case|support/i.test(x.href+x.text)).slice(0,30),text:(d.body?.innerText||'').slice(0,5000)})}return out})()`);
 }
 
+function sellerSupportCaseLogUnavailable(value) {
+  const body=text(value).toLowerCase();
+  return body.includes('case log system is currently unavailable')
+    || body.includes('sistema de registro de casos') && body.includes('indisponível')
+    || body.includes('sistema de registro de casos') && body.includes('indisponivel');
+}
+
 function sellerSupportUnavailableResult() {
   return bridgeResult('BLOCKED_UNTIL', {
     block_reason: 'SELLER_SUPPORT_CURRENTLY_UNAVAILABLE',
@@ -1597,6 +1604,7 @@ async function supportUpdate(cdp, job) {
   if (auth) return auth;
   const supportPage = await cdp.pageState(18000);
   const supportBody = text(supportPage?.text).toLowerCase();
+  if (sellerSupportCaseLogUnavailable(supportBody)) return sellerSupportUnavailableResult();
   if (supportBody.includes('answered cases cannot be reopened after 5 days with no activity')
       || supportBody.includes('casos respondidos não podem ser reabertos após 5 dias sem atividade')
       || supportBody.includes('casos respondidos nao podem ser reabertos apos 5 dias sem atividade')) {
@@ -1612,7 +1620,11 @@ async function supportUpdate(cdp, job) {
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
   if (already) return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   const composerReady = await ensureSupportReplyComposer(cdp);
-  if (!composerReady) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
+  if (!composerReady) {
+    const latestSupportPage = await cdp.pageState(18000);
+    if (sellerSupportCaseLogUnavailable(latestSupportPage?.text)) return sellerSupportUnavailableResult();
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
+  }
   if (!(await cdp.fillDeepSupportTextarea(narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
   const sendLabels=['Send','Send message','Submit','Enviar','Enviar mensagem','Enviar resposta'];
   const sent = await cdp.clickButtonTrustedByText(sendLabels);
