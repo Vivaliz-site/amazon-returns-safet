@@ -8,7 +8,7 @@ function ssclAssert(bool $ok,string $message):void
 
 $worker=(string)file_get_contents(__DIR__.'/../scripts/amazon-returns/seller-central-bridge-worker.mjs');
 $start=strpos($worker,'async function supportUpdate');
-$end=$start===false?false:strpos($worker,'\nasync function ',$start+1);
+$end=$start===false?false:strpos($worker,"\nasync function ",$start+1);
 ssclAssert($start!==false && $end!==false,'supportUpdate must remain auditable.');
 $update=substr($worker,(int)$start,(int)$end-(int)$start);
 
