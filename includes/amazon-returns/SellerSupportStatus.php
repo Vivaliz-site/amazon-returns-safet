@@ -99,6 +99,7 @@ final class SvAmazonSellerSupportStatus
         if($terminal && str_contains($text,'safe-t-review@amazon.com'))return 'EMAIL_REVIEW';
         if(($terminal || $sellerAction) && self::directsSafeTSubmission($text))return 'SAFE_T_SUBMIT';
         if(!$terminal){
+            if($sellerAction && self::returnNotReceivedDispute($text))return 'RETURN_NOT_RECEIVED_DISPUTE';
             if($sellerAction && self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
             return 'ACTIVE';
         }
@@ -109,6 +110,7 @@ final class SvAmazonSellerSupportStatus
         $safeT=str_contains($text,'safe-t') || str_contains($text,'safet');
         $appeal=preg_match('/(?:appeal|recurso|recorr)/u',$text)===1;
         if($safeT && $appeal)return 'SAFE_T_APPEAL';
+        if(self::returnNotReceivedDispute($text))return 'RETURN_NOT_RECEIVED_DISPUTE';
         if(self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
         return 'TERMINAL_AMBIGUOUS';
     }
@@ -124,6 +126,14 @@ final class SvAmazonSellerSupportStatus
     {
         $normalized=preg_replace('/[^A-Z0-9]+/','',strtoupper(trim($status))) ?? '';
         return in_array($normalized,['PENDINGSELLERACTION','AWAITINGSELLERACTION'],true);
+    }
+
+    private static function returnNotReceivedDispute(string $text): bool
+    {
+        $returnAsserted=preg_match('/(?:item|produto|devolu[cç][aã]o).{0,100}(?:foi\\s+)?devolvid[oa].{0,80}(?:\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4}|data\\s+de\\s+devolu[cç][aã]o)|(?:returned|return).{0,100}(?:item|product).{0,80}(?:date|\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4})/u',$text)===1;
+        $deadline=preg_match('/(?:7\\s*dias|7\\s*days|seven\\s+days).{0,180}(?:devolu[cç][aã]o|returned|return)|(?:devolu[cç][aã]o|returned|return).{0,180}(?:7\\s*dias|7\\s*days|seven\\s+days)/u',$text)===1;
+        $notReceived=preg_match('/(?:produto|item).{0,120}(?:n[aã]o|nao|not).{0,40}(?:retorn|devolv|recebid)|(?:n[aã]o|nao|not).{0,40}(?:retorn|devolv|recebid).{0,120}(?:produto|item)/u',$text)===1;
+        return $returnAsserted && $deadline && $notReceived;
     }
 
     private static function buyerRefundOnly(string $text): bool
