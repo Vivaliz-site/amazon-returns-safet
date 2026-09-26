@@ -29,7 +29,7 @@ assert.ok(supportUpdate.includes('await supportCaseContainsText(cdp, caseId, nar
 assert.ok(supportUpdate.includes('await cdp.clickButtonTrustedByText(sendLabels)'), 'supportUpdate must send with a trusted CDP pointer click.');
 assert.ok(supportUpdate.includes('await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240))'), 'supportUpdate must confirm the reply through ViewCase after sending.');
 assert.ok(
-  supportUpdate.includes('const selector = await ensureSupportReplyComposer(cdp);'),
+  supportUpdate.includes('const composerReady = await ensureSupportReplyComposer(cdp);'),
   'supportUpdate must open/locate the real reply composer before writing text.',
 );
 assert.ok(
@@ -39,6 +39,27 @@ assert.ok(
 assert.ok(
   worker.includes("const triggerLabels=['Reply','Responder']"),
   'reply composer transition must recognize the observed Reply/Responder action.',
+);
+
+assert.ok(
+  worker.includes('await cdp.clickButtonTrustedByText(triggerLabels)'),
+  'reply composer transition must use the trusted deep-root pointer helper for Reply/Responder.',
+);
+assert.ok(
+  worker.includes("querySelectorAll?.('iframe')") && worker.includes('if(e.shadowRoot)scan(e.shadowRoot)'),
+  'reply composer field discovery must traverse nested same-origin iframe and shadow roots.',
+);
+assert.ok(
+  worker.includes('async fillDeepSupportTextarea(value)'),
+  'Seller Support replies must provide a dedicated trusted deep-root textarea writer.',
+);
+assert.ok(
+  supportUpdate.includes('await cdp.fillDeepSupportTextarea(narrative)'),
+  'supportUpdate must write the reply through the deep-root trusted textarea writer.',
+);
+assert.ok(
+  !supportUpdate.includes("await cdp.setKat('kat-textarea', narrative)"),
+  'supportUpdate must not assume the reply textarea is in the top document.',
 );
 
 console.log('seller-support-reply-labels-contract-test: OK');
