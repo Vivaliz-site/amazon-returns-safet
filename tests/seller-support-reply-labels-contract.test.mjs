@@ -15,9 +15,14 @@ for (const label of ['Send', 'Send message', 'Submit', 'Enviar', 'Enviar mensage
   );
 }
 assert.ok(!supportUpdate.includes("sendLabels=['Send','Send message','Reply'"), 'Reply/Responder composer triggers must never count as final send actions.');
-assert.ok(worker.includes("querySelectorAll?.('kat-button,button')"), 'trusted reply click helper must inspect button hosts across deep roots.');
+assert.ok(worker.includes("const selector='kat-button,button,kat-link,[role=\"button\"],input[type=\"submit\"],input[type=\"button\"]'"), 'trusted reply click helper must inspect semantic button controls across deep roots.');
+assert.ok(worker.includes("host.tagName==='KAT-LINK'"), 'trusted reply click helper must support Seller Central KAT links rendered as buttons.');
+assert.ok(worker.includes("host.getAttribute?.('value')") && worker.includes("host.getAttribute?.('title')"), 'trusted reply click helper must recognize explicit send labels exposed through value/title attributes.');
+assert.ok(worker.includes("host.getAttribute?.('aria-disabled')==='true'"), 'trusted reply click helper must reject aria-disabled controls.');
+assert.ok(worker.includes('control.getClientRects().length===0'), 'trusted reply click helper must reject non-rendered controls.');
 assert.ok(worker.includes("querySelectorAll?.('iframe')") && worker.includes('scan(frame.contentDocument)'), 'trusted reply click helper must traverse same-origin iframes, including those nested under shadow DOM.');
 assert.ok(worker.includes('found.length===1'), 'trusted reply click helper must fail closed unless exactly one send target is visible.');
+assert.ok(worker.includes("const buttonSelector='kat-button,button,kat-link,[role=\"button\"],input[type=\"submit\"],input[type=\"button\"]'"), 'support evidence must snapshot the same semantic control family used for trusted sends.');
 assert.ok(worker.includes('async function supportCaseContainsText(cdp, caseId, needle)'), 'Seller Support updates must verify existing replies through authenticated ViewCase readback.');
 assert.ok(worker.includes('async clickButtonTrustedByText(labels)'), 'Seller Support send must use a trusted top-level pointer helper.');
 assert.ok(supportUpdate.includes('await supportCaseContainsText(cdp, caseId, narrative.slice(0, 240))'), 'supportUpdate must dedupe against authoritative case content before sending.');
