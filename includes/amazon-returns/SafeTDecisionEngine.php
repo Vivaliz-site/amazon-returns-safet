@@ -44,6 +44,7 @@ final class SvAmazonSafeTDecisionEngine
         if($supportResolution!==null && in_array($supportReason,[
             'SUPPORT_REIMBURSEMENT_PROCESSING','SUPPORT_REIMBURSEMENT_PROMISE_DUE','SUPPORT_REIMBURSEMENT_PROMISE_MISSED',
             'SUPPORT_BUYER_REFUND_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT',
+            'SUPPORT_RETURN_NOT_RECEIVED_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_RETURN_NOT_RECEIVED_REBUTTAL',
             'SUPPORT_DIRECTED_SAFE_T_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_RESOLUTION_DIRECTS_SAFE_T_SUBMISSION',
             'SUPPORT_DIRECTED_SAFE_T_PHYSICAL_STATUS_CONFLICT',
         ],true))return $supportResolution;
@@ -570,6 +571,24 @@ final class SvAmazonSafeTDecisionEngine
                 'case_id'=>$caseId,
                 'support_case_id'=>$support['case_id'],
                 'idempotency_key'=>hash('sha256','support-directed-safe-t-submit|'.$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
+            ];
+        }
+        if($resolution==='RETURN_NOT_RECEIVED_DISPUTE'){
+            if((string)($case['physical_status']??'')!==SvAmazonReturnPhysicalStatuses::NOT_RECEIVED){
+                return $this->decision('BLOCKED_REVIEW','SUPPORT_RETURN_NOT_RECEIVED_PHYSICAL_STATUS_CONFLICT',$caseId);
+            }
+            if(!$this->hasFreshConfirmedResidual($case,$timeline,$now)){
+                return $this->decision('CHECK_FINANCES','SUPPORT_RETURN_NOT_RECEIVED_REQUIRES_SELLER_CREDIT_CHECK',$caseId);
+            }
+            return [
+                'action'=>'SELLER_SUPPORT_UPDATE',
+                'reason'=>'SUPPORT_RETURN_NOT_RECEIVED_REBUTTAL',
+                'case_id'=>$caseId,
+                'support_case_id'=>$support['case_id'],
+                'support_route'=>strtoupper(trim((string)($case['program']??'')))==='FBA'
+                    ? 'FBA_RETURNS_REIMBURSEMENT'
+                    : 'GENERAL_ORDER_SUPPORT',
+                'idempotency_key'=>hash('sha256','support-return-not-received-rebuttal|'.$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
             ];
         }
         if($resolution==='BUYER_REFUND_ONLY'){
