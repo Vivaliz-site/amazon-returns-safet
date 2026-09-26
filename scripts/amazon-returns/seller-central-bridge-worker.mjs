@@ -248,24 +248,58 @@ class Cdp {
   async clickButtonTrustedByText(labels) {
     const wanted=[...new Set((Array.isArray(labels)?labels:[labels]).map(v=>String(v??'').trim()).filter(Boolean))];
     if(wanted.length===0)return '';
-    const evaluated=await this.send('Runtime.evaluate',{
-      expression:`(()=>{const wanted=${JSON.stringify(wanted)}.map(v=>v.toLowerCase());const roots=[];const scan=root=>{if(!root||roots.includes(root))return;roots.push(root);for(const frame of root.querySelectorAll?.('iframe')||[]){try{scan(frame.contentDocument)}catch{}}for(const e of root.querySelectorAll?.('*')||[]){if(e.shadowRoot)scan(e.shadowRoot)}};scan(document);const found=[];const seen=new Set();const selector='kat-button,button,kat-link,[role="button"],input[type="submit"],input[type="button"]';for(const root of roots){for(const host of root.querySelectorAll?.(selector)||[]){const control=host.tagName==='KAT-BUTTON'?(host.shadowRoot?.querySelector('button')||host):host.tagName==='KAT-LINK'?(host.shadowRoot?.querySelector('a,button')||host):host;if(!control||seen.has(control)||control.disabled||host.hasAttribute?.('disabled')||host.getAttribute?.('aria-disabled')==='true')continue;const labels=[host.getAttribute?.('label'),host.getAttribute?.('aria-label'),host.getAttribute?.('title'),host.getAttribute?.('value'),host.innerText,control.getAttribute?.('aria-label'),control.getAttribute?.('title'),control.getAttribute?.('value'),control.innerText].map(v=>String(v||'').trim().toLowerCase()).filter(Boolean);if(!labels.some(label=>wanted.includes(label)))continue;const style=getComputedStyle(control),rect=control.getBoundingClientRect();if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity||1)<=0||rect.width<=0||rect.height<=0||control.getClientRects().length===0)continue;seen.add(control);found.push(control)}}return found.length===1?found[0]:null})()`,
-      returnByValue:false,awaitPromise:true,
-    });
-    const objectId=evaluated?.result?.objectId;
-    if(!objectId)return '';
-    try{
-      await this.send('DOM.scrollIntoViewIfNeeded',{objectId});await sleep(120);
-      const box=await this.send('DOM.getBoxModel',{objectId});const q=box?.model?.content;
-      if(!Array.isArray(q)||q.length<8)return '';
-      const x=(Number(q[0])+Number(q[2])+Number(q[4])+Number(q[6]))/4;
-      const y=(Number(q[1])+Number(q[3])+Number(q[5])+Number(q[7]))/4;
-      if(!Number.isFinite(x)||!Number.isFinite(y))return '';
-      await this.send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y,button:'none'});
-      await this.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});
-      await this.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});
-      return 'CLICKED';
-    }catch{return ''}finally{await this.send('Runtime.releaseObject',{objectId}).catch(()=>{});}
+    const normalizedWanted=wanted.map(value=>value.toLowerCase());
+    const frameTree=await this.send('Page.getFrameTree').catch(()=>null);
+    const frameIds=[];
+    const visitFrame=node=>{
+      const frameId=node?.frame?.id;
+      if(frameId)frameIds.push(frameId);
+      for(const child of node?.childFrames||[])visitFrame(child);
+    };
+    visitFrame(frameTree?.frameTree);
+    const visible=[];
+    for(const frameId of frameIds){
+      const tree=await this.send('Accessibility.getFullAXTree',{frameId}).catch(()=>null);
+      for(const node of tree?.nodes||[]){
+        if(node?.ignored===true || !node?.backendDOMNodeId)continue;
+        const role=String(node?.role?.value||'').trim().toLowerCase();
+        if(!['button','link'].includes(role))continue;
+        const name=String(node?.name?.value||'').trim();
+        if(!normalizedWanted.includes(name.toLowerCase()))continue;
+        const disabled=(node?.properties||[]).some(property=>property?.name==='disabled' && property?.value?.value===true);
+        if(disabled)continue;
+        const resolved=await this.send('DOM.resolveNode',{backendNodeId:node.backendDOMNodeId}).catch(()=>null);
+        const objectId=resolved?.object?.objectId;
+        if(!objectId)continue;
+        const usable=await this.send('Runtime.callFunctionOn',{
+          objectId,
+          functionDeclaration:"function(){const style=getComputedStyle(this),rect=this.getBoundingClientRect();return !this.disabled&&this.getAttribute?.('aria-disabled')!=='true'&&style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity||1)>0&&rect.width>0&&rect.height>0&&this.getClientRects().length>0}",
+          returnByValue:true,
+          awaitPromise:true,
+        }).catch(()=>null);
+        if(usable?.result?.value===true)visible.push({objectId,name});
+        else await this.send('Runtime.releaseObject',{objectId}).catch(()=>{});
+      }
+    }
+    if(visible.length===1){
+      const {objectId}=visible[0];
+      try{
+        await this.send('DOM.scrollIntoViewIfNeeded',{objectId});await sleep(120);
+        const box=await this.send('DOM.getBoxModel',{objectId});const q=box?.model?.content;
+        if(!Array.isArray(q)||q.length<8)return '';
+        const x=(Number(q[0])+Number(q[2])+Number(q[4])+Number(q[6]))/4;
+        const y=(Number(q[1])+Number(q[3])+Number(q[5])+Number(q[7]))/4;
+        if(!Number.isFinite(x)||!Number.isFinite(y))return '';
+        await this.send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y,button:'none'});
+        await this.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});
+        await this.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});
+        return 'CLICKED';
+      }catch{return ''}finally{
+        for(const item of visible)await this.send('Runtime.releaseObject',{objectId:item.objectId}).catch(()=>{});
+      }
+    }
+    for(const item of visible)await this.send('Runtime.releaseObject',{objectId:item.objectId}).catch(()=>{});
+    return '';
   }
 
   async frameButtonReadyByText(label) {

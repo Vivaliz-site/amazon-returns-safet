@@ -15,13 +15,12 @@ for (const label of ['Send', 'Send message', 'Submit', 'Enviar', 'Enviar mensage
   );
 }
 assert.ok(!supportUpdate.includes("sendLabels=['Send','Send message','Reply'"), 'Reply/Responder composer triggers must never count as final send actions.');
-assert.ok(worker.includes("const selector='kat-button,button,kat-link,[role=\"button\"],input[type=\"submit\"],input[type=\"button\"]'"), 'trusted reply click helper must inspect semantic button controls across deep roots.');
-assert.ok(worker.includes("host.tagName==='KAT-LINK'"), 'trusted reply click helper must support Seller Central KAT links rendered as buttons.');
-assert.ok(worker.includes("host.getAttribute?.('value')") && worker.includes("host.getAttribute?.('title')"), 'trusted reply click helper must recognize explicit send labels exposed through value/title attributes.');
-assert.ok(worker.includes("host.getAttribute?.('aria-disabled')==='true'"), 'trusted reply click helper must reject aria-disabled controls.');
-assert.ok(worker.includes('control.getClientRects().length===0'), 'trusted reply click helper must reject non-rendered controls.');
-assert.ok(worker.includes("querySelectorAll?.('iframe')") && worker.includes('scan(frame.contentDocument)'), 'trusted reply click helper must traverse same-origin iframes, including those nested under shadow DOM.');
-assert.ok(worker.includes('found.length===1'), 'trusted reply click helper must fail closed unless exactly one send target is visible.');
+assert.ok(worker.includes("Accessibility.getFullAXTree"), 'trusted reply click helper must discover semantic controls through the browser accessibility tree.');
+assert.ok(worker.includes("Page.getFrameTree"), 'trusted reply click helper must inspect every CDP frame deterministically.');
+assert.ok(worker.includes("DOM.resolveNode"), 'trusted reply click helper must resolve accessible nodes back to real DOM controls before pointer input.');
+assert.ok(worker.includes("property?.name==='disabled'"), 'trusted reply click helper must reject disabled accessibility controls.');
+assert.ok(worker.includes('this.getClientRects().length>0'), 'trusted reply click helper must reject non-rendered controls.');
+assert.ok(worker.includes('visible.length===1'), 'trusted reply click helper must fail closed unless exactly one send target is visible.');
 assert.ok(worker.includes("const buttonSelector='kat-button,button,kat-link,[role=\"button\"],input[type=\"submit\"],input[type=\"button\"]'"), 'support evidence must snapshot the same semantic control family used for trusted sends.');
 assert.ok(worker.includes('async function supportCaseContainsText(cdp, caseId, needle)'), 'Seller Support updates must verify existing replies through authenticated ViewCase readback.');
 assert.ok(worker.includes('async clickButtonTrustedByText(labels)'), 'Seller Support send must use a trusted top-level pointer helper.');
