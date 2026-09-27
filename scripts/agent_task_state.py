@@ -10,25 +10,23 @@ from pathlib import Path
 from typing import Mapping
 
 REPOSITORY = "Vivaliz-site/amazon-returns-safet"
-DEFAULT_CONTROLLER = Path("/home/ubuntu/shopvivaliz-deploy/current/scripts/agent_task_state.py")
-DEFAULT_RUNTIME_DIR = Path("/home/ubuntu/shopvivaliz-deploy/shared/agent-task-state")
 CONTROLLER_ENV = "SHOPVIVALIZ_CONTINUITY_STATE_CLI"
 RUNTIME_ENV = "SHOPVIVALIZ_AGENT_TASK_STATE_DIR"
 
 
 def controller_path() -> Path:
     configured = os.getenv(CONTROLLER_ENV, "").strip()
-    return Path(configured).expanduser() if configured else DEFAULT_CONTROLLER
+    if not configured:
+        return Path()
+    return Path(configured).expanduser()
 
 
 def build_controller_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     env = dict(base or os.environ)
     env["SHOPVIVALIZ_TASK_REPOSITORY"] = REPOSITORY
-    env[RUNTIME_ENV] = str(
-        Path(env.get(RUNTIME_ENV, "")).expanduser()
-        if env.get(RUNTIME_ENV, "").strip()
-        else DEFAULT_RUNTIME_DIR
-    )
+    runtime = env.get(RUNTIME_ENV, "").strip()
+    if runtime:
+        env[RUNTIME_ENV] = str(Path(runtime).expanduser())
     return env
 
 
@@ -42,7 +40,7 @@ def main() -> int:
         same_file = controller.resolve() == Path(__file__).resolve()
     except OSError:
         same_file = False
-    if same_file or not controller.is_file():
+    if not str(controller) or same_file or not controller.is_file():
         print(
             json.dumps(
                 {
