@@ -21,3 +21,13 @@ Leia e cumpra AGENTS.md e a secao BROWSER_SESSION_POLICY_V1 de REGRAS-AGENTES-CE
 Leia primeiro `AGENTS.md`. Para auditoria/aptidão, cumpra `AUDIT_ABSOLUTE_GATE_V1.md`, `AUDIT_BROWSER_E2E_REAL_V1.md`, `AUDIT_AUTH_CREDENTIAL_DISCOVERY_V1.md`, `AUDIT_PROJECT_REQUIREMENTS_V1.md` e o manifesto local de requisitos. Somente o certifier pode autorizar APTO.
 
 <!-- merge-enforcement: docs/quality/AUDIT_MERGE_ENFORCEMENT_V1.md -->
+
+<!-- GLOBAL_TASK_CONTINUITY_V8 -->
+## Global task continuity V8
+
+Every repository task that can mutate code, infrastructure, data, CI, or deployment MUST create and maintain a durable checkpoint through `python3 scripts/agent_task_state.py`. This adapter targets the canonical A1 controller and stamps `repository=Vivaliz-site/amazon-returns-safet`.
+
+Required lifecycle: `start` before substantive work; `progress` after material progress or before handing off; `ready` + `complete` only after fresh verification. A recoverable error remains `RUNNING`. `BLOCKED_EXTERNAL` is allowed only with objective external evidence and exhausted safe alternatives.
+
+If the canonical controller is unavailable, the adapter fails closed. Do not create an unmonitored local substitute. Restore/use the A1 control plane before continuing work that depends on interruption recovery. Detached recovery does not reopen the same ChatGPT conversation.
+<!-- /GLOBAL_TASK_CONTINUITY_V8 -->
