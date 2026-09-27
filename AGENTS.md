@@ -166,4 +166,3 @@ Não adie o primeiro checkpoint para depois do diagnóstico. Se o contexto atual
 consegue alcançar o controlador canônico, falhe fechado para tarefas que dependem de
 retomada automática e use a rota operacional auditável que consiga registrar o estado.
 <!-- /CHECKPOINT_FIRST_V9 -->
-
