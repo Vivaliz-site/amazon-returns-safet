@@ -36,4 +36,5 @@ jobs:
           python3 -m unittest tests.test_global_task_continuity_adapter -v
           python3 scripts/agent_task_state.py --adapter-self-test
           grep -Fq "GLOBAL_TASK_CONTINUITY_V8" AGENTS.md
+      - run: grep -Fq "CHECKPOINT_FIRST_V9" AGENTS.md
           grep -Fq "GLOBAL_TASK_CONTINUITY_V8" docs/knowledge/task-continuity.md
