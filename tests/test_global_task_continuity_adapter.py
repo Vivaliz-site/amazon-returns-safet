@@ -27,23 +27,13 @@ class GlobalTaskContinuityAdapterTests(unittest.TestCase):
     def test_repository_identity_is_pinned(self) -> None:
         self.assertEqual(self.mod.REPOSITORY, "Vivaliz-site/amazon-returns-safet")
 
-    def test_adapter_targets_canonical_a1_runtime(self) -> None:
-        self.assertEqual(
-            str(self.mod.DEFAULT_CONTROLLER),
-            "/home/ubuntu/shopvivaliz-deploy/current/scripts/agent_task_state.py",
-        )
-        self.assertEqual(
-            str(self.mod.DEFAULT_RUNTIME_DIR),
-            "/home/ubuntu/shopvivaliz-deploy/shared/agent-task-state",
-        )
+    def test_adapter_requires_explicit_controller_injection(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(str(self.mod.controller_path()), ".")
 
     def test_environment_stamps_repository_and_runtime(self) -> None:
         env = self.mod.build_controller_env({"PATH": "/usr/bin"})
         self.assertEqual(env["SHOPVIVALIZ_TASK_REPOSITORY"], "Vivaliz-site/amazon-returns-safet")
-        self.assertEqual(
-            env["SHOPVIVALIZ_AGENT_TASK_STATE_DIR"],
-            "/home/ubuntu/shopvivaliz-deploy/shared/agent-task-state",
-        )
 
     def test_missing_controller_fails_closed_without_local_fallback(self) -> None:
         with mock.patch.dict(os.environ, {"SHOPVIVALIZ_CONTINUITY_STATE_CLI": "/definitely/missing/controller.py"}, clear=False):
