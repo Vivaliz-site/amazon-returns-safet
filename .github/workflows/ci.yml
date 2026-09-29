@@ -55,7 +55,7 @@ jobs:
           bash -n scripts/install-continuity-controller.sh
           bash -n scripts/provision-continuity-gemini-env.sh
           bash -n scripts/provision-continuity-publisher-key.sh
-      - name: Governance: issue_comment listener guard
+      - name: "Governance: issue_comment listener guard"
         run: |
           set -e
           python3 scripts/governance/check-issue-comment-listeners.py .github/workflows
