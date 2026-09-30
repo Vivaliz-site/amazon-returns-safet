@@ -20,6 +20,18 @@ $postWrite=SvAmazonSellerSupportStatus::readKeyForTimeline($caseId,$supportId,$n
 ssprAssert($postWrite!==$daily,'A successful support write after the last observation must force a distinct same-day readback key.');
 ssprSame($postWrite,SvAmazonSellerSupportStatus::readKeyForTimeline($caseId,$supportId,$now,$afterWrite),'Post-write readback key must be deterministic.');
 
+$later=$now->modify('+2 hours');
+$laterPostWrite=SvAmazonSellerSupportStatus::readKeyForTimeline($caseId,$supportId,$later,$afterWrite);
+ssprAssert(
+    $laterPostWrite!==$postWrite,
+    'If the post-write read produces no newer support observation, the forced readback key must advance with the normal polling bucket instead of starving all future support reads.'
+);
+ssprSame(
+    $laterPostWrite,
+    SvAmazonSellerSupportStatus::readKeyForTimeline($caseId,$supportId,$later,$afterWrite),
+    'Post-write polling key must remain deterministic inside the same polling bucket.'
+);
+
 $afterRead=$afterWrite;
 $afterRead[]=['id'=>12,'case_id'=>$caseId,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL','occurred_at'=>'2026-09-19 13:50:00','payload'=>['case_id'=>$supportId,'case_status'=>'PENDINGAMAZONACTION','latest_text'=>'Caso reaberto.']];
 ssprSame($daily,SvAmazonSellerSupportStatus::readKeyForTimeline($caseId,$supportId,$now,$afterRead),'Once post-write status is observed, cadence must return to the daily key.');
