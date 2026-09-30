@@ -741,6 +741,23 @@ async function safeTSubmit(cdp, job) {
   await sleep(7000);
   const readBack = await cdp.evaluate(`(()=>{const href=location.href;const body=document.body?.innerText||'';const claimMarker='/claim/';const claimPos=href.indexOf(claimMarker);const fromUrl=claimPos>=0?href.slice(claimPos+claimMarker.length).split(/[/?#]/,1)[0]:'';const fromBody=(body.match(new RegExp('(?:ID da reivindicação SAFE-T[:\\s]*|SAFE-T[:\\s]+)([0-9]{5}-[0-9]{5}-[0-9]{7})','i'))||[])[1]||'';const valid=v=>/^[0-9]{5}-[0-9]{5}-[0-9]{7}$/.test(String(v||''));return valid(fromUrl)?fromUrl:(valid(fromBody)?fromBody:'')})()`);
   if (!text(readBack)) {
+    await cdp.navigate(`${SAFE_T_BASE}?pageSize=100&dateFilterValue=90`, 5500);
+    const discoveredRaw = await cdp.evaluate(`JSON.stringify([...document.querySelectorAll('div[id^="claim-content-wrapper-"]')].map(e=>{const safe=(e.id.match(/\\d{5}-\\d{5}-\\d{7}/)||[])[0]||'';const href=e.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';const order=(href.match(/\\d{3}-\\d{7}-\\d{7}/)||[])[0]||'';return {safe,order}}).filter(x=>x.order===${JSON.stringify(orderId)}))`);
+    let discoveredMatches=[];
+    try { discoveredMatches=JSON.parse(text(discoveredRaw)||'[]'); } catch {}
+    const discoveredIds=[...new Set(discoveredMatches.map(row=>text(row?.safe)).filter(value=>/^\\d{5}-\\d{5}-\\d{7}$/.test(value)))];
+    if (discoveredIds.length===1) {
+      return bridgeResult('ACCEPTED', {
+        submitted: true,
+        external_id: discoveredIds[0],
+        retry_safe: true,
+        reason: 'SAFE_T_SUBMITTED_AND_DISCOVERED_BY_ORDER',
+        evidence: withTrackingEvidence(await evidence(cdp, 'safet-v1'), trackingEvidence, uploadResult),
+      });
+    }
+    if (discoveredIds.length>1) {
+      return bridgeResult('FAILED', { reason: 'MULTIPLE_SAFE_T_CLAIMS_AFTER_SUBMIT', submitted: false, retry_safe: false, evidence: await evidence(cdp, 'safet-v1') });
+    }
     return bridgeResult('FAILED', { reason: 'SAFE_T_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: await evidence(cdp, 'safet-v1') });
   }
   return bridgeResult('ACCEPTED', {
