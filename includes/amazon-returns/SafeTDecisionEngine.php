@@ -46,7 +46,7 @@ final class SvAmazonSafeTDecisionEngine
             'SUPPORT_BUYER_REFUND_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT',
             'SUPPORT_RETURN_NOT_RECEIVED_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_RETURN_NOT_RECEIVED_REBUTTAL',
             'SUPPORT_DIRECTED_SAFE_T_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_RESOLUTION_DIRECTS_SAFE_T_SUBMISSION',
-            'SUPPORT_DIRECTED_SAFE_T_PHYSICAL_STATUS_CONFLICT',
+            'SUPPORT_DIRECTED_SAFE_T_PHYSICAL_STATUS_CONFLICT','SUPPORT_REQUESTED_SELLER_RESPONSE',
         ],true))return $supportResolution;
         if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($supportResolution!==null)return $supportResolution;
@@ -555,6 +555,18 @@ final class SvAmazonSafeTDecisionEngine
         if($resolution==='ACTIVE')return null;
         $caseId=(int)($case['id']??0);
         $safeTId=trim((string)($case['safe_t_id']??''));
+        if($resolution==='SELLER_ACTION_REQUIRED'){
+            return [
+                'action'=>'SELLER_SUPPORT_UPDATE',
+                'reason'=>'SUPPORT_REQUESTED_SELLER_RESPONSE',
+                'case_id'=>$caseId,
+                'support_case_id'=>$support['case_id'],
+                'support_route'=>strtoupper(trim((string)($case['program']??'')))==='FBA'
+                    ? 'FBA_RETURNS_REIMBURSEMENT'
+                    : 'GENERAL_ORDER_SUPPORT',
+                'idempotency_key'=>hash('sha256','support-requested-seller-response|'.$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
+            ];
+        }
         if($resolution==='SAFE_T_SUBMIT'){
             if($safeTId!=='')return null;
             if((string)($case['physical_status']??'')!==SvAmazonReturnPhysicalStatuses::NOT_RECEIVED){
