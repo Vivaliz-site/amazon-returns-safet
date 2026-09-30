@@ -166,8 +166,7 @@ final class SvAmazonSellerSupportStatus
     {
         $returnAsserted=preg_match('/(?:item|produto|devolu[cç][aã]o).{0,100}(?:foi\\s+)?devolvid[oa].{0,80}(?:\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4}|data\\s+de\\s+devolu[cç][aã]o)|(?:returned|return).{0,100}(?:item|product).{0,80}(?:date|\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4})/u',$text)===1;
         $deadline=preg_match('/(?:7\\s*dias|7\\s*days|seven\\s+days).{0,180}(?:devolu[cç][aã]o|returned|return)|(?:devolu[cç][aã]o|returned|return).{0,180}(?:7\\s*dias|7\\s*days|seven\\s+days)/u',$text)===1;
-        $notReceived=preg_match('/(?:produto|item).{0,120}(?:n[aã]o|nao|not).{0,40}(?:retorn|devolv|recebid)|(?:n[aã]o|nao|not).{0,40}(?:retorn|devolv|recebid).{0,120}(?:produto|item)/u',$text)===1;
-        return $returnAsserted && $deadline && $notReceived;
+        return $returnAsserted && $deadline;
     }
 
     private static function buyerRefundOnly(string $text): bool
