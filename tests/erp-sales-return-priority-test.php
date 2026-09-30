@@ -44,6 +44,12 @@ erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowWithinOperationalScope
 erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowWithinOperationalScope(
     ['status'=>'PENDING'],$agedCases,$windowNow
 ),'An old refund without a created ERP return must remain outside the creation window.');
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::workflowShouldBeIgnoredOutsideOperationalWindow(
+    ['status'=>'RETURN_CREATED_WAITING_INVOICE']
+),'An old created return must transition to the explicit outside-window ignored status.');
+erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowShouldBeIgnoredOutsideOperationalWindow(
+    ['status'=>'RETURN_INVOICE_EXISTS']
+),'A fully reconciled return invoice must remain terminal, not be rewritten as ignored.');
 erpPrioritySame(true,SvAmazonErpSalesReturnTask::refundWithinOperationalWindow([
     ['quantity_refunded'=>1,'refund_at'=>''],
 ],$windowNow),'Missing refund timestamp must remain operational conservatively.');
