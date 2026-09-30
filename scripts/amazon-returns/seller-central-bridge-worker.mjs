@@ -1725,9 +1725,13 @@ async function supportUpdate(cdp, job) {
   const channels = Array.isArray(apiReply.channels) ? apiReply.channels : [];
   if (apiReply.status === 'LIVE_ONLY' && (channels.includes('Chat') || channels.includes('Phone'))) {
     const freshFallback = await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'GENERAL_ORDER_SUPPORT' });
-    if (freshFallback.status === 'BLOCKED_UNTIL'
-        && freshFallback.reason === 'SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION'
-        && supportRouteFor(job) === 'FBA_RETURNS_REIMBURSEMENT') {
+    const generalFallbackNeedsFba = (
+      (freshFallback.status === 'BLOCKED_UNTIL'
+        && freshFallback.reason === 'SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION')
+      || (freshFallback.status === 'UI_DRIFT'
+        && freshFallback.reason === 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED')
+    );
+    if (generalFallbackNeedsFba && supportRouteFor(job) === 'FBA_RETURNS_REIMBURSEMENT') {
       return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' });
     }
     return freshFallback;
