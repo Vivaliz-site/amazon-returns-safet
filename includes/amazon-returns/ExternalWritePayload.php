@@ -49,6 +49,18 @@ final class SvAmazonExternalWritePayload
                 .'o ressarcimento correspondente. Solicito o ressarcimento devido ao vendedor.';
         }
         if($action==='SELLER_SUPPORT_UPDATE'
+            && $reason==='SUPPORT_REQUESTED_SELLER_RESPONSE'){
+            $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
+            $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
+            $outstanding=max(0.0,$expected-$credited);
+            return 'Sobre o pedido '.$order.', nós estamos solicitando o nosso ressarcimento como vendedores. '
+                .'A conciliação financeira mais recente confirma valor esperado de '.self::brl($expected).', crédito efetivamente conciliado de '.self::brl($credited)
+                .' e saldo pendente de '.self::brl($outstanding).'. '
+                .'O problema que estamos reportando é o ressarcimento pendente em nossa conta de vendedor; não estamos reportando uma mensagem de erro na interface, portanto não há captura de erro aplicável. '
+                .'Solicitamos a reabertura ou continuidade deste chamado e a investigação do ressarcimento. '
+                .'Caso a Amazon considere que o crédito já foi efetuado, solicitamos que informe o valor, a data do crédito, o ID da transação e/ou do ressarcimento e o relatório financeiro em que ele aparece.';
+        }
+        if($action==='SELLER_SUPPORT_UPDATE'
             && $reason==='SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT'){
             $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
             $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
