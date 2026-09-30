@@ -32,6 +32,10 @@ ssloAssert(
     'If the general fresh route is also live-only, an FBA reimbursement job must try the FBA asynchronous route before declaring an attended-session block.'
 );
 ssloAssert(
+    str_contains($update,"freshFallback.reason === 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED'"),
+    'The production-observed general troubleshooter exhaustion must also fall back to the explicit FBA reimbursement route.'
+);
+ssloAssert(
     !str_contains($update,'clickHillChat(cdp)'),
     'Live-only Seller Support fallback must never start an unattended chat.'
 );
