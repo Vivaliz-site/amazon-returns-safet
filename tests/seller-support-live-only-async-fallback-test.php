@@ -22,7 +22,18 @@ ssloAssert(
 );
 ssloAssert(
     str_contains($update,"supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'GENERAL_ORDER_SUPPORT' })"),
-    'When an existing support case is live-only, automation must fall back to the asynchronous general-order support route instead of re-entering the live-only FBA route.'
+    'When an existing support case is live-only, automation must first try a fresh asynchronous general-order support route.'
+);
+ssloAssert(
+    str_contains($update,"freshFallback.status === 'BLOCKED_UNTIL'")
+        && str_contains($update,"freshFallback.reason === 'SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION'")
+        && str_contains($update,"supportRouteFor(job) === 'FBA_RETURNS_REIMBURSEMENT'")
+        && str_contains($update,"supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' })"),
+    'If the general fresh route is also live-only, an FBA reimbursement job must try the FBA asynchronous route before declaring an attended-session block.'
+);
+ssloAssert(
+    str_contains($update,"freshFallback.reason === 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED'"),
+    'The production-observed general troubleshooter exhaustion must also fall back to the explicit FBA reimbursement route.'
 );
 ssloAssert(
     !str_contains($update,'clickHillChat(cdp)'),
