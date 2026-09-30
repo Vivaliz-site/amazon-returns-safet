@@ -64,7 +64,7 @@ final class SvAmazonSellerSupportStatus
         }
         if($latestWrite===null || $latestWriteRank<=$latestObservationRank)return $daily;
         $eventId=(int)($latestWrite['id']??0);
-        return hash('sha256','seller-support-read-after-write|'.$caseId.'|'.$supportCaseId.'|'.$eventId);
+        return hash('sha256','seller-support-read-after-write|'.$caseId.'|'.$supportCaseId.'|'.$eventId.'|'.$daily);
     }
 
     /** @return array{append:bool,idempotency_key:string} */
