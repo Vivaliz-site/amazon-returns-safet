@@ -53,7 +53,7 @@ final class SvAmazonExternalWritePayload
             $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
             $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
             $outstanding=max(0.0,$expected-$credited);
-            return 'Sobre o pedido '.$order.', nós estamos solicitando o nosso ressarcimento como vendedores. '
+            return 'Sobre o pedido '.$order.'. Nós estamos solicitando o nosso ressarcimento como vendedores. '
                 .'A conciliação financeira mais recente confirma valor esperado de '.self::brl($expected).', crédito efetivamente conciliado de '.self::brl($credited)
                 .' e saldo pendente de '.self::brl($outstanding).'. '
                 .'O problema que estamos reportando é o ressarcimento pendente em nossa conta de vendedor; não estamos reportando uma mensagem de erro na interface, portanto não há captura de erro aplicável. '
