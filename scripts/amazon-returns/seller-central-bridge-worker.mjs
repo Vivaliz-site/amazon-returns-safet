@@ -782,7 +782,7 @@ async function safeTAppeal(cdp, job) {
   const narrative = narrativeFor(job, 1500);
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative)})`);
   if (already) return bridgeResult('ALREADY_EXISTS', { external_id: safeTId, retry_safe: true, evidence: await evidence(cdp, 'safet-v1') });
-  const hasField = await cdp.evaluate(`Boolean(document.querySelector('kat-textarea.description-textbox'))`);
+  const hasField = await cdp.waitFor(`Boolean(document.querySelector('kat-textarea.description-textbox'))`, 30000, 750);
   if (!hasField) {
     const state = await cdp.pageState();
     return bridgeResult('BLOCKED_UNTIL', { reason: 'SAFE_T_APPEAL_FIELD_UNAVAILABLE', block_reason: text(state.text).slice(-1200), retry_safe: true, evidence: await evidence(cdp, 'safet-v1') });
