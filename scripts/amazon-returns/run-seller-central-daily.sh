@@ -57,6 +57,60 @@ trap 'exit 143' TERM
 
 mkdir -p "$SELLER_CENTRAL_PROFILE"
 
+CYCLE_LOCK_FILE="${SELLER_CENTRAL_CYCLE_LOCK_FILE:-${SELLER_CENTRAL_PROFILE%/}/seller-central-cycle.lock}"
+CYCLE_LOCK_WAIT_SECONDS="${SELLER_CENTRAL_CYCLE_LOCK_WAIT_SECONDS:-900}"
+exec 9>"$CYCLE_LOCK_FILE"
+if ! flock -w "$CYCLE_LOCK_WAIT_SECONDS" 9; then
+  echo "SELLER_CENTRAL_CYCLE_LOCK_TIMEOUT" >&2
+  exit 75
+fi
+
+managed_orphan_browser_pid() {
+  local proc pid exe ppid arg
+  local -a matches=()
+  for proc in /proc/[0-9]*; do
+    pid="${proc##*/}"
+    [[ -r "$proc/cmdline" && -r "$proc/stat" ]] || continue
+    exe="$(readlink -f "$proc/exe" 2>/dev/null || true)"
+    [[ "$exe" == "$BROWSER_RESOLVED" ]] || continue
+    ppid="$(awk '{print $4}' "$proc/stat" 2>/dev/null || true)"
+    [[ "$ppid" == "1" ]] || continue
+    local has_port=0 has_profile=0 has_type=0
+    while IFS= read -r arg; do
+      [[ "$arg" == "--remote-debugging-port=$CDP_PORT" ]] && has_port=1
+      [[ "$arg" == "--user-data-dir=$SELLER_CENTRAL_PROFILE" ]] && has_profile=1
+      [[ "$arg" == --type=* ]] && has_type=1
+    done < <(tr '\0' '\n' <"$proc/cmdline" 2>/dev/null || true)
+    [[ "$has_port" -eq 1 && "$has_profile" -eq 1 && "$has_type" -eq 0 ]] || continue
+    matches+=("$pid")
+  done
+  [[ "${#matches[@]}" -eq 1 ]] || return 1
+  printf '%s\n' "${matches[0]}"
+}
+
+recover_stale_managed_cdp() {
+  local pid
+  pid="$(managed_orphan_browser_pid)" || return 1
+  echo "STALE_MANAGED_CDP_RECOVERING pid=$pid" >&2
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || return 1
+  for _ in $(seq 1 50); do
+    if ! curl -fsS --max-time 1 "$CDP_URL/json/version" >/dev/null 2>&1; then
+      echo "STALE_MANAGED_CDP_RECOVERED" >&2
+      return 0
+    fi
+    sleep 0.1
+  done
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    if ! curl -fsS --max-time 1 "$CDP_URL/json/version" >/dev/null 2>&1; then
+      echo "STALE_MANAGED_CDP_RECOVERED" >&2
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
 record_auth_failure() {
   local status="$1"
   "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" \
@@ -64,9 +118,11 @@ record_auth_failure() {
 }
 
 if curl -fsS --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then
-  record_auth_failure "PREEXISTING_CDP_UNOWNED"
-  echo "PREEXISTING_CDP_UNOWNED" >&2
-  exit 76
+  if ! recover_stale_managed_cdp; then
+    record_auth_failure "PREEXISTING_CDP_UNOWNED"
+    echo "PREEXISTING_CDP_UNOWNED" >&2
+    exit 76
+  fi
 fi
 
 setsid "$BROWSER_BIN" \
