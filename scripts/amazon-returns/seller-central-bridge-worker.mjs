@@ -781,7 +781,9 @@ async function safeTAppeal(cdp, job) {
     }
   }
   const sendSelector = 'kat-button.right-floated[label="Enviar"]';
-  if (!(await cdp.clickKat(sendSelector))) {
+  const legacySend = await cdp.clickKat(sendSelector);
+  const semanticSend = legacySend ? '' : text(await cdp.clickButtonTrustedByText(['Send','Enviar']));
+  if (!legacySend && !semanticSend) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_APPEAL_SEND_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(5000);
