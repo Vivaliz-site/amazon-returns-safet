@@ -224,6 +224,19 @@ function evidence(state) {
   return { ...safe, snapshot_sha256: sha(JSON.stringify(safe)) };
 }
 
+async function waitForSafeTClaimDetail(cdp, safeTId, orderId, timeoutMs = 30000) {
+  const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 30000);
+  let state = await cdp.pageState();
+  let read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
+  while (true) {
+    if (read.claim_status !== 'UNKNOWN') return { state, read, ready: true };
+    if (Date.now() >= deadline) return { state, read, ready: false };
+    await sleep(750);
+    state = await cdp.pageState();
+    read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
+  }
+}
+
 async function safeTDiscovery(job) {
   const orderId = clean(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return result('FAILED', { reason: 'ORDER_ID_REQUIRED_FOR_DISCOVERY' });
@@ -247,8 +260,10 @@ async function safeTDiscovery(job) {
     auth = page.auth;
     if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: page.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
     if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: page.reason || 'CAPTCHA_PRESENT', evidence: evidence(state) });
+    const settled = await waitForSafeTClaimDetail(cdp, safeTId, orderId);
+    state = settled.state;
     if (!String(state.text || '').includes(orderId)) return result('UI_DRIFT', { reason: 'DISCOVERED_CLAIM_ORDER_MISMATCH', evidence: evidence(state) });
-    const read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
+    const read = settled.read;
     return result('ACCEPTED', { external_id: safeTId, retry_safe: true, reason: 'SAFE_T_DISCOVERED_BY_ORDER', evidence: evidence(state), read });
   } finally {
     await cdp.close();
@@ -262,11 +277,13 @@ async function safeTRead(job) {
   const cdp = await Cdp.connect();
   try {
     const page = await authenticatedPage(cdp, `${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 5500);
-    const state = page.state;
+    let state = page.state;
     const auth = page.auth;
     if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: page.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
     if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: page.reason || 'CAPTCHA_PRESENT', evidence: evidence(state) });
-    const read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
+    const settled = await waitForSafeTClaimDetail(cdp, safeTId, orderId);
+    state = settled.state;
+    const read = settled.read;
     return result('ACCEPTED', {
       external_id: safeTId,
       retry_safe: true,
