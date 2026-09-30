@@ -46,7 +46,11 @@ final class SvAmazonSafeTDecisionEngine
             'SUPPORT_BUYER_REFUND_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT',
             'SUPPORT_RETURN_NOT_RECEIVED_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_RETURN_NOT_RECEIVED_REBUTTAL',
             'SUPPORT_DIRECTED_SAFE_T_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_RESOLUTION_DIRECTS_SAFE_T_SUBMISSION',
-            'SUPPORT_DIRECTED_SAFE_T_PHYSICAL_STATUS_CONFLICT',
+            'SUPPORT_DIRECTED_SAFE_T_PHYSICAL_STATUS_CONFLICT','SUPPORT_REQUESTED_SELLER_RESPONSE',
+            'SUPPORT_TOPIC_MISMATCH_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_TOPIC_MISMATCH_REIMBURSEMENT_RECOVERY',
+            'SUPPORT_CLAIMED_REIMBURSEMENT_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_CLAIMED_REIMBURSEMENT_NOT_RECONCILED',
+            'SUPPORT_REIMBURSEMENT_DENIAL_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_REIMBURSEMENT_DENIAL_REBUTTAL',
+            'SUPPORT_RESOLUTION_DIRECTS_SAFE_T_APPEAL','SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE',
         ],true))return $supportResolution;
         if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($supportResolution!==null)return $supportResolution;
@@ -555,6 +559,63 @@ final class SvAmazonSafeTDecisionEngine
         if($resolution==='ACTIVE')return null;
         $caseId=(int)($case['id']??0);
         $safeTId=trim((string)($case['safe_t_id']??''));
+        if($resolution==='SELLER_ACTION_REQUIRED'){
+            return [
+                'action'=>'SELLER_SUPPORT_UPDATE',
+                'reason'=>'SUPPORT_REQUESTED_SELLER_RESPONSE',
+                'case_id'=>$caseId,
+                'support_case_id'=>$support['case_id'],
+                'support_route'=>strtoupper(trim((string)($case['program']??'')))==='FBA'
+                    ? 'FBA_RETURNS_REIMBURSEMENT'
+                    : 'GENERAL_ORDER_SUPPORT',
+                'idempotency_key'=>hash('sha256','support-requested-seller-response|'.$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
+            ];
+        }
+        if($resolution==='UNRELATED_TOPIC'){
+            if(!$this->hasFreshConfirmedResidual($case,$timeline,$now)){
+                return $this->decision('CHECK_FINANCES','SUPPORT_TOPIC_MISMATCH_REQUIRES_SELLER_CREDIT_CHECK',$caseId);
+            }
+            return [
+                'action'=>'SELLER_SUPPORT_UPDATE',
+                'reason'=>'SUPPORT_TOPIC_MISMATCH_REIMBURSEMENT_RECOVERY',
+                'case_id'=>$caseId,
+                'support_case_id'=>$support['case_id'],
+                'support_route'=>strtoupper(trim((string)($case['program']??'')))==='FBA'
+                    ? 'FBA_RETURNS_REIMBURSEMENT'
+                    : 'GENERAL_ORDER_SUPPORT',
+                'idempotency_key'=>hash('sha256','support-topic-mismatch-recovery|'.$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
+            ];
+        }
+        if($resolution==='SELLER_REIMBURSEMENT_CLAIMED'){
+            if(!$this->hasFreshConfirmedResidual($case,$timeline,$now)){
+                return $this->decision('CHECK_FINANCES','SUPPORT_CLAIMED_REIMBURSEMENT_REQUIRES_SELLER_CREDIT_CHECK',$caseId);
+            }
+            return [
+                'action'=>'SELLER_SUPPORT_UPDATE',
+                'reason'=>'SUPPORT_CLAIMED_REIMBURSEMENT_NOT_RECONCILED',
+                'case_id'=>$caseId,
+                'support_case_id'=>$support['case_id'],
+                'support_route'=>strtoupper(trim((string)($case['program']??'')))==='FBA'
+                    ? 'FBA_RETURNS_REIMBURSEMENT'
+                    : 'GENERAL_ORDER_SUPPORT',
+                'idempotency_key'=>hash('sha256','support-claimed-reimbursement-not-reconciled|'.$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
+            ];
+        }
+        if($resolution==='REIMBURSEMENT_DENIED'){
+            if(!$this->hasFreshConfirmedResidual($case,$timeline,$now)){
+                return $this->decision('CHECK_FINANCES','SUPPORT_REIMBURSEMENT_DENIAL_REQUIRES_SELLER_CREDIT_CHECK',$caseId);
+            }
+            return [
+                'action'=>'SELLER_SUPPORT_UPDATE',
+                'reason'=>'SUPPORT_REIMBURSEMENT_DENIAL_REBUTTAL',
+                'case_id'=>$caseId,
+                'support_case_id'=>$support['case_id'],
+                'support_route'=>strtoupper(trim((string)($case['program']??'')))==='FBA'
+                    ? 'FBA_RETURNS_REIMBURSEMENT'
+                    : 'GENERAL_ORDER_SUPPORT',
+                'idempotency_key'=>hash('sha256','support-reimbursement-denial-rebuttal|'.$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint']),
+            ];
+        }
         if($resolution==='SAFE_T_SUBMIT'){
             if($safeTId!=='')return null;
             if((string)($case['physical_status']??'')!==SvAmazonReturnPhysicalStatuses::NOT_RECEIVED){

@@ -1,0 +1,82 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__.'/../includes/amazon-returns/SafeTDecisionEngine.php';
+require_once __DIR__.'/../includes/amazon-returns/ExternalWritePayload.php';
+
+function ssmaSame(mixed $expected,mixed $actual,string $message):void{
+    if($expected!==$actual)throw new RuntimeException($message.' expected='.var_export($expected,true).' actual='.var_export($actual,true));
+}
+function ssmaAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeException($message);}
+
+$merchantText='This is a reminder to let you know that we need more information to resolve your case. '
+    .'If you still need assistance, respond to this message and provide the details we requested below.';
+
+$merchantResolution=SvAmazonSellerSupportStatus::resolution([
+    'case_id'=>'22321391191',
+    'case_status'=>'PENDINGMERCHANTACTION',
+    'latest_text'=>$merchantText,
+]);
+ssmaSame('SELLER_ACTION_REQUIRED',$merchantResolution,'Amazon PENDINGMERCHANTACTION must be treated as an explicit seller response obligation.');
+
+$closedResolution=SvAmazonSellerSupportStatus::resolution([
+    'case_id'=>'22321391191',
+    'case_status'=>'RESOLVED',
+    'latest_text'=>'Because we haven’t received a response from you, we assume that your issue is resolved. '
+        .'We have now closed this case. If the issue is not resolved, you can reopen this case and provide the requested information.',
+]);
+ssmaSame('SELLER_ACTION_REQUIRED',$closedResolution,'A support case closed only because the seller did not answer must still require immediate recovery.');
+
+$case=[
+    'id'=>13221,
+    'amazon_order_id'=>'701-1480606-9517055',
+    'program'=>'FBA',
+    'safe_t_id'=>null,
+    'support_case_id'=>'22321391191',
+    'state'=>'SUPPORT_ESCALATION',
+    'physical_status'=>'NOT_RECEIVED',
+    'refund_at'=>'2026-08-13 23:02:28',
+    'seller_debit_at'=>'2026-08-13 23:02:28',
+    'refund_initiator'=>'UNKNOWN',
+    'expected_reimbursement_amount'=>'68.57',
+    'reconciled_credit_amount'=>'0.00',
+];
+$policy=['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'];
+$merchantObserved=[
+    'id'=>800559,
+    'case_id'=>13221,
+    'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED',
+    'source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-29 20:03:59',
+    'payload'=>[
+        'case_id'=>'22321391191',
+        'case_status'=>'PENDINGMERCHANTACTION',
+        'latest_text'=>$merchantText,
+    ],
+];
+$engine=new SvAmazonSafeTDecisionEngine();
+$decision=$engine->nextAction($case,[$merchantObserved],$policy,new DateTimeImmutable('2026-09-29 20:10:00',new DateTimeZone('UTC')));
+ssmaSame('SELLER_SUPPORT_UPDATE',$decision['action']??null,'A live merchant-action request must update the existing Seller Support case.');
+ssmaSame('SUPPORT_REQUESTED_SELLER_RESPONSE',$decision['reason']??null,'Seller-action follow-up must have a dedicated deterministic reason.');
+ssmaSame('22321391191',$decision['support_case_id']??null,'The response must stay in the same Seller Support case.');
+ssmaAssert(preg_match('/^[a-f0-9]{64}$/',(string)($decision['idempotency_key']??''))===1,'Seller-action response must be idempotent.');
+
+$closedObserved=$merchantObserved;
+$closedObserved['id']=804604;
+$closedObserved['occurred_at']='2026-09-30 08:02:08';
+$closedObserved['payload']['case_status']='RESOLVED';
+$closedObserved['payload']['latest_text']='Because we haven’t received a response from you, we assume that your issue is resolved. '
+    .'We have now closed this case. If the issue is not resolved, you can reopen this case and provide the requested information.';
+$closedDecision=$engine->nextAction($case,[$closedObserved],$policy,new DateTimeImmutable('2026-09-30 08:05:00',new DateTimeZone('UTC')));
+ssmaSame('SELLER_SUPPORT_UPDATE',$closedDecision['action']??null,'A case closed for missing seller response must be reopened/updated, not silently accepted as resolved.');
+ssmaSame('SUPPORT_REQUESTED_SELLER_RESPONSE',$closedDecision['reason']??null,'Missing-response closure must reuse the same recovery reason.');
+ssmaSame('22321391191',$closedDecision['support_case_id']??null,'Recovery must target the original support case.');
+
+$payload=SvAmazonExternalWritePayload::build($closedDecision,$case,[$closedObserved]);
+$narrative=(string)($payload['write_snapshot']['narrative']??'');
+ssmaAssert(str_contains($narrative,'Nós estamos solicitando o nosso ressarcimento como vendedores.'),'Seller Support reply must be written in first person.');
+ssmaAssert(str_contains($narrative,'R$ 68,57'),'Seller Support reply must include the outstanding seller reimbursement amount.');
+ssmaAssert(str_contains($narrative,'não estamos reportando uma mensagem de erro'),'Generic information request must explain why an error screenshot is not applicable for this reimbursement issue.');
+ssmaAssert(!str_contains($narrative,'SUPPORT_REQUESTED_SELLER_RESPONSE'),'Internal reason codes must never leak into external copy.');
+
+echo "seller-support-merchant-action-test: OK\n";

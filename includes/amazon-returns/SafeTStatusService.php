@@ -77,7 +77,9 @@ final class SvAmazonSafeTStatusService
     {
         $current=(string)($case['state']??'');
         $status=strtoupper(trim((string)($read['claim_status']??'UNKNOWN')));
-        $next=self::nextState($current,$status,(bool)($read['appeal_denied']??false));
+        $appealDenied=(bool)($read['appeal_denied']??false)
+            || ($current==='APPEAL_SUBMITTED' && $status==='DENIED' && (bool)($read['appeal_submitted']??false));
+        $next=self::nextState($current,$status,$appealDenied);
         $fingerprint=trim((string)($read['decision_fingerprint']??''));
         $last=trim((string)($case['last_denial_fingerprint']??''));
         $repeat=(int)($case['repeated_denial_count']??0);
