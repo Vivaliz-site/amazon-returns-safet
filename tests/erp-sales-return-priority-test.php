@@ -38,9 +38,9 @@ erpPrioritySame(false,SvAmazonErpSalesReturnTask::refundWithinOperationalWindow(
     ['quantity_refunded'=>1,'refund_at'=>'2026-08-19 11:59:59'],
 ],$windowNow),'Refund older than 30 days must be ignored for new ERP work.');
 $agedCases=[['quantity_refunded'=>1,'refund_at'=>'2026-08-01 12:00:00']];
-erpPrioritySame(true,SvAmazonErpSalesReturnTask::workflowWithinOperationalScope(
+erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowWithinOperationalScope(
     ['status'=>'RETURN_CREATED_WAITING_INVOICE'],$agedCases,$windowNow
-),'A created ERP return must keep reconciling its return NF after the 30-day creation window.');
+),'A created ERP return must also leave operational scope once its refund is older than 30 days.');
 erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowWithinOperationalScope(
     ['status'=>'PENDING'],$agedCases,$windowNow
 ),'An old refund without a created ERP return must remain outside the creation window.');
