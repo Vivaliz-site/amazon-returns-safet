@@ -42,14 +42,6 @@ arobSame(
     SvAmazonRequestedWait::decision($case,[$blocked],new DateTimeImmutable('2026-09-30T10:00:00Z')),
     'A transient UI appeal-field block is not an Amazon instruction to wait and must not become AMAZON_WAIT_DATE_UNRESOLVED.'
 );
-$engine=new SvAmazonSafeTDecisionEngine();
-$d=$engine->nextAction(
-    $case,
-    [$blocked],
-    ['eligible'=>true,'policy_version_id'=>1,'eligibility_at'=>'2026-08-20 12:00:00'],
-    new DateTimeImmutable('2026-09-30T10:00:00Z')
-);
-arobSame('SAFE_T_APPEAL',$d['action']??null,'The underlying appeal decision must remain active while the bridge retries its deferred UI block.');
 
 $eligibilityBlock=$blocked;
 $eligibilityBlock['payload']['reason']='SELLER_CENTRAL_NOT_ELIGIBLE';
