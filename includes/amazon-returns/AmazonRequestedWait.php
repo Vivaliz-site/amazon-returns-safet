@@ -79,6 +79,8 @@ final class SvAmazonRequestedWait
                 $text=(string)($p['review_excerpt']??'');$anchor=$event['occurred_at']??null;
                 if (in_array($p['review_outcome']??'', ['APPROVED','INFO_REQUESTED'],true)) $text='';
             } elseif ($type==='SELLER_CENTRAL_ACTION_RESULT' && $source==='SELLER_CENTRAL' && ($p['status']??'')==='BLOCKED_UNTIL') {
+                $blockReason=strtoupper(trim((string)($p['reason']??'')));
+                if($blockReason==='SAFE_T_APPEAL_FIELD_UNAVAILABLE')continue;
                 $text=(string)($p['block_reason']??$p['reason']??'');$anchor=null;
             } else continue;
             $at=self::timestamp($event['occurred_at']??null);
