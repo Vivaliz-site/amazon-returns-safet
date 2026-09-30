@@ -98,9 +98,11 @@ final class SvAmazonSellerSupportStatus
         $text=mb_strtolower($support['latest_text'],'UTF-8');
         if($terminal && str_contains($text,'safe-t-review@amazon.com'))return 'EMAIL_REVIEW';
         if(($terminal || $sellerAction) && self::directsSafeTSubmission($text))return 'SAFE_T_SUBMIT';
+        if($terminal && self::closedForMissingSellerResponse($text))return 'SELLER_ACTION_REQUIRED';
         if(!$terminal){
             if($sellerAction && self::returnNotReceivedDispute($text))return 'RETURN_NOT_RECEIVED_DISPUTE';
             if($sellerAction && self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
+            if($sellerAction)return 'SELLER_ACTION_REQUIRED';
             return 'ACTIVE';
         }
         $money=preg_match('/(?:reembols|reimbursement|cr[eé]dito|credit)/u',$text)===1;
@@ -125,7 +127,14 @@ final class SvAmazonSellerSupportStatus
     private static function sellerActionPending(string $status): bool
     {
         $normalized=preg_replace('/[^A-Z0-9]+/','',strtoupper(trim($status))) ?? '';
-        return in_array($normalized,['PENDINGSELLERACTION','AWAITINGSELLERACTION'],true);
+        return in_array($normalized,['PENDINGSELLERACTION','AWAITINGSELLERACTION','PENDINGMERCHANTACTION','AWAITINGMERCHANTACTION'],true);
+    }
+
+    private static function closedForMissingSellerResponse(string $text): bool
+    {
+        $missingReply=preg_match('/(?:haven.t|have\s+not|did\s+not).{0,100}(?:receiv\w*).{0,80}(?:response|reply)|(?:n[aã]o|nao).{0,80}(?:receb\w*).{0,80}(?:resposta|retorno)/u',$text)===1;
+        $closure=preg_match('/(?:closed|close|reopen|encerr\w*|fech\w*|reabr\w*)/u',$text)===1;
+        return $missingReply && $closure;
     }
 
     private static function returnNotReceivedDispute(string $text): bool
