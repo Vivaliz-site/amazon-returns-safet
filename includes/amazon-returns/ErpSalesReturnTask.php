@@ -139,11 +139,8 @@ final class SvAmazonErpSalesReturnTask
                 continue;
             }
             if(!self::workflowWithinOperationalScope($workflow,$cases,$now)){
-                if(is_array($workflow)){
-                    $status=strtoupper(trim((string)($workflow['status']??'')));
-                    if(in_array($status,['PENDING','READY_TO_CREATE','BLOCKED','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW'],true)){
-                        $p->erpSalesReturns->markIgnoredRefundOutsideOperationalWindow($orderId);
-                    }
+                if(self::workflowShouldBeIgnoredOutsideOperationalWindow($workflow)){
+                    $p->erpSalesReturns->markIgnoredRefundOutsideOperationalWindow($orderId);
                 }
                 continue;
             }
@@ -177,9 +174,21 @@ final class SvAmazonErpSalesReturnTask
     /** @param list<array<string,mixed>> $cases */
     public static function workflowWithinOperationalScope(?array $workflow,array $cases,?DateTimeImmutable $now=null): bool
     {
-        $status=strtoupper(trim((string)($workflow['status']??'')));
-        if($status==='RETURN_CREATED_WAITING_INVOICE')return true;
         return self::refundWithinOperationalWindow($cases,$now);
+    }
+
+    public static function workflowShouldBeIgnoredOutsideOperationalWindow(?array $workflow): bool
+    {
+        if(!is_array($workflow))return false;
+        $status=strtoupper(trim((string)($workflow['status']??'')));
+        return in_array($status,[
+            'PENDING',
+            'READY_TO_CREATE',
+            'BLOCKED',
+            'RETURN_CREATED_WAITING_INVOICE',
+            'IGNORED_REFUND_OLDER_THAN_90D',
+            'IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW',
+        ],true);
     }
 
     /** @param list<array<string,mixed>> $cases */
