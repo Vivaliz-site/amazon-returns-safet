@@ -13,23 +13,28 @@ final class SvAmazonGmailApiClient
     private $sleep;
     /** @var callable():int */
     private $jitter;
+    /** @var callable(string,array<string,mixed>):array<string,mixed> */
+    private $oauthTransport;
     private ?string $accessToken = null;
 
     /**
      * @param callable(string,string,array<string,string>,?array):array<string,mixed>|null $transport
      * @param callable(int):void|null $sleep
      * @param callable():int|null $jitter
+     * @param callable(string,array<string,mixed>):array<string,mixed>|null $oauthTransport
      */
     public function __construct(
         private ?SvAmazonReturnsConfig $config = null,
         ?callable $transport = null,
         ?callable $sleep = null,
-        ?callable $jitter = null
+        ?callable $jitter = null,
+        ?callable $oauthTransport = null
     ) {
         $this->config ??= new SvAmazonReturnsConfig();
         $this->transport = $transport ?? [$this, 'httpJson'];
         $this->sleep = $sleep ?? static function(int $microseconds): void { usleep($microseconds); };
         $this->jitter = $jitter ?? static fn(): int => random_int(0, 999999);
+        $this->oauthTransport = $oauthTransport ?? [$this, 'httpForm'];
     }
 
     /** @return array{message_id:string,thread_id:string} */
@@ -391,19 +396,68 @@ final class SvAmazonGmailApiClient
         $direct = $this->config->get('GMAIL_OAUTH_ACCESS_TOKEN');
         if ($direct !== '') return $this->accessToken = $direct;
 
-        $clientId = $this->config->first('GMAIL_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_ID');
-        $clientSecret = $this->config->first('GMAIL_OAUTH_CLIENT_SECRET','GOOGLE_OAUTH_CLIENT_SECRET');
-        $refreshToken = $this->config->first('GMAIL_OAUTH_REFRESH_TOKEN','GOOGLE_OAUTH_REFRESH_TOKEN');
-        if ($clientId === '' || $clientSecret === '' || $refreshToken === '') {
-            throw new RuntimeException('Gmail OAuth credentials are incomplete.');
-        }
-        $response = $this->httpForm(
-            'https://oauth2.googleapis.com/token',
-            ['client_id'=>$clientId,'client_secret'=>$clientSecret,'refresh_token'=>$refreshToken,'grant_type'=>'refresh_token']
+        return $this->accessToken = $this->refreshFromCandidates(
+            self::oauthCredentialCandidates($this->config)
         );
-        $token = trim((string)($response['access_token'] ?? ''));
-        if ($token === '') throw new RuntimeException('Gmail OAuth did not return access_token.');
-        return $this->accessToken = $token;
+    }
+
+    /** @return list<array{client_id:string,client_secret:string,refresh_token:string}> */
+    private static function oauthCredentialCandidates(SvAmazonReturnsConfig $config): array
+    {
+        $candidates = [
+            [
+                'client_id'=>$config->first('GMAIL_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_ID'),
+                'client_secret'=>$config->first('GMAIL_OAUTH_CLIENT_SECRET','GOOGLE_OAUTH_CLIENT_SECRET'),
+                'refresh_token'=>$config->get('GMAIL_OAUTH_REFRESH_TOKEN'),
+            ],
+            [
+                'client_id'=>$config->first('GOOGLE_OAUTH_CLIENT_ID','GMAIL_OAUTH_CLIENT_ID'),
+                'client_secret'=>$config->first('GOOGLE_OAUTH_CLIENT_SECRET','GMAIL_OAUTH_CLIENT_SECRET'),
+                'refresh_token'=>$config->get('GOOGLE_OAUTH_REFRESH_TOKEN'),
+            ],
+        ];
+        $result=[];$seen=[];
+        foreach($candidates as $candidate){
+            if($candidate['client_id']==='' || $candidate['client_secret']==='' || $candidate['refresh_token']==='')continue;
+            $fingerprint=hash('sha256',implode("\0",[
+                $candidate['client_id'],$candidate['client_secret'],$candidate['refresh_token']
+            ]));
+            if(isset($seen[$fingerprint]))continue;
+            $seen[$fingerprint]=true;
+            $result[]=$candidate;
+        }
+        return $result;
+    }
+
+    /** @param list<array{client_id:string,client_secret:string,refresh_token:string}> $candidates */
+    private function refreshFromCandidates(array $candidates): string
+    {
+        if($candidates===[])throw new RuntimeException('Gmail OAuth credentials are incomplete.');
+        $lastIndex=count($candidates)-1;
+        foreach($candidates as $index=>$candidate){
+            try{
+                $response=($this->oauthTransport)(
+                    'https://oauth2.googleapis.com/token',
+                    [
+                        'client_id'=>$candidate['client_id'],
+                        'client_secret'=>$candidate['client_secret'],
+                        'refresh_token'=>$candidate['refresh_token'],
+                        'grant_type'=>'refresh_token',
+                    ]
+                );
+                $token=trim((string)($response['access_token']??''));
+                if($token==='')throw new RuntimeException('Gmail OAuth did not return access_token.');
+                return $token;
+            }catch(RuntimeException $e){
+                if($index===$lastIndex || !self::isInvalidGrantFailure($e))throw $e;
+            }
+        }
+        throw new RuntimeException('Gmail OAuth credentials are incomplete.');
+    }
+
+    private static function isInvalidGrantFailure(RuntimeException $error): bool
+    {
+        return preg_match('/(?:^|\\s)error=invalid_grant(?:[.\\s]|$)/D',$error->getMessage())===1;
     }
 
     private static function oauthFailureCode(mixed $json): string
