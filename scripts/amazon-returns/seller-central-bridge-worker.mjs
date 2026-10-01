@@ -1729,13 +1729,9 @@ async function supportUpdate(cdp, job) {
       evidence: await evidence(cdp, 'help-v1'),
     });
   }
-  if (apiReply.attempted === true && apiReply.status === 'UNCONFIRMED') {
-    return bridgeResult('FAILED', { reason: 'SUPPORT_REPLY_NOT_CONFIRMED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-  }
-  if (apiReply.attempted === true && apiReply.status === 'HTTP_ERROR') {
-    // The authenticated API can fail transiently or be blocked by a provider-side
-    // policy while the real case composer remains writable. Do not strand the
-    // seller response: fall back to the trusted UI composer and require readback.
+  if (apiReply.attempted === true) {
+    const reason = apiReply.status === 'UNCONFIRMED' ? 'SUPPORT_REPLY_NOT_CONFIRMED' : 'SUPPORT_REPLY_API_FAILED';
+    return bridgeResult('FAILED', { reason, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
   const channels = Array.isArray(apiReply.channels) ? apiReply.channels : [];
   if (apiReply.status === 'LIVE_ONLY' && (channels.includes('Chat') || channels.includes('Phone'))) {
