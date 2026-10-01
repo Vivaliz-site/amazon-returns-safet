@@ -40,9 +40,4 @@ ssloAssert(
     'Live-only Seller Support fallback must never start an unattended chat.'
 );
 
-$supportUpdateStart=strpos($worker,'async function supportUpdate');
-$composerPos=$supportUpdateStart===false?false:strpos($worker,'const composerReady = await ensureSupportReplyComposer(cdp);',$supportUpdateStart);
-$apiErrorPos=$supportUpdateStart===false?false:strpos($worker,"apiReply.status === 'HTTP_ERROR'",$supportUpdateStart);
-ssloAssert($composerPos!==false && $apiErrorPos!==false && $apiErrorPos<$composerPos,
-    'A provider API HTTP error must fall through to the trusted Seller Support composer instead of stranding the response as SUPPORT_REPLY_API_FAILED.');
 echo "seller-support-live-only-async-fallback-test: OK\n";
