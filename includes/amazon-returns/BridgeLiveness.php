@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 final class SvAmazonBridgeLiveness
 {
-    public const MAX_AUTH_AGE_SECONDS = 108000;
-    public const MAX_PROCESS_AGE_SECONDS = 108000;
+    public const MAX_AUTH_AGE_SECONDS = 64800;
+    public const MAX_PROCESS_AGE_SECONDS = 64800;
 
     /**
      * @param array{value:string,metadata:array<string,mixed>,observed_at:?string}|null $authCursor
