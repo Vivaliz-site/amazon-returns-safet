@@ -23,14 +23,26 @@ ssafAssert(
     'Seller Support update must distinguish uncertain POST outcomes from pre-write channel discovery failures.'
 );
 ssafAssert(
-    str_contains($update,"SUPPORT_REPLY_API_FAILED"),
-    'A failed/uncertain ReplyCase POST must fail closed instead of falling through to a second UI write.'
+    str_contains($update,"apiReply.status === 'HTTP_ERROR'"),
+    'A definite non-2xx ReplyCase response must have an explicit recovery branch.'
 );
-$failedPos=strpos($update,"SUPPORT_REPLY_API_FAILED");
+ssafAssert(
+    str_contains($update,"waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240))"),
+    'HTTP-error recovery must read back the case before any second write to prevent duplicate replies.'
+);
+ssafAssert(
+    str_contains($update,"SUPPORT_REPLY_HTTP_ERROR_BUT_READ_BACK_CONFIRMED"),
+    'If the failed HTTP response nevertheless produced the reply, read-back must close the operation as accepted.'
+);
+ssafAssert(
+    str_contains($update,"SUPPORT_REPLY_API_FAILED"),
+    'Uncertain ReplyCase outcomes must remain fail-closed.'
+);
+$httpPos=strpos($update,"apiReply.status === 'HTTP_ERROR'");
 $composerPos=strpos($update,'ensureSupportReplyComposer(cdp)');
 ssafAssert(
-    $failedPos!==false && $composerPos!==false && $failedPos<$composerPos,
-    'API failure handling must occur before any UI send fallback to prevent duplicate replies.'
+    $httpPos!==false && $composerPos!==false && $httpPos<$composerPos,
+    'The definite HTTP-error recovery/read-back path must run before the UI composer fallback.'
 );
 
 echo "seller-support-reply-api-fail-closed-test: OK\n";

@@ -1730,8 +1730,21 @@ async function supportUpdate(cdp, job) {
     });
   }
   if (apiReply.attempted === true) {
-    const reason = apiReply.status === 'UNCONFIRMED' ? 'SUPPORT_REPLY_NOT_CONFIRMED' : 'SUPPORT_REPLY_API_FAILED';
-    return bridgeResult('FAILED', { reason, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    if (apiReply.status === 'HTTP_ERROR') {
+      const appearedAfterHttpError = await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240));
+      if (appearedAfterHttpError) {
+        return bridgeResult('ACCEPTED', {
+          submitted: true,
+          external_id: caseId,
+          retry_safe: true,
+          reason: 'SUPPORT_REPLY_HTTP_ERROR_BUT_READ_BACK_CONFIRMED',
+          evidence: await evidence(cdp, 'help-v1'),
+        });
+      }
+    } else {
+      const reason = apiReply.status === 'UNCONFIRMED' ? 'SUPPORT_REPLY_NOT_CONFIRMED' : 'SUPPORT_REPLY_API_FAILED';
+      return bridgeResult('FAILED', { reason, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    }
   }
   const channels = Array.isArray(apiReply.channels) ? apiReply.channels : [];
   if (apiReply.status === 'LIVE_ONLY' && (channels.includes('Chat') || channels.includes('Phone'))) {
