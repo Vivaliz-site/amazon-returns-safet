@@ -14,6 +14,7 @@ const WORKER_ID = process.env.SELLER_CENTRAL_WORKER_ID || 'seller-central-browse
 const POLL_MS = Math.max(10000, Number(process.env.SELLER_CENTRAL_BRIDGE_POLL_MS || 30000));
 const QUIESCE_MARKER = process.env.AMAZON_RETURNS_QUIESCE_MARKER || '/run/amazon-returns-seller-central.quiesce';
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
+const SAFE_T_APPEAL_FIELD_WAIT_MS = 15000;
 const HELP_URL = 'https://sellercentral.amazon.com.br/help/center?redirectSource=Hill';
 const CASE_LOBBY = 'https://sellercentral.amazon.com.br/cu/case-lobby';
 const supportHistoryRaw = Number(process.env.SELLER_CENTRAL_SUPPORT_CASE_HISTORY_LIMIT || 500);
@@ -769,6 +770,16 @@ async function safeTSubmit(cdp, job) {
   });
 }
 
+async function waitForSafeTAppealField(cdp) {
+  const deadline = Date.now() + SAFE_T_APPEAL_FIELD_WAIT_MS;
+  do {
+    const present = await cdp.evaluate(`Boolean(document.querySelector('kat-textarea.description-textbox'))`);
+    if (present) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(500);
+  } while (true);
+}
+
 async function safeTAppeal(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -782,7 +793,7 @@ async function safeTAppeal(cdp, job) {
   const narrative = narrativeFor(job, 1500);
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative)})`);
   if (already) return bridgeResult('ALREADY_EXISTS', { external_id: safeTId, retry_safe: true, evidence: await evidence(cdp, 'safet-v1') });
-  const hasField = await cdp.evaluate(`Boolean(document.querySelector('kat-textarea.description-textbox'))`);
+  const hasField = await waitForSafeTAppealField(cdp);
   if (!hasField) {
     const state = await cdp.pageState();
     return bridgeResult('BLOCKED_UNTIL', { reason: 'SAFE_T_APPEAL_FIELD_UNAVAILABLE', block_reason: text(state.text).slice(-1200), retry_safe: true, evidence: await evidence(cdp, 'safet-v1') });
