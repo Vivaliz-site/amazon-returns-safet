@@ -1,3 +1,10 @@
+<!-- SHOPVIVALIZ_HOST_ACCESS_CANONICAL_V2 -->
+## Acesso canônico aos hosts ShopVivaliz
+Antes de qualquer operação em host, VM, runtime, navegador, serviço, deploy, logs ou recuperação, leia `docs/HOST-ACCESS.md`. A fonte central detalhada é `Vivaliz-site/site-shopvivaliz:docs/knowledge/host-access.md`.
+
+Regras: produção `shopvivaliz-free-a1/10.0.1.112`; backend/controller/browser `always-free-arm-1787907847-26/10.0.1.38`; navegador somente no backend; SSH privado/Tailscale para Linux; OCI Bastion para bootstrap/recovery sem rota privada; RustDesk para GUI; Desktop Commander só contingência; Windows via backend `127.0.0.1:2222` Fred-Win e `127.0.0.1:2223` KOCEPSV; `5557/5558` somente bootstrap/recovery. Sempre provar `hostname`, identidade, diretório e estado Git antes de operar. Nunca registrar valores de secrets.
+<!-- /SHOPVIVALIZ_HOST_ACCESS_CANONICAL_V2 -->
+
 <!-- GEMINI_READ_AGENTS_FIRST_V1 -->
 > **BOOTSTRAP OBRIGATÓRIO DO GEMINI:** antes de analisar, planejar, editar, executar comandos, usar navegador, abrir PR, fazer merge, deploy ou validar qualquer tarefa, leia integralmente o `AGENTS.md` da raiz deste repositório e siga suas regras. Releia em retomadas ou quando o arquivo mudar. Em conflito, `AGENTS.md` prevalece.
 
