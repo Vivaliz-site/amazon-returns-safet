@@ -11,7 +11,7 @@ $now=new DateTimeImmutable('2026-09-08T12:00:00Z');
 $fresh=[
     'value'=>'vm-a1-safe-t-status',
     'metadata'=>['status'=>'AUTHENTICATED'],
-    'observed_at'=>'2026-09-07 13:00:00',
+    'observed_at'=>'2026-09-07 23:00:00',
 ];
 $process=[
     'value'=>'vm-a1-safe-t-status',
@@ -19,7 +19,7 @@ $process=[
     'observed_at'=>'2026-09-08 11:59:00',
 ];
 $ok=SvAmazonBridgeLiveness::evaluate($fresh,$now,true,$process,'vm-a1-safe-t-status');
-blSame('OK',$ok['status'],'Authenticated browser observation inside 30 hours must be healthy.');
+blSame('OK',$ok['status'],'Authenticated browser observation inside 18 hours must be healthy.');
 blSame('vm-a1-safe-t-status',$ok['worker_id'],'Health must identify the active browser worker without exposing secrets.');
 blAssert(($ok['age_seconds']??0)>0,'Health must expose heartbeat age.');
 
@@ -37,9 +37,9 @@ $wrongProcessResult=SvAmazonBridgeLiveness::evaluate($fresh,$now,true,$wrongProc
 blSame('DEGRADED',$wrongProcessResult['status'],'Primary auth plus a retired process heartbeat must not be healthy.');
 blSame('UNEXPECTED_READ_PROCESS_WORKER',$wrongProcessResult['reason'],'Unexpected read-process worker must be explicit.');
 
-$stale=$fresh;$stale['observed_at']='2026-09-07 05:00:00';
+$stale=$fresh;$stale['observed_at']='2026-09-07 17:00:00';
 $staleResult=SvAmazonBridgeLiveness::evaluate($stale,$now,true,$process,'vm-a1-safe-t-status');
-blSame('DEGRADED',$staleResult['status'],'Browser authentication older than 30 hours must degrade health.');
+blSame('DEGRADED',$staleResult['status'],'Browser authentication older than 18 hours must degrade health.');
 blSame('STALE_BROWSER_AUTH',$staleResult['reason'],'Stale auth must have an explicit reason.');
 
 $failed=$fresh;$failed['metadata']['status']='TOTP_UNAVAILABLE';$failed['observed_at']='2026-09-08 11:55:00';
@@ -51,7 +51,7 @@ $missing=SvAmazonBridgeLiveness::evaluate(null,$now,true,$process,'vm-a1-safe-t-
 blSame('DEGRADED',$missing['status'],'Configured Seller Central bridge without auth evidence must not report healthy.');
 blSame('NO_BROWSER_AUTH_OBSERVATION',$missing['reason'],'Missing auth evidence must be explicit.');
 
-$staleProcess=$process;$staleProcess['observed_at']='2026-09-07 05:00:00';
+$staleProcess=$process;$staleProcess['observed_at']='2026-09-07 17:00:00';
 $staleProcessResult=SvAmazonBridgeLiveness::evaluate($fresh,$now,true,$staleProcess,'vm-a1-safe-t-status');
 blSame('DEGRADED',$staleProcessResult['status'],'Stale read-process heartbeat must degrade health even when browser auth is fresh.');
 blSame('STALE_READ_PROCESS_HEARTBEAT',$staleProcessResult['reason'],'Stale read-process heartbeat must be explicit.');
