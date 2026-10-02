@@ -1243,6 +1243,24 @@ function supportedLiveChatReply(job, message) {
   return '';
 }
 
+
+async function sendHillChatMessage(chat, message, timeoutMs = 20000) {
+  const expected = text(message);
+  if (!expected) return false;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ready = (await chat.evaluate(`(()=>{const t=document.querySelector('textarea[placeholder*="Write here and press Enter"],textarea[aria-label*="Write here and press Enter"]');return !!(t&&!t.disabled)})()`)) === true;
+    if (ready) break;
+    await sleep(400);
+  }
+  const filled = (await chat.evaluate(`(()=>{const expected=${JSON.stringify(expected)};const t=document.querySelector('textarea[placeholder*="Write here and press Enter"],textarea[aria-label*="Write here and press Enter"]');if(!t||t.disabled)return false;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')?.set;if(typeof setter!=='function')return false;setter.call(t,expected);t.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:expected}));t.dispatchEvent(new Event('change',{bubbles:true}));t.focus();return t.value===expected})()`)) === true;
+  if (!filled) return false;
+  await chat.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  await chat.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  await sleep(500);
+  return (await chat.evaluate(`(()=>{const t=document.querySelector('textarea[placeholder*="Write here and press Enter"],textarea[aria-label*="Write here and press Enter"]');return !t||t.value===''})()`)) === true;
+}
+
 async function attendHillChat(cdp, job, excludedCaseIds = []) {
   const clicked = await clickHillChat(cdp);
   if (!clicked) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_START_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
@@ -1253,11 +1271,7 @@ async function attendHillChat(cdp, job, excludedCaseIds = []) {
   try {
     const initial = await chat.pageState(18000);
     const initialText = text(initial?.text);
-    if (!(await chat.fillDeepSupportTextarea(narrative))) {
-      return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_MESSAGE_NOT_WRITABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-    }
-    const sent = await chat.clickButtonTrustedByText(['Send','Enviar','Send message','Enviar mensagem']);
-    if (!text(sent)) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_SEND_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    if (!(await sendHillChatMessage(chat, narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_MESSAGE_NOT_WRITABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
     let lastText = initialText;
     const deadline = Date.now() + 5 * 60 * 1000;
     while (Date.now() < deadline) {
@@ -1275,9 +1289,7 @@ async function attendHillChat(cdp, job, excludedCaseIds = []) {
       if (!reply) {
         return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_UNSUPPORTED_AGENT_QUESTION', retry_safe: true, external_id: popup.caseId || null, evidence: await evidence(cdp, 'help-v1') });
       }
-      if (!(await chat.fillDeepSupportTextarea(reply))) return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_REPLY_NOT_WRITABLE', retry_safe: true, external_id: popup.caseId || null, evidence: await evidence(cdp, 'help-v1') });
-      const replySent = await chat.clickButtonTrustedByText(['Send','Enviar','Send message','Enviar mensagem']);
-      if (!text(replySent)) return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_REPLY_SEND_MISSING', retry_safe: true, external_id: popup.caseId || null, evidence: await evidence(cdp, 'help-v1') });
+      if (!(await sendHillChatMessage(chat, reply))) return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_REPLY_NOT_WRITABLE', retry_safe: true, external_id: popup.caseId || null, evidence: await evidence(cdp, 'help-v1') });
     }
     const caseId = popup.caseId || await currentSupportCaseId(cdp);
     if (caseId && await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240), 30000)) {
