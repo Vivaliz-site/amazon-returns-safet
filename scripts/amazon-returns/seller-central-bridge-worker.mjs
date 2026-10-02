@@ -847,6 +847,12 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
     const terminal=new Set(${JSON.stringify(SUPPORT_CASE_TERMINAL_STATUSES)});
     const activeSupportStatus=value=>{const status=String(value||'').trim().toUpperCase();return status!==''&&!terminal.has(status)};
     const supportStatusAllowed=value=>includeTerminal ? true : activeSupportStatus(value);
+    const terminalRetryCandidateAllowed=(status,creationDate)=>{
+      if(activeSupportStatus(status)||!includeTerminal)return true;
+      if(!Number.isFinite(cutoffSeconds)||cutoffSeconds<=0)return false;
+      const created=Number(creationDate);
+      return Number.isFinite(created)&&created>=cutoffSeconds;
+    };
     const validCaseId=value=>{const candidate=String(value||'');return candidate.length>=8&&candidate.length<=14&&[...candidate].every(ch=>ch>='0'&&ch<='9')};
     const limit=${SUPPORT_CASE_HISTORY_LIMIT};
     const pageSize=50;
@@ -878,20 +884,22 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
       throw new Error('VIEW_CASE_HTTP_429');
     };
     const deterministicTerms=[preferred,...needles].filter((value,index,all)=>value&&all.indexOf(value)===index);
+    const deterministicSeen=new Set();
     for(const term of deterministicTerms){
       if(budgetExceeded())return budgetResult();
       const search=await searchCases(term);
       if(search.error)return JSON.stringify({status:'UNAVAILABLE',reason:search.error});
       for(const item of search.rows){
         const caseId=String(item.caseId||'');
-        if(!validCaseId(caseId)||!supportStatusAllowed(item.status))continue;
+        if(!validCaseId(caseId)||deterministicSeen.has(caseId)||!supportStatusAllowed(item.status))continue;
+        deterministicSeen.add(caseId);
         const preferredCandidate=preferred&&caseId===preferred;
         const relevantCandidate=relevant.test(String(item.shortDescription||''));
         if(!preferredCandidate&&!relevantCandidate)continue;
         try{
           const detail=await viewCase(caseId);
           const status=detail?.viewCaseMetaData?.caseStatus||item.status;
-          if(supportStatusAllowed(status)&&needles.some(n=>JSON.stringify(detail).includes(n))){
+          if(supportStatusAllowed(status)&&terminalRetryCandidateAllowed(status,item.creationDate)&&needles.some(n=>JSON.stringify(detail).includes(n))){
             return JSON.stringify({status:'FOUND',case_id:caseId});
           }
         }catch{return JSON.stringify({status:'UNAVAILABLE',reason:'DETAIL_LOOKUP_FAILED'})}
@@ -970,7 +978,7 @@ async function findSupportCase(cdp, job, options = {}) {
         error.lookupReason = 'LOOKUP_CUTOFF_UNAVAILABLE';
         throw error;
       }
-      cutoffEpochSeconds = Math.floor(cutoffMs / 1000) - 86400;
+      cutoffEpochSeconds = Math.floor(cutoffMs / 1000) - (options.includeTerminal === true ? 0 : 86400);
     }
     return await scanSupportCaseHistory(lookup, job, known || quick, { ...options, cutoffEpochSeconds });
   } catch (error) {

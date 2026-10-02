@@ -134,4 +134,66 @@ async function withFetch(fakeFetch, fn) {
   assert.equal(viewCalls, 1, 'Preferred support ID must be verified with one paced ViewCase read.');
 }
 
+
+{
+  const orderId = '702-5349464-0245862';
+  const oldResolvedId = '21839128801';
+  let viewCalls = 0;
+  const fakeFetch = async (url, options = {}) => {
+    if (String(url).includes('SearchForCases')) {
+      const body = JSON.parse(options.body || '{}');
+      if (body.caseFilters?.searchText) return { ok: true, status: 200, json: async () => ({
+        totalNumberOfResults: 1,
+        caseSearchResultList: [{
+          caseId: oldResolvedId, status: 'Resolved', creationDate: 1787000000,
+          shortDescription: 'Order '+orderId+' reimbursement',
+        }],
+      }) };
+      return { ok: true, status: 200, json: async () => ({ totalNumberOfResults: 0, caseSearchResultList: [] }) };
+    }
+    if (String(url).includes('ViewCase')) {
+      viewCalls++;
+      return { ok: true, status: 200, json: async () => ({
+        viewCaseMetaData: { caseStatus: 'Resolved' },
+        contacts: [{ body: 'Order '+orderId+' reimbursement processed' }],
+      }) };
+    }
+    throw new Error('unexpected fetch '+url);
+  };
+  const cdp = { evaluate: async expression => await (0, eval)(expression) };
+  const found = await withFetch(fakeFetch, () => scanSupportCaseHistory(cdp, {
+    case: { order_id: orderId, safe_t_id: '12472-25597-6629839' },
+  }, oldResolvedId, { includeTerminal: true, cutoffEpochSeconds: 1788500000 }));
+  assert.equal(found, null, 'Retry reconciliation must not mistake a terminal support case older than this job for the case created by the retry episode.');
+  assert.equal(viewCalls, 1, 'Retry reconciliation must verify the authoritative case status once, then reject an old case that remains terminal.');
+}
+
+{
+  const orderId = '702-5349464-0245862';
+  const recentResolvedId = '21839999999';
+  const fakeFetch = async (url, options = {}) => {
+    if (String(url).includes('SearchForCases')) {
+      const body = JSON.parse(options.body || '{}');
+      if (body.caseFilters?.searchText) return { ok: true, status: 200, json: async () => ({
+        totalNumberOfResults: 1,
+        caseSearchResultList: [{
+          caseId: recentResolvedId, status: 'Resolved', creationDate: 1789000000,
+          shortDescription: 'Order '+orderId+' reimbursement',
+        }],
+      }) };
+      return { ok: true, status: 200, json: async () => ({ totalNumberOfResults: 0, caseSearchResultList: [] }) };
+    }
+    if (String(url).includes('ViewCase')) return { ok: true, status: 200, json: async () => ({
+      viewCaseMetaData: { caseStatus: 'Resolved' },
+      contacts: [{ body: 'Order '+orderId+' reimbursement processed' }],
+    }) };
+    throw new Error('unexpected fetch '+url);
+  };
+  const cdp = { evaluate: async expression => await (0, eval)(expression) };
+  const found = await withFetch(fakeFetch, () => scanSupportCaseHistory(cdp, {
+    case: { order_id: orderId, safe_t_id: '12472-25597-6629839' },
+  }, recentResolvedId, { includeTerminal: true, cutoffEpochSeconds: 1788500000 }));
+  assert.equal(found, recentResolvedId, 'A terminal support case created inside the retry reconciliation window must still deduplicate a successful prior write.');
+}
+
 console.log('seller-support-deterministic-lookup-test: OK');
