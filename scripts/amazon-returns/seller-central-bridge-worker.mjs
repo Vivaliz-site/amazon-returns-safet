@@ -1195,6 +1195,100 @@ async function hillSupportUnavailable(cdp) {
   return await hillPopupSupportState() === 'UNAVAILABLE';
 }
 
+
+async function connectLatestHillChatPopup(excludedCaseIds = []) {
+  const excluded = new Set((Array.isArray(excludedCaseIds) ? excludedCaseIds : []).map(text).filter(Boolean));
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    let targets = [];
+    try {
+      const response = await fetch(`${CDP_BASE}/json/list`, { signal: AbortSignal.timeout(2500) });
+      if (response.ok) targets = await response.json();
+    } catch {}
+    if (Array.isArray(targets)) {
+      const popup = [...targets].reverse().find(row => row?.type === 'page'
+        && text(row?.url).includes('/hill/website/chat')
+        && text(row?.webSocketDebuggerUrl)
+        && !excluded.has(supportCaseIdFromHillTargetUrl(row?.url)));
+      if (popup) {
+        const ws = new WebSocket(popup.webSocketDebuggerUrl);
+        await new Promise((resolve, reject) => {
+          ws.addEventListener('open', resolve, { once: true });
+          ws.addEventListener('error', reject, { once: true });
+        });
+        return { cdp: new Cdp(ws, null, 10000), caseId: supportCaseIdFromHillTargetUrl(popup.url) };
+      }
+    }
+    await sleep(500);
+  }
+  return null;
+}
+
+function supportedLiveChatReply(job, message) {
+  const body = text(message).toLowerCase();
+  const physical = text(job.case?.physical_status).toUpperCase();
+  const orderId = text(job.case?.order_id);
+  const amount = text(job.case?.refund_amount);
+  if (!body) return '';
+  if (/^(olá|ola|hello|hi|boa tarde|bom dia|boa noite)[!. ]*$/i.test(text(message))) {
+    return 'Olá. Estou acompanhando o atendimento e posso fornecer as informações deste caso.';
+  }
+  if (physical === 'NOT_RECEIVED' && /(receb|receive|retorn|return|produto|item)/i.test(body)) {
+    return `Não, não recebemos o produto de volta${orderId ? ` referente ao pedido ${orderId}` : ''}. Solicito o ressarcimento do valor devido ao vendedor.`;
+  }
+  if (orderId && /(pedido|order)/i.test(body)) return `O pedido é ${orderId}.`;
+  if (amount && /(valor|amount|reembolso|refund)/i.test(body)) return `O valor registrado para este reembolso é R$ ${amount}.`;
+  if (/(aguarde|wait|momento|moment)/i.test(body)) return '__WAIT__';
+  if (/(mais alguma|anything else|algo mais)/i.test(body)) return 'Não. Solicito apenas a análise e o ressarcimento devido ao vendedor conforme as evidências deste caso.';
+  return '';
+}
+
+async function attendHillChat(cdp, job, excludedCaseIds = []) {
+  const clicked = await clickHillChat(cdp);
+  if (!clicked) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_START_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  const popup = await connectLatestHillChatPopup(excludedCaseIds);
+  if (!popup) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_POPUP_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  const chat = popup.cdp;
+  const narrative = narrativeFor(job, 9000);
+  try {
+    const initial = await chat.pageState(18000);
+    const initialText = text(initial?.text);
+    if (!(await chat.fillDeepSupportTextarea(narrative))) {
+      return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_MESSAGE_NOT_WRITABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    }
+    const sent = await chat.clickButtonTrustedByText(['Send','Enviar','Send message','Enviar mensagem']);
+    if (!text(sent)) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_SEND_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    let lastText = initialText;
+    const deadline = Date.now() + 5 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await sleep(1500);
+      const state = await chat.pageState(24000).catch(() => null);
+      if (!state) break;
+      const current = text(state.text);
+      if (current === lastText) continue;
+      const delta = current.startsWith(lastText) ? current.slice(lastText.length).trim() : current.slice(Math.max(0, current.length - 2000)).trim();
+      lastText = current;
+      if (!delta || delta.includes(narrative.slice(0, 120))) continue;
+      if (/(chat ended|conversation ended|atendimento encerrado|conversa encerrada|case has been created|caso foi criado)/i.test(delta)) break;
+      const reply = supportedLiveChatReply(job, delta);
+      if (reply === '__WAIT__') continue;
+      if (!reply) {
+        return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_UNSUPPORTED_AGENT_QUESTION', retry_safe: true, external_id: popup.caseId || null, evidence: await evidence(cdp, 'help-v1') });
+      }
+      if (!(await chat.fillDeepSupportTextarea(reply))) return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_REPLY_NOT_WRITABLE', retry_safe: true, external_id: popup.caseId || null, evidence: await evidence(cdp, 'help-v1') });
+      const replySent = await chat.clickButtonTrustedByText(['Send','Enviar','Send message','Enviar mensagem']);
+      if (!text(replySent)) return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_REPLY_SEND_MISSING', retry_safe: true, external_id: popup.caseId || null, evidence: await evidence(cdp, 'help-v1') });
+    }
+    const caseId = popup.caseId || await currentSupportCaseId(cdp);
+    if (caseId && await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240), 30000)) {
+      return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason: 'SUPPORT_CHAT_ATTENDED_AND_READ_BACK_CONFIRMED', evidence: await evidence(cdp, 'help-v1') });
+    }
+    return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_READ_BACK_NOT_CONFIRMED', retry_safe: true, external_id: caseId || null, evidence: await evidence(cdp, 'help-v1') });
+  } finally {
+    await chat.close().catch(() => {});
+  }
+}
+
 async function currentSupportCaseId(cdp) {
   return text(await cdp.evaluate(`(()=>{const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){for(const a of d.querySelectorAll('a[href*="caseID="]')){const m=(a.href||'').match(/[?&]caseID=(\\d{8,14})/);if(m)return m[1]}const body=d.body?.innerText||'';const m=body.match(/(?:ID do caso|Case ID)[:\\s#-]*(\\d{8,14})/i);if(m)return m[1]}return ''})()`));
 }
@@ -1228,15 +1322,7 @@ async function contactSupportAndReadBack(cdp, job) {
   }
   const channel = await submitHillEmail(cdp, job);
   if (channel !== 'Email') {
-    if (await hillChatReady(cdp)) {
-      return bridgeResult('BLOCKED_UNTIL', {
-        block_reason: 'SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION',
-        reason: 'SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION',
-        retry_safe: true,
-        next_allowed_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-        evidence: await evidence(cdp, 'help-v1'),
-      });
-    }
+    if (await hillChatReady(cdp)) return await attendHillChat(cdp, job, popupCaseIdsBeforeWrite);
     return bridgeResult('UI_DRIFT', {
       reason: channel || 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE',
       retry_safe: true,
