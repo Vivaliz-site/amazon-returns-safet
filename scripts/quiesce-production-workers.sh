@@ -41,6 +41,12 @@ qw_unit_running() {
     systemctl is-active --quiet "$unit"
 }
 
+qw_unit_has_pending_job() {
+    local unit="$1" job
+    job="$(systemctl show --property=Job --value "$unit" 2>/dev/null || true)"
+    [[ -n "$job" && "$job" != "0" ]]
+}
+
 quiesce_workers() {
     local target_db="$1" tenant_slug="$2" connection_key="$3"
     local timeout_seconds="${AMAZON_RETURNS_QUIESCE_TIMEOUT_SECONDS:-180}"
@@ -56,7 +62,7 @@ quiesce_workers() {
     [[ "$poll_seconds" =~ ^[1-9][0-9]*$ ]] || { echo 'invalid quiesce poll interval' >&2; return 2; }
     [[ "$quiesce_marker" == /* ]] || { echo 'invalid quiesce marker path' >&2; return 2; }
 
-    local tenant_id connection_id count deadline unit timer_was_active=0 released=0 released_writes=0
+    local tenant_id connection_id count deadline unit timer_was_active=0 released=0 released_writes=0 freeze_retry=0
     local -a frozen=()
     tenant_id="$(qw_scalar "$target_db" "SELECT id FROM amazon_return_tenants WHERE slug='$tenant_slug' AND status='ACTIVE' LIMIT 1")"
     [[ "$tenant_id" =~ ^[0-9]+$ ]] || { echo 'active tenant not found during quiesce' >&2; return 1; }
@@ -94,11 +100,24 @@ quiesce_workers() {
             sleep "$poll_seconds"
             continue
         fi
+        if qw_unit_has_pending_job "$browser_service"; then
+            echo 'worker_quiesce_waiting_browser_systemd_job=1'
+            sleep "$poll_seconds"
+            continue
+        fi
+
         frozen=()
+        freeze_retry=0
         for unit in "${services[@]}"; do
             if qw_unit_running "$unit"; then
                 if ! systemctl freeze "$unit" >/dev/null; then
                     qw_thaw_units "${frozen[@]}"
+                    frozen=()
+                    if [[ "$unit" == "$browser_service" ]] && qw_unit_has_pending_job "$browser_service"; then
+                        echo 'worker_quiesce_waiting_browser_systemd_job=1'
+                        freeze_retry=1
+                        break
+                    fi
                     ((timer_was_active)) && systemctl start "$browser_timer"
                     echo "worker_quiesce_freeze_failed=$unit" >&2
                     return 1
@@ -106,6 +125,10 @@ quiesce_workers() {
                 frozen+=("$unit")
             fi
         done
+        if (( freeze_retry )); then
+            sleep "$poll_seconds"
+            continue
+        fi
 
         count="$(qw_processing_count "$target_db" "$tenant_id" "$connection_id")"
         if [[ ! "$count" =~ ^[0-9]+$ ]]; then
