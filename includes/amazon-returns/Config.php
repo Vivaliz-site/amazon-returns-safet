@@ -188,6 +188,7 @@ final class SvAmazonReturnsConfig
         if($override!=='')return $override;
         $configured=getenv('AMAZON_RETURNS_ENV_FILE');
         if(is_string($configured) && trim($configured)!=='')return trim($configured);
+        if(PHP_SAPI==='cli')return '';
         return '/home/ubuntu/amazon-returns-deploy/shared/.env';
     }
 
