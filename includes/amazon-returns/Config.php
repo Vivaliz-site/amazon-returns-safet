@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 final class SvAmazonReturnsConfig
 {
+    /** @var array<string,string>|null */
+    private ?array $runtimeEnv = null;
+
     /** @param array<string,string> $override */
     public function __construct(private array $override = []) {}
 
@@ -148,7 +151,45 @@ final class SvAmazonReturnsConfig
     {
         if (array_key_exists($key, $this->override)) return trim((string)$this->override[$key]);
         $value = getenv($key);
-        return is_string($value) && trim($value) !== '' ? trim($value) : $default;
+        if (is_string($value) && trim($value) !== '') return trim($value);
+        $runtime=$this->runtimeEnvironment();
+        if(array_key_exists($key,$runtime)){
+            $value=trim((string)$runtime[$key]);
+            if($value!=='')return $value;
+        }
+        return $default;
+    }
+
+    /** @return array<string,string> */
+    private function runtimeEnvironment(): array
+    {
+        if($this->runtimeEnv!==null)return $this->runtimeEnv;
+        $path=$this->runtimeEnvPath();
+        if($path==='' || !is_file($path) || !is_readable($path))return $this->runtimeEnv=[];
+        $values=[];
+        foreach(file($path,FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES)?:[] as $line){
+            $line=trim($line);
+            if($line==='' || str_starts_with($line,'#'))continue;
+            if(str_starts_with($line,'export '))$line=trim(substr($line,7));
+            if(!str_contains($line,'='))continue;
+            [$name,$value]=array_map('trim',explode('=',$line,2));
+            if(preg_match('/^[A-Z][A-Z0-9_]*$/D',$name)!==1)continue;
+            if(strlen($value)>=2 && (($value[0]==='"' && $value[-1]==='"') || ($value[0]==="'" && $value[-1]==="'"))){
+                $value=substr($value,1,-1);
+            }
+            $values[$name]=$value;
+        }
+        return $this->runtimeEnv=$values;
+    }
+
+    private function runtimeEnvPath(): string
+    {
+        $override=trim((string)($this->override['AMAZON_RETURNS_ENV_FILE']??''));
+        if($override!=='')return $override;
+        $configured=getenv('AMAZON_RETURNS_ENV_FILE');
+        if(is_string($configured) && trim($configured)!=='')return trim($configured);
+        if(PHP_SAPI==='cli')return '';
+        return '/home/ubuntu/amazon-returns-deploy/shared/.env';
     }
 
     public function first(string ...$keys): string
