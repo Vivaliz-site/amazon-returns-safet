@@ -139,7 +139,7 @@ final class SvAmazonReturnsStatusBridgeService
         $row=$this->p->outbox->findOwned($jobId);
         $kind=is_array($row)?strtoupper((string)($row['kind'] ?? '')):'';
         if(!is_array($row)
-            || !in_array($kind,['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'],true)
+            || !in_array($kind,['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ','SELLER_SUPPORT_UPDATE'],true)
             || !hash_equals((string)$row['idempotency_key'],$idempotencyKey)){
             return ['status'=>'JOB_NOT_FOUND','http_status'=>404];
         }
