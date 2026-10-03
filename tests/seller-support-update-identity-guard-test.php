@@ -12,4 +12,6 @@ if($reply===false || $guard >= $reply) throw new RuntimeException('identity guar
 if(!str_contains($fn,"SELLER_SUPPORT_CASE_IDENTITY_MISMATCH")) throw new RuntimeException('mismatch contract missing');
 if(!str_contains($fn,"bridgeResult('NOT_FOUND'")) throw new RuntimeException('mismatch must fail closed');
 if(!str_contains($fn,'external_id: caseId')) throw new RuntimeException('contaminated id must be reported');
+$service=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/StatusBridgeService.php');
+if(!str_contains($service,"SELLER_SUPPORT_UPDATE") || !str_contains($service,"completeSupportIdentityMismatch")) throw new RuntimeException("update mismatch recovery contract missing");
 echo "seller-support-update-identity-guard-test: OK\n";
