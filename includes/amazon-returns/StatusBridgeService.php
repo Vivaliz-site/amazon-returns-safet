@@ -154,7 +154,7 @@ final class SvAmazonReturnsStatusBridgeService
         if($kind==='SELLER_SUPPORT_READ' && $status==='ACCEPTED' && is_array($result['support'] ?? null)){
             return $this->completeSupportObservation($row,$result);
         }
-        if($kind==='SELLER_SUPPORT_READ' && $status==='NOT_FOUND'
+        if(in_array($kind,['SELLER_SUPPORT_READ','SELLER_SUPPORT_UPDATE'],true) && $status==='NOT_FOUND'
             && (string)($result['reason'] ?? '')==='SELLER_SUPPORT_CASE_IDENTITY_MISMATCH'){
             return $this->completeSupportIdentityMismatch($row,$result);
         }
