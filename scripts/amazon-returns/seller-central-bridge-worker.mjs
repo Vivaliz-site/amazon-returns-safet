@@ -1370,7 +1370,7 @@ async function contactSupportAndReadBack(cdp, job) {
       caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
     } catch (error) {
       if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
-        return bridgeResult('FAILED', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', lookup_reason: text(error?.lookupReason || 'UNKNOWN'), submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', lookup_phase: 'POST_WRITE_RECONCILIATION', lookup_reason: text(error?.lookupReason || 'UNKNOWN'), submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
       }
       throw error;
     }
@@ -1429,7 +1429,7 @@ async function submitDirectSupportCaseAndReadBack(cdp, job, narrative) {
       caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
     } catch (error) {
       if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
-        return bridgeResult('FAILED', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', lookup_reason: text(error?.lookupReason || 'UNKNOWN'), submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', lookup_phase: 'POST_WRITE_RECONCILIATION', lookup_reason: text(error?.lookupReason || 'UNKNOWN'), submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
       }
       throw error;
     }
