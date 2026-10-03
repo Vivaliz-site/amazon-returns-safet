@@ -1867,7 +1867,17 @@ async function supportUpdate(cdp, job) {
   if (!(await cdp.fillDeepSupportTextarea(narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
   const sendLabels=['Send','Send message','Submit','Enviar','Enviar mensagem','Enviar resposta'];
   const sent = await cdp.clickButtonTrustedByText(sendLabels);
-  if (!text(sent)) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_SEND_MISSING', evidence: await evidence(cdp, 'help-v1') });
+  if (!text(sent)) {
+    const freshFallback = await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'GENERAL_ORDER_SUPPORT' });
+    const generalFallbackNeedsFba = (
+      (freshFallback.status === 'BLOCKED_UNTIL' && freshFallback.reason === 'SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION')
+      || (freshFallback.status === 'UI_DRIFT' && freshFallback.reason === 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED')
+    );
+    if (generalFallbackNeedsFba && supportRouteFor(job) === 'FBA_RETURNS_REIMBURSEMENT') {
+      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' });
+    }
+    return freshFallback;
+  }
   const confirmed = await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240));
   if (!confirmed) return bridgeResult('FAILED', { reason: 'SUPPORT_REPLY_NOT_CONFIRMED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   return bridgeResult('ACCEPTED', {
