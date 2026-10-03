@@ -17,10 +17,18 @@ final class SvAmazonInvoiceSearch
     {
         $invoiceNumber=trim($invoiceNumber);
         if($invoiceNumber==='')return [];
-        $ids=array_merge(
-            self::query($db,$context,$invoiceNumber),
-            self::queryErpReturn($db,$context,$invoiceNumber)
-        );
+        if(preg_match('/^[0-9]+$/D',$invoiceNumber)===1){
+            $canonical=self::canonicalNumber($invoiceNumber);
+            $ids=array_merge(
+                self::queryNumericExact($db,$context,$canonical),
+                self::queryErpReturnNumericExact($db,$context,$canonical)
+            );
+        }else{
+            $ids=array_merge(
+                self::query($db,$context,$invoiceNumber),
+                self::queryErpReturn($db,$context,$invoiceNumber)
+            );
+        }
         $ids=array_values(array_unique(array_filter($ids,static fn(int $id): bool => $id>0)));
         sort($ids,SORT_NUMERIC);
         return $ids;
@@ -88,6 +96,167 @@ final class SvAmazonInvoiceSearch
             ':q_invoice'=>$pattern,
             ':q_invoice_legacy'=>$pattern,
             ':q_return_invoice'=>$pattern,
+        ]);
+        return array_values(array_unique(array_filter(
+            array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),
+            static fn(int $id): bool => $id>0
+        )));
+    }
+
+    /** @return list<int> */
+    private static function queryNumericExact(PDO $db,SvAmazonTenantContext $context,string $canonical): array
+    {
+        $stmt=$db->prepare(
+            "SELECT DISTINCT case_id FROM amazon_return_events "
+            ."WHERE tenant_id=:invoice_tenant_id AND amazon_connection_id=:invoice_connection_id "
+            ."AND ("
+            ."(JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.invoice_number')) REGEXP '^[0-9]+    {
+        $stmt=$db->prepare(
+            "SELECT DISTINCT c.id FROM amazon_return_erp_sales_returns r "
+            ."JOIN amazon_return_cases c ON c.tenant_id=r.tenant_id "
+            ."AND c.amazon_connection_id=r.amazon_connection_id AND c.amazon_order_id=r.amazon_order_id "
+            ."WHERE r.tenant_id=:erp_return_tenant_id AND r.amazon_connection_id=:erp_return_connection_id "
+            ."AND r.return_invoice_number=:erp_return_invoice ORDER BY c.id LIMIT 1000"
+        );
+        $stmt->execute([
+            ':erp_return_tenant_id'=>$context->tenantId(),
+            ':erp_return_connection_id'=>$context->amazonConnectionId(),
+            ':erp_return_invoice'=>$invoiceNumber,
+        ]);
+        return array_values(array_unique(array_filter(
+            array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),
+            static fn(int $id): bool => $id>0
+        )));
+    }
+
+    private static function canonicalNumber(string $value): string
+    {
+        $value=ltrim(trim($value),'0');
+        return $value===''?'0':$value;
+    }
+
+    private static function nullable(mixed $value): ?string
+    {
+        if(!is_scalar($value))return null;
+        $value=trim((string)$value);
+        return $value==='' ? null : $value;
+    }
+}
+ "
+            ."AND COALESCE(NULLIF(TRIM(LEADING '0' FROM JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.invoice_number'))),''),'0')=:q_invoice_canonical) "
+            ."OR (JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.sales_invoice_number')) REGEXP '^[0-9]+    {
+        $stmt=$db->prepare(
+            "SELECT DISTINCT c.id FROM amazon_return_erp_sales_returns r "
+            ."JOIN amazon_return_cases c ON c.tenant_id=r.tenant_id "
+            ."AND c.amazon_connection_id=r.amazon_connection_id AND c.amazon_order_id=r.amazon_order_id "
+            ."WHERE r.tenant_id=:erp_return_tenant_id AND r.amazon_connection_id=:erp_return_connection_id "
+            ."AND r.return_invoice_number=:erp_return_invoice ORDER BY c.id LIMIT 1000"
+        );
+        $stmt->execute([
+            ':erp_return_tenant_id'=>$context->tenantId(),
+            ':erp_return_connection_id'=>$context->amazonConnectionId(),
+            ':erp_return_invoice'=>$invoiceNumber,
+        ]);
+        return array_values(array_unique(array_filter(
+            array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),
+            static fn(int $id): bool => $id>0
+        )));
+    }
+
+    private static function nullable(mixed $value): ?string
+    {
+        if(!is_scalar($value))return null;
+        $value=trim((string)$value);
+        return $value==='' ? null : $value;
+    }
+}
+ "
+            ."AND COALESCE(NULLIF(TRIM(LEADING '0' FROM JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.sales_invoice_number'))),''),'0')=:q_invoice_legacy_canonical) "
+            ."OR (JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.return_invoice_number')) REGEXP '^[0-9]+    {
+        $stmt=$db->prepare(
+            "SELECT DISTINCT c.id FROM amazon_return_erp_sales_returns r "
+            ."JOIN amazon_return_cases c ON c.tenant_id=r.tenant_id "
+            ."AND c.amazon_connection_id=r.amazon_connection_id AND c.amazon_order_id=r.amazon_order_id "
+            ."WHERE r.tenant_id=:erp_return_tenant_id AND r.amazon_connection_id=:erp_return_connection_id "
+            ."AND r.return_invoice_number=:erp_return_invoice ORDER BY c.id LIMIT 1000"
+        );
+        $stmt->execute([
+            ':erp_return_tenant_id'=>$context->tenantId(),
+            ':erp_return_connection_id'=>$context->amazonConnectionId(),
+            ':erp_return_invoice'=>$invoiceNumber,
+        ]);
+        return array_values(array_unique(array_filter(
+            array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),
+            static fn(int $id): bool => $id>0
+        )));
+    }
+
+    private static function nullable(mixed $value): ?string
+    {
+        if(!is_scalar($value))return null;
+        $value=trim((string)$value);
+        return $value==='' ? null : $value;
+    }
+}
+ "
+            ."AND COALESCE(NULLIF(TRIM(LEADING '0' FROM JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.return_invoice_number'))),''),'0')=:q_return_invoice_canonical)"
+            .") ORDER BY case_id LIMIT 1000"
+        );
+        $stmt->execute([
+            ':invoice_tenant_id'=>$context->tenantId(),
+            ':invoice_connection_id'=>$context->amazonConnectionId(),
+            ':q_invoice_canonical'=>$canonical,
+            ':q_invoice_legacy_canonical'=>$canonical,
+            ':q_return_invoice_canonical'=>$canonical,
+        ]);
+        return array_values(array_unique(array_filter(
+            array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),
+            static fn(int $id): bool => $id>0
+        )));
+    }
+
+    /** @return list<int> */
+    private static function queryErpReturnNumericExact(PDO $db,SvAmazonTenantContext $context,string $canonical): array
+    {
+        $stmt=$db->prepare(
+            "SELECT DISTINCT c.id FROM amazon_return_erp_sales_returns r "
+            ."JOIN amazon_return_cases c ON c.tenant_id=r.tenant_id "
+            ."AND c.amazon_connection_id=r.amazon_connection_id AND c.amazon_order_id=r.amazon_order_id "
+            ."WHERE r.tenant_id=:erp_return_tenant_id AND r.amazon_connection_id=:erp_return_connection_id "
+            ."AND r.return_invoice_number REGEXP '^[0-9]+    {
+        $stmt=$db->prepare(
+            "SELECT DISTINCT c.id FROM amazon_return_erp_sales_returns r "
+            ."JOIN amazon_return_cases c ON c.tenant_id=r.tenant_id "
+            ."AND c.amazon_connection_id=r.amazon_connection_id AND c.amazon_order_id=r.amazon_order_id "
+            ."WHERE r.tenant_id=:erp_return_tenant_id AND r.amazon_connection_id=:erp_return_connection_id "
+            ."AND r.return_invoice_number=:erp_return_invoice ORDER BY c.id LIMIT 1000"
+        );
+        $stmt->execute([
+            ':erp_return_tenant_id'=>$context->tenantId(),
+            ':erp_return_connection_id'=>$context->amazonConnectionId(),
+            ':erp_return_invoice'=>$invoiceNumber,
+        ]);
+        return array_values(array_unique(array_filter(
+            array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),
+            static fn(int $id): bool => $id>0
+        )));
+    }
+
+    private static function nullable(mixed $value): ?string
+    {
+        if(!is_scalar($value))return null;
+        $value=trim((string)$value);
+        return $value==='' ? null : $value;
+    }
+}
+ "
+            ."AND COALESCE(NULLIF(TRIM(LEADING '0' FROM r.return_invoice_number),''),'0')=:erp_return_invoice_canonical "
+            ."ORDER BY c.id LIMIT 1000"
+        );
+        $stmt->execute([
+            ':erp_return_tenant_id'=>$context->tenantId(),
+            ':erp_return_connection_id'=>$context->amazonConnectionId(),
+            ':erp_return_invoice_canonical'=>$canonical,
         ]);
         return array_values(array_unique(array_filter(
             array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)),
