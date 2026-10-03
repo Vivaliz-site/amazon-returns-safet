@@ -1800,6 +1800,9 @@ async function supportUpdate(cdp, job) {
   await cdp.navigate(`https://sellercentral.amazon.com.br/cu/case-dashboard/view-case?caseID=${encodeURIComponent(caseId)}`, 5000);
   const auth = await authGate(cdp, 'help-v1', `https://sellercentral.amazon.com.br/cu/case-dashboard/view-case?caseID=${encodeURIComponent(caseId)}`, 5000);
   if (auth) return auth;
+  if (!(await supportCaseMatchesJob(cdp, job, caseId))) {
+    return bridgeResult('NOT_FOUND', { reason: 'SELLER_SUPPORT_CASE_IDENTITY_MISMATCH', external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
   const supportPage = await cdp.pageState(18000);
   const supportBody = text(supportPage?.text).toLowerCase();
   if (sellerSupportCaseLogUnavailable(supportBody)) return sellerSupportUnavailableResult();
