@@ -57,6 +57,17 @@ $erpInvoiceExecution=null;
 foreach($invoiceDb->executed as $execution){if(str_contains($execution['sql'],'amazon_return_erp_sales_returns')){$erpInvoiceExecution=$execution;break;}}
 crsAssert(is_array($erpInvoiceExecution),'Exact return-NF search must include the canonical ERP return workflow.');
 crsSame('123456',$erpInvoiceExecution['params'][':erp_return_invoice']??null,'ERP return-NF lookup must bind the exact invoice number.');
+
+$leadingZeroDb=new CrsPdo();
+$leadingZeroDb->queue([9]);
+$leadingZeroDb->queue([]);
+crsSame([9],SvAmazonInvoiceSearch::caseIdsExact($leadingZeroDb,$context,'003043'),'Numeric NF lookup must ignore leading-zero formatting differences.');
+$leadingZeroEvent=$leadingZeroDb->executed[0]??null;
+crsAssert(is_array($leadingZeroEvent),'Leading-zero NF event query must execute.');
+crsSame('3043',$leadingZeroEvent['params'][':q_invoice_canonical']??null,'Numeric NF lookup must bind the canonical number without leading zeros.');
+crsAssert(str_contains($leadingZeroEvent['sql'],"TRIM(LEADING '0'"),'Numeric NF lookup must canonicalize stored invoice numbers before exact comparison.');
+$leadingZeroErp=$leadingZeroDb->executed[1]??null;
+crsSame('3043',$leadingZeroErp['params'][':erp_return_invoice_canonical']??null,'ERP return-NF lookup must use the same canonical number.');
 $source=(string)file_get_contents($root.'/includes/amazon-returns/CaseReferenceSearch.php');
 $caseRepository=(string)file_get_contents($root.'/includes/amazon-returns/CaseRepository.php');
 $eventStore=(string)file_get_contents($root.'/includes/amazon-returns/TenantEventStore.php');
