@@ -252,6 +252,16 @@ final class SvAmazonReturnProjector
             || trim((string)($facts['seller_debit_at'] ?? ''))!=='';
     }
 
+    /** @param array<string,mixed> $facts */
+    private static function hasFinancialExposure(array $facts): bool
+    {
+        $expected=(float)($facts['expected_reimbursement_amount'] ?? 0);
+        $refund=(float)($facts['refund_amount'] ?? 0);
+        if(max($expected,$refund)>0.005)return true;
+        return trim((string)($facts['refund_at'] ?? ''))!==''
+            || trim((string)($facts['seller_debit_at'] ?? ''))!=='';
+    }
+
     private static function preserveTerminalFinancialClosure(string $state): bool
     {
         return in_array($state, [
