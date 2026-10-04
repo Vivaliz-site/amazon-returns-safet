@@ -462,6 +462,43 @@ final class SvAmazonReturnCaseRepository
         $stmt->execute($this->scopeParams());
         return max(0, (int)$stmt->fetchColumn());
     }
+
+    public function countPrematureReceivedOkClosures(): int
+    {
+        $outstanding="GREATEST((CASE WHEN expected_reimbursement_amount>0 THEN expected_reimbursement_amount ELSE refund_amount END)-reconciled_credit_amount,0)";
+        $stmt=$this->prepare(
+            "SELECT COUNT(*) FROM amazon_return_cases WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id AND state='RECEIVED_OK' "
+            . "AND closed_at IS NOT NULL AND $outstanding>0.005"
+        );
+        $stmt->execute($this->scopeParams());
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
+    public function reopenPrematureReceivedOkClosures(): int
+    {
+        $outstanding="GREATEST((CASE WHEN expected_reimbursement_amount>0 THEN expected_reimbursement_amount ELSE refund_amount END)-reconciled_credit_amount,0)";
+        $stmt=$this->prepare(
+            "SELECT id,next_action_at FROM amazon_return_cases WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id AND state='RECEIVED_OK' "
+            . "AND closed_at IS NOT NULL AND $outstanding>0.005 ORDER BY id"
+        );
+        $stmt->execute($this->scopeParams());
+        $reopened=0;
+        foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row){
+            if(!is_array($row))continue;
+            $id=(int)($row['id']??0);
+            if($id<1)continue;
+            $next=trim((string)($row['next_action_at']??''));
+            $this->update($id,[
+                'closed_at'=>null,
+                'terminal_reason'=>null,
+                'next_action_at'=>$next!==''?$next:gmdate('Y-m-d H:i:s'),
+            ]);
+            $reopened++;
+        }
+        return $reopened;
+    }
     public function earliestObservedDate(): ?string
     {
         $stmt = $this->prepare(
