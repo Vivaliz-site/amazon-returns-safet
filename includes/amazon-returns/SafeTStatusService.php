@@ -105,6 +105,40 @@ final class SvAmazonSafeTStatusService
         return $patch;
     }
 
+    /**
+     * Reconcile an already-observed final denial when a SAFE-T appeal write succeeds.
+     *
+     * @param list<array<string,mixed>> $events
+     * @return array<string,mixed>
+     */
+    public static function reconcileAfterAppealSubmission(
+        array $case,
+        array $events,
+        DateTimeImmutable $now
+    ): array {
+        $safeTId=trim((string)($case['safe_t_id']??''));
+        if($safeTId==='')return [];
+
+        for($i=count($events)-1;$i>=0;$i--){
+            $event=$events[$i]??null;
+            if(!is_array($event) || ($event['event_type']??'')!=='SAFE_T_STATUS_OBSERVED')continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if(trim((string)($payload['safe_t_id']??''))!==$safeTId)continue;
+            if(strtoupper(trim((string)($payload['claim_status']??'UNKNOWN')))!=='DENIED')continue;
+            if(!(bool)($payload['appeal_submitted']??false))continue;
+
+            $appealCase=$case;
+            $appealCase['state']='APPEAL_SUBMITTED';
+            $patch=self::projection($appealCase,$payload,false,$now);
+            if(($patch['state']??null)==='APPEAL_DENIED_FINAL'){
+                $patch['next_action_at']=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+            }
+            return $patch;
+        }
+
+        return [];
+    }
+
     public static function repeatCount(?string $previousFingerprint, int $currentCount, ?string $newFingerprint): int
     {
         $previous = strtolower(trim((string)$previousFingerprint));

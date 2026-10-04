@@ -201,9 +201,19 @@ final class SvAmazonReturnsBridgeService
                     'state'=>SvAmazonReturnStates::SAFE_T_SUBMITTED,
                 ]);
             }elseif($kind==='SAFE_T_APPEAL'){
-                $this->p->cases->update($caseId,[
+                $appealPatch=[
                     'state'=>SvAmazonReturnStates::APPEAL_SUBMITTED,
-                ]);
+                ];
+                $events=$this->p->events->eventsForCase($caseId);
+                $reconciled=SvAmazonSafeTStatusService::reconcileAfterAppealSubmission(
+                    $case,
+                    $events,
+                    new DateTimeImmutable('now',new DateTimeZone('UTC'))
+                );
+                if($reconciled!==[]){
+                    $appealPatch=array_merge($appealPatch,$reconciled);
+                }
+                $this->p->cases->update($caseId,$appealPatch);
             }elseif(in_array($kind,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){
                 $case=$this->p->cases->find($caseId);
                 $supportId=$externalId ?? ($case['support_case_id'] ?? null);
