@@ -172,13 +172,14 @@ $expectedStates = [
 ];
 assertSameValue($expectedStates, SvAmazonReturnStates::all(), 'Projection states must match the approved spec.');
 assertSameValue(
-    ['RECEIVED_OK', 'RECOVERED', 'CLOSED_LOSS'],
+    ['RECOVERED', 'CLOSED_LOSS'],
     SvAmazonReturnStates::terminal(),
     'Only the specified states are terminal.'
 );
 assertTrue(SvAmazonReturnStates::isValid('SAFE_T_READY'), 'A declared state must validate.');
 assertTrue(!SvAmazonReturnStates::isValid('MADE_UP'), 'An undeclared state must not validate.');
 assertTrue(SvAmazonReturnStates::isTerminal('RECOVERED'), 'RECOVERED must be terminal.');
+assertTrue(!SvAmazonReturnStates::isTerminal('RECEIVED_OK'), 'Physical receipt must not be terminal before financial settlement.');
 assertTrue(!SvAmazonReturnStates::isTerminal('SAFE_T_APPROVED'), 'Approval is not terminal before credit.');
 assertSameValue(
     ['AMAZON_AUTOMATIC', 'AMAZON_CUSTOMER_SERVICE', 'AMAZON_INITIATED', 'SELLER', 'A_TO_Z', 'UNKNOWN'],
