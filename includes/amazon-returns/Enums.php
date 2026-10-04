@@ -60,7 +60,7 @@ final class SvAmazonReturnStates
     /** @return list<string> */
     public static function terminal(): array
     {
-        return [self::RECEIVED_OK, self::RECOVERED, self::CLOSED_LOSS];
+        return [self::RECOVERED, self::CLOSED_LOSS];
     }
 
     public static function isValid(string $state): bool

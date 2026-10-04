@@ -46,6 +46,8 @@ final class SvAmazonReturnProjector
             'refund_at' => null,
             'seller_debit_at' => null,
             'refund_amount' => '0.00',
+            'expected_reimbursement_amount' => (string)($case['expected_reimbursement_amount'] ?? '0.00'),
+            'reconciled_credit_amount' => (string)($case['reconciled_credit_amount'] ?? '0.00'),
             'physical_status' => in_array((string)($case['physical_status'] ?? ''), [SvAmazonReturnPhysicalStatuses::IN_TRANSIT,SvAmazonReturnPhysicalStatuses::CARRIER_DELIVERED_PENDING_PHYSICAL], true)
                 ? (string)$case['physical_status'] : SvAmazonReturnPhysicalStatuses::NOT_RECEIVED,
             'state' => SvAmazonReturnStates::isValid((string)($case['state'] ?? ''))
@@ -59,6 +61,7 @@ final class SvAmazonReturnProjector
             'customer_tracking_ids' => [],
             'customer_delivery_carriers' => [],
             'return_tracking_ids' => [],
+            'physical_received_at' => null,
         ];
     }
 
@@ -175,9 +178,7 @@ final class SvAmazonReturnProjector
                 } else {
                     $facts['quantity_received'] += self::nonNegativeInt($payload['quantity'] ?? 1, 'quantity');
                 }
-                if (!self::preserveTerminalFinancialClosure((string)$facts['state']) || $facts['closed_at'] === null) {
-                    $facts['closed_at'] = $occurredAt;
-                }
+                $facts['physical_received_at'] = $occurredAt;
                 break;
         }
     }
@@ -211,7 +212,15 @@ final class SvAmazonReturnProjector
                 return;
             }
             $facts['state'] = SvAmazonReturnStates::RECEIVED_OK;
+            if (self::hasFinancialExposure($facts)) {
+                $facts['terminal_reason'] = null;
+                $facts['closed_at'] = null;
+                return;
+            }
             $facts['terminal_reason'] = 'PHYSICAL_RETURN_RECEIVED';
+            if ($facts['closed_at'] === null && is_string($facts['physical_received_at']) && $facts['physical_received_at'] !== '') {
+                $facts['closed_at'] = $facts['physical_received_at'];
+            }
             return;
         }
         $preserveState = self::preserveOperationalState((string)$facts['state']);
@@ -231,6 +240,16 @@ final class SvAmazonReturnProjector
                 SvAmazonReturnStates::CARRIER_DELIVERED_PENDING_PHYSICAL,
             default => SvAmazonReturnStates::AWAITING_RETURN,
         };
+    }
+
+    /** @param array<string,mixed> $facts */
+    private static function hasFinancialExposure(array $facts): bool
+    {
+        $expected=(float)($facts['expected_reimbursement_amount'] ?? 0);
+        $refund=(float)($facts['refund_amount'] ?? 0);
+        if(max($expected,$refund)>0.005)return true;
+        return trim((string)($facts['refund_at'] ?? ''))!==''
+            || trim((string)($facts['seller_debit_at'] ?? ''))!=='';
     }
 
     private static function preserveTerminalFinancialClosure(string $state): bool
