@@ -104,7 +104,7 @@ final class SvAmazonDecisionCoordinator
             if(!is_array($case))continue;
             $state=(string)($case['state']??'');
             $closed=trim((string)($case['closed_at']??''))!=='';
-            if(!$closed && !in_array($state,[SvAmazonReturnStates::RECOVERED,SvAmazonReturnStates::CLOSED_LOSS,SvAmazonReturnStates::RECEIVED_OK],true))continue;
+            if(!$closed && !in_array($state,[SvAmazonReturnStates::RECOVERED,SvAmazonReturnStates::CLOSED_LOSS],true))continue;
             $this->persistence->reviews->resolveOpenForCase($caseId);
         }
     }
