@@ -399,4 +399,25 @@ gicSame('900',$recover2['checkpoint_cursor']??null,'C8 pass 2: history cursor ma
 gicSame(5,count($recover2['messages']??[]),'C8 pass 2: final recovery page must ingest all remaining messages.');
 gicSame(null,$recover2['recovery']??null,'C8 pass 2: completed recovery must clear transient recovery metadata.');
 
+
+
+// --- C9: daemon must persist expired-cursor recovery state across independent runs ---
+$pdo9=new GmailCatchupPdo();
+gicSeedCursor($pdo9,'700');
+$gmail9=new SvAmazonGmailApiClient(gicConfig(),$transport8);
+$daemon9=new GmailCatchupDaemon($pdo9,new SvAmazonTenantContext(1,1),gicConfig(),$gmail9);
+$recoverRun1=(new ReflectionMethod($daemon9,'runGmail'))->invoke($daemon9);
+gicSame(true,$recoverRun1['has_more']??null,'C9 pass 1: daemon must keep expired-cursor recovery incomplete while another page remains.');
+gicSame('700',gicCursorValue($pdo9),'C9 pass 1: daemon must not advance the authoritative history ID before recovery drains.');
+$recoveryMeta1=json_decode((string)($pdo9->cursorRows['GMAIL|history_id_v2']['metadata_json']??''),true);
+gicSame('recover-page-2',$recoveryMeta1['gmail_recovery']['page']??null,'C9 pass 1: recovery page token must survive process boundaries.');
+gicSame('900',$recoveryMeta1['gmail_recovery']['target_history_id']??null,'C9 pass 1: pinned history target must survive process boundaries.');
+gicSame(0,$pdo9->claims,'C9 pass 1: incomplete expired-cursor recovery must not claim Gmail write jobs.');
+
+$recoverRun2=(new ReflectionMethod($daemon9,'runGmail'))->invoke($daemon9);
+gicSame(false,$recoverRun2['has_more']??null,'C9 pass 2: final recovery page must end catch-up.');
+gicSame('900',gicCursorValue($pdo9),'C9 pass 2: daemon may promote to the pinned history target only after recovery drains.');
+$recoveryMeta2=json_decode((string)($pdo9->cursorRows['GMAIL|history_id_v2']['metadata_json']??''),true);
+gicAssert(!isset($recoveryMeta2['gmail_recovery']),'C9 pass 2: completed recovery metadata must be cleared.');
+
 echo "gmail-incremental-catchup-test: OK\n";
