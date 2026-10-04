@@ -465,6 +465,7 @@ final class SvAmazonReturnsRuntime
         $policySeeds=SvAmazonReturnPolicySeeder::ensure($p->policies);
         $policyAudit=$policySeeds>0 ? SvAmazonReturnPolicySeeder::auditDefinitions($p->policies->allActive()) : ['valid'=>true,'policy_key'=>null];
         if(!$policyAudit['valid'])throw new RuntimeException('Active operational policy does not match approved opening rule.');
+        $prematureReceivedOkReopened=$p->cases->reopenPrematureReceivedOkClosures();
         self::refreshKnownActionCases($p);
         return [
             'status'=>'OK',
@@ -473,6 +474,7 @@ final class SvAmazonReturnsRuntime
             'schema_tables'=>count(SvAmazonReturnsSchema::statements()),
             'policy_seeds'=>$policySeeds,
             'policy_audit'=>$policyAudit,
+            'premature_received_ok_reopened'=>$prematureReceivedOkReopened,
             'next_known_action_at'=>self::nextKnownWakeAt(self::$knownActionCases),
         ];
     }
@@ -521,6 +523,7 @@ final class SvAmazonReturnsRuntime
         $erpStaleWaitingInvoices=$p->erpSalesReturns->countStaleWaitingInvoices();
         $erpBreakdown=$p->erpSalesReturns->healthBreakdown();
         $supportIdentityCollisions=$p->cases->countSupportCaseCrossOrderDuplicateGroups();
+        $prematureReceivedOkClosures=$p->cases->countPrematureReceivedOkClosures();
         if($erpIncomplete>0){
             $operationalHealth['blockers'][]='TASK_ERP_SALES_RETURNS_INCOMPLETE';
         }
@@ -532,6 +535,9 @@ final class SvAmazonReturnsRuntime
         }
         if($supportIdentityCollisions>0){
             $operationalHealth['blockers'][]='SELLER_SUPPORT_CROSS_ORDER_IDENTITY_COLLISION';
+        }
+        if($prematureReceivedOkClosures>0){
+            $operationalHealth['blockers'][]='PREMATURE_RECEIVED_OK_FINANCIAL_CLOSURE';
         }
         $operationalHealth['blockers']=array_values(array_unique($operationalHealth['blockers']));
         $businessHealth=SvAmazonBusinessHealth::evaluate($config->enabled(),$config->mode(),$readiness,$writeFlags,$browserLiveness,$operationalHealth['blockers']);
@@ -551,6 +557,7 @@ final class SvAmazonReturnsRuntime
             'erp_sales_return_stale_waiting_invoice'=>$erpStaleWaitingInvoices,
             'erp_sales_return_breakdown'=>$erpBreakdown,
             'seller_support_cross_order_duplicate_groups'=>$supportIdentityCollisions,
+            'premature_received_ok_financial_closures'=>$prematureReceivedOkClosures,
             'rule_conflicts'=>$p->reviews->countOpenByReason('LEARNED_RULE_CONFLICT'),
             'rule_applications'=>$p->ruleApplications->countAll(),
             'ai_suggestion_failures'=>$p->reviews->countAiFailures(),
