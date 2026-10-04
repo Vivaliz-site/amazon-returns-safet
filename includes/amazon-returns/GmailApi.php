@@ -128,7 +128,12 @@ final class SvAmazonGmailApiClient
      *
      * @return array{messages:list<array<string,mixed>>,checkpoint_cursor:string,mailbox_history_id:string,has_more:bool,recovered_cursor:bool}
      */
-    public function pullIncrementalBatch(?string $cursor, int $historyPageSize, int $messageLimit): array
+    public function pullIncrementalBatch(
+        ?string $cursor,
+        int $historyPageSize,
+        int $messageLimit,
+        array $cursorContext=[]
+    ): array
     {
         $historyPageSize = max(1, min(500, $historyPageSize));
         $messageLimit = max(1, $messageLimit);
@@ -139,19 +144,47 @@ final class SvAmazonGmailApiClient
         if ($mailboxHistoryId === '') throw new RuntimeException('Gmail profile did not return historyId.');
 
         if ($cursor === '') {
-            return ['messages'=>[],'checkpoint_cursor'=>$mailboxHistoryId,'mailbox_history_id'=>$mailboxHistoryId,'has_more'=>false,'recovered_cursor'=>false];
+            return [
+                'messages'=>[],
+                'checkpoint_cursor'=>$mailboxHistoryId,
+                'mailbox_history_id'=>$mailboxHistoryId,
+                'has_more'=>false,
+                'recovered_cursor'=>false,
+                'recovery'=>null,
+            ];
+        }
+
+        $contextMetadata=is_array($cursorContext['metadata'] ?? null)?$cursorContext['metadata']:[];
+        $persistedRecovery=is_array($contextMetadata['gmail_recovery'] ?? null)
+            ? $contextMetadata['gmail_recovery'] : null;
+        if($persistedRecovery!==null){
+            return $this->pullExpiredHistoryRecoveryBatch(
+                $cursor,
+                $mailboxHistoryId,
+                $messageLimit,
+                $persistedRecovery
+            );
         }
 
         try {
-            $data = $this->request('GET', '/history', ['startHistoryId'=>$cursor,'historyTypes'=>'messageAdded','maxResults'=>(string)$historyPageSize]);
+            $data = $this->request('GET', '/history', [
+                'startHistoryId'=>$cursor,
+                'historyTypes'=>'messageAdded',
+                'maxResults'=>(string)$historyPageSize,
+            ]);
         } catch (RuntimeException $e) {
             if (!str_contains($e->getMessage(), 'HTTP 404')) throw $e;
-            $recoveryIds = array_values(array_unique($this->bootstrapMessageIds(7)));
-            if (count($recoveryIds) > $messageLimit) {
-                throw new RuntimeException('Gmail 404 recovery message set exceeds bounded message limit.');
-            }
-            $messages = $this->fetchMessagesByIds($recoveryIds);
-            return ['messages'=>$messages,'checkpoint_cursor'=>$mailboxHistoryId,'mailbox_history_id'=>$mailboxHistoryId,'has_more'=>false,'recovered_cursor'=>true];
+            $after=$this->recoveryAfterDate($cursorContext['observed_at'] ?? null);
+            return $this->pullExpiredHistoryRecoveryBatch(
+                $cursor,
+                $mailboxHistoryId,
+                $messageLimit,
+                [
+                    'after'=>$after,
+                    'page'=>'',
+                    'target_history_id'=>$mailboxHistoryId,
+                ]
+            );
         }
 
         $records = array_values(array_filter($data['history'] ?? [], 'is_array'));
@@ -187,15 +220,74 @@ final class SvAmazonGmailApiClient
         $hasMore = $truncated || $nextPageToken !== '';
         if (!$hasMore) $checkpoint = $mailboxHistoryId;
 
-        $messages = $this->fetchMessagesByIds($coveredIds);
-
         return [
-            'messages'=>$messages,
+            'messages'=>$this->fetchMessagesByIds($coveredIds),
             'checkpoint_cursor'=>$checkpoint,
             'mailbox_history_id'=>$mailboxHistoryId,
             'has_more'=>$hasMore,
             'recovered_cursor'=>false,
+            'recovery'=>null,
         ];
+    }
+
+    /** @param array<string,mixed> $recovery @return array<string,mixed> */
+    private function pullExpiredHistoryRecoveryBatch(
+        string $cursor,
+        string $mailboxHistoryId,
+        int $messageLimit,
+        array $recovery
+    ): array {
+        $after=trim((string)($recovery['after'] ?? ''));
+        $target=trim((string)($recovery['target_history_id'] ?? ''));
+        $page=trim((string)($recovery['page'] ?? ''));
+        if(preg_match('/^\\d{4}\\/\\d{2}\\/\\d{2}$/D',$after)!==1){
+            throw new RuntimeException('Gmail expired history recovery date is invalid.');
+        }
+        if($target==='' || preg_match('/^[0-9]+$/D',$target)!==1){
+            throw new RuntimeException('Gmail expired history recovery target is invalid.');
+        }
+
+        $query=[
+            'q'=>'after:'.$after.' (from:donotreply@amazon.com OR from:amazon.com.br OR from:Safe-T-Review@amazon.com)',
+            'maxResults'=>(string)$messageLimit,
+        ];
+        if($page!=='')$query['pageToken']=$page;
+        $data=$this->request('GET','/messages',$query);
+        $ids=[];
+        foreach(($data['messages'] ?? []) as $message){
+            if(!is_array($message))continue;
+            $id=trim((string)($message['id'] ?? ''));
+            if($id!=='')$ids[$id]=true;
+            if(count($ids)>=$messageLimit)break;
+        }
+        $next=trim((string)($data['nextPageToken'] ?? ''));
+        $hasMore=$next!=='';
+        return [
+            'messages'=>$this->fetchMessagesByIds(array_keys($ids)),
+            'checkpoint_cursor'=>$hasMore?$cursor:$target,
+            'mailbox_history_id'=>$mailboxHistoryId,
+            'has_more'=>$hasMore,
+            'recovered_cursor'=>true,
+            'recovery'=>$hasMore?[
+                'after'=>$after,
+                'page'=>$next,
+                'target_history_id'=>$target,
+            ]:null,
+        ];
+    }
+
+    private function recoveryAfterDate(mixed $observedAt): string
+    {
+        if(!is_string($observedAt) || trim($observedAt)===''){
+            throw new RuntimeException('Gmail expired history cursor lacks observed_at recovery anchor.');
+        }
+        try{
+            $at=(new DateTimeImmutable(trim($observedAt),new DateTimeZone('UTC')))
+                ->setTimezone(new DateTimeZone('UTC'));
+        }catch(Throwable){
+            throw new RuntimeException('Gmail expired history cursor has invalid observed_at recovery anchor.');
+        }
+        return $at->modify('-1 day')->format('Y/m/d');
     }
 
     /** @return list<array<string,mixed>> */
