@@ -8,7 +8,7 @@ if(!is_file($path)){
 }
 $code=(string)file_get_contents($path);
 $needles=[
-    "AMAZON_RETURNS_EMAIL_INGRESS_TOKEN",
+    "HTTP_CF_ACCESS_JWT_ASSERTION",
     "CloudflareEmailIngress.php",
     "GmailEventSink.php",
     "SvAmazonCloudflareEmailIngress::parse",
