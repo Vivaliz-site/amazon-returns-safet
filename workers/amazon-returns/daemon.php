@@ -350,16 +350,25 @@ class SvAmazonReturnsDaemon
         ];
         if($ingestEnabled){
             $ingestor=new SvAmazonGmailIngestor();
-            $cursor=SvAmazonGmailIngestor::loadCursor($this->persistence->cursors,'history_id');
-            $catchup=trim((string)$cursor)!=='';
+            $cursorState=$this->persistence->cursors->load(
+                'GMAIL',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY
+            );
+            $cursor=is_array($cursorState)?trim((string)($cursorState['value'] ?? '')):'';
+            $catchup=$cursor!=='';
             if($catchup){
                 $pulled=$gmail->pullIncrementalBatch(
-                    $cursor,self::GMAIL_CATCHUP_HISTORY_PAGE_SIZE,self::GMAIL_CATCHUP_MESSAGE_LIMIT
+                    $cursor,
+                    self::GMAIL_CATCHUP_HISTORY_PAGE_SIZE,
+                    self::GMAIL_CATCHUP_MESSAGE_LIMIT,
+                    [
+                        'observed_at'=>$cursorState['observed_at'] ?? null,
+                        'metadata'=>is_array($cursorState['metadata'] ?? null)?$cursorState['metadata']:[],
+                    ]
                 );
                 $newCursor=(string)$pulled['checkpoint_cursor'];
                 $hasMore=($pulled['has_more'] ?? false)===true;
             }else{
-                $pulled=$gmail->pull($cursor);
+                $pulled=$gmail->pull(null);
                 $newCursor=(string)$pulled['cursor'];
                 $hasMore=false;
             }
@@ -372,12 +381,13 @@ class SvAmazonReturnsDaemon
                 $this->persistence->cursors,
                 'history_id',
                 $newCursor,
-                [
+                array_filter([
                     'message_count'=>$ingested['messages'],
                     'event_count'=>$ingested['events'],
                     'recovered_cursor'=>$pulled['recovered_cursor'] ?? false,
                     'has_more'=>$hasMore,
-                ]
+                    'gmail_recovery'=>is_array($pulled['recovery'] ?? null)?$pulled['recovery']:null,
+                ],static fn(mixed $value):bool=>$value!==null)
             );
             $result['messages']=$ingested['messages'];
             $result['events']=$ingested['events'];
