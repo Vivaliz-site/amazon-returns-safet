@@ -258,7 +258,9 @@ final class SvAmazonGmailApiClient
             if(!is_array($message))continue;
             $id=trim((string)($message['id'] ?? ''));
             if($id!=='')$ids[$id]=true;
-            if(count($ids)>=$messageLimit)break;
+        }
+        if(count($ids)>$messageLimit){
+            throw new RuntimeException('Gmail expired history recovery page exceeds bounded message limit.');
         }
         $next=trim((string)($data['nextPageToken'] ?? ''));
         $hasMore=$next!=='';
