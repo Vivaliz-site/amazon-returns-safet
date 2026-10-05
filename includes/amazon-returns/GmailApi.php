@@ -16,6 +16,8 @@ final class SvAmazonGmailApiClient
     /** @var callable(string,array<string,mixed>):array<string,mixed> */
     private $oauthTransport;
     private ?string $accessToken = null;
+    private int $oauthCandidateIndex = 0;
+    private bool $directAccessToken = false;
 
     /**
      * @param callable(string,string,array<string,string>,?array):array<string,mixed>|null $transport
@@ -453,6 +455,7 @@ final class SvAmazonGmailApiClient
         $url = 'https://gmail.googleapis.com/gmail/v1/users/me' . $path;
         if ($query !== []) $url .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
         $attempt=0;
+        $permissionFallbackUsed=false;
         do {
             $response = ($this->transport)(
                 $method,
@@ -465,6 +468,10 @@ final class SvAmazonGmailApiClient
             if ($status >= 200 && $status < 300) return $json;
             $reason = trim((string)($json['error']['errors'][0]['reason'] ?? $json['error']['status'] ?? ''));
             $reason = preg_replace('/[^A-Za-z0-9_.-]/', '', $reason) ?? '';
+            if (strtoupper($method)==='GET' && $status===403 && $reason==='insufficientPermissions' && !$permissionFallbackUsed) {
+                $permissionFallbackUsed=true;
+                if($this->advanceReadCredential())continue;
+            }
             if ($this->shouldRetryRead($method,$status,$reason) && $attempt < self::READ_RATE_LIMIT_RETRIES) {
                 $baseSeconds=1 << $attempt;
                 $jitter=max(0,min(999999,(int)($this->jitter)()));
@@ -488,10 +495,14 @@ final class SvAmazonGmailApiClient
     {
         if ($this->accessToken !== null) return $this->accessToken;
         $direct = $this->config->get('GMAIL_OAUTH_ACCESS_TOKEN');
-        if ($direct !== '') return $this->accessToken = $direct;
+        if ($direct !== '') {
+            $this->directAccessToken=true;
+            return $this->accessToken = $direct;
+        }
 
+        $this->directAccessToken=false;
         return $this->accessToken = $this->refreshFromCandidates(
-            self::oauthCredentialCandidates($this->config)
+            self::oauthCredentialCandidates($this->config),0
         );
     }
 
@@ -523,8 +534,18 @@ final class SvAmazonGmailApiClient
         return $result;
     }
 
+    private function advanceReadCredential(): bool
+    {
+        if($this->directAccessToken)return false;
+        $candidates=self::oauthCredentialCandidates($this->config);
+        $next=$this->oauthCandidateIndex+1;
+        if(!isset($candidates[$next]))return false;
+        $this->accessToken=$this->refreshFromCandidates(array_slice($candidates,$next),$next);
+        return true;
+    }
+
     /** @param list<array{client_id:string,client_secret:string,refresh_token:string}> $candidates */
-    private function refreshFromCandidates(array $candidates): string
+    private function refreshFromCandidates(array $candidates,int $baseIndex=0): string
     {
         if($candidates===[])throw new RuntimeException('Gmail OAuth credentials are incomplete.');
         $lastIndex=count($candidates)-1;
@@ -541,6 +562,7 @@ final class SvAmazonGmailApiClient
                 );
                 $token=trim((string)($response['access_token']??''));
                 if($token==='')throw new RuntimeException('Gmail OAuth did not return access_token.');
+                $this->oauthCandidateIndex=$baseIndex+$index;
                 return $token;
             }catch(RuntimeException $e){
                 if($index===$lastIndex || !self::isInvalidGrantFailure($e))throw $e;
