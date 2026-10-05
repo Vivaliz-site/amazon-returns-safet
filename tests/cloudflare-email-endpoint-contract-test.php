@@ -9,6 +9,10 @@ if(!is_file($path)){
 $code=(string)file_get_contents($path);
 $needles=[
     "HTTP_CF_ACCESS_JWT_ASSERTION",
+    "CloudflareAccessJwt.php",
+    "CLOUDFLARE_ACCESS_TEAM_DOMAIN",
+    "CLOUDFLARE_ACCESS_AUD",
+    "SvAmazonCloudflareAccessJwt",
     "CloudflareEmailIngress.php",
     "GmailEventSink.php",
     "SvAmazonCloudflareEmailIngress::parse",
