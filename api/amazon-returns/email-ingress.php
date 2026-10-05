@@ -9,6 +9,7 @@ require_once dirname(__DIR__,2).'/includes/amazon-returns/TenantRegistry.php';
 require_once dirname(__DIR__,2).'/includes/amazon-returns/TenantPersistence.php';
 require_once dirname(__DIR__,2).'/includes/amazon-returns/HttpJsonRequest.php';
 require_once dirname(__DIR__,2).'/includes/amazon-returns/CloudflareEmailIngress.php';
+require_once dirname(__DIR__,2).'/includes/amazon-returns/CloudflareAccessJwt.php';
 require_once dirname(__DIR__,2).'/includes/amazon-returns/GmailEventSink.php';
 
 header_remove('X-Powered-By');
@@ -25,7 +26,14 @@ function sv_amz_email_ingress_reply(array $payload,int $status=200): never
 
 $accessJwt=trim((string)($_SERVER["HTTP_CF_ACCESS_JWT_ASSERTION"] ?? ""));
 $cfRay=trim((string)($_SERVER["HTTP_CF_RAY"] ?? ""));
-if($accessJwt==="" || substr_count($accessJwt,".")!==2 || $cfRay===""){
+$accessConfig=new SvAmazonReturnsConfig();
+$teamDomain=$accessConfig->get('CLOUDFLARE_ACCESS_TEAM_DOMAIN');
+$accessAudience=$accessConfig->get('CLOUDFLARE_ACCESS_AUD');
+if($teamDomain==='' || $accessAudience===''){
+    sv_amz_email_ingress_reply(['status'=>'ACCESS_NOT_CONFIGURED'],503);
+}
+$claims=(new SvAmazonCloudflareAccessJwt())->validate($accessJwt,$teamDomain,$accessAudience);
+if($claims===null || $cfRay===""){
     sv_amz_email_ingress_reply(["status"=>"UNAUTHORIZED"],401);
 }
 if(strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? ''))!=='POST'){
