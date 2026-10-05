@@ -14,6 +14,8 @@ final class SvAmazonGmailParser
     public function parse(array $message): array
     {
         $messageId = trim((string)($message['message_id'] ?? $message['id'] ?? ''));
+        $source = strtoupper(trim((string)($message['source'] ?? 'GMAIL')));
+        if (!in_array($source, ['GMAIL','CLOUDFLARE_EMAIL'], true)) return [];
         $subject = trim((string)($message['subject'] ?? ''));
         $from = trim((string)($message['from'] ?? $message['from_'] ?? ''));
         if ($messageId === '' || $subject === '' || !$this->isAmazonSender($from)) return [];
@@ -78,10 +80,10 @@ final class SvAmazonGmailParser
         }
 
         $contentSha = hash('sha256', $this->canonicalText($subject) . "\n" . $this->canonicalText($body));
-        $identityParts = ['gmail',$messageId,$eventType,$orderId,$safeTId ?? ''];
+        $identityParts = [strtolower($source),$messageId,$eventType,$orderId,$safeTId ?? ''];
         return [[
             'event_type'=>$eventType,
-            'source'=>'GMAIL',
+            'source'=>$source,
             'financial_truth'=>false,
             'source_event_id'=>$messageId,
             'message_id'=>$messageId,
@@ -124,6 +126,8 @@ final class SvAmazonGmailParser
             PREG_SET_ORDER
         );
         if($matches===[])return [];
+        $source=strtoupper(trim((string)($message['source'] ?? 'GMAIL')));
+        if(!in_array($source,['GMAIL','CLOUDFLARE_EMAIL'],true))return [];
         $contentSha=hash('sha256',$this->canonicalText($subject)."\n".$this->canonicalText($body));
         $occurredAt=$this->normalizeDate($message['received_at'] ?? $message['email_ts'] ?? null);
         $events=[];
@@ -135,10 +139,10 @@ final class SvAmazonGmailParser
                 $tracking=strtoupper(trim((string)$trackingMatch[1]));
             }
             $carrier=$this->carrierBeforeTracking($detail);
-            $identityParts=['gmail',$messageId,'FBA_SHIPMENT_EMAIL',$orderId,$tracking ?? ''];
+            $identityParts=[strtolower($source),$messageId,'FBA_SHIPMENT_EMAIL',$orderId,$tracking ?? ''];
             $events[]=[
                 'event_type'=>'FBA_SHIPMENT_EMAIL',
-                'source'=>'GMAIL',
+                'source'=>$source,
                 'financial_truth'=>false,
                 'source_event_id'=>$messageId,
                 'message_id'=>$messageId,
