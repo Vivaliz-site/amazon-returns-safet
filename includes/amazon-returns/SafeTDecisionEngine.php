@@ -51,6 +51,7 @@ final class SvAmazonSafeTDecisionEngine
             'SUPPORT_CLAIMED_REIMBURSEMENT_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_CLAIMED_REIMBURSEMENT_NOT_RECONCILED',
             'SUPPORT_REIMBURSEMENT_DENIAL_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_REIMBURSEMENT_DENIAL_REBUTTAL',
             'SUPPORT_RESOLUTION_DIRECTS_SAFE_T_APPEAL','SUPPORT_RESOLUTION_APPEAL_WINDOW_UNAVAILABLE',
+            'SUPPORT_OUTBOUND_AWAITING_RESPONSE',
         ],true))return $supportResolution;
         if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($supportResolution!==null)return $supportResolution;
@@ -549,15 +550,44 @@ final class SvAmazonSafeTDecisionEngine
         return false;
     }
 
+    private function supportWriteAcceptedAfterObservation(array $case,array $timeline,array $observation,string $supportCaseId): bool
+    {
+        $caseId=(int)($case['id']??0);
+        if($caseId<1 || $supportCaseId==='')return false;
+        try{$observedAt=new DateTimeImmutable((string)($observation['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){return false;}
+        $observationRank=[$observedAt->getTimestamp(),(int)($observation['id']??0)];
+        foreach($timeline as $candidate){
+            if(!is_array($candidate) || (int)($candidate['case_id']??0)!==$caseId)continue;
+            if(($candidate['event_type']??'')!=='SELLER_CENTRAL_ACTION_RESULT' || ($candidate['source']??'')!=='SELLER_CENTRAL')continue;
+            $candidatePayload=is_array($candidate['payload']??null)?$candidate['payload']:[];
+            $action=strtoupper(trim((string)($candidatePayload['action']??'')));
+            $status=strtoupper(trim((string)($candidatePayload['status']??'')));
+            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
+                || $status!=='ACCEPTED' || ($candidatePayload['submitted']??false)!==true)continue;
+            if(trim((string)($candidatePayload['external_id']??''))!==$supportCaseId)continue;
+            try{$candidateAt=new DateTimeImmutable((string)($candidate['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            if([$candidateAt->getTimestamp(),(int)($candidate['id']??0)]>$observationRank)return true;
+        }
+        return false;
+    }
+
     private function supportResolutionAction(array $case,array $timeline,DateTimeImmutable $now): ?array
     {
         $event=$this->latestSupportObservation($case,$timeline);
         if($event===null)return null;
         $payload=is_array($event['payload']??null)?$event['payload']:[];
         try{$support=SvAmazonSellerSupportStatus::normalize($payload);}catch(Throwable){return $this->decision('BLOCKED_REVIEW','SELLER_SUPPORT_OBSERVATION_INVALID',(int)($case['id']??0));}
+        $caseId=(int)($case['id']??0);
+        if($this->supportWriteAcceptedAfterObservation($case,$timeline,$event,$support['case_id'])){
+            return [
+                'action'=>'WAIT',
+                'reason'=>'SUPPORT_OUTBOUND_AWAITING_RESPONSE',
+                'case_id'=>$caseId,
+                'support_case_id'=>$support['case_id'],
+            ];
+        }
         $resolution=SvAmazonSellerSupportStatus::resolution($support);
         if($resolution==='ACTIVE')return null;
-        $caseId=(int)($case['id']??0);
         $safeTId=trim((string)($case['safe_t_id']??''));
         if($resolution==='SELLER_ACTION_REQUIRED'){
             return [
