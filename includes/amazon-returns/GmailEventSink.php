@@ -108,11 +108,10 @@ final class SvAmazonGmailEventSink
         $occurredAt = trim((string)($event['occurred_at'] ?? ''));
         if ($occurredAt === '') $occurredAt = gmdate('Y-m-d H:i:s');
         $sourceEventId = trim((string)($event['source_event_id'] ?? $event['message_id'] ?? ''));
-        $source = self::eventSource($event);
         $primaryId = $p->events->append([
             'case_id'=>$caseId,
             'event_type'=>(string)$event['event_type'],
-            'source'=>$source,
+            'source'=>'GMAIL',
             'source_event_id'=>$sourceEventId !== '' ? $sourceEventId : null,
             'idempotency_key'=>(string)$event['idempotency_key'],
             'occurred_at'=>$occurredAt,
@@ -198,17 +197,15 @@ final class SvAmazonGmailEventSink
             || !SvAmazonRefundInitiators::isValid($initiator)) return null;
         $sourceIdentity = $sourceEventId !== '' ? $sourceEventId : trim((string)($event['idempotency_key'] ?? ''));
         if ($sourceIdentity === '') return null;
-        $source = self::eventSource($event);
-        $sourcePrefix = $source === 'GMAIL' ? 'gmail' : 'cloudflare-email';
         $evidence = isset($event['content_sha256']) && is_string($event['content_sha256'])
             && preg_match('/^[a-f0-9]{64}$/i', $event['content_sha256']) === 1
             ? strtolower($event['content_sha256']) : null;
         return [
             'case_id'=>$caseId,
             'event_type'=>'REFUND_INITIATOR_CONFIRMED',
-            'source'=>$source,
+            'source'=>'GMAIL',
             'source_event_id'=>$sourceEventId !== '' ? $sourceEventId : null,
-            'idempotency_key'=>hash('sha256', implode('|', [$sourcePrefix.'-refund-initiator',$orderId,$sourceIdentity,$initiator])),
+            'idempotency_key'=>hash('sha256', implode('|', ['gmail-refund-initiator',$orderId,$sourceIdentity,$initiator])),
             'occurred_at'=>$occurredAt,
             'payload'=>['order_id'=>$orderId,'refund_initiator'=>$initiator,'financial_truth'=>false],
             'evidence_sha256'=>$evidence,
@@ -235,9 +232,9 @@ final class SvAmazonGmailEventSink
         return [
             'case_id'=>$caseId,
             'event_type'=>'PROGRAM_CONFIRMED',
-            'source'=>$source,
+            'source'=>'GMAIL',
             'source_event_id'=>$sourceEventId !== '' ? $sourceEventId : null,
-            'idempotency_key'=>hash('sha256', implode('|', [$sourcePrefix.'-refund-program',$orderId,$sourceIdentity,$program])),
+            'idempotency_key'=>hash('sha256', implode('|', ['gmail-refund-program',$orderId,$sourceIdentity,$program])),
             'occurred_at'=>$occurredAt,
             'payload'=>['order_id'=>$orderId,'program'=>$program,'financial_truth'=>false],
             'evidence_sha256'=>$evidence,
@@ -265,9 +262,9 @@ final class SvAmazonGmailEventSink
         return [
             'case_id'=>$caseId,
             'event_type'=>'REFUND_QUANTITY_CONFIRMED',
-            'source'=>$source,
+            'source'=>'GMAIL',
             'source_event_id'=>$sourceEventId !== '' ? $sourceEventId : null,
-            'idempotency_key'=>hash('sha256', implode('|', [$sourcePrefix.'-refund-quantity',$orderId,$sourceIdentity,$ordered === false ? 'unknown' : $ordered,$refunded])),
+            'idempotency_key'=>hash('sha256', implode('|', ['gmail-refund-quantity',$orderId,$sourceIdentity,$ordered === false ? 'unknown' : $ordered,$refunded])),
             'occurred_at'=>$occurredAt,
             'payload'=>array_filter([
                 'order_id'=>$orderId,
@@ -277,12 +274,6 @@ final class SvAmazonGmailEventSink
             ],static fn(mixed $value,string $key):bool=>$key !== 'quantity_ordered' || $value !== null,ARRAY_FILTER_USE_BOTH),
             'evidence_sha256'=>$evidence,
         ];
-    }
-
-    private static function eventSource(array $event): string
-    {
-        $source = strtoupper(trim((string)($event['source'] ?? 'GMAIL')));
-        return in_array($source, ['GMAIL','CLOUDFLARE_EMAIL'], true) ? $source : 'GMAIL';
     }
 
     /** @return array<string,mixed> */
