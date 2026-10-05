@@ -46,7 +46,11 @@ $wrongIssuer=$claims;$wrongIssuer['iss']='https://other.cloudflareaccess.com';
 cajAssert($validator->validate(cajToken($key,$wrongIssuer),$team,$aud)===null,'Wrong issuer must fail.');
 $expired=$claims;$expired['exp']=$now-1;
 cajAssert($validator->validate(cajToken($key,$expired),$team,$aud)===null,'Expired token must fail.');
-$tampered=substr($valid,0,-1).($valid[-1]==='A'?'B':'A');
+[$tamperedHeader,$tamperedPayload,$tamperedSignature]=explode('.',$valid);
+$signatureRaw=base64_decode(strtr($tamperedSignature,'-_','+/').str_repeat('=',(4-strlen($tamperedSignature)%4)%4),true);
+cajAssert(is_string($signatureRaw) && $signatureRaw!=='','Signature fixture must decode.');
+$signatureRaw[0]=chr(ord($signatureRaw[0]) ^ 0x01);
+$tampered=$tamperedHeader.'.'.$tamperedPayload.'.'.cajB64($signatureRaw);
 cajAssert($validator->validate($tampered,$team,$aud)===null,'Tampered signature must fail.');
 cajAssert($validator->validate($valid,'https://evil.example.com',$aud)===null,'Untrusted team domain must fail.');
 
