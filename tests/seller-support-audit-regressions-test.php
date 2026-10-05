@@ -91,6 +91,39 @@ $dd=$engine->nextAction($deniedCase,[$deniedFinance,$deniedEvent],['eligible'=>f
 ssarSame('SELLER_SUPPORT_UPDATE',$dd['action']??null,'Explicit reimbursement denial with unpaid balance must receive a rebuttal.');
 ssarSame('SUPPORT_REIMBURSEMENT_DENIAL_REBUTTAL',$dd['reason']??null,'Reimbursement denial must not become a silent terminal state.');
 
+
+$acceptedAfterChat=[
+    'id'=>6,'case_id'=>13231,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-30 10:06:00',
+    'payload'=>[
+        'action'=>'SELLER_SUPPORT_UPDATE','status'=>'ACCEPTED','submitted'=>true,
+        'external_id'=>'22144700811',
+    ],
+];
+$afterWrite=$engine->nextAction(
+    $base,
+    [$finance,$chatEvent,$acceptedAfterChat],
+    ['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'],
+    new DateTimeImmutable('2026-09-30T10:07:00Z')
+);
+ssarSame('WAIT',$afterWrite['action']??null,'A successful Seller Support update after the latest observation must wait for a newer Amazon observation.');
+ssarSame('SUPPORT_OUTBOUND_AWAITING_RESPONSE',$afterWrite['reason']??null,'Post-write wait must use a deterministic reason.');
+
+$newChat=$chat;
+$newChat['latest_text']=$chat['latest_text'].' Novo retorno da Amazon solicitando nossa resposta.';
+$newObservation=[
+    'id'=>7,'case_id'=>13231,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-30 10:08:00','payload'=>$newChat,
+];
+$rearmed=$engine->nextAction(
+    $base,
+    [$finance,$chatEvent,$acceptedAfterChat,$newObservation],
+    ['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'],
+    new DateTimeImmutable('2026-09-30T10:09:00Z')
+);
+ssarSame('SELLER_SUPPORT_UPDATE',$rearmed['action']??null,'A newer Seller Support observation after the successful write must rearm the recovery decision.');
+ssarAssert(($rearmed['idempotency_key']??'')!==($d['idempotency_key']??''),'A materially newer Seller Support observation must generate a new idempotency key.');
+
 foreach([$wd,$pd,$dd] as $decision){
     $payload=SvAmazonExternalWritePayload::build($decision,
         $decision===$wd?$wrongCase:($decision===$pd?$paidCase:$deniedCase),
