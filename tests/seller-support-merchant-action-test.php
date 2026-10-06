@@ -61,6 +61,30 @@ ssmaSame('SUPPORT_REQUESTED_SELLER_RESPONSE',$decision['reason']??null,'Seller-a
 ssmaSame('22321391191',$decision['support_case_id']??null,'The response must stay in the same Seller Support case.');
 ssmaAssert(preg_match('/^[a-f0-9]{64}$/',(string)($decision['idempotency_key']??''))===1,'Seller-action response must be idempotent.');
 
+$missingReturnCase=$case;
+$missingReturnCase['physical_status']='NOT_RECEIVED';
+$missingReturnCase['quantity_received']=0;
+$missingReturnCase['quantity_refunded']=2;
+$missingReturnRequest=[
+    'id'=>804612,
+    'case_id'=>13221,
+    'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED',
+    'source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-06 12:00:00',
+    'payload'=>[
+        'case_id'=>'22403466041',
+        'case_status'=>'PENDINGMERCHANTACTION',
+        'latest_text'=>'Por favor, confirme qual situação se aplica: a unidade foi danificada após a devolução ou a unidade não retornou ao seu estoque após a devolução?',
+    ],
+];
+$missingReturnDecision=$engine->nextAction($missingReturnCase,[$missingReturnRequest],$policy,new DateTimeImmutable('2026-10-06 12:05:00',new DateTimeZone('UTC')));
+ssmaSame('SELLER_SUPPORT_UPDATE',$missingReturnDecision['action']??null,'Missing-return clarification must produce a Seller Support update.');
+ssmaSame('22403466041',$missingReturnDecision['support_case_id']??null,'Missing-return clarification must target the exact sibling case.');
+$missingReturnPayload=SvAmazonExternalWritePayload::build($missingReturnDecision,$missingReturnCase,[$missingReturnRequest]);
+$missingReturnNarrative=(string)($missingReturnPayload['write_snapshot']['narrative']??'');
+ssmaAssert(str_contains($missingReturnNarrative,'não retornaram ao nosso estoque'),'Trusted NOT_RECEIVED state must answer that the units did not return.');
+ssmaAssert(str_contains($missingReturnNarrative,'Não estamos informando dano após recebimento'),'The answer must explicitly reject the damaged-after-receipt alternative.');
+
 $closedObserved=$merchantObserved;
 $closedObserved['id']=804604;
 $closedObserved['occurred_at']='2026-09-30 08:02:08';
