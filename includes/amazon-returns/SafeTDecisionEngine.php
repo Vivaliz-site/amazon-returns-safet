@@ -508,19 +508,37 @@ final class SvAmazonSafeTDecisionEngine
     private function latestSupportObservation(array $case,array $timeline): ?array
     {
         $caseId=(int)($case['id']??0);
-        $supportId=trim((string)($case['support_case_id']??''));
-        if($caseId<1 || $supportId==='')return null;
-        $latest=null;$rank=[0,0];
+        if($caseId<1)return null;
+        $primary=trim((string)($case['support_case_id']??''));
+        $latestBySupport=[];
         foreach($timeline as $event){
             if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
             if(($event['event_type']??'')!=='SELLER_SUPPORT_STATUS_OBSERVED' || ($event['source']??'')!=='SELLER_CENTRAL')continue;
             $payload=is_array($event['payload']??null)?$event['payload']:[];
-            if(trim((string)($payload['case_id']??''))!==$supportId)continue;
+            $supportId=trim((string)($payload['case_id']??''));
+            $validSupportId=preg_match('/^\\d{8,14}$/D',$supportId)===1;
+            if(!$validSupportId && $supportId!==$primary)continue;
             try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
             $candidate=[$at->getTimestamp(),(int)($event['id']??0)];
-            if($candidate>$rank){$rank=$candidate;$latest=$event;}
+            $mapKey=$validSupportId?$supportId:'__invalid_primary__';
+            $existing=$latestBySupport[$mapKey]??null;
+            if(!is_array($existing) || $candidate>$existing['rank'])$latestBySupport[$mapKey]=['rank'=>$candidate,'event'=>$event,'support_id'=>$supportId,'valid'=>$validSupportId];
         }
-        return $latest;
+        $best=null;$bestRank=[-1,0,0];
+        foreach($latestBySupport as $entry){
+            $supportId=(string)($entry['support_id']??'');
+            $event=$entry['event'];$payload=is_array($event['payload']??null)?$event['payload']:[];
+            try{$resolution=SvAmazonSellerSupportStatus::resolution($payload);}catch(Throwable){$resolution='INVALID';}
+            if($resolution==='INVALID'){
+                $awaitingWrite=true;$priority=4;
+            }else{
+                $awaitingWrite=$resolution!=='ACTIVE' && !$this->supportWriteAcceptedAfterObservation($case,$timeline,$event,$supportId);
+                $priority=$awaitingWrite?3:($supportId===$primary?2:1);
+            }
+            $rank=[$priority,$entry['rank'][0],$entry['rank'][1]];
+            if($rank>$bestRank){$bestRank=$rank;$best=$event;}
+        }
+        return $best;
     }
 
     private function hasEmailReviewHistory(array $timeline,int $caseId,string $safeTId): bool
@@ -595,6 +613,7 @@ final class SvAmazonSafeTDecisionEngine
                 'reason'=>'SUPPORT_REQUESTED_SELLER_RESPONSE',
                 'case_id'=>$caseId,
                 'support_case_id'=>$support['case_id'],
+                'support_latest_text'=>$support['latest_text'],
                 'support_route'=>strtoupper(trim((string)($case['program']??'')))==='FBA'
                     ? 'FBA_RETURNS_REIMBURSEMENT'
                     : 'GENERAL_ORDER_SUPPORT',
