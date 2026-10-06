@@ -40,7 +40,7 @@ foreach([$deployService,$deploySource] as $sourceConfig){
     }
 }
 $decisionEngine=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/SafeTDecisionEngine.php');
-if(str_contains($decisionEngine,"$checkedAt->modify('+2 hours')->format('Y-m-d H:i:s')")){
+if(str_contains($decisionEngine,'$checkedAt->modify(\'+2 hours\')->format(\'Y-m-d H:i:s\')')){
     throw new RuntimeException('Internal FBA finance cooldown must not create a synthetic known-date wake that bypasses the 12-hour cadence.');
 }
 
