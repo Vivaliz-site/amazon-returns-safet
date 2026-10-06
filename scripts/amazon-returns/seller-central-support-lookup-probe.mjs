@@ -1,35 +1,11 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 
 const CDP_BASE = process.env.SELLER_CENTRAL_CDP_URL || 'http://127.0.0.1:9225';
-const STATUS_ENDPOINT = process.env.SELLER_CENTRAL_STATUS_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php';
-const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
 const CASE_LOBBY = 'https://sellercentral.amazon.com.br/cu/case-lobby';
 const VIEW_ENDPOINT = '/hill/hillservice/mons-api/ViewCase?caseId=';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 160);
-
-function token() {
-  const direct=String(process.env.SELLER_CENTRAL_BRIDGE_TOKEN ?? '').trim();
-  if(direct.length>=32)return direct;
-  let value='';
-  try{value=fs.readFileSync(TOKEN_FILE,'utf8').trim();}catch{}
-  if(value.length<32)throw new Error('bridge token missing or too short');
-  return value;
-}
-
-async function statusBridge(operation,payload={}) {
-  const response=await fetch(STATUS_ENDPOINT,{
-    method:'POST',
-    headers:{authorization:`Bearer ${token()}`,'content-type':'application/json',accept:'application/json','user-agent':'ShopVivaliz-SellerSupportDiscovery/1.0'},
-    body:JSON.stringify({operation,...payload}),
-    signal:AbortSignal.timeout(45000),
-  });
-  const body=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(`status bridge HTTP ${response.status}: ${clean(body.status)}`);
-  return body;
-}
 
 async function closeTarget(targetId) {
   const id = String(targetId ?? '').trim();
@@ -125,8 +101,6 @@ function safeResult(data = {}) {
     detail_http_status: Number.isInteger(data.detail_http_status) ? data.detail_http_status : null,
     detail_content_type: clean(data.detail_content_type || ''),
     detail_response_keys: safeKeys(data.detail_response_keys),
-    actionable_count: Number.isInteger(data.actionable_count) ? data.actionable_count : 0,
-    discovered_count: Number.isInteger(data.discovered_count) ? data.discovered_count : 0,
   };
 }
 
@@ -179,25 +153,6 @@ async function probeSupportCaseLookup() {
             detailKeys=[];
           }
         }
-        const actionable=[];
-        for(const row of rows){
-          const status=String(row?.status||'');
-          const normalized=status.toUpperCase().replace(/[^A-Z0-9]+/g,'');
-          if(!['PENDINGSELLERACTION','AWAITINGSELLERACTION','PENDINGMERCHANTACTION','AWAITINGMERCHANTACTION'].includes(normalized))continue;
-          const supportCaseId=String(row?.caseId||'');
-          if(!/^\d{8,14}$/.test(supportCaseId))continue;
-          try{
-            const detailResponse=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(supportCaseId)+'&timeZone=UTC&pageSize=20',{credentials:'include'});
-            if(!detailResponse.ok)continue;
-            const detail=await detailResponse.json();
-            const serialized=JSON.stringify(detail);
-            const orderMatch=serialized.match(/\b\d{3}-\d{7}-\d{7}\b/);
-            if(!orderMatch)continue;
-            const contacts=Array.isArray(detail?.contactList)?detail.contactList:[];
-            const latestText=contacts.map(contact=>String(contact?.message||contact?.description||'')).filter(Boolean).join(' ').slice(0,12000);
-            actionable.push({case_id:supportCaseId,case_status:status,latest_text:latestText,order_id:orderMatch[0]});
-          }catch{}
-        }
         const searchOk=response.ok&&listOk&&totalOk;
         const detailOk=!candidate||(Number.isInteger(detailHttpStatus)&&detailHttpStatus>=200&&detailHttpStatus<300&&detailKeys.length>0);
         return JSON.stringify({
@@ -211,21 +166,13 @@ async function probeSupportCaseLookup() {
           row_keys:rowKeys,
           detail_http_status:detailHttpStatus,
           detail_content_type:detailContentType,
-          detail_response_keys:detailKeys,
-          actionable
+          detail_response_keys:detailKeys
         });
       }catch{return JSON.stringify({status:'UNAVAILABLE',reason:'SEARCH_REQUEST_FAILED',http_status:null,content_type:'',response_keys:[],list_is_array:false,total_is_numeric:false,row_keys:[],detail_http_status:null,detail_content_type:'',detail_response_keys:[]})}
     })()`);
     let parsed = {};
     try { parsed = JSON.parse(raw || '{}'); } catch {}
-    let discoveredCount=0;
-    const actionable=Array.isArray(parsed.actionable)?parsed.actionable:[];
-    if(parsed.status==='OK' && actionable.length>0){
-      const discovery=await statusBridge('discover_support_actions',{items:actionable});
-      discoveredCount=Number(discovery?.accepted||0);
-    }
-    delete parsed.actionable;
-    return safeResult({ ...parsed, auth_state: authState, actionable_count: actionable.length, discovered_count: discoveredCount });
+    return safeResult({ ...parsed, auth_state: authState });
   } finally {
     await cdp.close();
   }
