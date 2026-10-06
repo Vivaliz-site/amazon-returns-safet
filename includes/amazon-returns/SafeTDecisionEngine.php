@@ -401,8 +401,9 @@ final class SvAmazonSafeTDecisionEngine
     private function financialRecheckCooldown(int $caseId,DateTimeImmutable $checkedAt): array
     {
         return [
-            'action'=>'WAIT','reason'=>'CLASSIC_FBA_FINANCE_RECENTLY_CHECKED','case_id'=>$caseId,
-            'next_action_at'=>$checkedAt->modify('+2 hours')->format('Y-m-d H:i:s'),
+            'action'=>'WAIT',
+            'reason'=>'CLASSIC_FBA_FINANCE_RECENTLY_CHECKED',
+            'case_id'=>$caseId,
         ];
     }
 
