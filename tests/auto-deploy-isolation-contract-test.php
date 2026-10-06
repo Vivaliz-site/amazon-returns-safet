@@ -9,12 +9,12 @@ $bootstrapPath=__DIR__.'/../scripts/ensure-auto-deploy-source.sh';
 isoAssert(is_file($bootstrapPath),'Dedicated deploy-source bootstrap script must exist.');
 $bootstrap=(string)file_get_contents($bootstrapPath);
 
-isoAssert(str_contains($service,'Environment=AMAZON_RETURNS_REPO=/home/ubuntu/amazon-returns-deploy-source'),'Deploy service must pin the dedicated source checkout.');
-isoAssert(str_contains($service,'ExecStart=/home/ubuntu/amazon-returns-deploy-source/scripts/auto-deploy.sh'),'Deploy service must execute auto-deploy from the dedicated source checkout.');
+isoAssert(str_contains($service,'Environment=AMAZON_RETURNS_REPO=/home/ubuntu/amazon-returns-auto-deploy-source'),'Deploy service must pin the dedicated source checkout.');
+isoAssert(str_contains($service,'ExecStart=/home/ubuntu/amazon-returns-auto-deploy-source/scripts/auto-deploy.sh'),'Deploy service must execute auto-deploy from the dedicated source checkout.');
 isoAssert(!str_contains($service,'ExecStart=/home/ubuntu/amazon-returns-safet/scripts/auto-deploy.sh'),'Deploy service must never execute from the agent work checkout.');
-isoAssert(str_contains($script,'${AMAZON_RETURNS_REPO:-/home/ubuntu/amazon-returns-deploy-source}'),'Auto-deploy safe default must be the dedicated source checkout.');
+isoAssert(str_contains($script,'${AMAZON_RETURNS_REPO:-/home/ubuntu/amazon-returns-auto-deploy-source}'),'Auto-deploy safe default must be the dedicated source checkout.');
 isoAssert(str_contains($script,'status --porcelain'),'Auto-deploy must reject untracked or modified files in the dedicated checkout.');
-isoAssert(str_contains($bootstrap,'deploy_source="${AMAZON_RETURNS_DEPLOY_SOURCE_REPO:-/home/ubuntu/amazon-returns-deploy-source}"'),'Bootstrap must own the dedicated deploy source path.');
+isoAssert(str_contains($bootstrap,'deploy_source="${AMAZON_RETURNS_DEPLOY_SOURCE_REPO:-/home/ubuntu/amazon-returns-auto-deploy-source}"'),'Bootstrap must own the dedicated deploy source path.');
 isoAssert(str_contains($bootstrap,'git clone') && str_contains($bootstrap,'Vivaliz-site/amazon-returns-safet'),'Bootstrap must clone the canonical repository when missing.');
 isoAssert(str_contains($bootstrap,"repo_remote='https://github.com/Vivaliz-site/amazon-returns-safet.git'"),'Bootstrap must use the production-verified HTTPS Git authentication path.');
 isoAssert(str_contains($bootstrap,'status --porcelain'),'Bootstrap must reject unexpected dirt in the dedicated checkout.');

@@ -102,6 +102,49 @@ final class SvAmazonReturnsStatusBridgeService
         return $ensured;
     }
 
+    /**
+     * @param list<array<string,mixed>> $items
+     * @return array<string,mixed>
+     */
+    public function discoverSupportActions(array $items,DateTimeImmutable $now): array
+    {
+        if(count($items)>50)return ['status'=>'TOO_MANY_ITEMS','http_status'=>413];
+        $accepted=0;$skipped=0;$seen=[];
+        foreach($items as $item){
+            if(!is_array($item)){$skipped++;continue;}
+            $orderId=trim((string)($item['order_id']??''));
+            if(preg_match('/^\d{3}-\d{7}-\d{7}$/D',$orderId)!==1){$skipped++;continue;}
+            try{$support=SvAmazonSellerSupportStatus::normalize($item);}catch(Throwable){$skipped++;continue;}
+            $normalizedStatus=preg_replace('/[^A-Z0-9]+/','',strtoupper($support['case_status'])) ?? '';
+            if(!in_array($normalizedStatus,['PENDINGSELLERACTION','AWAITINGSELLERACTION','PENDINGMERCHANTACTION','AWAITINGMERCHANTACTION'],true)){
+                $skipped++;continue;
+            }
+            $case=$this->p->cases->findSingleByOrder($orderId);
+            if(!is_array($case)){$skipped++;continue;}
+            $caseId=(int)($case['id']??0);
+            if($caseId<1){$skipped++;continue;}
+            $dedupe=$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint'];
+            if(isset($seen[$dedupe]))continue;
+            $seen[$dedupe]=true;
+            $timeline=$this->p->events->eventsForCase($caseId);
+            $plan=SvAmazonSellerSupportStatus::observationPlan($caseId,$support,$timeline);
+            if($plan['append']){
+                $this->p->events->append([
+                    'case_id'=>$caseId,
+                    'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED',
+                    'source'=>'SELLER_CENTRAL',
+                    'source_event_id'=>$support['case_id'].'|'.$support['case_status'].'|ACTION_DISCOVERY',
+                    'idempotency_key'=>$plan['idempotency_key'],
+                    'occurred_at'=>$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+                    'payload'=>$support+['discovered_via'=>'CASE_LOBBY_ACTION_SCAN'],
+                    'evidence_sha256'=>null,
+                ]);
+                $accepted++;
+            }
+        }
+        return ['status'=>'OK','accepted'=>$accepted,'skipped'=>$skipped];
+    }
+
     /** @return array<string,mixed> */
     public function pull(DateTimeImmutable $now): array
     {

@@ -53,7 +53,7 @@ $noRefundFinance=$finance;$noRefundFinance['case_id']=901;
 $noRefundDecision=$engine->nextAction($noRefund,[$noRefundFinance],$policy,$now);
 cffrSame('WAIT',$noRefundDecision['action']??null,'A just-checked FBA order without refund must not immediately request another full finance scan');
 cffrSame('CLASSIC_FBA_FINANCE_RECENTLY_CHECKED',$noRefundDecision['reason']??null,'Fresh no-refund finance evidence must enter a bounded cooldown');
-cffrSame('2026-09-08 16:01:33',$noRefundDecision['next_action_at']??null,'The next finance recheck must be scheduled exactly two hours after the fresh receipt');
+cffrSame(null,$noRefundDecision['next_action_at']??null,'Routine no-refund finance rechecks must follow the 12-hour business cadence instead of creating a synthetic known-date wake');
 $noRefundStale=$noRefundFinance;$noRefundStale['occurred_at']='2026-09-08 11:00:00';
 cffrSame('CHECK_FINANCES',$engine->nextAction($noRefund,[$noRefundStale],$policy,$now)['action']??null,'A no-refund FBA order must resume finance checks after the cooldown expires');
 cffrSame('CHECK_FINANCES',$engine->nextAction($noRefund,[],$policy,$now)['action']??null,'A no-refund FBA order with no finance evidence still requires an initial finance check');
@@ -65,7 +65,7 @@ $noRefundRefresh=[
 $noRefundRefreshDecision=$engine->nextAction($noRefund,[$noRefundRefresh],$policy,$now);
 cffrSame('WAIT',$noRefundRefreshDecision['action']??null,'A completed SP-API refresh must cool down a no-refund FBA case even when there is no monetary reconciliation row');
 cffrSame('CLASSIC_FBA_FINANCE_RECENTLY_CHECKED',$noRefundRefreshDecision['reason']??null,'SP-API freshness is a cooldown receipt, not a payment decision');
-cffrSame('2026-09-08 16:05:00',$noRefundRefreshDecision['next_action_at']??null,'No-refund cooldown must wake exactly two hours after the source refresh');
+cffrSame(null,$noRefundRefreshDecision['next_action_at']??null,'A source refresh cooldown must not bypass the owner-approved 12-hour business cadence');
 $staleNoRefundRefresh=$noRefundRefresh;$staleNoRefundRefresh['occurred_at']='2026-09-08 11:00:00';
 cffrSame('CHECK_FINANCES',$engine->nextAction($noRefund,[$staleNoRefundRefresh],$policy,$now)['action']??null,'A stale source refresh must not suppress the next finance check');
 $failedNoRefundRefresh=$noRefundRefresh;$failedNoRefundRefresh['payload']['refresh_complete']=false;

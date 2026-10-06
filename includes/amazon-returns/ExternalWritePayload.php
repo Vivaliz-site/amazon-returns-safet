@@ -62,6 +62,19 @@ final class SvAmazonExternalWritePayload
                     .'Não utilizamos '.$negative.' para este item. '
                     .'Por favor, prossigam com a análise e o ressarcimento solicitado neste chamado.';
             }
+            $asksReturnOutcome=(
+                (str_contains($latest,'danific') && (str_contains($latest,'retorn') || str_contains($latest,'devolu')))
+                && (str_contains($latest,'não retorn') || str_contains($latest,'nao retorn') || str_contains($latest,'estoque'))
+            );
+            $physicalStatus=strtoupper(trim((string)($case['physical_status']??'')));
+            $quantityReceived=(int)($case['quantity_received']??0);
+            if($asksReturnOutcome && $physicalStatus==='NOT_RECEIVED' && $quantityReceived===0){
+                $quantity=max(1,(int)($case['quantity_refunded']??$case['quantity_ordered']??1));
+                $unitWord=$quantity===1?'unidade':'unidades';
+                return 'Sobre o pedido '.$order.'. Confirmamos que as '.$quantity.' '.$unitWord.' não retornaram ao nosso estoque após a devolução. '
+                    .'Não estamos informando dano após recebimento; a situação aplicável é que as unidades não foram recebidas de volta em nosso estoque. '
+                    .'Por favor, prossigam com a investigação e o ressarcimento solicitado neste chamado.';
+            }
             $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
             $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
             $outstanding=max(0.0,$expected-$credited);
