@@ -50,6 +50,18 @@ final class SvAmazonExternalWritePayload
         }
         if($action==='SELLER_SUPPORT_UPDATE'
             && $reason==='SUPPORT_REQUESTED_SELLER_RESPONSE'){
+            $latest=mb_strtolower(trim((string)($decision['support_latest_text']??'')),'UTF-8');
+            $program=strtoupper(trim((string)($case['program']??'')));
+            $asksFulfillmentMode=(str_contains($latest,'seller flex') || str_contains($latest,'fba onsite') || str_contains($latest,'fba clássico') || str_contains($latest,'fba classico'));
+            if($asksFulfillmentMode && in_array($program,['FBA','FBA_ONSITE'],true)){
+                $mode=$program==='FBA_ONSITE'
+                    ? 'FBA Onsite (Seller Flex), em que preparamos e embalamos o pedido em nosso local'
+                    : 'FBA Clássico, enviado diretamente pelos centros de distribuição da Amazon';
+                $negative=$program==='FBA_ONSITE'?'FBA Clássico':'FBA Onsite/Seller Flex';
+                return 'Sobre o pedido '.$order.'. Confirmamos que este produto utiliza '.$mode.'. '
+                    .'Não utilizamos '.$negative.' para este item. '
+                    .'Por favor, prossigam com a análise e o ressarcimento solicitado neste chamado.';
+            }
             $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
             $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
             $outstanding=max(0.0,$expected-$credited);
