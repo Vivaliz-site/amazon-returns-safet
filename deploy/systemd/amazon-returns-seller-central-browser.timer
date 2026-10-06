@@ -1,12 +1,12 @@
 [Unit]
-Description=Run ShopVivaliz Seller Central browser cycle every 12 hours without overlap
+Description=Run ShopVivaliz Seller Central browser cycle continuously without overlap
 
 [Timer]
 OnBootSec=2m
-OnUnitInactiveSec=12h
+OnUnitInactiveSec=5m
 Persistent=true
-AccuracySec=5m
-RandomizedDelaySec=5m
+AccuracySec=30s
+RandomizedDelaySec=30s
 Unit=amazon-returns-seller-central-browser.service
 
 [Install]
