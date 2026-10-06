@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-deploy_source="${AMAZON_RETURNS_DEPLOY_SOURCE_REPO:-/home/ubuntu/amazon-returns-deploy-source}"
+deploy_source="${AMAZON_RETURNS_DEPLOY_SOURCE_REPO:-/home/ubuntu/amazon-returns-auto-deploy-source}"
 repo_remote='https://github.com/Vivaliz-site/amazon-returns-safet.git'
 
 [[ "$(id -u)" -eq 0 ]] || { echo 'deploy-source bootstrap requires root' >&2; exit 2; }
