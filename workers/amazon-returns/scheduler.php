@@ -77,12 +77,14 @@ final class SvAmazonReturnsScheduler
         if ($key === '') throw new LogicException(($read ? 'Read' : 'Write').' decision missing idempotency key.');
         $caseId = (int)($case['id'] ?? 0);
         $action=(string)$decision['action'];
+        $supportCaseId=trim((string)($decision['support_case_id']??''));
         if($read){
             $payload=[
                 'case_id'=>$caseId,
                 'order_id'=>(string)($case['amazon_order_id'] ?? ''),
                 'order_item_id'=>(string)($case['amazon_order_item_id'] ?? ''),
                 'safe_t_id'=>$case['safe_t_id'] ?? null,
+                'support_case_id'=>preg_match('/^\\d{8,14}$/D',$supportCaseId)===1?$supportCaseId:null,
                 'read_only'=>true,
                 'decision'=>$decision,
             ];
@@ -91,6 +93,7 @@ final class SvAmazonReturnsScheduler
                 'case_id'=>$caseId,
                 'order_id'=>(string)($case['amazon_order_id'] ?? ''),
                 'safe_t_id'=>$case['safe_t_id'] ?? null,
+                'support_case_id'=>preg_match('/^\\d{8,14}$/D',$supportCaseId)===1?$supportCaseId:null,
                 'decision'=>$decision,
             ] + SvAmazonExternalWritePayload::build($decision,$case,$timeline);
             $deadline=SvAmazonRecoveryWindow::effectiveDeadlineAt($case,$action);
