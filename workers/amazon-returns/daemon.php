@@ -635,6 +635,8 @@ class SvAmazonReturnsDaemon
         $safeTEvents=0;
         $safeTEmpty=0;
         $safeTFailures=0;
+        $failedOrderIds=[];
+        $failureClasses=[];
         $throttleMs=max(
             0,min(10000,(int)$this->config->get('AMAZON_RETURNS_SP_API_THROTTLE_MS','2100'))
         );
@@ -668,20 +670,26 @@ class SvAmazonReturnsDaemon
                             is_array($safeT['response_sha256']??null)?$safeT['response_sha256']:[]
                         );
                         $safeTEvents+=(int)($persisted['persisted']??0);
-                    }catch(Throwable){
+                    }catch(Throwable $e){
                         $safeTFailures++;
                         $financeComplete=false;
+                        $failedOrderIds[$orderId]=true;
+                        $failureClasses[$e::class]=($failureClasses[$e::class]??0)+1;
                     }
                 }
                 $this->recordFinanceSource($orderId,$financeComplete);
                 $synced++;
-            }catch(Throwable){
+            }catch(Throwable $e){
                 $failures++;
+                $failedOrderIds[$orderId]=true;
+                $failureClasses[$e::class]=($failureClasses[$e::class]??0)+1;
                 try{$this->recordFinanceSource($orderId,false);}catch(Throwable){}
             }
             if($throttleMs>0 && $index<count($orders)-1)usleep($throttleMs*1000);
         }
-        $scan=SvAmazonFinancialRefresh::recordAttempted($this->persistence,$batch,$failures+$safeTFailures);
+        $scan=SvAmazonFinancialRefresh::recordAttempted(
+            $this->persistence,$batch,$failures+$safeTFailures,array_keys($failedOrderIds)
+        );
         return [
             'status'=>($failures>0||$safeTFailures>0)?'PARTIAL':'OK','orders'=>count($orders),
             'initial_scan_complete'=>$scan['initial_scan_complete'],
@@ -691,6 +699,8 @@ class SvAmazonReturnsDaemon
             'synced'=>$synced,'persisted_cases'=>$persistedCases,'failures'=>$failures,
             'safe_t_reads'=>$safeTReads,'safe_t_events'=>$safeTEvents,
             'safe_t_empty'=>$safeTEmpty,'safe_t_failures'=>$safeTFailures,
+            'retry_orders'=>count($scan['retry_order_ids']??[]),
+            'failure_classes'=>$failureClasses,
         ];
     }
 

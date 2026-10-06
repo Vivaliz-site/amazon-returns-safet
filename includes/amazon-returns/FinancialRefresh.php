@@ -15,6 +15,20 @@ final class SvAmazonFinancialRefresh
         $saved = $p->cursors->load(self::SOURCE, self::KEY);
         $meta = is_array($saved) ? $saved['metadata'] : [];
         $after = is_array($saved) ? (string)$saved['value'] : '';
+        $retryOrderIds=self::normalizeOrderIds($meta['retry_order_ids'] ?? []);
+        if (($meta['has_more'] ?? false) !== true && $retryOrderIds !== []) {
+            return [
+                'order_ids'=>array_slice($retryOrderIds,0,$limit),
+                'wrapped'=>false,
+                'has_more'=>count($retryOrderIds)>$limit,
+                'initial_scan_complete'=>(bool)($meta['initial_scan_complete'] ?? false),
+                'cycle_attempted'=>max(0,(int)($meta['cycle_attempted'] ?? 0)),
+                'cycle_failures'=>count($retryOrderIds),
+                'retry_only'=>true,
+                'retry_order_ids'=>$retryOrderIds,
+                'rotation_cursor'=>$after!==''?$after:'0',
+            ];
+        }
         $orders = $p->cases->financialOrderIdsAfter($after, $limit + 1);
         $wrapped = $after !== '' && $orders === [];
         if ($wrapped) $orders = $p->cases->financialOrderIdsAfter('', $limit + 1);
@@ -24,22 +38,67 @@ final class SvAmazonFinancialRefresh
             'initial_scan_complete'=>(bool)($meta['initial_scan_complete'] ?? false),
             'cycle_attempted'=>$wrapped ? 0 : (int)($meta['cycle_attempted'] ?? 0),
             'cycle_failures'=>$wrapped ? 0 : (int)($meta['cycle_failures'] ?? 0),
+            'retry_only'=>false,
+            'retry_order_ids'=>$wrapped ? [] : $retryOrderIds,
+            'rotation_cursor'=>$after!==''?$after:'0',
         ];
     }
 
-    public static function recordAttempted(SvAmazonTenantPersistence $p, array $batch, int $failures): array
-    {
-        $orders = is_array($batch['order_ids'] ?? null) ? $batch['order_ids'] : [];
-        $totalFailures = max(0, (int)($batch['cycle_failures'] ?? 0)) + max(0, $failures);
-        $meta = [
+    public static function recordAttempted(
+        SvAmazonTenantPersistence $p,array $batch,int $failures,array $failedOrderIds=[]
+    ): array {
+        $orders=self::normalizeOrderIds($batch['order_ids'] ?? []);
+        $failedOrderIds=self::normalizeOrderIds($failedOrderIds);
+        $retryOnly=($batch['retry_only'] ?? false)===true;
+        $previousRetry=self::normalizeOrderIds($batch['retry_order_ids'] ?? []);
+        if($retryOnly){
+            $attempted=array_fill_keys($orders,true);
+            $remaining=[];
+            foreach($previousRetry as $orderId){
+                if(!isset($attempted[$orderId]))$remaining[]=$orderId;
+            }
+            $retryOrderIds=self::normalizeOrderIds(array_merge($remaining,$failedOrderIds));
+            $totalFailures=count($retryOrderIds);
+            $cursor=trim((string)($batch['rotation_cursor'] ?? '0'));
+            if($cursor==='')$cursor='0';
+            $meta=[
+                'has_more'=>false,
+                'cycle_attempted'=>max(0,(int)($batch['cycle_attempted'] ?? 0)),
+                'cycle_failures'=>$totalFailures,
+                'initial_scan_complete'=>(bool)($batch['initial_scan_complete'] ?? false),
+                'retry_order_ids'=>$retryOrderIds,
+            ];
+            $p->cursors->save(self::SOURCE,self::KEY,$cursor,$meta);
+            return $meta;
+        }
+
+        $retryOrderIds=self::normalizeOrderIds(array_merge($previousRetry,$failedOrderIds));
+        $totalFailures=max(0,(int)($batch['cycle_failures'] ?? 0))+max(0,$failures);
+        $meta=[
             'has_more'=>(bool)($batch['has_more'] ?? false),
-            'cycle_attempted'=>max(0, (int)($batch['cycle_attempted'] ?? 0)) + count($orders),
+            'cycle_attempted'=>max(0,(int)($batch['cycle_attempted'] ?? 0))+count($orders),
             'cycle_failures'=>$totalFailures,
             'initial_scan_complete'=>(bool)($batch['initial_scan_complete'] ?? false)
-                || (!(bool)($batch['has_more'] ?? false) && $totalFailures === 0),
+                || (!(bool)($batch['has_more'] ?? false) && $totalFailures===0),
+            'retry_order_ids'=>$retryOrderIds,
         ];
-        $p->cursors->save(self::SOURCE, self::KEY, $orders === [] ? '0' : (string)$orders[array_key_last($orders)], $meta);
+        $p->cursors->save(
+            self::SOURCE,self::KEY,$orders===[]?'0':(string)$orders[array_key_last($orders)],$meta
+        );
         return $meta;
+    }
+
+    /** @return list<string> */
+    private static function normalizeOrderIds(mixed $values): array
+    {
+        if(!is_array($values))return [];
+        $seen=[];$result=[];
+        foreach($values as $value){
+            $id=trim((string)$value);
+            if(preg_match('/^\d{3}-\d{7}-\d{7}$/D',$id)!==1 || isset($seen[$id]))continue;
+            $seen[$id]=true;$result[]=$id;
+        }
+        return $result;
     }
 
     public static function initialScanComplete(SvAmazonTenantPersistence $p): bool
