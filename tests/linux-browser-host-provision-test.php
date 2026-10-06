@@ -31,7 +31,8 @@ lbAssert(str_contains($authSvc,'run-seller-central-daily.sh --auth-check-only'),
 lbAssert(str_contains($authSvc,'EnvironmentFile=-/home/ubuntu/amazon-returns-deploy/shared/.env'),'Auth smoke must load the protected shared runtime environment.');
 $tmr=(string)file_get_contents($timer);
 lbAssert(str_contains($tmr,'OnBootSec=2m'),'Browser timer must begin shortly after boot.');
-lbAssert(str_contains($tmr,'OnUnitInactiveSec=5m'),'Browser timer must drain polling work five minutes after the prior cycle becomes inactive.');
+lbAssert(str_contains($tmr,'OnUnitInactiveSec=8h'),'Browser timer must run every eight hours after the prior cycle becomes inactive.');
+lbAssert(!str_contains($tmr,'OnUnitInactiveSec=5m'),'Legacy five-minute Seller Central cadence must not return.');
 lbAssert(!str_contains($tmr,'OnCalendar='),'Browser timer must not regress to twice-daily-only polling.');
 lbAssert(str_contains($tmr,'Persistent=true'),'Missed browser cycle must recover after downtime.');
 $prov=(string)file_get_contents($provision);
