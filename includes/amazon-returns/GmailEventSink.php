@@ -57,6 +57,7 @@ final class SvAmazonGmailEventSink
             }
             return $patch;
         }
+        if ($type === 'SELLER_SUPPORT_EMAIL') return [];
         if ($type === 'FBA_SHIPMENT_EMAIL') {
             return ['program'=>SvAmazonReturnPrograms::FBA];
         }
@@ -124,6 +125,18 @@ final class SvAmazonGmailEventSink
         if ($programEvidence !== null) $p->events->append($programEvidence);
         $quantityEvidence = self::refundQuantityEvidence($caseId, $event, $orderId, $occurredAt, $sourceEventId);
         if ($quantityEvidence !== null) $p->events->append($quantityEvidence);
+        if (strtoupper(trim((string)($event['event_type'] ?? ''))) === 'SELLER_SUPPORT_EMAIL') {
+            $supportCaseId=trim((string)($event['support_case_id'] ?? ''));
+            if (preg_match('/^\\d{8,14}$/D',$supportCaseId)===1) {
+                $p->outbox->enqueue('SELLER_SUPPORT_READ',$caseId,[
+                    'case_id'=>$caseId,
+                    'order_id'=>$orderId,
+                    'support_case_id'=>$supportCaseId,
+                    'read_only'=>true,
+                    'discovered_via'=>'GMAIL',
+                ],hash('sha256','seller-support-email-read|'.$caseId.'|'.$supportCaseId.'|'.$sourceEventId));
+            }
+        }
         return $primaryId;
     }
 
@@ -285,6 +298,9 @@ final class SvAmazonGmailEventSink
         $payload = [
             'order_id'=>$orderId,
             'safe_t_id'=>$event['safe_t_id'] ?? null,
+            'support_case_id'=>$event['support_case_id'] ?? null,
+            'seller_action_required'=>($event['seller_action_required'] ?? false)===true,
+            'support_excerpt'=>$event['support_excerpt'] ?? null,
             'amount'=>$event['amount'] ?? null,
             'currency'=>$event['currency'] ?? null,
             'return_tracking_ids'=>$returnTracking!==''?[strtoupper($returnTracking)]:[],

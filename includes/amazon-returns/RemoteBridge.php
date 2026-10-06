@@ -77,6 +77,11 @@ final class SvAmazonReturnsRemoteBridge
             throw new InvalidArgumentException('Seller Central bridge job lacks server-bound ownership.');
         }
         $payload = is_array($row['payload'] ?? null) ? $row['payload'] : [];
+        $supportCaseId=self::nullableString($case['support_case_id'] ?? null);
+        if(in_array($kind,['SELLER_SUPPORT_READ','SELLER_SUPPORT_UPDATE'],true)){
+            $scoped=self::nullableString($payload['support_case_id'] ?? null);
+            if($scoped!==null && preg_match('/^\\d{8,14}$/D',$scoped)===1)$supportCaseId=$scoped;
+        }
         return [
             'tenant_id'=>$tenantId,
             'amazon_connection_id'=>$connectionId,
@@ -96,7 +101,7 @@ final class SvAmazonReturnsRemoteBridge
                 'physical_status' => (string)($case['physical_status'] ?? ''),
                 'refund_at' => self::nullableString($case['refund_at'] ?? null),
                 'safe_t_id' => self::nullableString($case['safe_t_id'] ?? null),
-                'support_case_id' => self::nullableString($case['support_case_id'] ?? null),
+                'support_case_id' => $supportCaseId,
                 'quantity_refunded' => (int)($case['quantity_refunded'] ?? 0),
                 'quantity_received' => (int)($case['quantity_received'] ?? 0),
             ],
