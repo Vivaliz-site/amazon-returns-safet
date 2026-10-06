@@ -22,6 +22,28 @@ if(!str_contains($runtimeSource,"'known_action_wake'")){
 if(!str_contains($daemon,"'next_action_at'=>null")){
     throw new RuntimeException('Scheduler must clear a consumed next-action timestamp to avoid repeated due-trigger execution.');
 }
+$sellerTimer=(string)file_get_contents(__DIR__.'/../deploy/systemd/amazon-returns-seller-central-browser.timer');
+if(!str_contains($sellerTimer,'OnUnitInactiveSec=12h')){
+    throw new RuntimeException('Seller Central browser cadence must remain aligned with the approved 12-hour business polling schedule.');
+}
+if(str_contains($sellerTimer,'OnUnitInactiveSec=5m')){
+    throw new RuntimeException('Legacy five-minute Seller Central polling must not return.');
+}
+$deployService=(string)file_get_contents(__DIR__.'/../deploy/systemd/amazon-returns-deploy.service');
+$deploySource=(string)file_get_contents(__DIR__.'/../scripts/ensure-auto-deploy-source.sh');
+foreach([$deployService,$deploySource] as $sourceConfig){
+    if(!str_contains($sourceConfig,'/home/ubuntu/amazon-returns-auto-deploy-source')){
+        throw new RuntimeException('Auto-deploy must use a dedicated clean checkout isolated from developer worktrees.');
+    }
+    if(str_contains($sourceConfig,'/home/ubuntu/amazon-returns-deploy-source')){
+        throw new RuntimeException('Developer checkout must not be reused as the auto-deploy source.');
+    }
+}
+$decisionEngine=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/SafeTDecisionEngine.php');
+if(str_contains($decisionEngine,"$checkedAt->modify('+2 hours')->format('Y-m-d H:i:s')")){
+    throw new RuntimeException('Internal FBA finance cooldown must not create a synthetic known-date wake that bypasses the 12-hour cadence.');
+}
+
 $deployTimer=(string)file_get_contents(__DIR__.'/../deploy/systemd/amazon-returns-deploy.timer');
 if(!str_contains($deployTimer,'OnUnitActiveSec=300')){
     throw new RuntimeException('Automatic deploy polling must run every five minutes after CI-safe deploy hardening.');
