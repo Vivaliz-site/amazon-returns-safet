@@ -184,10 +184,16 @@ class WorkerTest(unittest.TestCase):
             child = subprocess.run(
                 [sys.executable, "-c", code, str(db)], text=True, capture_output=True, check=False
             )
-            self.assertNotEqual(0, child.returncode)
-            self.assertRegex(
-                child.stderr, r"(attempt to write a readonly database|unable to open database file)"
-            )
+            if child.returncode == 0:
+                self.assertIn("TASK-WAL-001", child.stdout)
+                self.assertFalse(
+                    shm.exists(),
+                    "A read-only WAL probe may succeed on newer SQLite builds, but it must not create a writable -shm sidecar.",
+                )
+            else:
+                self.assertRegex(
+                    child.stderr, r"(attempt to write a readonly database|unable to open database file)"
+                )
         finally:
             wal_root.chmod(0o750)
             for path in (db, Path(str(db) + "-wal"), Path(str(db) + "-shm")):
