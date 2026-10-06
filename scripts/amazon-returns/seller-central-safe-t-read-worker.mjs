@@ -513,8 +513,10 @@ async function main() {
   }
   try {
     if (process.argv.includes('--drain')) {
-      const discovery = await discoverActionableSupportCases();
-      log('support_action_discovery', { status: discovery.status || 'OK' });
+      if (BROWSER && PROFILE) {
+        const discovery = await discoverActionableSupportCases();
+        log('support_action_discovery', { status: discovery.status || 'OK' });
+      }
       while (!quiesceRequested() && await runOnce()) {}
       return;
     }
