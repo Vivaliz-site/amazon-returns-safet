@@ -40,14 +40,17 @@ final class SvAmazonReturnsScheduler
             $reason=$action==='SAFE_T_EMAIL_REPLY'
                 ? 'SAFE_T_FOLLOWUP_ESCALATED_VIA_SELLER_CENTRAL'
                 : 'SAFE_T_REVIEW_ESCALATED_VIA_SELLER_CENTRAL';
+            $supportRoute=strtoupper(trim((string)($case['program']??'')))==='FBA'
+                ? 'FBA_RETURNS_REIMBURSEMENT'
+                : 'GENERAL_ORDER_SUPPORT';
             $replacement=[
                 'action'=>$supportId!==''?'SELLER_SUPPORT_UPDATE':'SELLER_SUPPORT_OPEN',
                 'reason'=>$reason,
                 'case_id'=>$caseId,
-                'idempotency_key'=>hash('sha256','seller-central-only|'.$action.'|'.$caseId.'|'.$safeTId.'|'.$supportId.'|'.$scope),
+                'support_route'=>$supportRoute,
+                'idempotency_key'=>hash('sha256','seller-central-only|'.$action.'|'.$caseId.'|'.$safeTId.'|'.$supportId.'|'.$supportRoute.'|'.$scope),
             ];
             if($supportId!=='')$replacement['support_case_id']=$supportId;
-            else $replacement['support_route']='GENERAL_ORDER_SUPPORT';
             return array_replace($decision,$replacement);
         }
         if($action!=='SAFE_T_APPEAL')return $decision;
