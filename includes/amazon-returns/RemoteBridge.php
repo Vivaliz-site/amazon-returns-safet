@@ -129,17 +129,22 @@ final class SvAmazonReturnsRemoteBridge
         }
         $submitted = ($result['submitted'] ?? false) === true;
         $externalId = self::nullableString($result['external_id'] ?? null);
-        if ($submitted && $externalId === null) {
+        $retrySafe = ($result['retry_safe'] ?? false) === true;
+        $reason = self::nullableString($result['reason'] ?? null);
+        $submittedWithoutReadback = $status === 'UI_DRIFT'
+            && $retrySafe
+            && $reason === 'SUPPORT_WRITE_WITHOUT_READBACK_ID';
+        if ($submitted && $externalId === null && !$submittedWithoutReadback) {
             throw new RuntimeException('Submitted Seller Central write requires external read-back ID.');
         }
         return [
             'status' => $status,
             'submitted' => $submitted,
             'external_id' => $externalId,
-            'retry_safe' => ($result['retry_safe'] ?? false) === true,
+            'retry_safe' => $retrySafe,
             'block_reason' => self::nullableString($result['block_reason'] ?? null),
             'next_allowed_at' => self::nullableString($result['next_allowed_at'] ?? null),
-            'reason' => self::nullableString($result['reason'] ?? null),
+            'reason' => $reason,
             'evidence' => is_array($result['evidence'] ?? null) ? $result['evidence'] : [],
             'support' => is_array($result['support'] ?? null) ? SvAmazonSellerSupportStatus::normalize($result['support']) : null,
             'read' => is_array($result['read'] ?? null) ? SvAmazonSafeTStatus::normalize($result['read']) : null,
