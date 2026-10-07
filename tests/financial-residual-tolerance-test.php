@@ -13,7 +13,7 @@ $under=$reconciler->reconcile($case,[frtTx('under-fifteen','86.00')]);
 frtSame('RECOVERED',$under['state']??null,'A released credit leaving a residual below 15 percent must be treated as settled.');
 frtSame('0.00',$under['outstanding_amount']??null,'A tolerated residual must not drive another recovery claim.');
 frtSame(true,$under['residual_tolerance_applied']??null,'Sub-15-percent settlement must be auditable.');
-frtSame('4.00',$under['tolerated_residual_amount']??null,'The tolerated residual amount must be retained for audit.');
+frtSame('14.00',$under['tolerated_residual_amount']??null,'The tolerated residual amount must be retained for audit.');
 
 $multi=$case;
 $multi['quantity_ordered']=2;
