@@ -56,7 +56,7 @@ try{
         $config=new SvAmazonReturnsConfig();
         $context=SvAmazonTenantRegistry::resolveCurrent($db,$config);
         $p=SvAmazonTenantPersistence::create($db,$context);
-        foreach($events as $event)$persisted[]=SvAmazonGmailEventSink::persist($p,$event);
+        foreach($events as $event)$persisted[]=SvAmazonGmailEventSink::persist($p,$event,$config->fulfillmentProgramOverride());
     }
     $safeEvents=array_map(static fn(array $event):array=>[
         'event_type'=>$event['event_type']??null,
