@@ -120,17 +120,30 @@ rbSame('DENIED', $readValid['read']['claim_status'], 'SAFE-T status read must su
 rbSame('2026-09-08 16:23:00', $readValid['read']['appeal_deadline_at'], 'Seller Central appeal deadline must normalize to UTC.');
 rbAssert(preg_match('/^[a-f0-9]{64}$/', (string)$readValid['read']['decision_fingerprint']) === 1, 'Decision text must receive a deterministic fingerprint.');
 
-$thrown = false;
-try {
-    SvAmazonReturnsRemoteBridge::validateResult([
-        'status' => 'ACCEPTED',
-        'submitted' => true,
-        'external_id' => null,
-    ]);
-} catch (RuntimeException) {
-    $thrown = true;
+$uncertainWrite = SvAmazonReturnsRemoteBridge::validateResult([
+    'status' => 'UI_DRIFT',
+    'submitted' => true,
+    'external_id' => null,
+    'retry_safe' => true,
+    'reason' => 'SUPPORT_WRITE_WITHOUT_READBACK_ID',
+]);
+rbSame('UI_DRIFT', $uncertainWrite['status'], 'Post-write read-back uncertainty must be accepted as UI drift.');
+rbSame(true, $uncertainWrite['submitted'], 'Post-write uncertainty must preserve that the Seller Central write may already have been submitted.');
+rbSame(null, $uncertainWrite['external_id'], 'Unreconciled post-write result must preserve a null external ID.');
+
+foreach ([
+    ['status'=>'ACCEPTED','submitted'=>true,'external_id'=>null,'retry_safe'=>true,'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID'],
+    ['status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>false,'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID'],
+    ['status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>true,'reason'=>'SUPPORT_REPLY_FIELD_MISSING'],
+] as $invalidSubmittedWithoutId) {
+    $thrown = false;
+    try {
+        SvAmazonReturnsRemoteBridge::validateResult($invalidSubmittedWithoutId);
+    } catch (RuntimeException) {
+        $thrown = true;
+    }
+    rbAssert($thrown, 'Only retry-safe SUPPORT_WRITE_WITHOUT_READBACK_ID UI drift may be submitted without an external ID.');
 }
-rbAssert($thrown, 'Submitted write without external read-back ID must be rejected.');
 
 $thrown = false;
 try {
