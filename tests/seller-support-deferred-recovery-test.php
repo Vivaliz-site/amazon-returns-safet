@@ -78,6 +78,34 @@ ssdrAssert(str_contains($sql,'last_error IN'),
 ssdrAssert(!str_contains($sql,"last_error LIKE 'UI_DRIFT:%'"),
     'Recovery must not broadly rearm post-write or otherwise uncertain UI drift failures, including SAFE-T.');
 
+ssdrAssert(method_exists($outbox,'reactivateLegacyEmptyFallbackSupportWrites'),
+    'Outbox stack recovery must expose a one-shot migration for the legacy empty-fallback Seller Support supersession.');
+$db->queue(['row_count'=>2]);
+$legacyReactivated=$outbox->reactivateLegacyEmptyFallbackSupportWrites();
+ssdrSame(2,$legacyReactivated,'Legacy empty-fallback recovery must report only the Seller Support rows rearmed.');
+$legacyExec=$db->executed[array_key_last($db->executed)]??[];
+$legacySql=(string)($legacyExec['sql']??'');$legacyParams=$legacyExec['params']??[];
+foreach(['tenant_id','amazon_connection_id',"status='SUPERSEDED'","kind IN ('SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE')",'attempt_count>0','LEFT(last_error,:legacy_empty_fallback_length)=:legacy_empty_fallback'] as $needle){
+    ssdrAssert(str_contains($legacySql,$needle),'Legacy empty-fallback recovery SQL missing guard: '.$needle);
+}
+ssdrAssert(!str_contains($legacySql,'last_error LIKE'),
+    'Legacy empty-fallback recovery must compare the literal prefix, not SQL wildcard syntax.');
+$legacyWherePos=strpos($legacySql,' WHERE ');
+$legacySet=$legacyWherePos===false?$legacySql:substr($legacySql,0,$legacyWherePos);
+foreach(["status='PENDING'",'available_at=UTC_TIMESTAMP()','locked_at=NULL'] as $needle){
+    ssdrAssert(str_contains($legacySet,$needle),'Legacy empty-fallback recovery SET missing: '.$needle);
+}
+foreach(['attempt_count','payload_json','idempotency_key','last_error='] as $forbidden){
+    ssdrAssert(!str_contains($legacySet,$forbidden),'Legacy recovery must preserve retry/idempotency evidence: '.$forbidden);
+}
+$legacyPrefix='RECONCILED_EMPTY_FALLBACK_CASE_NO_CONTACT:';
+ssdrSame($legacyPrefix,$legacyParams[':legacy_empty_fallback']??null,
+    'Only the proven legacy empty-fallback supersession may be rearmed.');
+ssdrSame(strlen($legacyPrefix),$legacyParams[':legacy_empty_fallback_length']??null,
+    'Literal legacy prefix comparison must bind its exact length.');
+ssdrAssert(!str_contains($legacySql,'SUPERSEDED_BY_CURRENT_DECISION'),
+    'Legacy empty-fallback migration must remain separate from ordinary decision supersession reactivation.');
+
 $runtimeSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
 foreach(['TenantOutbox.php','BridgeService.php','RemoteBridge.php','seller-central-bridge-worker.mjs'] as $file){
     ssdrAssert(str_contains($runtimeSource,$file),'Outbox stack revision must fingerprint '.$file.'.');
@@ -86,6 +114,8 @@ $daemonSource=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daem
 ssdrAssert(str_contains($daemonSource,'outboxStackChanged'),'Daemon must detect an outbox execution-stack revision change.');
 ssdrAssert(str_contains($daemonSource,'reactivateSafeDeferredExternalWrites'),
     'Daemon must rearm only enumerated safe deferred external-write rows after a fixed write stack is deployed.');
+ssdrAssert(str_contains($daemonSource,'reactivateLegacyEmptyFallbackSupportWrites'),
+    'Daemon outbox-stack recovery must run the bounded legacy empty-fallback migration exactly on stack revision change.');
 ssdrAssert(str_contains($daemonSource,"'outbox_recovery'"),'Daemon must expose recovery evidence in runtime results.');
 ssdrAssert(str_contains($daemonSource,'($results[\'outbox_recovery\'][\'status\'] ?? null)===\'OK\''),
     'Daemon must not acknowledge the new outbox revision when recovery failed.');

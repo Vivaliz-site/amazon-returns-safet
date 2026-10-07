@@ -282,6 +282,26 @@ final class SvAmazonTenantReturnsOutbox
         return max(0,$stmt->rowCount());
     }
 
+    public function reactivateLegacyEmptyFallbackSupportWrites(): int
+    {
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_outbox "
+            . "SET status='PENDING',available_at=UTC_TIMESTAMP(),locked_at=NULL,updated_at=UTC_TIMESTAMP() "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND status='SUPERSEDED' "
+            . "AND kind IN ('SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE') "
+            . "AND attempt_count>0 AND attempt_count<:max_attempts "
+            . "AND LEFT(last_error,:legacy_empty_fallback_length)=:legacy_empty_fallback"
+        );
+        $legacyPrefix='RECONCILED_EMPTY_FALLBACK_CASE_NO_CONTACT:';
+        $stmt->execute($this->scopeParams([
+            ':max_attempts'=>self::MAX_ATTEMPTS,
+            ':legacy_empty_fallback_length'=>strlen($legacyPrefix),
+            ':legacy_empty_fallback'=>$legacyPrefix,
+        ]));
+        return max(0,$stmt->rowCount());
+    }
+
     public function hasActive(int $caseId,string $kind): bool
     {
         $stmt=$this->prepare(

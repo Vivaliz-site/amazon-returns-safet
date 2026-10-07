@@ -103,9 +103,13 @@ class SvAmazonReturnsDaemon
         $results=['bootstrap'=>$bootstrap];
         if($outboxStackChanged){
             try{
+                $deferredReactivated=$this->persistence->outbox->reactivateSafeDeferredExternalWrites();
+                $legacyEmptyFallbackReactivated=$this->persistence->outbox->reactivateLegacyEmptyFallbackSupportWrites();
                 $results['outbox_recovery']=[
                     'status'=>'OK',
-                    'reactivated'=>$this->persistence->outbox->reactivateSafeDeferredExternalWrites(),
+                    'reactivated'=>$deferredReactivated+$legacyEmptyFallbackReactivated,
+                    'reactivated_deferred'=>$deferredReactivated,
+                    'reactivated_legacy_empty_fallback'=>$legacyEmptyFallbackReactivated,
                 ];
             }catch(Throwable $e){
                 $results['outbox_recovery']=[
