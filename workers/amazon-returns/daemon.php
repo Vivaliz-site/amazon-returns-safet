@@ -541,7 +541,7 @@ class SvAmazonReturnsDaemon
             $policy=SvAmazonReturnPolicyEngine::evaluate($projected,$now);
             $timeline=$this->persistence->events->eventsForCase($caseId);
             $decision=$coordinator->nextAction($projected,$timeline,$policy,$now);
-            $decision=SvAmazonReturnsScheduler::normalizeRecoveryChannel($projected,$decision,$now);
+            $decision=SvAmazonReturnsScheduler::normalizeRecoveryChannel($projected,$decision,$now,$timeline);
             $action=(string)($decision['action'] ?? 'WAIT');
             $isWrite=SvAmazonReturnsScheduler::isWriteAction($decision);
             $keepKind=null;

@@ -26,7 +26,7 @@ final class SvAmazonReturnsScheduler
         return in_array(strtoupper(trim($action)), ['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY'], true) ? 'gmail' : 'seller_central_bridge';
     }
 
-    public static function normalizeRecoveryChannel(array $case,array $decision,DateTimeImmutable $now): array
+    public static function normalizeRecoveryChannel(array $case,array $decision,DateTimeImmutable $now,array $timeline=[]): array
     {
         if(SvAmazonRecoveryWindow::expired($case,$now)){
             return ['action'=>'WAIT','reason'=>'RECOVERY_WINDOW_EXPIRED','case_id'=>(int)($case['id']??0)];
@@ -47,6 +47,15 @@ final class SvAmazonReturnsScheduler
             ];
         }
         $scope=(string)($decision['resume_scope']??$decision['review_scope']??$decision['idempotency_key']??'appeal-expired');
+        $latestMismatchId=0;
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==(int)($case['id']??0))continue;
+            if((string)($event['event_type']??'')!=='SELLER_SUPPORT_IDENTITY_MISMATCH')continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if(($payload['binding_cleared']??false)!==true)continue;
+            $latestMismatchId=max($latestMismatchId,(int)($event['id']??0));
+        }
+        if($latestMismatchId>0)$scope.='|identity-mismatch:'.$latestMismatchId;
         return array_replace($decision,[
             'action'=>'SELLER_SUPPORT_OPEN',
             'reason'=>'OFFICIAL_APPEAL_WINDOW_EXPIRED_RECOVERY_CONTINUES',
@@ -70,7 +79,7 @@ final class SvAmazonReturnsScheduler
     public function scheduleDecision(SvAmazonTenantReturnsOutbox $target,array $case,array $decision,array $timeline=[],?DateTimeImmutable $now=null): array
     {
         $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
-        $decision=self::normalizeRecoveryChannel($case,$decision,$now);
+        $decision=self::normalizeRecoveryChannel($case,$decision,$now,$timeline);
         $read=self::isReadAction($decision);
         if (!$read && !self::isWriteAction($decision)) return ['decision'=>$decision,'outbox_id'=>null];
         $key = (string)($decision['idempotency_key'] ?? '');
