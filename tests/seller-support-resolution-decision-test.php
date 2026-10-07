@@ -148,4 +148,56 @@ $noSafeTIdResult=$engine->nextAction($noSafeTIdCase,[$noSafeTIdObserved],$policy
 ssrdSame('BLOCKED_REVIEW',$noSafeTIdResult['action']??null,'Support-directed email review without a linked SAFE-T ID must block for human review, never send an email review with nothing to reference.');
 ssrdSame('SUPPORT_RESOLUTION_SAFE_T_ID_MISSING',$noSafeTIdResult['reason']??null,'Missing SAFE-T ID on a support-directed email review must be named explicitly.');
 
+
+
+// A newer active sibling must supersede an older terminal sibling that still
+// looks semantically actionable. Otherwise the engine keeps targeting a
+// closed case while Amazon is already working the newer sibling.
+$newerActiveSiblingCase=$case;
+$newerActiveSiblingCase['id']=8;
+$newerActiveSiblingCase['amazon_order_id']='702-3172035-4814644';
+$newerActiveSiblingCase['support_case_id']='22403466041';
+$newerActiveSiblingCase['state']='SUPPORT_ESCALATION';
+$newerActiveSiblingCase['refund_at']='2026-08-20 12:00:00';
+$newerActiveSiblingCase['seller_debit_at']='2026-08-20 12:00:00';
+$newerActiveSiblingCase['expected_reimbursement_amount']='72.78';
+$newerActiveSiblingCase['reconciled_credit_amount']='0.00';
+
+$newerActiveFinance=$finance;
+$newerActiveFinance['id']=3001;
+$newerActiveFinance['case_id']=8;
+$newerActiveFinance['occurred_at']='2026-10-07 02:08:00';
+$newerActiveFinance['payload']['outstanding_amount']='72.78';
+
+$staleClosedSibling=[
+    'id'=>3002,'case_id'=>8,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 02:10:00','payload'=>[
+        'case_id'=>'22403466041','case_status'=>'RESOLVED',
+        'latest_text'=>"Because we haven't received a response from you, we assume that your issue is resolved.",
+    ],
+];
+$newerActiveSibling=[
+    'id'=>3003,'case_id'=>8,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 02:11:00','payload'=>[
+        'case_id'=>'22403666441','case_status'=>'PENDINGAMAZONACTION',
+        'latest_text'=>'A Amazon está analisando o ressarcimento deste pedido.',
+    ],
+];
+$newerActiveSiblingDecision=$engine->nextAction(
+    $newerActiveSiblingCase,
+    [$newerActiveFinance,$staleClosedSibling,$newerActiveSibling],
+    $policy,
+    new DateTimeImmutable('2026-10-07 02:12:00',new DateTimeZone('UTC'))
+);
+ssrdSame(
+    'WAIT',
+    $newerActiveSiblingDecision['action']??null,
+    'A newer active Seller Support sibling must suppress a stale closed sibling response.'
+);
+ssrdSame(
+    'SUPPORT_ESCALATION_ALREADY_ACTIVE',
+    $newerActiveSiblingDecision['reason']??null,
+    'The newer active sibling must remain authoritative while Amazon is acting.'
+);
+
 echo "seller-support-resolution-decision-test: OK\n";

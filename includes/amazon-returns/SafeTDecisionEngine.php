@@ -525,6 +525,13 @@ final class SvAmazonSafeTDecisionEngine
             $existing=$latestBySupport[$mapKey]??null;
             if(!is_array($existing) || $candidate>$existing['rank'])$latestBySupport[$mapKey]=['rank'=>$candidate,'event'=>$event,'support_id'=>$supportId,'valid'=>$validSupportId];
         }
+        $latestActiveRank=[-1,0];
+        foreach($latestBySupport as $entry){
+            $event=$entry['event'];$payload=is_array($event['payload']??null)?$event['payload']:[];
+            try{$resolution=SvAmazonSellerSupportStatus::resolution($payload);}catch(Throwable){continue;}
+            if($resolution==='ACTIVE' && $entry['rank']>$latestActiveRank)$latestActiveRank=$entry['rank'];
+        }
+
         $best=null;$bestRank=[-1,0,0];
         foreach($latestBySupport as $entry){
             $supportId=(string)($entry['support_id']??'');
@@ -532,6 +539,8 @@ final class SvAmazonSafeTDecisionEngine
             try{$resolution=SvAmazonSellerSupportStatus::resolution($payload);}catch(Throwable){$resolution='INVALID';}
             if($resolution==='INVALID'){
                 $awaitingWrite=true;$priority=4;
+            }elseif($resolution!=='ACTIVE' && $latestActiveRank>$entry['rank']){
+                $awaitingWrite=false;$priority=0;
             }else{
                 $awaitingWrite=$resolution!=='ACTIVE' && !$this->supportWriteAcceptedAfterObservation($case,$timeline,$event,$supportId);
                 $priority=$awaitingWrite?3:($supportId===$primary?2:1);
