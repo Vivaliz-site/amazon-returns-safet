@@ -1308,10 +1308,43 @@ async function currentSupportCaseId(cdp) {
   return text(await cdp.evaluate(`(()=>{const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){for(const a of d.querySelectorAll('a[href*="caseID="]')){const m=(a.href||'').match(/[?&]caseID=(\\d{8,14})/);if(m)return m[1]}const body=d.body?.innerText||'';const m=body.match(/(?:ID do caso|Case ID)[:\\s#-]*(\\d{8,14})/i);if(m)return m[1]}return ''})()`));
 }
 
+function supportReplyCanonicalText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function supportReplyEquivalentText(haystack, narrative) {
+  const rawBody = String(haystack ?? '');
+  const rawExpected = String(narrative ?? '');
+  const body = supportReplyCanonicalText(rawBody);
+  const expected = supportReplyCanonicalText(rawExpected);
+  if (!body || !expected) return false;
+  if (body.includes(expected)) return true;
+
+  const orderId = rawExpected.match(/\b\d{3}-\d{7}-\d{7}\b/)?.[0] || '';
+  if (orderId && !rawBody.includes(orderId)) return false;
+
+  const clauses = rawExpected
+    .split(/[.!?]+/)
+    .map(supportReplyCanonicalText)
+    .filter(clause => clause.length >= 24);
+  if (clauses.length < 3) return false;
+
+  const matched = clauses.filter(clause => body.includes(clause)).length;
+  return matched >= 3 && (matched / clauses.length) >= 0.6;
+}
+
 async function supportCaseContainsText(cdp, caseId, needle) {
   const candidate=text(caseId), expected=text(needle);
   if(!/^\d{8,14}$/.test(candidate)||!expected)return false;
-  return (await cdp.evaluate(`(async()=>{try{const response=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(${JSON.stringify(candidate)})+'&timeZone=UTC&pageSize=50',{credentials:'include'});if(!response.ok)return false;const detail=await response.json();return JSON.stringify(detail||{}).includes(${JSON.stringify(expected)})}catch{return false}})()`))===true;
+  const canonicalSource=supportReplyCanonicalText.toString();
+  const equivalentSource=supportReplyEquivalentText.toString();
+  return (await cdp.evaluate(`(async()=>{try{const supportReplyCanonicalText=${canonicalSource};const supportReplyEquivalentText=${equivalentSource};const response=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(${JSON.stringify(candidate)})+'&timeZone=UTC&pageSize=50',{credentials:'include'});if(!response.ok)return false;const detail=await response.json();return supportReplyEquivalentText(JSON.stringify(detail||{}),${JSON.stringify(expected)})}catch{return false}})()`))===true;
 }
 
 async function waitForSupportCaseText(cdp, caseId, needle, timeoutMs=20000) {
