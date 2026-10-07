@@ -149,6 +149,10 @@ final class SvAmazonReturnPrograms
         $observed=strtoupper(trim($observed));
         if(!in_array($observed,self::all(),true))$observed=self::UNKNOWN;
         $override=strtoupper(trim($override));
+        if($override===''){
+            $runtime=getenv('AMAZON_RETURNS_FULFILLMENT_PROGRAM_OVERRIDE');
+            $override=is_string($runtime)?strtoupper(trim($runtime)):'';
+        }
         if($override==='')return $observed;
         if($override!==self::FBA_ONSITE){
             throw new InvalidArgumentException('Unsupported Amazon Returns fulfillment program override.');
