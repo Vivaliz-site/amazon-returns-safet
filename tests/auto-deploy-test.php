@@ -32,4 +32,20 @@ adAssert($ciGateStart!==false && $ciSkip!==false,'CI-not-green gate must remain 
 $ciGate=substr($s,(int)$ciGateStart,(int)$ciSkip-(int)$ciGateStart);
 adAssert(str_contains($ciGate,'retry_seller_central_browser_if_failed'),'A failed current Seller Central runtime must recover even when the candidate main SHA is not CI-green.');
 
+$provisionPos=strpos($s,'"$repo/scripts/provision-production.sh"');
+$daemonRestartPos=strpos($s,'systemctl restart amazon-returns-safet.service',$provisionPos===false?0:$provisionPos);
+$browserKickPos=strpos($s,"\nkick_seller_central_browser\n",$provisionPos===false?0:$provisionPos);
+adAssert(
+    $provisionPos!==false
+    && $daemonRestartPos!==false
+    && $browserKickPos!==false
+    && $provisionPos<$daemonRestartPos
+    && $daemonRestartPos<$browserKickPos,
+    'Successful deploy must restart the long-lived Amazon Returns daemon after promotion and before the Seller Central kick.'
+);
+adAssert(
+    str_contains($s,'systemctl is-active --quiet amazon-returns-safet.service'),
+    'Auto-deploy must verify the restarted Amazon Returns daemon is active.'
+);
+
 echo "auto-deploy-test: OK\n";
