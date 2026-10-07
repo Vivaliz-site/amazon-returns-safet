@@ -1381,7 +1381,7 @@ async function contactSupportAndReadBack(cdp, job) {
     if (!caseId) await sleep(4000);
   }
   if (!/^\d{8,14}$/.test(caseId)) {
-    return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
   }
   return bridgeResult('ACCEPTED', {
     submitted: true,
@@ -1442,7 +1442,7 @@ async function submitDirectSupportCaseAndReadBack(cdp, job, narrative) {
     if (!caseId) await sleep(3000);
   }
   if (!/^\d{8,14}$/.test(caseId)) {
-    return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
   }
   return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason: 'SUPPORT_CASE_OPENED_DIRECTLY', evidence: await evidence(cdp, 'help-v1') });
 }
@@ -1578,10 +1578,16 @@ async function supportOpen(cdp, job, options = {}) {
   if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION' && physicalStatus === 'RECEIVED_OK') {
     return bridgeResult('SUPERSEDED', { reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN', retry_safe: false });
   }
-  const retryReconciliation = Number(job.attempt_count || 0) > 1 && options.forceFreshCase !== true;
+  const retryReconciliation = Number(job.attempt_count || 0) > 1;
+  const lookupOptions = retryReconciliation ? { includeTerminal: true } : {};
+  const priorSupportCaseId = text(job.case?.support_case_id);
+  const reconcileKnownCase = options.forceFreshCase !== true;
+  if (!reconcileKnownCase && /^\d{8,14}$/.test(priorSupportCaseId)) {
+    lookupOptions.excludeCaseIds = [priorSupportCaseId];
+  }
   let existing;
   try {
-    existing = await findSupportCase(cdp, job, retryReconciliation ? { includeTerminal: true } : {});
+    existing = await findSupportCase(cdp, job, lookupOptions);
   } catch (error) {
     if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
       return bridgeResult('UI_DRIFT', {
@@ -1870,6 +1876,10 @@ async function supportUpdate(cdp, job) {
   if (!composerReady) {
     const latestSupportPage = await cdp.pageState(18000);
     if (sellerSupportCaseLogUnavailable(latestSupportPage?.text)) return sellerSupportUnavailableResult();
+    const supportRoute = supportRouteFor(job);
+    if (supportRoute) {
+      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute });
+    }
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
   }
   if (!(await cdp.fillDeepSupportTextarea(narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });

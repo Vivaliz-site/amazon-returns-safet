@@ -55,6 +55,15 @@ ssdrSame('UI_DRIFT: SAFE_T_SUBREASON_OPTION_MISSING',$params[':safe_t_subreason_
 ssdrSame('UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE',$params[':lookup_error']??null,
     'Only the known pre-write lookup failure may be rearmed for SELLER_SUPPORT_OPEN.');
 foreach([
+    ':support_open_write_without_readback'=>'UI_DRIFT: SUPPORT_WRITE_WITHOUT_READBACK_ID',
+    ':support_open_legacy_write_without_readback'=>'FAILED: SUPPORT_WRITE_WITHOUT_READBACK_ID',
+    ':support_update_write_without_readback'=>'UI_DRIFT: SUPPORT_WRITE_WITHOUT_READBACK_ID',
+    ':support_update_legacy_write_without_readback'=>'FAILED: SUPPORT_WRITE_WITHOUT_READBACK_ID',
+] as $parameter=>$error){
+    ssdrSame($error,$params[$parameter]??null,
+        'Potentially submitted Seller Support creates must be rearmed only for guarded reconciliation after a changed write stack.');
+}
+foreach([
     ':reply_send_missing'=>'UI_DRIFT: SUPPORT_REPLY_SEND_MISSING',
     ':reply_field_missing'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_MISSING',
     ':reply_field_not_writable'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_NOT_WRITABLE',
