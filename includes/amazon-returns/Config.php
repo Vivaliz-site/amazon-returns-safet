@@ -32,6 +32,16 @@ final class SvAmazonReturnsConfig
         return in_array($mode, ['development','dry-run','shadow','production'], true) ? $mode : 'dry-run';
     }
 
+    public function fulfillmentProgramOverride(): string
+    {
+        $program=strtoupper(trim($this->get('AMAZON_RETURNS_FULFILLMENT_PROGRAM_OVERRIDE','')));
+        if($program==='')return '';
+        if($program!=='FBA_ONSITE'){
+            throw new UnexpectedValueException('Unsupported Amazon Returns fulfillment program override.');
+        }
+        return $program;
+    }
+
     public function flag(string $name): bool
     {
         $map = [
