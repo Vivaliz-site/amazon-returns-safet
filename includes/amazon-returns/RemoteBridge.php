@@ -64,6 +64,17 @@ final class SvAmazonReturnsRemoteBridge
         return hash_equals($expected, trim((string)$m[1]));
     }
 
+    public static function staleScopedSupportUpdate(array $row, array $case): bool
+    {
+        if (strtoupper(trim((string)($row['kind'] ?? ''))) !== 'SELLER_SUPPORT_UPDATE') return false;
+        $payload = is_array($row['payload'] ?? null) ? $row['payload'] : [];
+        $scoped = self::nullableString($payload['support_case_id'] ?? null);
+        $current = self::nullableString($case['support_case_id'] ?? null);
+        if ($scoped === null || $current === null) return false;
+        if (preg_match('/^\\d{8,14}$/D', $scoped) !== 1 || preg_match('/^\\d{8,14}$/D', $current) !== 1) return false;
+        return !hash_equals($scoped, $current);
+    }
+
     /** @return array<string,mixed> */
     public static function jobEnvelope(array $row, array $case, array $writeFlags): array
     {
