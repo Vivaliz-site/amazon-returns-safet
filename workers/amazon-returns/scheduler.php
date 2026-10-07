@@ -31,7 +31,26 @@ final class SvAmazonReturnsScheduler
         if(SvAmazonRecoveryWindow::expired($case,$now)){
             return ['action'=>'WAIT','reason'=>'RECOVERY_WINDOW_EXPIRED','case_id'=>(int)($case['id']??0)];
         }
-        if(strtoupper(trim((string)($decision['action']??'')))!=='SAFE_T_APPEAL')return $decision;
+        $action=strtoupper(trim((string)($decision['action']??'')));
+        if(in_array($action,['SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY'],true)){
+            $caseId=(int)($case['id']??0);
+            $safeTId=trim((string)($case['safe_t_id']??''));
+            $supportId=trim((string)($case['support_case_id']??''));
+            $scope=(string)($decision['resume_scope']??$decision['review_scope']??$decision['denial_fingerprint']??$decision['idempotency_key']??'');
+            $reason=$action==='SAFE_T_EMAIL_REPLY'
+                ? 'SAFE_T_FOLLOWUP_ESCALATED_VIA_SELLER_CENTRAL'
+                : 'SAFE_T_REVIEW_ESCALATED_VIA_SELLER_CENTRAL';
+            $replacement=[
+                'action'=>$supportId!==''?'SELLER_SUPPORT_UPDATE':'SELLER_SUPPORT_OPEN',
+                'reason'=>$reason,
+                'case_id'=>$caseId,
+                'idempotency_key'=>hash('sha256','seller-central-only|'.$action.'|'.$caseId.'|'.$safeTId.'|'.$supportId.'|'.$scope),
+            ];
+            if($supportId!=='')$replacement['support_case_id']=$supportId;
+            else $replacement['support_route']='GENERAL_ORDER_SUPPORT';
+            return array_replace($decision,$replacement);
+        }
+        if($action!=='SAFE_T_APPEAL')return $decision;
         $deadlineRaw=$case['appeal_deadline_at']??null;
         $deadline=null;
         if(is_string($deadlineRaw) && trim($deadlineRaw)!==''){
