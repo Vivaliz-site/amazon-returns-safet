@@ -36,7 +36,8 @@ ssrrAssert(str_contains($worker,'options.forceFreshCase !== true'),'Fresh-case f
 $nonReopenableStart=strpos($worker,"if (supportBody.includes('answered cases cannot be reopened after 5 days with no activity')");
 $nonReopenableEnd=strpos($worker,'const narrative = narrativeFor(job, 9000);',$nonReopenableStart);
 $nonReopenable=substr($worker,$nonReopenableStart,$nonReopenableEnd-$nonReopenableStart);
-ssrrAssert(str_contains($nonReopenable,"bridgeResult('SUPERSEDED', { reason: 'SUPPORT_CASE_NOT_REOPENABLE'"),'A non-reopenable Seller Support update must fail closed on the existing case.');
+ssrrAssert(str_contains($nonReopenable,"bridgeResult('HUMAN_INTERVENTION_REQUIRED'"),'A non-reopenable Seller Support update must surface an explicit human-intervention status.');
+ssrrAssert(str_contains($nonReopenable,"reason: 'SUPPORT_CASE_NOT_REOPENABLE'"),'The human-intervention result must preserve the non-reopenable support reason.');
 ssrrAssert(!str_contains($nonReopenable,'supportOpen(cdp, job'),'A non-reopenable Seller Support update must not create a duplicate fresh support case.');
 ssrrAssert(str_contains($fba,'SUPPORT_CONTACT_ADDITIONAL_INFO_NOT_WRITABLE'),'FBA recovery must fill the observed required additional-information field before Continue.');
 ssrrAssert(str_contains($worker,'async fillFrameTextareaTrusted(selector, value)'),'Required Seller Support textarea input must use trusted browser input rather than synthetic DOM-only events.');

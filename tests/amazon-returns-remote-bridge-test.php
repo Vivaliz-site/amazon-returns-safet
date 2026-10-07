@@ -131,6 +131,16 @@ rbSame('UI_DRIFT', $uncertainWrite['status'], 'Post-write read-back uncertainty 
 rbSame(true, $uncertainWrite['submitted'], 'Post-write uncertainty must preserve that the Seller Central write may already have been submitted.');
 rbSame(null, $uncertainWrite['external_id'], 'Unreconciled post-write result must preserve a null external ID.');
 
+$humanIntervention = SvAmazonReturnsRemoteBridge::validateResult([
+    'status' => 'HUMAN_INTERVENTION_REQUIRED',
+    'submitted' => false,
+    'external_id' => '22403666441',
+    'retry_safe' => false,
+    'reason' => 'SUPPORT_CASE_NOT_REOPENABLE',
+]);
+rbSame('HUMAN_INTERVENTION_REQUIRED', $humanIntervention['status'], 'Seller Support non-reopenable cases must cross the bridge as an explicit human intervention state.');
+rbSame('SUPPORT_CASE_NOT_REOPENABLE', $humanIntervention['reason'], 'Human intervention must preserve its review reason.');
+
 foreach ([
     ['status'=>'ACCEPTED','submitted'=>true,'external_id'=>null,'retry_safe'=>true,'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID'],
     ['status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>false,'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID'],

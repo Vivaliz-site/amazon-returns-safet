@@ -23,6 +23,7 @@ final class SvAmazonReturnsRemoteBridge
         'SUPERSEDED',
         'AUTH_REQUIRED',
         'HUMAN_CHALLENGE',
+        'HUMAN_INTERVENTION_REQUIRED',
         'UI_DRIFT',
         'NOT_FOUND',
         'FAILED',
