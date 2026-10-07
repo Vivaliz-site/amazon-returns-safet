@@ -11,8 +11,9 @@ final class SvAmazonGmailEventSink
     public const BR_MARKETPLACE_ID = 'A2Q3Y263D00KWC';
 
     /** @return array<string,mixed> */
-    public static function casePatch(array $event,array $existing=[]): array
+    public static function casePatch(array $event,array $existing=[],string $programOverride=''): array
     {
+        $event=self::applyProgramOverride($event,$programOverride);
         $type = strtoupper(trim((string)($event['event_type'] ?? '')));
         if ($type === 'REFUND_ISSUED_EMAIL') {
             $patch = ['state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED];
@@ -59,7 +60,7 @@ final class SvAmazonGmailEventSink
         }
         if ($type === 'SELLER_SUPPORT_EMAIL') return [];
         if ($type === 'FBA_SHIPMENT_EMAIL') {
-            return ['program'=>SvAmazonReturnPrograms::FBA];
+            return ['program'=>(string)($event['program'] ?? SvAmazonReturnPrograms::FBA)];
         }
         if ($type === 'SAFE_T_REGISTERED_EMAIL') {
             return ['safe_t_id'=>trim((string)($event['safe_t_id'] ?? '')),'state'=>SvAmazonReturnStates::SAFE_T_SUBMITTED];
@@ -80,6 +81,17 @@ final class SvAmazonGmailEventSink
         return ['state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED];
     }
 
+    private static function applyProgramOverride(array $event,string $programOverride): array
+    {
+        $type=strtoupper(trim((string)($event['event_type']??'')));
+        $program=strtoupper(trim((string)($event['program']??'')));
+        if($program==='' && $type==='FBA_SHIPMENT_EMAIL')$program=SvAmazonReturnPrograms::FBA;
+        if($program!==''){
+            $event['program']=SvAmazonReturnPrograms::applyAccountFulfillmentOverride($program,$programOverride);
+        }
+        return $event;
+    }
+
     /** @param list<string> $resolvedItemIds */
     public static function targetItemId(array $resolvedItemIds): string
     {
@@ -90,8 +102,9 @@ final class SvAmazonGmailEventSink
         return count($items) === 1 ? $items[0] : self::UNRESOLVED_ITEM_ID;
     }
 
-    public static function persist(SvAmazonTenantPersistence $p, array $event): int
+    public static function persist(SvAmazonTenantPersistence $p, array $event, string $programOverride=''): int
     {
+        $event=self::applyProgramOverride($event,$programOverride);
         $orderId = trim((string)($event['order_id'] ?? ''));
         if ($orderId === '') throw new InvalidArgumentException('Gmail event order_id is required.');
         [$caseId,$itemId] = self::ensureTargetCaseScoped($p, $orderId, $event);
@@ -99,7 +112,7 @@ final class SvAmazonGmailEventSink
         foreach($p->cases->forOrder($orderId) as $row){
             if((int)($row['id']??0)===$caseId){$existing=$row;break;}
         }
-        $patch = self::casePatch($event,$existing);
+        $patch = self::casePatch($event,$existing,$programOverride);
         if ($itemId !== self::UNRESOLVED_ITEM_ID
             && ($patch['state'] ?? null) === SvAmazonReturnStates::POLICY_REVIEW_REQUIRED) {
             unset($patch['state']);
