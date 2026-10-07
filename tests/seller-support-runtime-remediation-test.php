@@ -15,7 +15,7 @@ $contactStart=strpos($worker,'async function contactSupportAndReadBack');
 $contactEnd=strpos($worker,'async function fillGeneralSupportIssue',$contactStart);
 $contact=substr($worker,$contactStart,$contactEnd-$contactStart);
 ssrrAssert(!str_contains($contact,'clickHillChat(cdp)'),'Unattended Seller Support runtime must never start a live Chat session.');
-ssrrAssert(str_contains($contact,"findSupportCase(cdp, job, { includeTerminal: true })"),'Chat/email writes require authoritative case-ID readback before success.');
+ssrrAssert(str_contains($contact,"findSupportCase(cdp, job, { includeTerminal: true, excludeCaseIds: [...preWriteCaseIds] })"),'Chat/email writes require authoritative case-ID readback that cannot reuse a pre-write terminal case.');
 ssrrAssert(str_contains($contact,"bridgeResult('BLOCKED_UNTIL'"),'Chat-only Hill form must fail closed instead of being abandoned after opening.');
 $fbaStart=strpos($worker,'async function supportOpen');
 $fba=substr($worker,$fbaStart);

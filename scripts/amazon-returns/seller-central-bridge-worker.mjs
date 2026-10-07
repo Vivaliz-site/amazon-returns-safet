@@ -828,16 +828,18 @@ async function safeTAppeal(cdp, job) {
   });
 }
 
-async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeTerminal = false, cutoffEpochSeconds = null } = {}) {
+async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeTerminal = false, cutoffEpochSeconds = null, excludeCaseIds = [] } = {}) {
   const orderId = text(job.case?.order_id);
   const safeTId = text(job.case?.safe_t_id);
   const needles = [orderId, safeTId].filter(Boolean);
   if (needles.length === 0) return null;
   const preferred = /^\d{8,14}$/.test(text(preferredCaseId)) ? text(preferredCaseId) : '';
+  const excludedCaseIds = [...new Set((Array.isArray(excludeCaseIds) ? excludeCaseIds : []).map(text).filter(value => /^\d{8,14}$/.test(value)))];
   const cutoff = Number(cutoffEpochSeconds);
   const raw = await cdp.evaluate(`(async()=>{
     const needles=${JSON.stringify(needles)};
     const preferred=${JSON.stringify(preferred)};
+    const excluded=new Set(${JSON.stringify(excludedCaseIds)});
     const includeTerminal=${includeTerminal === true ? 'true' : 'false'};
     const cutoffSeconds=${Number.isFinite(cutoff) && cutoff > 0 ? cutoff : 'null'};
     const scanBudgetMs=${SUPPORT_CASE_LOOKUP_SCAN_BUDGET_MS};
@@ -884,7 +886,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
       if(search.error)return JSON.stringify({status:'UNAVAILABLE',reason:search.error});
       for(const item of search.rows){
         const caseId=String(item.caseId||'');
-        if(!validCaseId(caseId)||!supportStatusAllowed(item.status))continue;
+        if(!validCaseId(caseId)||excluded.has(caseId)||!supportStatusAllowed(item.status))continue;
         const preferredCandidate=preferred&&caseId===preferred;
         const relevantCandidate=relevant.test(String(item.shortDescription||''));
         if(!preferredCandidate&&!relevantCandidate)continue;
@@ -917,10 +919,11 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
       }
       const recent=dated.filter(entry=>entry.created>=cutoffSeconds).map(entry=>entry.item);
       for(const item of recent){
+        const caseId=String(item.caseId||'');
         const summary=JSON.stringify(item);
-        if(needles.some(n=>summary.includes(n))&&supportStatusAllowed(item.status))return JSON.stringify({status:'FOUND',case_id:String(item.caseId||'')});
+        if(!excluded.has(caseId)&&needles.some(n=>summary.includes(n))&&supportStatusAllowed(item.status))return JSON.stringify({status:'FOUND',case_id:caseId});
       }
-      const candidates=recent.filter(item=>supportStatusAllowed(item.status)&&relevant.test(String(item.shortDescription||'')));
+      const candidates=recent.filter(item=>!excluded.has(String(item.caseId||''))&&supportStatusAllowed(item.status)&&relevant.test(String(item.shortDescription||'')));
       for(const item of candidates){
         if(budgetExceeded())return budgetResult();
         try{
@@ -1326,6 +1329,7 @@ async function supportCaseMatchesJob(cdp, job, caseId) {
 
 async function contactSupportAndReadBack(cdp, job) {
   const popupCaseIdsBeforeWrite = await hillPopupSupportCaseIds();
+  const preWriteCaseIds = new Set([...popupCaseIdsBeforeWrite, text(job.case?.support_case_id)].filter(id => /^\d{8,14}$/.test(id)));
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline && !(await hillContactReady(cdp))) await sleep(750);
   if (!(await hillContactReady(cdp))) {
@@ -1352,8 +1356,8 @@ async function contactSupportAndReadBack(cdp, job) {
   }
   await sleep(1500);
   let caseId = await currentSupportCaseId(cdp);
-  if (caseId && !(await supportCaseMatchesJob(cdp, job, caseId))) caseId = '';
-  const excludedPopupCaseIds = [...popupCaseIdsBeforeWrite];
+  if (caseId && (preWriteCaseIds.has(caseId) || !(await supportCaseMatchesJob(cdp, job, caseId)))) caseId = '';
+  const excludedPopupCaseIds = [...preWriteCaseIds];
   for (let attempt = 0; !caseId && attempt < 8; attempt++) {
     const popupCaseId = await hillPopupSupportCaseId(excludedPopupCaseIds);
     if (popupCaseId) {
@@ -1367,7 +1371,7 @@ async function contactSupportAndReadBack(cdp, job) {
   }
   for (let attempt = 0; !caseId && attempt < 5; attempt++) {
     try {
-      caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
+      caseId = text(await findSupportCase(cdp, job, { includeTerminal: true, excludeCaseIds: [...preWriteCaseIds] }));
     } catch (error) {
       if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
         return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', lookup_phase: 'POST_WRITE_RECONCILIATION', lookup_reason: text(error?.lookupReason || 'UNKNOWN'), submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
@@ -1418,15 +1422,17 @@ async function submitDirectSupportCaseAndReadBack(cdp, job, narrative) {
   if (!(await waitForDirectSupportCaseDetails(cdp, narrative, 15000))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_DIRECT_CASE_DETAILS_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
+  const popupCaseIdsBeforeWrite = await hillPopupSupportCaseIds();
+  const preWriteCaseIds = new Set([...popupCaseIdsBeforeWrite, text(job.case?.support_case_id)].filter(id => /^\d{8,14}$/.test(id)));
   if (!(await cdp.clickFrameButtonTrustedByText('Create a case'))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_DIRECT_CREATE_BUTTON_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
   await sleep(2500);
   let caseId = await currentSupportCaseId(cdp);
-  if (caseId && !(await supportCaseMatchesJob(cdp, job, caseId))) caseId = '';
+  if (caseId && (preWriteCaseIds.has(caseId) || !(await supportCaseMatchesJob(cdp, job, caseId)))) caseId = '';
   for (let attempt = 0; !caseId && attempt < 6; attempt++) {
     try {
-      caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
+      caseId = text(await findSupportCase(cdp, job, { includeTerminal: true, excludeCaseIds: [...preWriteCaseIds] }));
     } catch (error) {
       if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
         return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', lookup_phase: 'POST_WRITE_RECONCILIATION', lookup_reason: text(error?.lookupReason || 'UNKNOWN'), submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
