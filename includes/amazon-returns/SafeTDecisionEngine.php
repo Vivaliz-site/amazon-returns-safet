@@ -599,8 +599,50 @@ final class SvAmazonSafeTDecisionEngine
         return false;
     }
 
+    private function unresolvedSupportHumanIntervention(array $case,array $timeline): ?array
+    {
+        $caseId=(int)($case['id']??0);
+        if($caseId<1)return null;
+        $primary=trim((string)($case['support_case_id']??''));
+        $blocker=null;$blockerRank=[-1,0];$supportId='';
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='SELLER_CENTRAL_ACTION_RESULT' || ($event['source']??'')!=='SELLER_CENTRAL')continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            $action=strtoupper(trim((string)($payload['action']??'')));
+            $status=strtoupper(trim((string)($payload['status']??'')));
+            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
+                || $status!=='HUMAN_INTERVENTION_REQUIRED')continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            $rank=[$at->getTimestamp(),(int)($event['id']??0)];
+            if($rank<=$blockerRank)continue;
+            $candidate=trim((string)($payload['external_id']??''));
+            $supportId=preg_match('/^\d{8,14}$/D',$candidate)===1?$candidate:$primary;
+            $blocker=$event;$blockerRank=$rank;
+        }
+        if(!is_array($blocker))return null;
+        if($supportId==='')return $blocker;
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
+            if(($event['event_type']??'')!=='SELLER_SUPPORT_STATUS_OBSERVED' || ($event['source']??'')!=='SELLER_CENTRAL')continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if(trim((string)($payload['case_id']??''))!==$supportId)continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            if([$at->getTimestamp(),(int)($event['id']??0)]>$blockerRank)return null;
+        }
+        return $blocker;
+    }
+
     private function supportResolutionAction(array $case,array $timeline,DateTimeImmutable $now): ?array
     {
+        $caseId=(int)($case['id']??0);
+        $blocker=$this->unresolvedSupportHumanIntervention($case,$timeline);
+        if($blocker!==null){
+            $blockerPayload=is_array($blocker['payload']??null)?$blocker['payload']:[];
+            $reason=strtoupper(trim((string)($blockerPayload['reason']??'SELLER_SUPPORT_HUMAN_INTERVENTION_REQUIRED')));
+            if(preg_match('/^[A-Z0-9_:-]{1,96}$/D',$reason)!==1)$reason='SELLER_SUPPORT_HUMAN_INTERVENTION_REQUIRED';
+            return $this->decision('BLOCKED_REVIEW',$reason,$caseId);
+        }
         $event=$this->latestSupportObservation($case,$timeline);
         if($event===null)return null;
         $payload=is_array($event['payload']??null)?$event['payload']:[];

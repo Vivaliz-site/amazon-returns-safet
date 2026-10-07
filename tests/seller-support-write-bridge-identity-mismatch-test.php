@@ -13,4 +13,11 @@ if(!str_contains($flow,'completeSupportIdentityMismatch($row,$result)'))throw ne
 if(!str_contains($service,"'event_type'=>'SELLER_SUPPORT_IDENTITY_MISMATCH'"))throw new RuntimeException('audit event missing');
 if(!str_contains($service,"support_case_id'=>null"))throw new RuntimeException("stale binding clear missing");
 if(!str_contains($service,'hash_equals($known,$mismatchedId)'))throw new RuntimeException('binding race guard missing');
+$human=strpos($flow,"if(\$status==='HUMAN_INTERVENTION_REQUIRED')");
+if($human===false)throw new RuntimeException('explicit human-intervention bridge handling missing');
+$genericFailure=strpos($flow,'$failedRow=$row;');
+if($genericFailure===false||$human>$genericFailure)throw new RuntimeException('human intervention must be handled before generic failure/dead-letter logic');
+if(!str_contains($flow,'$this->p->reviews->open('))throw new RuntimeException('human intervention must open a durable cockpit review');
+if(!str_contains($flow,"'source'=>'SELLER_CENTRAL_BRIDGE'"))throw new RuntimeException('human review context must preserve Seller Central bridge provenance');
+if(!str_contains($flow,'$this->p->outbox->markSuperseded('))throw new RuntimeException('human intervention must stop automatic retries after opening review');
 echo "seller-support-write-bridge-identity-mismatch-test: OK\n";

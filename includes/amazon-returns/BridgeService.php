@@ -137,6 +137,9 @@ final class SvAmazonReturnsBridgeService
             && (string)($result['reason'] ?? '')==='SELLER_SUPPORT_CASE_IDENTITY_MISMATCH'){
             return $this->completeSupportIdentityMismatch($row,$result);
         }
+        if($status==='HUMAN_INTERVENTION_REQUIRED'){
+            return $this->completeHumanIntervention($row,$result);
+        }
         $this->appendResultEvent($row,$result);
         if($status==='BLOCKED_UNTIL'){
             $next=$this->futureDate($result['next_allowed_at'] ?? null,'+6 hours');
@@ -169,6 +172,49 @@ final class SvAmazonReturnsBridgeService
         return [
             'status'=>'ACK','job_id'=>$jobId,'result_status'=>$status,'completed'=>false,
         ];
+    }
+
+
+    /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */
+    private function completeHumanIntervention(array $row,array $result): array
+    {
+        $caseId=(int)($row['case_id']??0);
+        $jobId=(int)($row['id']??0);
+        $reason=strtoupper(trim((string)($result['reason']??'HUMAN_INTERVENTION_REQUIRED')));
+        if(preg_match('/^[A-Z0-9_:-]{1,96}$/D',$reason)!==1)$reason='HUMAN_INTERVENTION_REQUIRED';
+        $db=$this->p->db();$db->beginTransaction();
+        try{
+            $case=$this->p->cases->find($caseId);
+            if(!is_array($case))throw new RuntimeException('Seller Support human-intervention case disappeared.');
+            $rowPayload=is_array($row['payload']??null)?$row['payload']:[];
+            $supportId=trim((string)($result['external_id']??$rowPayload['support_case_id']??$case['support_case_id']??''));
+            $context=[
+                'source'=>'SELLER_CENTRAL_BRIDGE',
+                'action'=>strtoupper(trim((string)($row['kind']??''))),
+                'reason'=>$reason,
+                'case_id'=>$caseId,
+                'order_id'=>(string)($case['amazon_order_id']??''),
+                'support_case_id'=>$supportId!==''?$supportId:null,
+                'outbox_id'=>$jobId,
+            ];
+            $contextHash=hash('sha256',json_encode(
+                $context,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
+            ));
+            $this->appendResultEvent($row,$result);
+            $review=$this->p->reviews->open($caseId,$reason,$contextHash,$context);
+            $this->p->outbox->markSuperseded(
+                $jobId,'HUMAN_INTERVENTION_REQUIRED: '.$reason
+            );
+            $db->commit();
+            return [
+                'status'=>'ACK','job_id'=>$jobId,
+                'result_status'=>'HUMAN_INTERVENTION_REQUIRED',
+                'completed'=>true,'review_id'=>(int)($review['id']??0),
+            ];
+        }catch(Throwable $e){
+            if($db->inTransaction())$db->rollBack();
+            throw $e;
+        }
     }
 
     /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */

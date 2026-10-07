@@ -103,4 +103,31 @@ ssmaAssert(str_contains($narrative,'R$ 68,57'),'Seller Support reply must includ
 ssmaAssert(str_contains($narrative,'não estamos reportando uma mensagem de erro'),'Generic information request must explain why an error screenshot is not applicable for this reimbursement issue.');
 ssmaAssert(!str_contains($narrative,'SUPPORT_REQUESTED_SELLER_RESPONSE'),'Internal reason codes must never leak into external copy.');
 
+$humanIntervention=[
+    'id'=>804605,
+    'case_id'=>13221,
+    'event_type'=>'SELLER_CENTRAL_ACTION_RESULT',
+    'source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-30 08:06:00',
+    'payload'=>[
+        'action'=>'SELLER_SUPPORT_UPDATE',
+        'status'=>'HUMAN_INTERVENTION_REQUIRED',
+        'submitted'=>false,
+        'external_id'=>'22321391191',
+        'retry_safe'=>false,
+        'reason'=>'SUPPORT_CASE_NOT_REOPENABLE',
+    ],
+];
+$blockedDecision=$engine->nextAction($case,[$closedObserved,$humanIntervention],$policy,new DateTimeImmutable('2026-09-30 08:07:00',new DateTimeZone('UTC')));
+ssmaSame('BLOCKED_REVIEW',$blockedDecision['action']??null,'A non-reopenable Seller Support result must remain visible as a review blocker instead of silently rescheduling or disappearing.');
+ssmaSame('SUPPORT_CASE_NOT_REOPENABLE',$blockedDecision['reason']??null,'The review blocker must preserve the exact Seller Support reason.');
+
+$freshAfterBlock=$merchantObserved;
+$freshAfterBlock['id']=804606;
+$freshAfterBlock['occurred_at']='2026-09-30 09:00:00';
+$freshAfterBlock['payload']['case_status']='PENDINGMERCHANTACTION';
+$freshAfterBlock['payload']['latest_text']=$merchantText;
+$freshDecision=$engine->nextAction($case,[$closedObserved,$humanIntervention,$freshAfterBlock],$policy,new DateTimeImmutable('2026-09-30 09:01:00',new DateTimeZone('UTC')));
+ssmaSame('SELLER_SUPPORT_UPDATE',$freshDecision['action']??null,'A newer Seller Support observation must clear the older human-intervention blocker and allow the current case to be reevaluated.');
+
 echo "seller-support-merchant-action-test: OK\n";

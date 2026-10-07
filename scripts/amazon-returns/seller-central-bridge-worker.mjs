@@ -1854,10 +1854,12 @@ async function supportUpdate(cdp, job) {
   if (supportBody.includes('answered cases cannot be reopened after 5 days with no activity')
       || supportBody.includes('casos respondidos não podem ser reabertos após 5 dias sem atividade')
       || supportBody.includes('casos respondidos nao podem ser reabertos apos 5 dias sem atividade')) {
-    if (supportRouteFor(job)) {
-      return await supportOpen(cdp, job, { forceFreshCase: true });
-    }
-    return bridgeResult('SUPERSEDED', { reason: 'SUPPORT_CASE_NOT_REOPENABLE', retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
+    return bridgeResult('HUMAN_INTERVENTION_REQUIRED', {
+      reason: 'SUPPORT_CASE_NOT_REOPENABLE',
+      external_id: caseId,
+      retry_safe: false,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
   }
   const narrative = narrativeFor(job, 9000);
   if (await supportCaseContainsText(cdp, caseId, narrative.slice(0, 240))) {

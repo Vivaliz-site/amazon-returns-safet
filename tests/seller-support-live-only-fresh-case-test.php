@@ -17,8 +17,8 @@ ssliveAssert(
     'Seller Support update must explicitly recognize live-only reply channels.'
 );
 ssliveAssert(
-    str_contains($update,"supportOpen(cdp, job, { forceFreshCase: true })"),
-    'When an existing thread only offers live channels, automation must open a fresh asynchronous support case instead of abandoning the rebuttal.'
+    str_contains($update,"supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'GENERAL_ORDER_SUPPORT' })"),
+    'When an existing thread only offers live channels, the dedicated live-only branch must open its asynchronous support route instead of relying on unrelated fallback code.'
 );
 ssliveAssert(
     !str_contains($update,'clickHillChat(cdp)'),
