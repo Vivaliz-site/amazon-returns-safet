@@ -126,6 +126,21 @@ final class SvAmazonSafeTDecisionEngine
             }
 
             if($state===SvAmazonReturnStates::APPEAL_DENIED_FINAL){
+                $supportEvent=$this->latestSupportObservation($case,$timeline);
+                if(is_array($supportEvent)){
+                    $supportPayload=is_array($supportEvent['payload']??null)?$supportEvent['payload']:[];
+                    try{
+                        $activeSupport=SvAmazonSellerSupportStatus::normalize($supportPayload);
+                        if(SvAmazonSellerSupportStatus::resolution($activeSupport)==='ACTIVE'){
+                            return [
+                                'action'=>'WAIT',
+                                'reason'=>'SUPPORT_ESCALATION_ALREADY_ACTIVE',
+                                'case_id'=>$caseId,
+                                'support_case_id'=>$activeSupport['case_id'],
+                            ];
+                        }
+                    }catch(Throwable){}
+                }
                 $denialContext=SvAmazonSafeTStatus::denialContext($timeline);
                 $latestText=trim((string)($case['latest_denial_text'] ?? $denialContext['latest_denial_text']));
                 if($latestText==='')return $this->decision('BLOCKED_REVIEW','DENIAL_TEXT_MISSING',$caseId);

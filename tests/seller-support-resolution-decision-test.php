@@ -234,4 +234,42 @@ $sameSecondDecision=$engine->nextAction(
 ssrdSame('SELLER_SUPPORT_UPDATE',$sameSecondDecision['action']??null,'Seller action required must remain actionable.');
 ssrdSame('22450149561',$sameSecondDecision['support_case_id']??null,'Current Seller Support binding must win a same-second sibling tie.');
 
+// An active newer sibling must also suppress the APPEAL_DENIED_FINAL fallback.
+$activeAfterDenied=$case;
+$activeAfterDenied['id']=10;
+$activeAfterDenied['amazon_order_id']='702-1808735-0608208';
+$activeAfterDenied['program']='FBA';
+$activeAfterDenied['safe_t_id']='37495-60041-8543443';
+$activeAfterDenied['state']=SvAmazonReturnStates::APPEAL_DENIED_FINAL;
+$activeAfterDenied['latest_denial_text']='Recurso negado. Decisão final mantida.';
+$activeAfterDenied['support_case_id']='22144771981';
+$activeAfterDenied['refund_at']='2026-08-03 18:22:13';
+$activeAfterDenied['seller_debit_at']='2026-08-03 18:22:13';
+$activeAfterDenied['expected_reimbursement_amount']='68.57';
+$activeAfterDenied['reconciled_credit_amount']='0.00';
+
+$oldDeniedSupport=[
+    'id'=>5001,'case_id'=>10,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 19:20:00','payload'=>[
+        'case_id'=>'22144771981','case_status'=>'RESOLVED',
+        'latest_text'=>'Caso anterior encerrado.',
+    ],
+];
+$activeInternalReview=[
+    'id'=>5002,'case_id'=>10,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 19:23:30','payload'=>[
+        'case_id'=>'22455791871','case_status'=>'PENDINGAMAZONACTION',
+        'latest_text'=>'Recebemos sua solicitação SAFE-T e encaminhamos para a equipe interna. Aguarde nossa atualização.',
+    ],
+];
+$activeAfterDeniedDecision=$engine->nextAction(
+    $activeAfterDenied,
+    [$oldDeniedSupport,$activeInternalReview],
+    $policy,
+    new DateTimeImmutable('2026-10-07 19:24:00',new DateTimeZone('UTC'))
+);
+ssrdSame('WAIT',$activeAfterDeniedDecision['action']??null,'An active Seller Support sibling must suppress a duplicate post-denial review write.');
+ssrdSame('SUPPORT_ESCALATION_ALREADY_ACTIVE',$activeAfterDeniedDecision['reason']??null,'Amazon-owned active support work must remain authoritative after final appeal denial.');
+ssrdSame('22455791871',$activeAfterDeniedDecision['support_case_id']??null,'Wait must identify the active sibling that Amazon is currently handling.');
+
 echo "seller-support-resolution-decision-test: OK\n";

@@ -66,7 +66,7 @@ final class SvAmazonTenantReturnsOutbox
         }
 
         $existing = $this->prepare(
-            'SELECT id,status,attempt_count,kind,case_id,last_error FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
+            'SELECT id,status,attempt_count,kind,case_id,last_error,payload_json FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
             . 'AND amazon_connection_id=:amazon_connection_id AND idempotency_key=:idempotency_key LIMIT 1'
         );
         $existing->execute($this->scopeParams([':idempotency_key'=>$idempotencyKey]));
@@ -74,22 +74,41 @@ final class SvAmazonTenantReturnsOutbox
         $id = is_array($row) ? (int)($row['id'] ?? 0) : 0;
         if ($id < 1) throw new RuntimeException('Scoped duplicate outbox action could not be resolved.');
         $temporaryDecisionSupersede = str_starts_with((string)($row['last_error'] ?? ''), 'SUPERSEDED_BY_CURRENT_DECISION:');
+        $scopeSupersede=false;
+        $previousPayloadJson=(string)($row['payload_json']??'');
+        if((string)($row['status']??'')==='SUPERSEDED'
+            && (string)($row['kind']??'')==='SELLER_SUPPORT_UPDATE'
+            && (string)($row['last_error']??'')==='SELLER_SUPPORT_SCOPE_SUPERSEDED'){
+            $previousPayload=json_decode($previousPayloadJson,true);
+            $previousScope=is_array($previousPayload)?trim((string)($previousPayload['support_case_id']??'')):'';
+            $currentScope=trim((string)($payload['support_case_id']??''));
+            $scopeSupersede=preg_match('/^\d{8,14}$/D',$previousScope)===1
+                && preg_match('/^\d{8,14}$/D',$currentScope)===1
+                && hash_equals($previousScope,$currentScope);
+        }
         if ((string)($row['status'] ?? '') === 'SUPERSEDED'
-            && ((int)($row['attempt_count'] ?? -1) === 0 || $temporaryDecisionSupersede)
+            && ((int)($row['attempt_count'] ?? -1) === 0 || $temporaryDecisionSupersede || $scopeSupersede)
             && (string)($row['kind'] ?? '') === $kind
             && (int)($row['case_id'] ?? 0) === $caseId) {
-            $reactivate = $this->prepare(
-                "UPDATE amazon_return_outbox SET status='PENDING',payload_json=:payload_json,available_at=UTC_TIMESTAMP(),"
-                . "locked_at=NULL,last_error=NULL,updated_at=UTC_TIMESTAMP() WHERE id=:id "
-                . "AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
-                . "AND status='SUPERSEDED' AND (attempt_count=0 OR last_error LIKE 'SUPERSEDED_BY_CURRENT_DECISION:%') AND kind=:kind AND case_id=:case_id"
-            );
-            $reactivate->execute($this->scopeParams([
+            $reactivationGuard="(attempt_count=0 OR last_error LIKE 'SUPERSEDED_BY_CURRENT_DECISION:%'";
+            $reactivationParams=[
                 ':id'=>$id,
                 ':payload_json'=>json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
                 ':kind'=>$kind,
                 ':case_id'=>$caseId,
-            ]));
+            ];
+            if($scopeSupersede){
+                $reactivationGuard.=" OR (last_error='SELLER_SUPPORT_SCOPE_SUPERSEDED' AND payload_json=:previous_payload_json)";
+                $reactivationParams[':previous_payload_json']=$previousPayloadJson;
+            }
+            $reactivationGuard.=')';
+            $reactivate = $this->prepare(
+                "UPDATE amazon_return_outbox SET status='PENDING',payload_json=:payload_json,available_at=UTC_TIMESTAMP(),"
+                . "locked_at=NULL,last_error=NULL,updated_at=UTC_TIMESTAMP() WHERE id=:id "
+                . "AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+                . "AND status='SUPERSEDED' AND ".$reactivationGuard." AND kind=:kind AND case_id=:case_id"
+            );
+            $reactivate->execute($this->scopeParams($reactivationParams));
             return ['id'=>$id,'enqueued'=>$reactivate->rowCount()===1];
         }
         return ['id'=>$id,'enqueued'=>false];

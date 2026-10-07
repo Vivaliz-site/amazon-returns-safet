@@ -190,6 +190,45 @@ $attemptedReactivation = array_values(array_filter(
 ));
 toSame([], $attemptedReactivation, 'A superseded action with any prior attempt must never be reactivated automatically.');
 
+$scopeDb = new TenantOutboxMemoryPdo();
+$scopeOutbox = new SvAmazonTenantReturnsOutbox($scopeDb, $context);
+$scopeKey = $scopeOutbox->deterministicKey('SELLER_SUPPORT_UPDATE', 77, 'support-scope-22449931941');
+$scopePayload = ['order_id'=>'702-9207715-8524262','support_case_id'=>'22449931941'];
+$scopeDb->queue(['fetch'=>['id'=>77]]);
+$scopeDb->queue(['throw'=>outboxDuplicate()]);
+$scopeDb->queue(['fetch'=>[
+    'id'=>406,'status'=>'SUPERSEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>'SELLER_SUPPORT_SCOPE_SUPERSEDED',
+    'payload_json'=>'{"order_id":"702-9207715-8524262","support_case_id":"22449931941"}',
+]]);
+$scopeDb->queue(['row_count'=>1]);
+$scopeRevived = $scopeOutbox->enqueueResult('SELLER_SUPPORT_UPDATE',77,$scopePayload,$scopeKey);
+toSame(406,$scopeRevived['id']??null,'A scope-superseded Seller Support update must keep its original outbox identity.');
+toSame(true,$scopeRevived['enqueued']??null,'A scope-superseded update must be rearmed when the exact same support scope becomes current again.');
+$scopeReactivation = array_values(array_filter(
+    $scopeDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame(1,count($scopeReactivation),'Scope recovery must perform exactly one guarded reactivation.');
+toAssert(str_contains((string)($scopeReactivation[0]['sql']??''),"last_error='SELLER_SUPPORT_SCOPE_SUPERSEDED'"),'Scope recovery SQL must be guarded by the exact pre-write supersede reason.');
+
+$scopeMismatchDb = new TenantOutboxMemoryPdo();
+$scopeMismatchOutbox = new SvAmazonTenantReturnsOutbox($scopeMismatchDb,$context);
+$scopeMismatchDb->queue(['fetch'=>['id'=>77]]);
+$scopeMismatchDb->queue(['throw'=>outboxDuplicate()]);
+$scopeMismatchDb->queue(['fetch'=>[
+    'id'=>407,'status'=>'SUPERSEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>'SELLER_SUPPORT_SCOPE_SUPERSEDED',
+    'payload_json'=>'{"order_id":"702-9207715-8524262","support_case_id":"22450149561"}',
+]]);
+$scopeMismatch = $scopeMismatchOutbox->enqueueResult('SELLER_SUPPORT_UPDATE',77,$scopePayload,$scopeKey);
+toSame(false,$scopeMismatch['enqueued']??null,'A superseded update from a different Seller Support scope must remain inert.');
+$scopeMismatchReactivation = array_values(array_filter(
+    $scopeMismatchDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame([],$scopeMismatchReactivation,'Scope recovery must never reactivate a different support thread.');
+
 $pendingRow = [
     'id'=>301,'tenant_id'=>1,'amazon_connection_id'=>10,'case_id'=>77,'kind'=>'SAFE_T_SUBMIT',
     'idempotency_key'=>$key,'payload_json'=>'{"order_id":"702-1234567-7654321"}',
