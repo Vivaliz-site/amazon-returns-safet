@@ -11,7 +11,7 @@ require_once __DIR__ . '/FinancialObservations.php';
 final class SvAmazonSpApiEventSink
 {
     /** @return string */
-    public static function programFromOrder(array $order): string
+    public static function programFromOrder(array $order,string $programOverride=''): string
     {
         $programs = array_map(
             static fn(mixed $value): string => strtoupper(trim((string)$value)),
@@ -31,11 +31,11 @@ final class SvAmazonSpApiEventSink
         // which must stay distinct from seller-fulfilled STANDARD. 'channel'/'fulfillmentChannel'
         // are kept as fallbacks for other callers/fixtures that predate the real field name.
         $fulfilledBy = strtoupper(trim((string)($fulfillment['fulfilledBy'] ?? '')));
-        if ($fulfilledBy === 'AMAZON') return SvAmazonReturnPrograms::FBA;
+        if ($fulfilledBy === 'AMAZON') return SvAmazonReturnPrograms::applyAccountFulfillmentOverride(SvAmazonReturnPrograms::FBA,$programOverride);
         if ($fulfilledBy === 'MERCHANT') return SvAmazonReturnPrograms::STANDARD;
         $channel = strtoupper(trim((string)($fulfillment['channel'] ?? $fulfillment['fulfillmentChannel'] ?? '')));
         if (in_array($channel, ['MERCHANT','MFN','SELLER'], true)) return SvAmazonReturnPrograms::STANDARD;
-        return SvAmazonReturnPrograms::UNKNOWN;
+        return SvAmazonReturnPrograms::applyAccountFulfillmentOverride(SvAmazonReturnPrograms::UNKNOWN,$programOverride);
     }
 
     /** @return array{confirmed:bool,tracking_ids:list<string>,carriers:list<string>} */
@@ -142,7 +142,8 @@ final class SvAmazonSpApiEventSink
     public static function persist(
         SvAmazonTenantPersistence $p,
         array $order,
-        array $transactions
+        array $transactions,
+        string $programOverride=''
     ): array {
         $orderId = trim((string)($order['order_id'] ?? ''));
         if ($orderId === '') throw new InvalidArgumentException('SP-API order_id is required.');
@@ -151,11 +152,12 @@ final class SvAmazonSpApiEventSink
         if ($items === []) return ['cases'=>[],'single_item'=>false,'refund_event_id'=>null];
 
         $single = count($items) === 1;
+        $program=self::programFromOrder($order,$programOverride);
         $caseIds = [];
         foreach ($items as $item) {
-            $caseId = self::upsertCaseScoped($p, $order, $item, $single);
+            $caseId = self::upsertCaseScoped($p, $order, $item, $single, $program);
             $caseIds[] = $caseId;
-            self::appendOrderEventScoped($p->events, $caseId, $order, $item, $single);
+            self::appendOrderEventScoped($p->events, $caseId, $order, $item, $single, $program);
         }
         foreach ($caseIds as $caseId) {
             self::appendTransactionsScoped($p->events, $caseId, $transactions, $single);
@@ -177,7 +179,7 @@ final class SvAmazonSpApiEventSink
                     . implode(',', $refund['transaction_ids'])
                 ),
                 'occurred_at'=>$refund['seller_debit_at'],
-                'payload'=>self::financialRefundPayload($refund, self::programFromOrder($order), $quantity),
+                'payload'=>self::financialRefundPayload($refund, $program, $quantity),
                 'evidence_sha256'=>null,
             ]);
             $p->cases->update($caseIds[0], [
@@ -332,7 +334,8 @@ final class SvAmazonSpApiEventSink
         SvAmazonTenantPersistence $p,
         array $order,
         array $item,
-        bool $single
+        bool $single,
+        string $program
     ): int {
         $orderId = trim((string)$order['order_id']);
         $itemId = trim((string)($item['orderItemId'] ?? $item['order_item_id'] ?? ''));
@@ -349,7 +352,7 @@ final class SvAmazonSpApiEventSink
             'sku'=>self::nullable($item['sellerSku'] ?? $item['sku'] ?? null),
             'asin'=>self::nullable($item['asin'] ?? null),
             'quantity_ordered'=>max(1, (int)($item['quantityOrdered'] ?? $item['quantity'] ?? 1)),
-            'program'=>self::programFromOrder($order),
+            'program'=>$program,
             'refund_initiator'=>SvAmazonRefundInitiators::UNKNOWN,
             'physical_status'=>SvAmazonReturnPhysicalStatuses::NOT_RECEIVED,
             'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED,
@@ -361,7 +364,8 @@ final class SvAmazonSpApiEventSink
         int $caseId,
         array $order,
         array $item,
-        bool $single
+        bool $single,
+        string $program
     ): int {
         $orderId = trim((string)$order['order_id']);
         $itemId = trim((string)($item['orderItemId'] ?? $item['order_item_id'] ?? ''));
@@ -382,7 +386,7 @@ final class SvAmazonSpApiEventSink
             'payload'=>[
                 'order_at'=>$occurred,
                 'quantity_ordered'=>max(1, (int)($item['quantityOrdered'] ?? $item['quantity'] ?? 1)),
-                'program'=>self::programFromOrder($order),
+                'program'=>$program,
                 'marketplace_id'=>$order['marketplace_id'] ?? null,
                 'customer_delivery_confirmed'=>$delivery['confirmed'],
                 'customer_tracking_ids'=>$delivery['tracking_ids'],
