@@ -200,4 +200,38 @@ ssrdSame(
     'The newer active sibling must remain authoritative while Amazon is acting.'
 );
 
+// When sibling observations arrive in the same discovery second, the current
+// persisted support binding must win the tie. Otherwise the engine can target
+// a sibling that the bridge will correctly reject as scope-superseded.
+$sameSecondCase=$case;
+$sameSecondCase['id']=9;
+$sameSecondCase['amazon_order_id']='702-9207715-8524262';
+$sameSecondCase['support_case_id']='22450149561';
+$sameSecondCase['state']='SUPPORT_ESCALATION';
+$sameSecondCase['expected_reimbursement_amount']='485.75';
+$sameSecondCase['reconciled_credit_amount']='262.85';
+
+$currentBindingObservation=[
+    'id'=>4001,'case_id'=>9,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 16:35:09','payload'=>[
+        'case_id'=>'22450149561','case_status'=>'PENDINGMERCHANTACTION',
+        'latest_text'=>'This is a reminder to let you know that we need more information to resolve your case.',
+    ],
+];
+$siblingObservation=[
+    'id'=>4002,'case_id'=>9,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 16:35:09','payload'=>[
+        'case_id'=>'22449931941','case_status'=>'PENDINGMERCHANTACTION',
+        'latest_text'=>'This is a reminder to let you know that we need more information to resolve your case.',
+    ],
+];
+$sameSecondDecision=$engine->nextAction(
+    $sameSecondCase,
+    [$currentBindingObservation,$siblingObservation],
+    $policy,
+    new DateTimeImmutable('2026-10-07 16:36:00',new DateTimeZone('UTC'))
+);
+ssrdSame('SELLER_SUPPORT_UPDATE',$sameSecondDecision['action']??null,'Seller action required must remain actionable.');
+ssrdSame('22450149561',$sameSecondDecision['support_case_id']??null,'Current Seller Support binding must win a same-second sibling tie.');
+
 echo "seller-support-resolution-decision-test: OK\n";

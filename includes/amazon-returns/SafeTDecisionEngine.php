@@ -532,7 +532,7 @@ final class SvAmazonSafeTDecisionEngine
             if($resolution==='ACTIVE' && $entry['rank']>$latestActiveRank)$latestActiveRank=$entry['rank'];
         }
 
-        $best=null;$bestRank=[-1,0,0];
+        $best=null;$bestRank=[-1,0,0,0];
         foreach($latestBySupport as $entry){
             $supportId=(string)($entry['support_id']??'');
             $event=$entry['event'];$payload=is_array($event['payload']??null)?$event['payload']:[];
@@ -545,7 +545,7 @@ final class SvAmazonSafeTDecisionEngine
                 $awaitingWrite=$resolution!=='ACTIVE' && !$this->supportWriteAcceptedAfterObservation($case,$timeline,$event,$supportId);
                 $priority=$awaitingWrite?3:($supportId===$primary?2:1);
             }
-            $rank=[$priority,$entry['rank'][0],$entry['rank'][1]];
+            $rank=[$priority,$entry['rank'][0],$supportId===$primary?1:0,$entry['rank'][1]];
             if($rank>$bestRank){$bestRank=$rank;$best=$event;}
         }
         return $best;
