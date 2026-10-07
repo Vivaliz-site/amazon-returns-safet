@@ -16,6 +16,7 @@ $case=[
     'amazon_order_id'=>'702-1808735-0608208',
     'safe_t_id'=>'37495-60041-8543443',
     'support_case_id'=>'22144771981',
+    'program'=>'FBA',
     'refund_at'=>'2026-08-03 18:22:13',
     'expected_reimbursement_amount'=>'68.57',
     'reconciled_credit_amount'=>'0.00',
@@ -29,6 +30,7 @@ $routed=SvAmazonReturnsScheduler::normalizeRecoveryChannel($case,$review,$now);
 scorSame('SELLER_SUPPORT_UPDATE',$routed['action']??null,'A SAFE-T review must use the existing Seller Central support case.');
 scorSame('22144771981',$routed['support_case_id']??null,'Existing Seller Support case must be reused.');
 scorSame('SAFE_T_REVIEW_ESCALATED_VIA_SELLER_CENTRAL',$routed['reason']??null,'Seller Central escalation reason must be explicit.');
+scorSame('FBA_RETURNS_REIMBURSEMENT',$routed['support_route']??null,'FBA SAFE-T review must preserve the reimbursement route so a closed thread can fall back to a fresh case.');
 scorSame('seller_central_bridge',SvAmazonReturnsScheduler::dependencyForAction((string)($routed['action']??'')),'Routed review must depend on Seller Central, never Gmail.');
 scorAssert(($routed['idempotency_key']??'')!==$review['idempotency_key'],'Channel migration must receive a new deterministic idempotency key.');
 
@@ -38,7 +40,7 @@ $unbound['support_case_id']=null;
 $unbound['refund_at']='2026-07-22 11:51:02';
 $open=SvAmazonReturnsScheduler::normalizeRecoveryChannel($unbound,$review,$now);
 scorSame('SELLER_SUPPORT_OPEN',$open['action']??null,'A SAFE-T review without a support case must open Seller Support in Seller Central.');
-scorSame('GENERAL_ORDER_SUPPORT',$open['support_route']??null,'New Seller Support escalation must use the general order route.');
+scorSame('FBA_RETURNS_REIMBURSEMENT',$open['support_route']??null,'FBA review without an existing thread must open the dedicated reimbursement route.');
 
 $reply=[
     'action'=>'SAFE_T_EMAIL_REPLY',
