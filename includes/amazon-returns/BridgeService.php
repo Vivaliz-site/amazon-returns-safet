@@ -53,22 +53,37 @@ final class SvAmazonReturnsBridgeService
         if($enabled===[]){
             return ['status'=>'NO_JOB','reason'=>'ALL_WRITE_FLAGS_OFF'];
         }
-        $rows=$this->p->outbox->claimBatch(1,$enabled);
-        if($rows===[])return ['status'=>'NO_JOB'];
-        $row=$rows[0];
-        $case=$this->p->cases->find((int)$row['case_id']);
-        if(!is_array($case)){
-            $this->p->outbox->markFailed($row,'Bridge case not found in tenant scope.');
-            return ['status'=>'NO_JOB','reason'=>'SCOPED_CASE_MISSING'];
+        for($staleSkipped=0;$staleSkipped<25;$staleSkipped++){
+            $rows=$this->p->outbox->claimBatch(1,$enabled);
+            if($rows===[])return ['status'=>'NO_JOB'];
+            $row=$rows[0];
+            $case=$this->p->cases->find((int)$row['case_id']);
+            if(!is_array($case)){
+                $this->p->outbox->markFailed($row,'Bridge case not found in tenant scope.');
+                return ['status'=>'NO_JOB','reason'=>'SCOPED_CASE_MISSING'];
+            }
+            if(SvAmazonReturnsRemoteBridge::staleScopedSupportUpdate($row,$case)){
+                $currentSupportId=trim((string)($case['support_case_id'] ?? ''));
+                $result=[
+                    'status'=>'SUPERSEDED','submitted'=>false,
+                    'external_id'=>$currentSupportId!==''?$currentSupportId:null,
+                    'retry_safe'=>false,'block_reason'=>null,'next_allowed_at'=>null,
+                    'reason'=>'SELLER_SUPPORT_SCOPE_SUPERSEDED','evidence'=>[],
+                ];
+                $this->appendResultEvent($row,$result);
+                $this->p->outbox->markSuperseded((int)$row['id'],'SELLER_SUPPORT_SCOPE_SUPERSEDED');
+                continue;
+            }
+            $job=SvAmazonReturnsRemoteBridge::jobEnvelope($row,$case,$flags);
+            foreach([
+                'physical_status','state','program','refund_at','seller_debit_at',
+                'eligibility_at','appeal_deadline_at',
+            ] as $field){
+                $job['case'][$field]=$case[$field] ?? null;
+            }
+            return ['status'=>'JOB','job'=>$job];
         }
-        $job=SvAmazonReturnsRemoteBridge::jobEnvelope($row,$case,$flags);
-        foreach([
-            'physical_status','state','program','refund_at','seller_debit_at',
-            'eligibility_at','appeal_deadline_at',
-        ] as $field){
-            $job['case'][$field]=$case[$field] ?? null;
-        }
-        return ['status'=>'JOB','job'=>$job];
+        return ['status'=>'NO_JOB','reason'=>'STALE_SUPPORT_UPDATE_DRAIN_LIMIT'];
     }
 
     /** @return array<string,mixed> */
