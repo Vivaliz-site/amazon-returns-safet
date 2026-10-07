@@ -1842,9 +1842,8 @@ async function supportUpdate(cdp, job) {
           evidence: await evidence(cdp, 'help-v1'),
         });
       }
-    } else {
-      const reason = apiReply.status === 'UNCONFIRMED' ? 'SUPPORT_REPLY_NOT_CONFIRMED' : 'SUPPORT_REPLY_API_FAILED';
-      return bridgeResult('FAILED', { reason, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    } else if (apiReply.status !== 'UNCONFIRMED') {
+      return bridgeResult('FAILED', { reason: 'SUPPORT_REPLY_API_FAILED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
     }
   }
   const channels = Array.isArray(apiReply.channels) ? apiReply.channels : [];
@@ -1868,7 +1867,7 @@ async function supportUpdate(cdp, job) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
   }
   if (!(await cdp.fillDeepSupportTextarea(narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
-  const sendLabels=['Send','Send message','Submit','Enviar','Enviar mensagem','Enviar resposta'];
+  const sendLabels=['Send','Send message','Submit','Send to Amazon','Enviar','Enviar mensagem','Enviar resposta','Enviar para a Amazon'];
   const sent = await cdp.clickButtonTrustedByText(sendLabels);
   if (!text(sent)) {
     const freshFallback = await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'GENERAL_ORDER_SUPPORT' });

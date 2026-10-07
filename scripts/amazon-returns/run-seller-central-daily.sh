@@ -181,3 +181,7 @@ if ! "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker
   record_auth_failure "READ_DRAIN_FAILED"
   exit 75
 fi
+if ! "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" --drain; then
+  record_auth_failure "BRIDGE_POST_READ_DRAIN_FAILED"
+  exit 75
+fi
