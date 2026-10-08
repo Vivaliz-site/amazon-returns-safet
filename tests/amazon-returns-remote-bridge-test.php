@@ -92,6 +92,50 @@ $discoveryJob = SvAmazonReturnsRemoteBridge::jobEnvelope(array_replace($row, ['k
 rbSame('SAFE_T_DISCOVERY', $discoveryJob['action'], 'Read-only SAFE-T discovery must be an approved bridge action.');
 rbSame(false, $discoveryJob['write_enabled'], 'SAFE-T discovery must never require or imply a write flag.');
 
+$currentWriteHash=hash('sha256','current-seller-support-write');
+$oldWriteHash=hash('sha256','older-seller-support-write');
+$retryRow=[
+    'id'=>88,
+    'case_id'=>77,
+    'kind'=>'SELLER_SUPPORT_UPDATE',
+    'attempt_count'=>3,
+    'payload'=>[
+        'write_snapshot'=>['content_sha256'=>$currentWriteHash],
+    ],
+];
+$oldAmbiguousEvent=[
+    'event_type'=>'SELLER_CENTRAL_ACTION_RESULT',
+    'source'=>'SELLER_CENTRAL',
+    'source_event_id'=>'88',
+    'payload'=>[
+        'action'=>'SELLER_SUPPORT_UPDATE',
+        'status'=>'UI_DRIFT',
+        'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID',
+        'submitted'=>true,
+        'write_content_sha256'=>$oldWriteHash,
+    ],
+];
+rbSame(
+    false,
+    SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$oldAmbiguousEvent]),
+    'A high attempt count with an ambiguous older write hash must be a new Seller Support episode, not retry reconciliation.'
+);
+$currentAmbiguousEvent=$oldAmbiguousEvent;
+$currentAmbiguousEvent['payload']['write_content_sha256']=$currentWriteHash;
+rbSame(
+    true,
+    SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$currentAmbiguousEvent]),
+    'Only a submitted-without-readback event for the exact current write hash may authorize retry reconciliation.'
+);
+$confirmedEvent=$currentAmbiguousEvent;
+$confirmedEvent['payload']['status']='ACCEPTED';
+$confirmedEvent['payload']['reason']='SUPPORT_CASE_UPDATED_AND_READ_BACK';
+rbSame(
+    false,
+    SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$currentAmbiguousEvent,$confirmedEvent]),
+    'A confirmed result for the current write hash must suppress retry reconciliation even if an earlier ambiguous submit exists.'
+);
+
 $valid = SvAmazonReturnsRemoteBridge::validateResult([
     'status' => 'ACCEPTED',
     'submitted' => true,
