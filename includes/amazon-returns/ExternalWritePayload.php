@@ -62,13 +62,10 @@ final class SvAmazonExternalWritePayload
                     .'Não utilizamos '.$negative.' para este item. '
                     .'Por favor, prossigam com a análise e o ressarcimento solicitado neste chamado.';
             }
+            $returnMention='(?:retorn(?:ou|ar|ado|ada|aram|em|e)?(?:\\s+fisicamente)?|recebid[oa]\\s+de\\s+volta)';
             $returnQuestionContext=(
-                str_contains($latest,'?')
-                || str_contains($latest,'confirme')
-                || str_contains($latest,'confirmar')
-                || str_contains($latest,'poderia')
-                || str_contains($latest,'precisamos entender')
-                || str_contains($latest,'precisamos confirmar')
+                preg_match('/(?:confirme|confirmar|poderia|precisamos\\s+(?:entender|confirmar))[^.!?]{0,220}'.$returnMention.'/u',$latest)===1
+                || preg_match('/'.$returnMention.'[^.!?]{0,220}\\?/u',$latest)===1
             );
             $mentionsReturnOutcome=(
                 str_contains($latest,'retornou fisicamente')
