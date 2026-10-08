@@ -323,6 +323,49 @@ $priorSubmittedReactivation = array_values(array_filter(
 ));
 toSame([],$priorSubmittedReactivation,'Full result history with any submitted write must preserve the terminal outbox state and prevent duplicate delivery.');
 
+$crossOutboxSubmittedDb = new TenantOutboxMemoryPdo();
+$crossOutboxSubmittedOutbox = new SvAmazonTenantReturnsOutbox($crossOutboxSubmittedDb,$context);
+$crossOutboxSubmittedKey = $crossOutboxSubmittedOutbox->deterministicKey('SELLER_SUPPORT_UPDATE',77,'cross-outbox-submitted-update');
+$crossOutboxHash = '66e1fb8f89e80cb942671afbeba5ba157ae598af7512b4ba6310ae4314457dad';
+$crossOutboxSubmittedDb->queue(['fetch'=>['id'=>77]]);
+$crossOutboxSubmittedDb->queue(['throw'=>outboxDuplicate()]);
+$crossOutboxSubmittedDb->queue(['fetch'=>[
+    'id'=>411,'status'=>'SUCCEEDED','attempt_count'=>3,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>null,
+    'payload_json'=>json_encode([
+        'order_id'=>'702-6823050-9173862',
+        'support_case_id'=>'22426419421',
+        'write_snapshot'=>['content_sha256'=>$crossOutboxHash],
+    ],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES),
+]]);
+$crossOutboxSubmittedDb->queue([
+    'rows'=>[
+        ['payload_json'=>json_encode([
+            'action'=>'SELLER_SUPPORT_UPDATE','status'=>'ALREADY_EXISTS','reason'=>null,
+            'submitted'=>false,'external_id'=>'22426419421','write_content_sha256'=>$crossOutboxHash,
+        ],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES)],
+    ],
+]);
+$crossOutboxSubmittedDb->queue([
+    'row_count'=>1,
+    'rows'=>[
+        ['payload_json'=>json_encode([
+            'action'=>'SELLER_SUPPORT_UPDATE','status'=>'ACCEPTED','reason'=>'SUPPORT_CASE_OPENED_VIA_EMAIL',
+            'submitted'=>true,'external_id'=>'22354106631','write_content_sha256'=>$crossOutboxHash,
+        ],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES)],
+    ],
+]);
+$crossOutboxSubmittedDb->queue(['row_count'=>1]);
+$crossOutboxSubmitted = $crossOutboxSubmittedOutbox->enqueueResult(
+    'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$crossOutboxSubmittedKey
+);
+toSame(false,$crossOutboxSubmitted['enqueued']??null,'A matching Seller Support write submitted by another outbox row must prevent legacy rearming.');
+$crossOutboxSubmittedReactivation = array_values(array_filter(
+    $crossOutboxSubmittedDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame([],$crossOutboxSubmittedReactivation,'Cross-outbox delivery proof for the same write content must prevent duplicate delivery.');
+
 $pendingRow = [
     'id'=>301,'tenant_id'=>1,'amazon_connection_id'=>10,'case_id'=>77,'kind'=>'SAFE_T_SUBMIT',
     'idempotency_key'=>$key,'payload_json'=>'{"order_id":"702-1234567-7654321"}',
