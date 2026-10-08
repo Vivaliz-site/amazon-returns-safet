@@ -19,6 +19,8 @@ $openEnd=$openStart===false?false:strpos($worker,'async function supportUpdate',
 ssrfAssert($openStart!==false&&$openEnd!==false,'supportOpen must remain independently auditable.');
 $open=substr($worker,(int)$openStart,(int)$openEnd-(int)$openStart);
 ssrfAssert(str_contains($open,'const reconcileKnownCase = options.forceFreshCase !== true;'),'Fresh-case mode must explicitly disable reconciliation of the known stale thread.');
+ssrfAssert(str_contains($open,'const shouldScanExisting = reconcileKnownCase || retryReconciliation;'),'A non-retry forceFreshCase flow must skip pre-write sibling discovery instead of oscillating between existing merchant-action cases.');
+ssrfAssert(str_contains($open,'if (shouldScanExisting)'),'Existing-case lookup must be gated by normal dedupe or a server-authorized retry episode.');
 ssrfAssert(str_contains($open,'if (!reconcileKnownCase'),'Fresh-case lookup must exclude the stale support case ID.');
 ssrfAssert(str_contains($open,'excludeCaseIds'),'Fresh-case lookup must exclude the stale support case ID while still reconciling any new sibling.');
 ssrfAssert(str_contains($open,'const retryReconciliation = job.retry_reconciliation === true;'),'A server-authorized retry after a potentially submitted fresh-case write must enter reconciliation even when forceFreshCase is true.');
