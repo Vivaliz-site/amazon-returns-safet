@@ -75,6 +75,17 @@ final class SvAmazonReturnsBridgeService
                 continue;
             }
             $job=SvAmazonReturnsRemoteBridge::jobEnvelope($row,$case,$flags);
+            if(in_array((string)($row['kind']??''),['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){
+                $retryEvents=$this->p->events->eventsForSourceEventId(
+                    (int)$row['case_id'],
+                    (string)$row['id'],
+                    'SELLER_CENTRAL_ACTION_RESULT'
+                );
+                $job['retry_reconciliation']=SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible(
+                    $row,
+                    $retryEvents
+                );
+            }
             foreach([
                 'physical_status','state','program','refund_at','seller_debit_at',
                 'eligibility_at','appeal_deadline_at',
