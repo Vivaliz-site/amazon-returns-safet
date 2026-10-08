@@ -66,8 +66,31 @@ final class SvAmazonExternalWritePayload
                 (str_contains($latest,'danific') && (str_contains($latest,'retorn') || str_contains($latest,'devolu')))
                 && (str_contains($latest,'não retorn') || str_contains($latest,'nao retorn') || str_contains($latest,'estoque'))
             );
+            $asksNonReceiptEvidence=(
+                str_contains($latest,'evidên')
+                || str_contains($latest,'eviden')
+                || str_contains($latest,'evidence')
+            );
+            $asksHistoricalAddress=(
+                str_contains($latest,'endereço')
+                || str_contains($latest,'endereco')
+                || str_contains($latest,'address')
+            );
             $physicalStatus=strtoupper(trim((string)($case['physical_status']??'')));
             $quantityReceived=(int)($case['quantity_received']??0);
+            if($asksNonReceiptEvidence && $asksHistoricalAddress
+                && $physicalStatus==='NOT_RECEIVED' && $quantityReceived===0){
+                $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
+                $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
+                $outstanding=max(0.0,$expected-$credited);
+                return 'Sobre o pedido '.$order.', SAFE-T '.$safeT.'. Confirmamos que não recebemos fisicamente a devolução; '
+                    .'nosso registro do caso continua indicando que a devolução não foi recebida e a quantidade recebida permanece 0. '
+                    .'A conciliação financeira mais recente confirma saldo pendente de '.self::brl($outstanding).' para nós, vendedores. '
+                    .'Não temos no registro deste caso o endereço histórico de devolução cadastrado no período; por isso, não podemos afirmar um endereço sem evidência. '
+                    .'Solicitamos que a Amazon informe o endereço de devolução efetivamente utilizado, a transportadora, o código de rastreio, '
+                    .'a data e hora da entrega, a identificação do recebedor e o comprovante de entrega ao vendedor. '
+                    .'Até que exista evidência de entrega física ao vendedor ou conciliação integral do crédito, o ressarcimento permanece pendente para nós.';
+            }
             if($asksReturnOutcome && $physicalStatus==='NOT_RECEIVED' && $quantityReceived===0){
                 $quantity=max(1,(int)($case['quantity_refunded']??$case['quantity_ordered']??1));
                 $unitWord=$quantity===1?'unidade':'unidades';

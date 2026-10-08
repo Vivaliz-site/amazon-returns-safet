@@ -85,6 +85,30 @@ $missingReturnNarrative=(string)($missingReturnPayload['write_snapshot']['narrat
 ssmaAssert(str_contains($missingReturnNarrative,'não retornaram ao nosso estoque'),'Trusted NOT_RECEIVED state must answer that the units did not return.');
 ssmaAssert(str_contains($missingReturnNarrative,'Não estamos informando dano após recebimento'),'The answer must explicitly reject the damaged-after-receipt alternative.');
 
+$evidenceRequestCase=$case;
+$evidenceRequestCase['safe_t_id']='93434-86383-4098666';
+$evidenceRequestCase['physical_status']='NOT_RECEIVED';
+$evidenceRequestCase['quantity_received']=0;
+$evidenceRequestCase['quantity_refunded']=1;
+$evidenceRequestCase['expected_reimbursement_amount']='485.75';
+$evidenceRequestCase['reconciled_credit_amount']='262.85';
+$evidenceRequestDecision=[
+    'action'=>'SELLER_SUPPORT_UPDATE',
+    'reason'=>'SUPPORT_REQUESTED_SELLER_RESPONSE',
+    'case_id'=>13227,
+    'support_case_id'=>'22449931941',
+    'support_latest_text'=>'Confirmamos que a sua solicitação de revisão foi registrada com sucesso. Para prosseguirmos, precisamos das seguintes informações: '
+        .'1. Evidências de que a devolução não foi recebida, como registros de logística ou declaração escrita. '
+        .'2. Confirmação do endereço de entrega cadastrado na sua conta no período do pedido. Retorne a este caso assim que possível.',
+];
+$evidenceRequestPayload=SvAmazonExternalWritePayload::build($evidenceRequestDecision,$evidenceRequestCase,[]);
+$evidenceRequestNarrative=(string)($evidenceRequestPayload['write_snapshot']['narrative']??'');
+ssmaAssert(str_contains($evidenceRequestNarrative,'não recebemos fisicamente'),'A request for non-receipt evidence must answer with the trusted physical non-receipt fact.');
+ssmaAssert(str_contains($evidenceRequestNarrative,'quantidade recebida permanece 0'),'The reply must state the persisted zero received quantity as evidence.');
+ssmaAssert(mb_stripos($evidenceRequestNarrative,'não temos no registro deste caso o endereço histórico',0,'UTF-8')!==false,'The reply must not invent a historical seller return address that is absent from case evidence.');
+ssmaAssert(str_contains($evidenceRequestNarrative,'endereço de devolução efetivamente utilizado'),'The reply must ask Amazon for the exact return address it actually used when historical address evidence is unavailable.');
+ssmaAssert(str_contains($evidenceRequestNarrative,'R$ 222,90'),'The reply must preserve the current unreconciled seller balance.');
+
 $closedObserved=$merchantObserved;
 $closedObserved['id']=804604;
 $closedObserved['occurred_at']='2026-09-30 08:02:08';
