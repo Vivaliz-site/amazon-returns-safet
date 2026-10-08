@@ -224,6 +224,16 @@ function evidence(state) {
   return { ...safe, snapshot_sha256: sha(JSON.stringify(safe)) };
 }
 
+async function waitForSafeTClaimOrderIdentity(cdp, orderId, timeoutMs = 15000) {
+  const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 15000);
+  let state = await cdp.pageState();
+  while (!String(state.text || '').includes(orderId) && Date.now() < deadline) {
+    await sleep(500);
+    state = await cdp.pageState();
+  }
+  return state;
+}
+
 async function safeTDiscovery(job) {
   const orderId = clean(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return result('FAILED', { reason: 'ORDER_ID_REQUIRED_FOR_DISCOVERY' });
@@ -247,6 +257,7 @@ async function safeTDiscovery(job) {
     auth = page.auth;
     if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: page.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
     if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: page.reason || 'CAPTCHA_PRESENT', evidence: evidence(state) });
+    state = await waitForSafeTClaimOrderIdentity(cdp, orderId);
     if (!String(state.text || '').includes(orderId)) return result('UI_DRIFT', { reason: 'DISCOVERED_CLAIM_ORDER_MISMATCH', evidence: evidence(state) });
     const read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
     return result('ACCEPTED', { external_id: safeTId, retry_safe: true, reason: 'SAFE_T_DISCOVERED_BY_ORDER', evidence: evidence(state), read });
