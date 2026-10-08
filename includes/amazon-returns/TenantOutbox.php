@@ -114,7 +114,7 @@ final class SvAmazonTenantReturnsOutbox
                 ':case_id'=>$caseId,
             ];
             if($scopeSupersede){
-                $reactivationGuard.=" OR (last_error='SELLER_SUPPORT_SCOPE_SUPERSEDED' AND payload_json=:previous_payload_json)";
+                $reactivationGuard.=" OR (last_error='SELLER_SUPPORT_SCOPE_SUPERSEDED' AND CAST(payload_json AS CHAR)=:previous_payload_json)";
                 $reactivationParams[':previous_payload_json']=$previousPayloadJson;
             }
             $reactivationGuard.=')';
