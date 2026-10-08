@@ -1633,7 +1633,7 @@ async function supportOpen(cdp, job, options = {}) {
   }
   if (existing) return bridgeResult('ALREADY_EXISTS', {
     external_id: existing, retry_safe: true,
-    ...(retryReconciliation ? { reason: 'SUPPORT_RETRY_RECONCILED_TERMINAL_CASE' } : {}),
+    reason: retryReconciliation ? 'SUPPORT_RETRY_RECONCILED_TERMINAL_CASE' : 'SUPPORT_CASE_ALREADY_EXISTS',
     evidence: await evidence(cdp, 'help-v1')
   });
   const orderId = text(job.case?.order_id);
@@ -1863,10 +1863,10 @@ async function supportUpdate(cdp, job) {
   }
   const narrative = narrativeFor(job, 9000);
   if (await supportCaseContainsText(cdp, caseId, narrative.slice(0, 240))) {
-    return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, reason: 'SUPPORT_UPDATE_READBACK_CONFIRMED', evidence: await evidence(cdp, 'help-v1') });
   }
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
-  if (already) return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  if (already) return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, reason: 'SUPPORT_UPDATE_READBACK_CONFIRMED', evidence: await evidence(cdp, 'help-v1') });
   const apiReply = await submitSupportEmailReplyApi(cdp, caseId, narrative);
   if (apiReply.status === 'ACCEPTED') {
     return bridgeResult('ACCEPTED', {

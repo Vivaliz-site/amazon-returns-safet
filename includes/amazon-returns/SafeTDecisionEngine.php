@@ -605,8 +605,11 @@ final class SvAmazonSafeTDecisionEngine
             $candidatePayload=is_array($candidate['payload']??null)?$candidate['payload']:[];
             $action=strtoupper(trim((string)($candidatePayload['action']??'')));
             $status=strtoupper(trim((string)($candidatePayload['status']??'')));
-            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
-                || $status!=='ACCEPTED' || ($candidatePayload['submitted']??false)!==true)continue;
+            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))continue;
+            $reason=strtoupper(trim((string)($candidatePayload['reason']??'')));
+            $confirmed=($status==='ACCEPTED' && ($candidatePayload['submitted']??false)===true)
+                || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED');
+            if(!$confirmed)continue;
             if(trim((string)($candidatePayload['external_id']??''))!==$supportCaseId)continue;
             try{$candidateAt=new DateTimeImmutable((string)($candidate['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
             if([$candidateAt->getTimestamp(),(int)($candidate['id']??0)]>$observationRank)return true;
@@ -648,6 +651,41 @@ final class SvAmazonSafeTDecisionEngine
         return $blocker;
     }
 
+    private function duplicateReferencedSellerAction(array $case,array $timeline,array $support): ?array
+    {
+        $caseId=(int)($case['id']??0);
+        $reference=SvAmazonSellerSupportStatus::duplicateCaseReference($support);
+        if($caseId<1 || $reference===null)return null;
+        $latest=null;$latestRank=[-1,0];
+        foreach($timeline as $candidate){
+            if(!is_array($candidate) || (int)($candidate['case_id']??0)!==$caseId)continue;
+            if(($candidate['event_type']??'')!=='SELLER_SUPPORT_STATUS_OBSERVED' || ($candidate['source']??'')!=='SELLER_CENTRAL')continue;
+            $payload=is_array($candidate['payload']??null)?$candidate['payload']:[];
+            if(trim((string)($payload['case_id']??''))!==$reference)continue;
+            try{
+                $referenced=SvAmazonSellerSupportStatus::normalize($payload);
+                if(SvAmazonSellerSupportStatus::resolution($referenced)!=='SELLER_ACTION_REQUIRED')continue;
+                $at=new DateTimeImmutable((string)($candidate['occurred_at']??''),new DateTimeZone('UTC'));
+            }catch(Throwable){continue;}
+            $rank=[$at->getTimestamp(),(int)($candidate['id']??0)];
+            if($rank>$latestRank){$latestRank=$rank;$latest=$referenced;}
+        }
+        if(!is_array($latest))return null;
+        $target=trim((string)($support['case_id']??''));
+        if(preg_match('/^\d{8,14}$/D',$target)!==1)return null;
+        return [
+            'action'=>'SELLER_SUPPORT_UPDATE',
+            'reason'=>'SUPPORT_REQUESTED_SELLER_RESPONSE',
+            'case_id'=>$caseId,
+            'support_case_id'=>$target,
+            'support_latest_text'=>(string)$latest['latest_text'],
+            'support_route'=>strtoupper(trim((string)($case['program']??'')))==='FBA'
+                ? 'FBA_RETURNS_REIMBURSEMENT'
+                : 'GENERAL_ORDER_SUPPORT',
+            'idempotency_key'=>hash('sha256','support-duplicate-missing-response|'.$caseId.'|'.$target.'|'.$reference.'|'.(string)$latest['content_fingerprint']),
+        ];
+    }
+
     private function supportResolutionAction(array $case,array $timeline,DateTimeImmutable $now): ?array
     {
         $caseId=(int)($case['id']??0);
@@ -671,6 +709,8 @@ final class SvAmazonSafeTDecisionEngine
                 'support_case_id'=>$support['case_id'],
             ];
         }
+        $duplicateSellerAction=$this->duplicateReferencedSellerAction($case,$timeline,$support);
+        if($duplicateSellerAction!==null)return $duplicateSellerAction;
         $resolution=SvAmazonSellerSupportStatus::resolution($support);
         if($resolution==='ACTIVE')return null;
         $safeTId=trim((string)($case['safe_t_id']??''));
