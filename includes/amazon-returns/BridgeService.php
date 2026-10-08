@@ -125,8 +125,15 @@ final class SvAmazonReturnsBridgeService
                 'status'=>'ACK','job_id'=>$jobId,'result_status'=>$status,'completed'=>true,
             ];
         }
-        if($kind==='SELLER_SUPPORT_UPDATE' && $status==='ALREADY_EXISTS'
-            && (string)($result['reason'] ?? '')!=='SUPPORT_UPDATE_READBACK_CONFIRMED'){
+        $supportScopeOnly=in_array($kind,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
+            && (
+                ($status==='ALREADY_EXISTS'
+                    && (string)($result['reason'] ?? '')!=='SUPPORT_UPDATE_READBACK_CONFIRMED')
+                || ($status==='UI_DRIFT'
+                    && (string)($result['reason'] ?? '')==='SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK'
+                    && ($result['submitted'] ?? false)===true)
+            );
+        if($supportScopeOnly){
             return $this->completeSupportExistingCaseDiscovery($row,$result);
         }
         $success=in_array($status,['ACCEPTED','ALREADY_EXISTS'],true);
@@ -204,7 +211,7 @@ final class SvAmazonReturnsBridgeService
             $this->p->outbox->markSuperseded($jobId,'SELLER_SUPPORT_SCOPE_SUPERSEDED');
             $db->commit();
             return [
-                'status'=>'ACK','job_id'=>$jobId,'result_status'=>'ALREADY_EXISTS',
+                'status'=>'ACK','job_id'=>$jobId,'result_status'=>(string)($result['status'] ?? 'ALREADY_EXISTS'),
                 'completed'=>true,'delivery_confirmed'=>false,'scope_reconciled'=>true,
                 'support_case_id'=>$supportId,
             ];
