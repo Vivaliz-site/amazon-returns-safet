@@ -240,9 +240,14 @@ $legacyFalseSuccessDb->queue(['fetch'=>[
     'last_error'=>null,
     'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421"}',
 ]]);
-$legacyFalseSuccessDb->queue(['fetch'=>[
-    'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}',
-]]);
+$legacyFalseSuccessDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}'],
+    ],
+]);
 $legacyFalseSuccessDb->queue(['row_count'=>1]);
 $legacyFalseSuccess = $legacyFalseSuccessOutbox->enqueueResult(
     'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$legacyFalseSuccessKey
@@ -266,9 +271,14 @@ $confirmedSuccessDb->queue(['fetch'=>[
     'last_error'=>null,
     'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421"}',
 ]]);
-$confirmedSuccessDb->queue(['fetch'=>[
-    'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":"SUPPORT_UPDATE_READBACK_CONFIRMED","submitted":false,"external_id":"22426419421"}',
-]]);
+$confirmedSuccessDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":"SUPPORT_UPDATE_READBACK_CONFIRMED","submitted":false,"external_id":"22426419421"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":"SUPPORT_UPDATE_READBACK_CONFIRMED","submitted":false,"external_id":"22426419421"}'],
+    ],
+]);
 $confirmedSuccess = $confirmedSuccessOutbox->enqueueResult(
     'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$confirmedSuccessKey
 );
