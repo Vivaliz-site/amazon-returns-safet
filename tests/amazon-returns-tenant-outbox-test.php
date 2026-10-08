@@ -279,6 +279,36 @@ $confirmedSuccessReactivation = array_values(array_filter(
 ));
 toSame([],$confirmedSuccessReactivation,'Explicit Seller Central readback proof must prevent duplicate delivery.');
 
+$priorSubmittedDb = new TenantOutboxMemoryPdo();
+$priorSubmittedOutbox = new SvAmazonTenantReturnsOutbox($priorSubmittedDb,$context);
+$priorSubmittedKey = $priorSubmittedOutbox->deterministicKey('SELLER_SUPPORT_UPDATE',77,'prior-submitted-update');
+$priorSubmittedDb->queue(['fetch'=>['id'=>77]]);
+$priorSubmittedDb->queue(['throw'=>outboxDuplicate()]);
+$priorSubmittedDb->queue(['fetch'=>[
+    'id'=>410,'status'=>'SUCCEEDED','attempt_count'=>2,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>null,
+    'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421"}',
+]]);
+$priorSubmittedDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}'],
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"UI_DRIFT","reason":"SUPPORT_WRITE_WITHOUT_READBACK_ID","submitted":true,"external_id":"22426419421"}'],
+    ],
+]);
+$priorSubmittedDb->queue(['row_count'=>1]);
+$priorSubmitted = $priorSubmittedOutbox->enqueueResult(
+    'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$priorSubmittedKey
+);
+toSame(false,$priorSubmitted['enqueued']??null,'Any prior submitted Seller Support result must prevent rearming even when a newer legacy ALREADY_EXISTS result is ambiguous.');
+$priorSubmittedReactivation = array_values(array_filter(
+    $priorSubmittedDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame([],$priorSubmittedReactivation,'Full result history with any submitted write must preserve the terminal outbox state and prevent duplicate delivery.');
+
 $pendingRow = [
     'id'=>301,'tenant_id'=>1,'amazon_connection_id'=>10,'case_id'=>77,'kind'=>'SAFE_T_SUBMIT',
     'idempotency_key'=>$key,'payload_json'=>'{"order_id":"702-1234567-7654321"}',
