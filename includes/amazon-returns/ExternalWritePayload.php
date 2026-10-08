@@ -62,19 +62,30 @@ final class SvAmazonExternalWritePayload
                     .'Não utilizamos '.$negative.' para este item. '
                     .'Por favor, prossigam com a análise e o ressarcimento solicitado neste chamado.';
             }
-            $asksReturnOutcome=(
-                (
-                    str_contains($latest,'danific')
-                    && (str_contains($latest,'retorn') || str_contains($latest,'devolu'))
-                    && (str_contains($latest,'não retorn') || str_contains($latest,'nao retorn') || str_contains($latest,'estoque'))
-                )
-                || str_contains($latest,'retornou fisicamente')
+            $returnQuestionContext=(
+                str_contains($latest,'?')
+                || str_contains($latest,'confirme')
+                || str_contains($latest,'confirmar')
+                || str_contains($latest,'poderia')
+                || str_contains($latest,'precisamos entender')
+                || str_contains($latest,'precisamos confirmar')
+            );
+            $mentionsReturnOutcome=(
+                str_contains($latest,'retornou fisicamente')
                 || str_contains($latest,'recebido de volta')
                 || str_contains($latest,'recebida de volta')
                 || (
                     str_contains($latest,'retorn')
                     && (str_contains($latest,'centro de distribuição') || str_contains($latest,'centro de distribuicao'))
                 )
+            );
+            $asksReturnOutcome=(
+                (
+                    str_contains($latest,'danific')
+                    && (str_contains($latest,'retorn') || str_contains($latest,'devolu'))
+                    && (str_contains($latest,'não retorn') || str_contains($latest,'nao retorn') || str_contains($latest,'estoque'))
+                )
+                || ($returnQuestionContext && $mentionsReturnOutcome)
             );
             $asksNonReceiptEvidence=(
                 str_contains($latest,'evidên')
