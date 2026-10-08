@@ -665,39 +665,7 @@ final class SvAmazonTenantReturnsOutbox
                 $ambiguousUnconfirmed=true;
             }
         }
-        if(!$ambiguousUnconfirmed)return false;
-        if($this->matchingSellerSupportWriteDeliveredElsewhere($row))return false;
-        return true;
-    }
-
-    /** @param array<string,mixed> $row */
-    private function matchingSellerSupportWriteDeliveredElsewhere(array $row): bool
-    {
-        try{$rowPayload=self::decodePayloadStatic($row['payload_json']??null);}catch(Throwable){return false;}
-        $writeHash=strtolower(trim((string)($rowPayload['write_snapshot']['content_sha256']??'')));
-        if(preg_match('/^[0-9a-f]{64}$/D',$writeHash)!==1)return false;
-        $stmt=$this->prepare(
-            "SELECT payload_json FROM amazon_return_events WHERE tenant_id=:tenant_id "
-            . "AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id "
-            . "AND event_type='SELLER_CENTRAL_ACTION_RESULT' AND source='SELLER_CENTRAL' ORDER BY id DESC"
-        );
-        $stmt->execute($this->scopeParams([':case_id'=>(int)$row['case_id']]));
-        foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $event){
-            if(!is_array($event))continue;
-            try{$payload=self::decodePayloadStatic($event['payload_json']??null);}catch(Throwable){continue;}
-            if(strtoupper(trim((string)($payload['action']??'')))!=='SELLER_SUPPORT_UPDATE')continue;
-            $eventWriteHash=strtolower(trim((string)($payload['write_content_sha256']??'')));
-            if(preg_match('/^[0-9a-f]{64}$/D',$eventWriteHash)!==1 || !hash_equals($writeHash,$eventWriteHash))continue;
-            $status=strtoupper(trim((string)($payload['status']??'')));
-            $reason=strtoupper(trim((string)($payload['reason']??'')));
-            $submitted=($payload['submitted']??false)===true;
-            if($submitted
-                || $status==='ACCEPTED'
-                || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED')){
-                return true;
-            }
-        }
-        return false;
+        return $ambiguousUnconfirmed;
     }
 
     private function positiveId(int $value, string $label): int
