@@ -179,6 +179,18 @@ $blockedDecision=$engine->nextAction($case,[$closedObserved,$humanIntervention],
 ssmaSame('BLOCKED_REVIEW',$blockedDecision['action']??null,'A non-reopenable Seller Support result must remain visible as a review blocker instead of silently rescheduling or disappearing.');
 ssmaSame('SUPPORT_CASE_NOT_REOPENABLE',$blockedDecision['reason']??null,'The review blocker must preserve the exact Seller Support reason.');
 
+$legacySupersededIntervention=$humanIntervention;
+$legacySupersededIntervention['id']=804607;
+$legacySupersededIntervention['occurred_at']='2026-09-30 08:08:00';
+$legacySupersededIntervention['payload']['status']='SUPERSEDED';
+$legacySupersededIntervention['payload']['external_id']=null;
+$legacySupersededDecision=$engine->nextAction(
+    $case,[$closedObserved,$legacySupersededIntervention],$policy,
+    new DateTimeImmutable('2026-09-30 08:09:00',new DateTimeZone('UTC'))
+);
+ssmaSame('BLOCKED_REVIEW',$legacySupersededDecision['action']??null,'A persisted non-reopenable result normalized to SUPERSEDED must remain a review blocker instead of rescheduling the same impossible update.');
+ssmaSame('SUPPORT_CASE_NOT_REOPENABLE',$legacySupersededDecision['reason']??null,'Legacy SUPERSEDED non-reopenable blockers must preserve the exact Seller Support reason.');
+
 $freshAfterBlock=$merchantObserved;
 $freshAfterBlock['id']=804606;
 $freshAfterBlock['occurred_at']='2026-09-30 09:00:00';
