@@ -603,13 +603,8 @@ final class SvAmazonSafeTDecisionEngine
             if(!is_array($candidate) || (int)($candidate['case_id']??0)!==$caseId)continue;
             if(($candidate['event_type']??'')!=='SELLER_CENTRAL_ACTION_RESULT' || ($candidate['source']??'')!=='SELLER_CENTRAL')continue;
             $candidatePayload=is_array($candidate['payload']??null)?$candidate['payload']:[];
-            $action=strtoupper(trim((string)($candidatePayload['action']??'')));
-            $status=strtoupper(trim((string)($candidatePayload['status']??'')));
-            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))continue;
-            $reason=strtoupper(trim((string)($candidatePayload['reason']??'')));
-            $confirmed=($status==='ACCEPTED' && ($candidatePayload['submitted']??false)===true)
-                || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED');
-            if(!$confirmed)continue;
+            if(strtoupper(trim((string)($candidatePayload['action']??'')))!=='SELLER_SUPPORT_UPDATE')continue;
+            if(!SvAmazonSellerSupportStatus::isConfirmedWriteResult($candidatePayload))continue;
             if(trim((string)($candidatePayload['external_id']??''))!==$supportCaseId)continue;
             try{$candidateAt=new DateTimeImmutable((string)($candidate['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
             if([$candidateAt->getTimestamp(),(int)($candidate['id']??0)]>$observationRank)return true;

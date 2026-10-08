@@ -1837,6 +1837,35 @@ async function submitSupportEmailReplyApi(cdp, caseId, narrative) {
   return { status: confirmed ? 'ACCEPTED' : 'UNCONFIRMED', channels: channels.channels, http_status: Number(result.http_status || 0), attempted: true };
 }
 
+async function confirmSupportUpdateFallback(cdp, fallback, narrative) {
+  if (!fallback || fallback.status !== 'ACCEPTED') return fallback;
+  const caseId = text(fallback.external_id);
+  if (!/^\d{8,14}$/.test(caseId)) {
+    return bridgeResult('FAILED', {
+      reason: 'SUPPORT_UPDATE_FALLBACK_READBACK_ID_MISSING',
+      retry_safe: true,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
+  }
+  const confirmed = await waitForSupportCaseText(cdp, caseId, text(narrative).slice(0, 240), 30000);
+  if (!confirmed) {
+    return bridgeResult('ALREADY_EXISTS', {
+      submitted: true,
+      external_id: caseId,
+      retry_safe: true,
+      reason: 'SUPPORT_CASE_ALREADY_EXISTS',
+      evidence: await evidence(cdp, 'help-v1'),
+    });
+  }
+  return bridgeResult('ACCEPTED', {
+    submitted: true,
+    external_id: caseId,
+    retry_safe: true,
+    reason: 'SUPPORT_UPDATE_FALLBACK_READBACK_CONFIRMED',
+    evidence: await evidence(cdp, 'help-v1'),
+  });
+}
+
 async function supportUpdate(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -1903,9 +1932,9 @@ async function supportUpdate(cdp, job) {
         && freshFallback.reason === 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED')
     );
     if (generalFallbackNeedsFba && supportRouteFor(job) === 'FBA_RETURNS_REIMBURSEMENT') {
-      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' });
+      return await confirmSupportUpdateFallback(cdp, await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' }), narrative);
     }
-    return freshFallback;
+    return await confirmSupportUpdateFallback(cdp, freshFallback, narrative);
   }
   const composerReady = await ensureSupportReplyComposer(cdp);
   if (!composerReady) {
@@ -1913,7 +1942,7 @@ async function supportUpdate(cdp, job) {
     if (sellerSupportCaseLogUnavailable(latestSupportPage?.text)) return sellerSupportUnavailableResult();
     const supportRoute = supportRouteFor(job);
     if (supportRoute) {
-      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute });
+      return await confirmSupportUpdateFallback(cdp, await supportOpen(cdp, job, { forceFreshCase: true, supportRoute }), narrative);
     }
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
   }
@@ -1927,9 +1956,9 @@ async function supportUpdate(cdp, job) {
       || (freshFallback.status === 'UI_DRIFT' && freshFallback.reason === 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED')
     );
     if (generalFallbackNeedsFba && supportRouteFor(job) === 'FBA_RETURNS_REIMBURSEMENT') {
-      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' });
+      return await confirmSupportUpdateFallback(cdp, await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' }), narrative);
     }
-    return freshFallback;
+    return await confirmSupportUpdateFallback(cdp, freshFallback, narrative);
   }
   const confirmed = await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240));
   if (!confirmed) return bridgeResult('FAILED', { reason: 'SUPPORT_REPLY_NOT_CONFIRMED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
