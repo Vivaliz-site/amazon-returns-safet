@@ -1419,6 +1419,16 @@ async function contactSupportAndReadBack(cdp, job) {
   if (!/^\d{8,14}$/.test(caseId)) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
   }
+  const narrative = narrativeFor(job, 9000);
+  if (!(await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240)))) {
+    return bridgeResult('UI_DRIFT', {
+      reason: 'SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK',
+      submitted: true,
+      external_id: caseId,
+      retry_safe: true,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
+  }
   return bridgeResult('ACCEPTED', {
     submitted: true,
     external_id: caseId,
@@ -1479,6 +1489,15 @@ async function submitDirectSupportCaseAndReadBack(cdp, job, narrative) {
   }
   if (!/^\d{8,14}$/.test(caseId)) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+  }
+  if (!(await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240)))) {
+    return bridgeResult('UI_DRIFT', {
+      reason: 'SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK',
+      submitted: true,
+      external_id: caseId,
+      retry_safe: true,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
   }
   return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason: 'SUPPORT_CASE_OPENED_DIRECTLY', evidence: await evidence(cdp, 'help-v1') });
 }

@@ -23,6 +23,8 @@ $contact=substr($worker,(int)$contactStart,(int)$contactEnd-(int)$contactStart);
 $emailPos=strpos($contact,'submitHillEmail(cdp, job)');$chatPos=strpos($contact,'clickHillChat(cdp)');
 dhAssert($emailPos!==false && ($chatPos===false || $emailPos<$chatPos),'Deterministic email must be attempted before chat because clicking Chat now alone does not submit a support request.');
 dhAssert(!str_contains($contact,'let channel = await clickHillChat(cdp);'),'A Chat now click must never be treated as a completed Seller Support write without message submission/read-back.');
+dhAssert(str_contains($contact,'waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240))'),'Hill/email case creation must verify the exact submitted narrative through authoritative ViewCase readback before delivery is accepted.');
+dhAssert(str_contains($contact,"SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK"),'Hill/email case creation without narrative readback must fail closed as submitted-but-unconfirmed.');
 
 $genericStart=strpos($worker,'async function openGeneralSupportRoute');
 $genericEnd=$genericStart===false?false:strpos($worker,'async function supportOpen',$genericStart);

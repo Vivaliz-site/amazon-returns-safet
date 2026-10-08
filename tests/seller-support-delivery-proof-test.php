@@ -11,6 +11,8 @@ ssdpAssert(str_contains($worker,"SUPPORT_UPDATE_READBACK_CONFIRMED"),'Exact Sell
 ssdpAssert(str_contains($worker,"SUPPORT_CASE_ALREADY_EXISTS"),'Existing-case discovery must be distinct from reply readback.');
 ssdpAssert(str_contains($bridge,"SUPPORT_UPDATE_READBACK_CONFIRMED"),'Bridge must distinguish reply readback from case discovery.');
 ssdpAssert(str_contains($bridge,"completeSupportExistingCaseDiscovery"),'A discovered existing case must reconcile scope instead of marking update delivery.');
+ssdpAssert(str_contains($bridge,"SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK"),'A submitted new Seller Support case without narrative readback must be reconciled as scope discovery, never delivery proof.');
+ssdpAssert(str_contains($bridge,"['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE']"),'Both support-open and support-update creation paths must fail closed when only a case ID was read back.');
 ssdpAssert(str_contains($status,"SUPPORT_UPDATE_READBACK_CONFIRMED"),'Read cadence must only treat explicit update readback as ALREADY_EXISTS delivery proof.');
 
 echo "seller-support-delivery-proof-test: OK\n";
