@@ -65,8 +65,10 @@ final class SvAmazonExternalWritePayload
             $returnMention='(?:retorn(?:ou|ar|ado|ada|aram|em|e)?(?:\\s+fisicamente)?|recebid[oa]\\s+de\\s+volta)';
             $returnRequest='(?:confirme|confirmar|informe|informar|indique|indicar|diga|dizer|esclareça|esclarecer|favor\\s+(?:confirmar|informar|indicar)|(?:pode|poderia)\\s+(?:nos\\s+)?(?:confirmar|informar|indicar|dizer)|precisamos\\s+(?:entender|confirmar|saber)|gostaríamos\\s+de\\s+saber|solicitamos(?:\\s+que)?(?:\\s+nos)?\\s+(?:confirme|informe|indique))';
             $returnQuestionContext=(
-                preg_match('/'.$returnRequest.'[^.!?]{0,220}'.$returnMention.'/u',$latest)===1
-                || preg_match('/'.$returnMention.'[^.!?]{0,220}\\?/u',$latest)===1
+                preg_match('/'.$returnRequest.'[^.!?]{0,80}\\b(?:se|caso)\\b[^.!?]{0,140}'.$returnMention.'/u',$latest)===1
+                || preg_match('/(?:item|produto|unidade)[^.!?]{0,60}\\bfoi\\s+recebid[oa]\\s+de\\s+volta[^.!?]{0,80}\\?/u',$latest)===1
+                || preg_match('/(?:item|produto|unidade)[^.!?]{0,60}\\bretorn(?:ou|aram)\\b[^.!?]{0,100}\\?/u',$latest)===1
+                || preg_match('/\\bretornou\\s+fisicamente\\b[^.!?]{0,100}\\?/u',$latest)===1
             );
             $mentionsReturnOutcome=(
                 str_contains($latest,'retornou fisicamente')
