@@ -60,6 +60,9 @@ function statusFrom(body) {
     lastIndex(normalized, /\bem analise\b/i),
     lastIndex(normalized, /\bpendente\b/i),
     lastIndex(normalized, /\bem andamento\b/i),
+    lastIndex(normalized, /\bunder investigation\b/i),
+    lastIndex(normalized, /\bunder review\b/i),
+    lastIndex(normalized, /\bin progress\b/i),
   );
   const latestDecision = Math.max(denied, approved, info);
   if (appeal > latestDecision) return 'PENDING';
