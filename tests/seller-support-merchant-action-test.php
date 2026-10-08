@@ -100,6 +100,18 @@ $physicalReturnQuestionPayload=SvAmazonExternalWritePayload::build($physicalRetu
 $physicalReturnQuestionNarrative=(string)($physicalReturnQuestionPayload['write_snapshot']['narrative']??'');
 ssmaAssert(str_contains($physicalReturnQuestionNarrative,'não retornou ao nosso estoque') || str_contains($physicalReturnQuestionNarrative,'não recebemos fisicamente'),'A direct physical-return question must be answered from trusted NOT_RECEIVED evidence, not with a generic finance-only reply.');
 
+$imperativeReturnDecision=$physicalReturnQuestionDecision;
+$imperativeReturnDecision['support_latest_text']='Informe se o item foi recebido de volta.';
+$imperativeReturnPayload=SvAmazonExternalWritePayload::build($imperativeReturnDecision,$physicalReturnQuestionCase,[]);
+$imperativeReturnNarrative=(string)($imperativeReturnPayload['write_snapshot']['narrative']??'');
+ssmaAssert(str_contains($imperativeReturnNarrative,'não retornou ao nosso estoque') || str_contains($imperativeReturnNarrative,'não recebemos fisicamente'),'An imperative request for physical-return status must be answered from trusted NOT_RECEIVED evidence.');
+
+$invoiceForReturnedItemDecision=$physicalReturnQuestionDecision;
+$invoiceForReturnedItemDecision['support_latest_text']='Informe a nota fiscal de compra do item recebido de volta.';
+$invoiceForReturnedItemPayload=SvAmazonExternalWritePayload::build($invoiceForReturnedItemDecision,$physicalReturnQuestionCase,[]);
+$invoiceForReturnedItemNarrative=(string)($invoiceForReturnedItemPayload['write_snapshot']['narrative']??'');
+ssmaAssert(!str_contains($invoiceForReturnedItemNarrative,'não retornou ao nosso estoque') && !str_contains($invoiceForReturnedItemNarrative,'não retornaram ao nosso estoque'),'An imperative request for another field must not be misclassified merely because the item is described as received back.');
+
 $returnMentionDecision=$physicalReturnQuestionDecision;
 $returnMentionDecision['support_latest_text']='O item retornou ao centro de distribuição em 01/10/2026. Para prosseguir com a análise, a nota fiscal de compra está disponível?';
 $returnMentionPayload=SvAmazonExternalWritePayload::build($returnMentionDecision,$physicalReturnQuestionCase,[]);
