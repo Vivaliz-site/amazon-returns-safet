@@ -273,10 +273,20 @@ async function safeTRead(job) {
   const cdp = await Cdp.connect();
   try {
     const page = await authenticatedPage(cdp, `${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 5500);
-    const state = page.state;
+    let state = page.state;
     const auth = page.auth;
     if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: page.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
     if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: page.reason || 'CAPTCHA_PRESENT', evidence: evidence(state) });
+    if (/^\d{3}-\d{7}-\d{7}$/.test(orderId)) {
+      state = await waitForSafeTClaimOrderIdentity(cdp, orderId);
+      if (!String(state.text || '').includes(orderId)) {
+        return result('UI_DRIFT', {
+          reason: 'SAFE_T_READ_ORDER_IDENTITY_NOT_READY',
+          retry_safe: true,
+          evidence: evidence(state),
+        });
+      }
+    }
     const read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
     return result('ACCEPTED', {
       external_id: safeTId,
