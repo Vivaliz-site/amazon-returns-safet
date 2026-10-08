@@ -63,8 +63,18 @@ final class SvAmazonExternalWritePayload
                     .'Por favor, prossigam com a análise e o ressarcimento solicitado neste chamado.';
             }
             $asksReturnOutcome=(
-                (str_contains($latest,'danific') && (str_contains($latest,'retorn') || str_contains($latest,'devolu')))
-                && (str_contains($latest,'não retorn') || str_contains($latest,'nao retorn') || str_contains($latest,'estoque'))
+                (
+                    str_contains($latest,'danific')
+                    && (str_contains($latest,'retorn') || str_contains($latest,'devolu'))
+                    && (str_contains($latest,'não retorn') || str_contains($latest,'nao retorn') || str_contains($latest,'estoque'))
+                )
+                || str_contains($latest,'retornou fisicamente')
+                || str_contains($latest,'recebido de volta')
+                || str_contains($latest,'recebida de volta')
+                || (
+                    str_contains($latest,'retorn')
+                    && (str_contains($latest,'centro de distribuição') || str_contains($latest,'centro de distribuicao'))
+                )
             );
             $asksNonReceiptEvidence=(
                 str_contains($latest,'evidên')
@@ -93,9 +103,14 @@ final class SvAmazonExternalWritePayload
             }
             if($asksReturnOutcome && $physicalStatus==='NOT_RECEIVED' && $quantityReceived===0){
                 $quantity=max(1,(int)($case['quantity_refunded']??$case['quantity_ordered']??1));
-                $unitWord=$quantity===1?'unidade':'unidades';
-                return 'Sobre o pedido '.$order.'. Confirmamos que as '.$quantity.' '.$unitWord.' não retornaram ao nosso estoque após a devolução. '
-                    .'Não estamos informando dano após recebimento; a situação aplicável é que as unidades não foram recebidas de volta em nosso estoque. '
+                $returnFact=$quantity===1
+                    ? 'Confirmamos que a unidade não retornou ao nosso estoque após a tentativa de devolução. '
+                    : 'Confirmamos que as '.$quantity.' unidades não retornaram ao nosso estoque após a tentativa de devolução. ';
+                $receiptFact=$quantity===1
+                    ? 'A unidade não foi recebida de volta em nosso estoque. '
+                    : 'As unidades não foram recebidas de volta em nosso estoque. ';
+                return 'Sobre o pedido '.$order.'. '.$returnFact
+                    .'Não estamos informando dano após recebimento; '.$receiptFact
                     .'Por favor, prossigam com a investigação e o ressarcimento solicitado neste chamado.';
             }
             $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));

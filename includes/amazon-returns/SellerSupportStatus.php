@@ -56,8 +56,14 @@ final class SvAmazonSellerSupportStatus
             if($type!=='SELLER_CENTRAL_ACTION_RESULT' || $source!=='SELLER_CENTRAL')continue;
             $action=strtoupper(trim((string)($payload['action']??'')));
             $status=strtoupper(trim((string)($payload['status']??'')));
-            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
-                || !in_array($status,['ACCEPTED','ALREADY_EXISTS'],true))continue;
+            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))continue;
+            $reason=strtoupper(trim((string)($payload['reason']??'')));
+            $confirmedWrite=($status==='ACCEPTED' && ($payload['submitted']??false)===true)
+                || ($status==='ALREADY_EXISTS' && (
+                    $action==='SELLER_SUPPORT_OPEN'
+                    || $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED'
+                ));
+            if(!$confirmedWrite)continue;
             $external=trim((string)($payload['external_id']??''));
             if($external!=='' && $external!==$supportCaseId)continue;
             if($rank>$latestWriteRank){$latestWrite=$event;$latestWriteRank=$rank;}
@@ -118,6 +124,16 @@ final class SvAmazonSellerSupportStatus
         if(self::returnNotReceivedDispute($text))return 'RETURN_NOT_RECEIVED_DISPUTE';
         if(self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
         return 'TERMINAL_AMBIGUOUS';
+    }
+
+    public static function duplicateCaseReference(array $support): ?string
+    {
+        $support=self::normalize($support);
+        if(!self::isTerminalStatus($support['case_status']))return null;
+        $text=mb_strtolower($support['latest_text'],'UTF-8');
+        if(preg_match('/(?:mesma\s+solicita[cç][aã]o|caso\s+duplicad|duplicate(?:d)?\s+case|same\s+(?:request|issue))/u',$text)!==1)return null;
+        if(preg_match('/(?:id\s+do\s+caso\s+anterior|previous\s+case(?:\s+id)?|prior\s+case(?:\s+id)?)[^0-9]{0,40}(\d{8,14})/u',$text,$match)!==1)return null;
+        return (string)$match[1];
     }
 
     private static function directsSafeTSubmission(string $text): bool

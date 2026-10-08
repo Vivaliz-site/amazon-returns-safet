@@ -85,6 +85,21 @@ $missingReturnNarrative=(string)($missingReturnPayload['write_snapshot']['narrat
 ssmaAssert(str_contains($missingReturnNarrative,'não retornaram ao nosso estoque'),'Trusted NOT_RECEIVED state must answer that the units did not return.');
 ssmaAssert(str_contains($missingReturnNarrative,'Não estamos informando dano após recebimento'),'The answer must explicitly reject the damaged-after-receipt alternative.');
 
+$physicalReturnQuestionCase=$case;
+$physicalReturnQuestionCase['physical_status']='NOT_RECEIVED';
+$physicalReturnQuestionCase['quantity_received']=0;
+$physicalReturnQuestionCase['quantity_refunded']=1;
+$physicalReturnQuestionDecision=[
+    'action'=>'SELLER_SUPPORT_UPDATE',
+    'reason'=>'SUPPORT_REQUESTED_SELLER_RESPONSE',
+    'case_id'=>13225,
+    'support_case_id'=>'22426419421',
+    'support_latest_text'=>'Para que possamos confirmar se há algum valor adicional a ser ressarcido, precisamos entender se o produto retornou fisicamente ao seu centro de distribuição após a tentativa de entrega. Poderia nos confirmar se o item foi recebido de volta?',
+];
+$physicalReturnQuestionPayload=SvAmazonExternalWritePayload::build($physicalReturnQuestionDecision,$physicalReturnQuestionCase,[]);
+$physicalReturnQuestionNarrative=(string)($physicalReturnQuestionPayload['write_snapshot']['narrative']??'');
+ssmaAssert(str_contains($physicalReturnQuestionNarrative,'não retornou ao nosso estoque') || str_contains($physicalReturnQuestionNarrative,'não recebemos fisicamente'),'A direct physical-return question must be answered from trusted NOT_RECEIVED evidence, not with a generic finance-only reply.');
+
 $evidenceRequestCase=$case;
 $evidenceRequestCase['safe_t_id']='93434-86383-4098666';
 $evidenceRequestCase['physical_status']='NOT_RECEIVED';

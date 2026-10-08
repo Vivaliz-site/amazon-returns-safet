@@ -125,11 +125,18 @@ final class SvAmazonReturnsBridgeService
                 'status'=>'ACK','job_id'=>$jobId,'result_status'=>$status,'completed'=>true,
             ];
         }
+        if($kind==='SELLER_SUPPORT_UPDATE' && $status==='ALREADY_EXISTS'
+            && (string)($result['reason'] ?? '')!=='SUPPORT_UPDATE_READBACK_CONFIRMED'){
+            return $this->completeSupportExistingCaseDiscovery($row,$result);
+        }
         $success=in_array($status,['ACCEPTED','ALREADY_EXISTS'],true);
         if($success){
             $this->completeSuccess($row,$result);
             return [
                 'status'=>'ACK','job_id'=>$jobId,'result_status'=>$status,'completed'=>true,
+                'delivery_confirmed'=>$kind!=='SELLER_SUPPORT_UPDATE'
+                    || $status==='ACCEPTED'
+                    || (string)($result['reason'] ?? '')==='SUPPORT_UPDATE_READBACK_CONFIRMED',
             ];
         }
 
@@ -174,6 +181,38 @@ final class SvAmazonReturnsBridgeService
         ];
     }
 
+
+    /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */
+    private function completeSupportExistingCaseDiscovery(array $row,array $result): array
+    {
+        $caseId=(int)($row['case_id']??0);
+        $jobId=(int)($row['id']??0);
+        $supportId=trim((string)($result['external_id']??''));
+        if($caseId<1 || preg_match('/^\d{8,14}$/D',$supportId)!==1){
+            throw new RuntimeException('Seller Support existing-case discovery requires a valid case identity.');
+        }
+        $db=$this->p->db();$db->beginTransaction();
+        try{
+            $this->p->cases->assertOwned($caseId);
+            $case=$this->p->cases->find($caseId);
+            if(!is_array($case))throw new RuntimeException('Seller Support discovery case disappeared.');
+            $this->appendResultEvent($row,$result);
+            $this->p->cases->update($caseId,[
+                'support_case_id'=>$supportId,
+                'state'=>SvAmazonReturnStates::SUPPORT_ESCALATION,
+            ]);
+            $this->p->outbox->markSuperseded($jobId,'SELLER_SUPPORT_SCOPE_SUPERSEDED');
+            $db->commit();
+            return [
+                'status'=>'ACK','job_id'=>$jobId,'result_status'=>'ALREADY_EXISTS',
+                'completed'=>true,'delivery_confirmed'=>false,'scope_reconciled'=>true,
+                'support_case_id'=>$supportId,
+            ];
+        }catch(Throwable $e){
+            if($db->inTransaction())$db->rollBack();
+            throw $e;
+        }
+    }
 
     /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */
     private function completeHumanIntervention(array $row,array $result): array
