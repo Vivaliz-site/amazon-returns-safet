@@ -211,6 +211,7 @@ $scopeReactivation = array_values(array_filter(
 ));
 toSame(1,count($scopeReactivation),'Scope recovery must perform exactly one guarded reactivation.');
 toAssert(str_contains((string)($scopeReactivation[0]['sql']??''),"last_error='SELLER_SUPPORT_SCOPE_SUPERSEDED'"),'Scope recovery SQL must be guarded by the exact pre-write supersede reason.');
+toAssert(str_contains((string)($scopeReactivation[0]['sql']??''),'CAST(payload_json AS CHAR)=:previous_payload_json'),'Scope recovery must compare a MySQL JSON payload through its canonical text representation, not JSON-to-string equality.');
 
 $scopeMismatchDb = new TenantOutboxMemoryPdo();
 $scopeMismatchOutbox = new SvAmazonTenantReturnsOutbox($scopeMismatchDb,$context);
