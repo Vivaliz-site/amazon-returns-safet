@@ -62,19 +62,27 @@ final class SvAmazonExternalWritePayload
                     .'Não utilizamos '.$negative.' para este item. '
                     .'Por favor, prossigam com a análise e o ressarcimento solicitado neste chamado.';
             }
-            $asksReturnOutcome=(
-                (
-                    str_contains($latest,'danific')
-                    && (str_contains($latest,'retorn') || str_contains($latest,'devolu'))
-                    && (str_contains($latest,'não retorn') || str_contains($latest,'nao retorn') || str_contains($latest,'estoque'))
-                )
-                || str_contains($latest,'retornou fisicamente')
+            $returnMention='(?:retorn(?:ou|ar|ado|ada|aram|em|e)?(?:\\s+fisicamente)?|recebid[oa]\\s+de\\s+volta)';
+            $returnQuestionContext=(
+                preg_match('/(?:confirme|confirmar|poderia|precisamos\\s+(?:entender|confirmar))[^.!?]{0,220}'.$returnMention.'/u',$latest)===1
+                || preg_match('/'.$returnMention.'[^.!?]{0,220}\\?/u',$latest)===1
+            );
+            $mentionsReturnOutcome=(
+                str_contains($latest,'retornou fisicamente')
                 || str_contains($latest,'recebido de volta')
                 || str_contains($latest,'recebida de volta')
                 || (
                     str_contains($latest,'retorn')
                     && (str_contains($latest,'centro de distribuição') || str_contains($latest,'centro de distribuicao'))
                 )
+            );
+            $asksReturnOutcome=(
+                (
+                    str_contains($latest,'danific')
+                    && (str_contains($latest,'retorn') || str_contains($latest,'devolu'))
+                    && (str_contains($latest,'não retorn') || str_contains($latest,'nao retorn') || str_contains($latest,'estoque'))
+                )
+                || ($returnQuestionContext && $mentionsReturnOutcome)
             );
             $asksNonReceiptEvidence=(
                 str_contains($latest,'evidên')

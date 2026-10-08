@@ -32,4 +32,22 @@ ssdrSame('SELLER_SUPPORT_UPDATE',$decision['action']??null,'Duplicate closure mu
 ssdrSame('SUPPORT_REQUESTED_SELLER_RESPONSE',$decision['reason']??null,'Duplicate closure must inherit the missing-response reason.');
 ssdrSame('22426419421',$decision['support_case_id']??null,'Recovery must use the current recent support binding.');
 ssdrAssert(str_contains((string)($decision['support_latest_text']??''),'recebido de volta'),'Recovery must carry the referenced unanswered question.');
+
+$resolvedReference=$old;
+$resolvedReference['id']=825665;
+$resolvedReference['occurred_at']='2026-10-03 10:00:00';
+$resolvedReference['payload']['case_status']='RESOLVED';
+$resolvedReference['payload']['latest_text']='A investigação deste caso foi concluída e não há ação adicional pendente do vendedor.';
+$resolvedDecision=$engine->nextAction($case,[$old,$resolvedReference,$current],['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'],new DateTimeImmutable('2026-10-08 03:20:00',new DateTimeZone('UTC')));
+ssdrAssert(($resolvedDecision['action']??null)!=='SELLER_SUPPORT_UPDATE','A newer resolved observation on the referenced case must suppress replay of an older unanswered prompt.');
+
+$acceptedReply=[
+    'id'=>825666,'case_id'=>13225,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-03 11:00:00','payload'=>[
+        'action'=>'SELLER_SUPPORT_UPDATE','status'=>'ACCEPTED','submitted'=>true,'external_id'=>'22354106631',
+    ],
+];
+$answeredDecision=$engine->nextAction($case,[$old,$acceptedReply,$current],['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'],new DateTimeImmutable('2026-10-08 03:20:00',new DateTimeZone('UTC')));
+ssdrAssert(($answeredDecision['action']??null)!=='SELLER_SUPPORT_UPDATE','A confirmed outbound reply on the referenced case must suppress replay of the older unanswered prompt.');
+
 echo "seller-support-duplicate-redirect-test: OK\n";

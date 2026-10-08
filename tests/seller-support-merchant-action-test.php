@@ -100,6 +100,12 @@ $physicalReturnQuestionPayload=SvAmazonExternalWritePayload::build($physicalRetu
 $physicalReturnQuestionNarrative=(string)($physicalReturnQuestionPayload['write_snapshot']['narrative']??'');
 ssmaAssert(str_contains($physicalReturnQuestionNarrative,'não retornou ao nosso estoque') || str_contains($physicalReturnQuestionNarrative,'não recebemos fisicamente'),'A direct physical-return question must be answered from trusted NOT_RECEIVED evidence, not with a generic finance-only reply.');
 
+$returnMentionDecision=$physicalReturnQuestionDecision;
+$returnMentionDecision['support_latest_text']='O item retornou ao centro de distribuição em 01/10/2026. Para prosseguir com a análise, a nota fiscal de compra está disponível?';
+$returnMentionPayload=SvAmazonExternalWritePayload::build($returnMentionDecision,$physicalReturnQuestionCase,[]);
+$returnMentionNarrative=(string)($returnMentionPayload['write_snapshot']['narrative']??'');
+ssmaAssert(!str_contains($returnMentionNarrative,'não retornou ao nosso estoque') && !str_contains($returnMentionNarrative,'não retornaram ao nosso estoque'),'A mere statement that an item returned must not be misclassified as a physical-return question.');
+
 $evidenceRequestCase=$case;
 $evidenceRequestCase['safe_t_id']='93434-86383-4098666';
 $evidenceRequestCase['physical_status']='NOT_RECEIVED';
