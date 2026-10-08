@@ -229,6 +229,96 @@ $scopeMismatchReactivation = array_values(array_filter(
 ));
 toSame([],$scopeMismatchReactivation,'Scope recovery must never reactivate a different support thread.');
 
+$legacyFalseSuccessDb = new TenantOutboxMemoryPdo();
+$legacyFalseSuccessOutbox = new SvAmazonTenantReturnsOutbox($legacyFalseSuccessDb,$context);
+$legacyFalseSuccessKey = $legacyFalseSuccessOutbox->deterministicKey('SELLER_SUPPORT_UPDATE',77,'legacy-unconfirmed-update');
+$legacyFalseSuccessPayload = ['order_id'=>'702-6823050-9173862','support_case_id'=>'22426419421'];
+$legacyFalseSuccessDb->queue(['fetch'=>['id'=>77]]);
+$legacyFalseSuccessDb->queue(['throw'=>outboxDuplicate()]);
+$legacyFalseSuccessDb->queue(['fetch'=>[
+    'id'=>408,'status'=>'SUCCEEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>null,
+    'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421"}',
+]]);
+$legacyFalseSuccessDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}'],
+    ],
+]);
+$legacyFalseSuccessDb->queue(['row_count'=>1]);
+$legacyFalseSuccess = $legacyFalseSuccessOutbox->enqueueResult(
+    'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$legacyFalseSuccessKey
+);
+toSame(408,$legacyFalseSuccess['id']??null,'A legacy false-success Seller Support update must preserve its outbox identity.');
+toSame(true,$legacyFalseSuccess['enqueued']??null,'A legacy SUCCEEDED update backed only by unconfirmed ALREADY_EXISTS must be rearmed when the same decision is current.');
+$legacyFalseSuccessReactivation = array_values(array_filter(
+    $legacyFalseSuccessDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame(1,count($legacyFalseSuccessReactivation),'Legacy false success recovery must perform one guarded reactivation.');
+toAssert(str_contains((string)($legacyFalseSuccessReactivation[0]['sql']??''),"status='SUCCEEDED'"),'Legacy false success recovery must only rewrite a still-SUCCEEDED row.');
+
+$confirmedSuccessDb = new TenantOutboxMemoryPdo();
+$confirmedSuccessOutbox = new SvAmazonTenantReturnsOutbox($confirmedSuccessDb,$context);
+$confirmedSuccessKey = $confirmedSuccessOutbox->deterministicKey('SELLER_SUPPORT_UPDATE',77,'confirmed-update');
+$confirmedSuccessDb->queue(['fetch'=>['id'=>77]]);
+$confirmedSuccessDb->queue(['throw'=>outboxDuplicate()]);
+$confirmedSuccessDb->queue(['fetch'=>[
+    'id'=>409,'status'=>'SUCCEEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>null,
+    'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421"}',
+]]);
+$confirmedSuccessDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":"SUPPORT_UPDATE_READBACK_CONFIRMED","submitted":false,"external_id":"22426419421"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":"SUPPORT_UPDATE_READBACK_CONFIRMED","submitted":false,"external_id":"22426419421"}'],
+    ],
+]);
+$confirmedSuccess = $confirmedSuccessOutbox->enqueueResult(
+    'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$confirmedSuccessKey
+);
+toSame(false,$confirmedSuccess['enqueued']??null,'An update with explicit Seller Central readback proof must remain terminal and must never be rearmed.');
+$confirmedSuccessReactivation = array_values(array_filter(
+    $confirmedSuccessDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame([],$confirmedSuccessReactivation,'Explicit Seller Central readback proof must prevent duplicate delivery.');
+
+$priorSubmittedDb = new TenantOutboxMemoryPdo();
+$priorSubmittedOutbox = new SvAmazonTenantReturnsOutbox($priorSubmittedDb,$context);
+$priorSubmittedKey = $priorSubmittedOutbox->deterministicKey('SELLER_SUPPORT_UPDATE',77,'prior-submitted-update');
+$priorSubmittedDb->queue(['fetch'=>['id'=>77]]);
+$priorSubmittedDb->queue(['throw'=>outboxDuplicate()]);
+$priorSubmittedDb->queue(['fetch'=>[
+    'id'=>410,'status'=>'SUCCEEDED','attempt_count'=>2,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>null,
+    'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421"}',
+]]);
+$priorSubmittedDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}'],
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"UI_DRIFT","reason":"SUPPORT_WRITE_WITHOUT_READBACK_ID","submitted":true,"external_id":"22426419421"}'],
+    ],
+]);
+$priorSubmittedDb->queue(['row_count'=>1]);
+$priorSubmitted = $priorSubmittedOutbox->enqueueResult(
+    'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$priorSubmittedKey
+);
+toSame(false,$priorSubmitted['enqueued']??null,'Any prior submitted Seller Support result must prevent rearming even when a newer legacy ALREADY_EXISTS result is ambiguous.');
+$priorSubmittedReactivation = array_values(array_filter(
+    $priorSubmittedDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame([],$priorSubmittedReactivation,'Full result history with any submitted write must preserve the terminal outbox state and prevent duplicate delivery.');
+
 $pendingRow = [
     'id'=>301,'tenant_id'=>1,'amazon_connection_id'=>10,'case_id'=>77,'kind'=>'SAFE_T_SUBMIT',
     'idempotency_key'=>$key,'payload_json'=>'{"order_id":"702-1234567-7654321"}',
