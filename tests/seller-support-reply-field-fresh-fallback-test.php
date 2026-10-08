@@ -21,7 +21,7 @@ $open=substr($worker,(int)$openStart,(int)$openEnd-(int)$openStart);
 ssrfAssert(str_contains($open,'const reconcileKnownCase = options.forceFreshCase !== true;'),'Fresh-case mode must explicitly disable reconciliation of the known stale thread.');
 ssrfAssert(str_contains($open,'if (!reconcileKnownCase'),'Fresh-case lookup must exclude the stale support case ID.');
 ssrfAssert(str_contains($open,'excludeCaseIds'),'Fresh-case lookup must exclude the stale support case ID while still reconciling any new sibling.');
-ssrfAssert(str_contains($open,'const retryReconciliation = Number(job.attempt_count || 0) > 1;'),'A retry after a potentially submitted fresh-case write must enter reconciliation even when forceFreshCase is true.');
+ssrfAssert(str_contains($open,'const retryReconciliation = job.retry_reconciliation === true;'),'A server-authorized retry after a potentially submitted fresh-case write must enter reconciliation even when forceFreshCase is true.');
 ssrfAssert(str_contains($open,"retryReconciliation ? { includeTerminal: true } : {}"),'Retry reconciliation must include terminal sibling cases so a quickly closed created case cannot be duplicated.');
 
 echo "seller-support-reply-field-fresh-fallback-test: OK\n";
