@@ -640,22 +640,32 @@ final class SvAmazonTenantReturnsOutbox
             "SELECT payload_json FROM amazon_return_events WHERE tenant_id=:tenant_id "
             . "AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id "
             . "AND event_type='SELLER_CENTRAL_ACTION_RESULT' AND source='SELLER_CENTRAL' "
-            . "AND source_event_id=:source_event_id ORDER BY id DESC LIMIT 1"
+            . "AND source_event_id=:source_event_id ORDER BY id DESC"
         );
         $stmt->execute($this->scopeParams([
             ':case_id'=>(int)$row['case_id'],
             ':source_event_id'=>(string)$row['id'],
         ]));
-        $event=$stmt->fetch(PDO::FETCH_ASSOC);
-        if(!is_array($event))return false;
-        try{$payload=self::decodePayloadStatic($event['payload_json']??null);}catch(Throwable){return false;}
-        $action=strtoupper(trim((string)($payload['action']??'')));
-        $status=strtoupper(trim((string)($payload['status']??'')));
-        $reason=strtoupper(trim((string)($payload['reason']??'')));
-        return $action==='SELLER_SUPPORT_UPDATE'
-            && $status==='ALREADY_EXISTS'
-            && ($payload['submitted']??false)!==true
-            && $reason!=='SUPPORT_UPDATE_READBACK_CONFIRMED';
+        $events=array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+        if($events===[])return false;
+        $ambiguousUnconfirmed=false;
+        foreach($events as $event){
+            try{$payload=self::decodePayloadStatic($event['payload_json']??null);}catch(Throwable){return false;}
+            $action=strtoupper(trim((string)($payload['action']??'')));
+            if($action!=='SELLER_SUPPORT_UPDATE')continue;
+            $status=strtoupper(trim((string)($payload['status']??'')));
+            $reason=strtoupper(trim((string)($payload['reason']??'')));
+            $submitted=($payload['submitted']??false)===true;
+            if($submitted
+                || $status==='ACCEPTED'
+                || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED')){
+                return false;
+            }
+            if($status==='ALREADY_EXISTS' && !$submitted){
+                $ambiguousUnconfirmed=true;
+            }
+        }
+        return $ambiguousUnconfirmed;
     }
 
     private function positiveId(int $value, string $label): int
