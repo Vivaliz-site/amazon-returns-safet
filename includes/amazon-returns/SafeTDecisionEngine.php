@@ -629,8 +629,11 @@ final class SvAmazonSafeTDecisionEngine
             $payload=is_array($event['payload']??null)?$event['payload']:[];
             $action=strtoupper(trim((string)($payload['action']??'')));
             $status=strtoupper(trim((string)($payload['status']??'')));
+            $reason=strtoupper(trim((string)($payload['reason']??'')));
+            $blocked=$status==='HUMAN_INTERVENTION_REQUIRED'
+                || ($status==='SUPERSEDED' && $reason==='SUPPORT_CASE_NOT_REOPENABLE');
             if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
-                || $status!=='HUMAN_INTERVENTION_REQUIRED')continue;
+                || !$blocked)continue;
             try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
             $rank=[$at->getTimestamp(),(int)($event['id']??0)];
             if($rank<=$blockerRank)continue;
