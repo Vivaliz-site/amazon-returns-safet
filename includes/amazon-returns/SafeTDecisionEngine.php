@@ -656,7 +656,7 @@ final class SvAmazonSafeTDecisionEngine
         $caseId=(int)($case['id']??0);
         $reference=SvAmazonSellerSupportStatus::duplicateCaseReference($support);
         if($caseId<1 || $reference===null)return null;
-        $latest=null;$latestRank=[-1,0];
+        $latestEvent=null;$latest=null;$latestRank=[-1,0];
         foreach($timeline as $candidate){
             if(!is_array($candidate) || (int)($candidate['case_id']??0)!==$caseId)continue;
             if(($candidate['event_type']??'')!=='SELLER_SUPPORT_STATUS_OBSERVED' || ($candidate['source']??'')!=='SELLER_CENTRAL')continue;
@@ -664,13 +664,14 @@ final class SvAmazonSafeTDecisionEngine
             if(trim((string)($payload['case_id']??''))!==$reference)continue;
             try{
                 $referenced=SvAmazonSellerSupportStatus::normalize($payload);
-                if(SvAmazonSellerSupportStatus::resolution($referenced)!=='SELLER_ACTION_REQUIRED')continue;
                 $at=new DateTimeImmutable((string)($candidate['occurred_at']??''),new DateTimeZone('UTC'));
             }catch(Throwable){continue;}
             $rank=[$at->getTimestamp(),(int)($candidate['id']??0)];
-            if($rank>$latestRank){$latestRank=$rank;$latest=$referenced;}
+            if($rank>$latestRank){$latestRank=$rank;$latest=$referenced;$latestEvent=$candidate;}
         }
-        if(!is_array($latest))return null;
+        if(!is_array($latest) || !is_array($latestEvent))return null;
+        if($this->supportWriteAcceptedAfterObservation($case,$timeline,$latestEvent,$reference))return null;
+        if(SvAmazonSellerSupportStatus::resolution($latest)!=='SELLER_ACTION_REQUIRED')return null;
         $target=trim((string)($support['case_id']??''));
         if(preg_match('/^\d{8,14}$/D',$target)!==1)return null;
         return [
