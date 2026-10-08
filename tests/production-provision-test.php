@@ -85,7 +85,7 @@ foreach(['--dry-run','mysqldump','--apply','verify-migration.sh','rollback','37/
     ppAssert(str_contains($runbook,$runbookNeedle),'Runbook missing '.$runbookNeedle);
 }
 
-ppAssert(str_contains($script,"ensure_env_key 'AMAZON_RETURNS_REVIEW_AI_MODEL' 'gpt-5.6-terra'"),'Provisioning must install review AI model without overwriting.');
+ppAssert(str_contains($script,"ensure_env_key 'AMAZON_RETURNS_REVIEW_AI_MODEL' 'gpt-6-luna'"),'Provisioning must install review AI model without overwriting.');
 ppAssert(str_contains($script,"set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '1'"),'Guarded learned-rule execution must be enabled in production.');
 ppAssert(str_contains($script,"set_env_key 'AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL' 'fredmourao@gmail.com'"),'Production must persist the approved review reminder recipient.');
 ppAssert(!str_contains($script,"ensure_env_key 'OPENAI_API_KEY'"),'Provisioning must not manufacture or overwrite an OpenAI API key.');

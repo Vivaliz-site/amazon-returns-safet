@@ -14,7 +14,7 @@ final class SvAmazonReturnsConfig
     public function openAiKey(): string { return $this->aiSecret('OPENAI_API_KEY'); }
     public function anthropicKey(): string { return $this->aiSecret('ANTHROPIC_API_KEY','CLAUDE_API_KEY'); }
     public function geminiKey(): string { return $this->aiSecret('GEMINI_API_KEY','GOOGLE_API_KEY','GOOGLE_IMAGEN_API_KEY'); }
-    public function reviewAiModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_MODEL','gpt-5.6-terra'); }
+    public function reviewAiModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_MODEL','gpt-6-luna'); }
     public function reviewAiAnthropicModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_ANTHROPIC_MODEL','claude-sonnet-4-6'); }
     public function reviewAiGeminiModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_GEMINI_MODEL','gemini-3.5-flash-lite'); }
     public function reviewAiGeminiFallbackModel(): string { return $this->get('AMAZON_RETURNS_REVIEW_AI_GEMINI_FALLBACK_MODEL','gemini-3.1-flash-lite'); }
