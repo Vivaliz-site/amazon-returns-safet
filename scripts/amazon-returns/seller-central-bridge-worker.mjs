@@ -1611,7 +1611,7 @@ async function supportOpen(cdp, job, options = {}) {
   if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION' && physicalStatus === 'RECEIVED_OK') {
     return bridgeResult('SUPERSEDED', { reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN', retry_safe: false });
   }
-  const retryReconciliation = Number(job.attempt_count || 0) > 1;
+  const retryReconciliation = job.retry_reconciliation === true;
   const lookupOptions = retryReconciliation ? { includeTerminal: true } : {};
   const priorSupportCaseId = text(job.case?.support_case_id);
   const reconcileKnownCase = options.forceFreshCase !== true;
