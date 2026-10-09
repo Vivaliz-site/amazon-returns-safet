@@ -22,6 +22,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate repository governance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/repository-governance-validate.sh ci
       - name: Verify audit evidence
         run: |
