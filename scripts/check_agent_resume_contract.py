@@ -16,8 +16,8 @@ for name in ENTRYPOINTS:
     text = path.read_text(encoding="utf-8", errors="replace")
     missing.extend(f"{name}: {tag} missing" for tag in REQUIRED if tag not in text)
 copilot = ROOT / ".github/copilot-instructions.md"
-if copilot.is_file() and "AGENTS.md" not in copilot.read_text(encoding="utf-8", errors="replace"):
-    missing.append("Copilot entrypoint must refer to AGENTS.md")
+if copilot.is_file() and not any(tag in copilot.read_text(encoding="utf-8", errors="replace") for tag in ("AGENTS.md", "AI-TO-CLI-PROTOCOL.md")):
+    missing.append("Copilot entrypoint must refer to AGENTS.md or AI-TO-CLI-PROTOCOL.md")
 if missing:
     print("\n".join(missing), file=sys.stderr)
     sys.exit(2)
