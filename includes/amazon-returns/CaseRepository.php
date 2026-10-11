@@ -533,6 +533,83 @@ final class SvAmazonReturnCaseRepository
         return $id;
     }
 
+    /**
+     * Internal loss-closure candidate lookup, scoped to one connection.
+     * Confirmed warehouse receipts are excluded even before their projection.
+     * @return list<int>
+     */
+    public function agedUnreceivedCaseIds(string $cutoff, int $limit=250): array
+    {
+        $limit=max(1,min(500,$limit));
+        $stmt=$this->prepare(
+            'SELECT c.id FROM amazon_return_cases c WHERE ' . self::ageClosureEligibility()
+            . ' ORDER BY c.refund_at,c.id LIMIT ' . $limit
+        );
+        $stmt->execute($this->scopeParams([':cutoff'=>$cutoff]));
+        return array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /** @return array<string,mixed>|null */
+    public function lockAgedUnreceivedCase(int $caseId,string $cutoff): ?array
+    {
+        $caseId=$this->positiveId($caseId,'Case ID');
+        $driver=(string)$this->db->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $stmt=$this->prepare(
+            'SELECT c.* FROM amazon_return_cases c WHERE c.id=:id AND '
+            . self::ageClosureEligibility() . ' LIMIT 1'
+            . ($driver==='mysql' ? ' FOR UPDATE' : '')
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId,':cutoff'=>$cutoff]));
+        $row=$stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row)?$row:null;
+    }
+
+    public function hasPendingAgeCloseOutbox(int $caseId): bool
+    {
+        $caseId=$this->positiveId($caseId,'Case ID');
+        $driver=(string)$this->db->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $stmt=$this->prepare(
+            "SELECT id FROM amazon_return_outbox "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND case_id=:id AND status IN ('PENDING','PROCESSING') LIMIT 1"
+            . ($driver==='mysql' ? ' FOR UPDATE' : '')
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId]));
+        return $stmt->fetchColumn()!==false;
+    }
+
+    public function closeAgedUnreceivedCase(int $caseId,array $snapshot,string $closedAt,string $reason): bool
+    {
+        $caseId=$this->positiveId($caseId,'Case ID');
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_cases SET state='CLOSED_LOSS',"
+            . "terminal_reason=:reason,closed_at=:closed_at,"
+            . "next_action_at=NULL,updated_at=:updated_at "
+            . "WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND state=:previous_state AND refund_at=:refund_at AND closed_at IS NULL"
+        );
+        $stmt->execute($this->scopeParams([
+            ':id'=>$caseId,
+            ':reason'=>$reason,
+            ':closed_at'=>$closedAt,
+            ':updated_at'=>$closedAt,
+            ':previous_state'=>(string)($snapshot['state']??''),
+            ':refund_at'=>(string)($snapshot['refund_at']??''),
+        ]));
+        return $stmt->rowCount()===1;
+    }
+
+    private static function ageClosureEligibility(): string
+    {
+        return "c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id "
+            . "AND c.closed_at IS NULL AND c.refund_at IS NOT NULL AND c.refund_at<=:cutoff "
+            . "AND c.state NOT IN ('RECOVERED','RECEIVED_OK','CLOSED_LOSS') "
+            . "AND c.physical_status<>'RECEIVED_OK' AND c.quantity_received=0 "
+            . "AND NOT EXISTS (SELECT 1 FROM amazon_return_events e "
+            . "WHERE e.tenant_id=c.tenant_id AND e.amazon_connection_id=c.amazon_connection_id "
+            . "AND e.case_id=c.id AND e.event_type='PHYSICAL_RECEIVED' AND e.source='WAREHOUSE')";
+    }
+
     /** @param array<string,mixed> $patch */
     public function update(int $caseId, array $patch): void
     {
@@ -552,9 +629,16 @@ final class SvAmazonReturnCaseRepository
             $sets[] = '`' . $field . '`=' . $parameter;
             $params[$parameter] = $this->normalizeField($field, $value);
         }
+        // A stale Gmail/support/financial worker may finish after an owner closes
+        // an old loss. Never allow its outdated state projection to reopen the
+        // audited CLOSED_LOSS row. Non-terminal financial fields remain patchable.
+        $terminalPatch = array_key_exists('state',$patch)
+            || array_key_exists('closed_at',$patch)
+            || array_key_exists('terminal_reason',$patch);
         $stmt = $this->prepare(
             'UPDATE amazon_return_cases SET ' . implode(',', $sets) . ',updated_at=UTC_TIMESTAMP() '
             . 'WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
+            . ($terminalPatch ? " AND NOT (state='CLOSED_LOSS' AND closed_at IS NOT NULL)" : '')
         );
         $stmt->execute($params);
         if ($stmt->rowCount() === 0 && $this->find($caseId) === null) {
