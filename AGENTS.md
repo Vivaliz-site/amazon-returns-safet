@@ -1,3 +1,9 @@
+<!-- AUDIT_UI_EVIDENCE_INTEGRITY_V2 -->
+## Gate V5: interface real, evidencias validadas e zero abandono
+
+Toda Auditoria Extrema exige execucao pelo proprio agente na UI grafica real, inventario de rotas/controles/casos, evidencias fisicas conferidas pelo certifier, correcao RED/GREEN/regressao e reauditoria E2E por sessao independente apos deploy. Seguir `docs/quality/AUDIT_UI_EVIDENCE_INTEGRITY_V2.md`. API, SQL, CLI, screenshot ou headless-only nao substituem prova UI. Permanecer `RUNNING` com `next_action` duravel ate `AUDIT_VERDICT=APTO` oficial no release real, sem abandonar por PR, erro, timeout ou limite de turno. Respeitar autorizacoes, leases, MFA e protecoes; somente bloqueio externo comprovado permite checkpoint nao concluido.
+<!-- /AUDIT_UI_EVIDENCE_INTEGRITY_V2 -->
+
 <!-- EXTREME_AUDIT_UI_FIRST_HARD_GATE_V1 -->
 ## GATE INEGOCIAVEL: Auditoria Extrema V5 executada pela UI real
 
