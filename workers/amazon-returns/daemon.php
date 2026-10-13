@@ -99,6 +99,9 @@ class SvAmazonReturnsDaemon
                 $due,$gmailCursorState,$gmailTaskCursor,$now
             );
         }
+        $due=SvAmazonReturnsRuntime::deferFailedGmailReconciliation(
+            $due,$this->persistence->cursors->load('OPERATIONAL_TASK','gmail_refund_reconciliation'),$now
+        );
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
         $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
         $results=['bootstrap'=>$bootstrap];
