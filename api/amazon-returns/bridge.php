@@ -98,6 +98,7 @@ try{
     }
     sv_amz_bridge_service_reply($service->acceptResult((int)$jobId,$key,$result));
 }catch(Throwable $e){
-    error_log('[amazon-returns-bridge] '.get_class($e));
+    // Record only structural diagnostics: never log payloads, tokens or case data.
+    error_log('[amazon-returns-bridge] '.get_class($e).' at '.basename($e->getFile()).':'.$e->getLine());
     sv_amz_bridge_reply(['status'=>'SERVER_ERROR'],500);
 }
