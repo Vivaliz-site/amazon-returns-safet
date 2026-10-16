@@ -7,6 +7,7 @@ require_once __DIR__ . '/RemoteBridge.php';
 require_once __DIR__ . '/AmazonRequestedWait.php';
 require_once __DIR__ . '/TenantPersistence.php';
 require_once __DIR__ . '/Runtime.php';
+require_once __DIR__ . '/SafeTStatusService.php';
 
 final class SvAmazonReturnsBridgeService
 {
@@ -308,6 +309,8 @@ final class SvAmazonReturnsBridgeService
                     'state'=>SvAmazonReturnStates::SAFE_T_SUBMITTED,
                 ]);
             }elseif($kind==='SAFE_T_APPEAL'){
+                $case=$this->p->cases->find($caseId);
+                if(!is_array($case))throw new RuntimeException('Owned SAFE-T appeal case disappeared.');
                 $appealPatch=[
                     'state'=>SvAmazonReturnStates::APPEAL_SUBMITTED,
                 ];
