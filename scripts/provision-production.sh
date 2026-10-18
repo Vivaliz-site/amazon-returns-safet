@@ -288,9 +288,22 @@ install -m 0644 "$root/current/deploy/systemd/amazon-returns-erp-canary-discover
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-erp-canary-execute.service" /etc/systemd/system/amazon-returns-erp-canary-execute.service
 install -m 0644 "$root/current/deploy/systemd/amazon-returns-seller-central-browser.timer" /etc/systemd/system/amazon-returns-seller-central-browser.timer
 systemctl daemon-reload
-systemctl enable amazon-returns-safet.service >/dev/null
-systemctl restart amazon-returns-safet.service
-systemctl is-active --quiet amazon-returns-safet.service
+
+# Gate P0: Se a origem estiver bloqueada pela migracao para Marina, nao habilite
+# ou reinicie o amazon-returns-safet.service. Isso impede reativacao acidental.
+if [ -f "/etc/shopvivaliz/migration/origin-workers-fenced" ]; then
+    echo 'WARN: amazon-returns-safet.service esta bloqueado (origem fenced, Marina tem ownership)' >&2
+    # Desabilitar a unit na origem para evitar reativacao por outro mecanismo
+    systemctl disable amazon-returns-safet.service >/dev/null 2>&1 || true
+    systemctl stop amazon-returns-safet.service >/dev/null 2>&1 || true
+    # Registrar o gate e continuar a provision (sem fail)
+    echo 'amazon_returns_worker_blocked_by_migration_gate=true'
+else
+    # Migracao nao esta em andamento; continuar com provision normal
+    systemctl enable amazon-returns-safet.service >/dev/null
+    systemctl restart amazon-returns-safet.service
+    systemctl is-active --quiet amazon-returns-safet.service
+fi
 
 browser_root="$shared/seller-central-browser"
 browser_env="$shared/seller-central-browser.env"
