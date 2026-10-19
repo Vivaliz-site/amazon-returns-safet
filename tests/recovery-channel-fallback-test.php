@@ -12,6 +12,14 @@ rcfSame('GENERAL_ORDER_SUPPORT',$fallback['support_route']??null,'Expired appeal
 $open=$case;$open['support_case_id']='12345678901';$open['support_case_status']='OPEN';
 $waiting=SvAmazonReturnsScheduler::normalizeRecoveryChannel($open,$appeal,$now);
 rcfSame('WAIT',$waiting['action']??null,'An already active support case must suppress duplicate support creation.');
+$mismatchTimeline=[[
+    'id'=>901,'case_id'=>505,'event_type'=>'SELLER_SUPPORT_IDENTITY_MISMATCH',
+    'payload'=>['binding_cleared'=>true,'support_case_id'=>'22144700811'],
+]];
+$retry=SvAmazonReturnsScheduler::normalizeRecoveryChannel($case,$appeal,$now,$mismatchTimeline);
+rcfSame('SELLER_SUPPORT_OPEN',$retry['action']??null,'A cleared cross-order support binding must remain recoverable.');
+if(($retry['idempotency_key']??null)===($fallback['idempotency_key']??null))throw new RuntimeException('Identity mismatch must rotate the support-open idempotency key so a proven wrong case cannot suppress recovery.');
+
 $before=$case;$before['appeal_deadline_at']='2026-09-08 16:35:00';
 rcfSame('SAFE_T_APPEAL',SvAmazonReturnsScheduler::normalizeRecoveryChannel($before,$appeal,$now)['action']??null,'An appeal still inside its explicit deadline must remain an appeal.');
 $expired=$case;$expired['seller_debit_at']='2026-06-01 08:32:36';$expired['refund_at']='2026-06-01 08:32:36';
