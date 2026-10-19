@@ -2,6 +2,12 @@
 set -Eeuo pipefail
 
 [[ "$(id -u)" -eq 0 ]] || { echo 'run as root' >&2; exit 2; }
+# Origin is retired as a worker owner; require an explicit coordinated rollback to remove this fence.
+if [[ -e /etc/shopvivaliz/migration/origin-workers-fenced ]]; then
+    echo 'provision_blocked=origin_workers_fenced' >&2
+    exit 75
+fi
+
 exec 9>/run/lock/amazon-returns-provision.lock
 flock -n 9 || { echo 'production_provision_locked=1' >&2; exit 75; }
 repo="${AMAZON_RETURNS_REPO:-/home/ubuntu/amazon-returns-safet}"

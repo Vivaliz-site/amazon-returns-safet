@@ -7,6 +7,12 @@ repo_name='Vivaliz-site/amazon-returns-safet'
 continuity_config='/etc/agent-continuity/config.json'
 
 [[ "$(id -u)" -eq 0 ]] || { echo 'auto-deploy requires root' >&2; exit 2; }
+# Ownership moved to Marina: never run source-side deploy or service bootstrap once fenced.
+if [[ -e /etc/shopvivaliz/migration/origin-workers-fenced ]]; then
+    echo 'auto_deploy_skipped=origin_workers_fenced'
+    exit 0
+fi
+
 [[ -d "$repo/.git" ]] || { echo 'target checkout missing' >&2; exit 2; }
 if [[ -n "$(runuser -u ubuntu -- git -C "$repo" status --porcelain)" ]]; then
     echo auto_deploy_skipped=dirty_checkout

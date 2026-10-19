@@ -2,6 +2,8 @@
 Description=Amazon Returns and SAFE-T Recovery
 After=network-online.target mysql.service
 Wants=network-online.target
+# Source-side migration fence: no competing workers after Marina assumes ownership.
+ConditionPathExists=!/etc/shopvivaliz/migration/origin-workers-fenced
 
 [Service]
 Type=simple

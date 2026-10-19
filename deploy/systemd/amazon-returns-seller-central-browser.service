@@ -2,6 +2,8 @@
 Description=ShopVivaliz Amazon Returns Seller Central daily browser cycle
 After=network-online.target amazon-returns-safet.service
 Wants=network-online.target
+# Source-side migration fence: no competing workers after Marina assumes ownership.
+ConditionPathExists=!/etc/shopvivaliz/migration/origin-workers-fenced
 StartLimitIntervalSec=10min
 StartLimitBurst=3
 
