@@ -28,8 +28,15 @@ final class SvAmazonSafeTExternalWindow
             if(!is_array($event) || (string)($event['event_type']??'')!=='ORDER_SYNCED')continue;
             $payload=$event['payload']??null;
             if(!is_array($payload))continue;
-            $orderAt=self::utcDate($payload['order_at']??null);
-            if($orderAt!==null)$orderDates[$orderAt->format('Y-m-d H:i:s')]=$orderAt;
+            if(!array_key_exists('order_at',$payload))continue;
+            $raw=$payload['order_at'];
+            if($raw===null || $raw==='')continue;
+            $orderAt=self::utcDate($raw);
+            if($orderAt===null){
+                return ['allowed'=>false,'reason'=>'ORDER_AT_INVALID',
+                    'not_before'=>null,'order_at'=>null];
+            }
+            $orderDates[$orderAt->format('Y-m-d H:i:s')]=$orderAt;
         }
         if(count($orderDates)!==1){
             return ['allowed'=>false,'reason'=>'ORDER_AT_UNVERIFIED_OR_CONFLICTING',
