@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
+import { safeTExternalWindow } from './safe-t-external-window.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
@@ -650,6 +651,14 @@ async function safeTSubreasonDiagnostics(cdp, value) {
 async function safeTSubmit(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
+  // First fail-closed gate: do not even enter the SAFE-T creation flow early.
+  const openingWindow = safeTExternalWindow(job);
+  if (!openingWindow.allowed) {
+    return bridgeResult('BLOCKED_UNTIL', {
+      reason: openingWindow.reason, block_reason: openingWindow.reason,
+      next_allowed_at: openingWindow.next_allowed_at || null, retry_safe: true,
+    });
+  }
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'INVALID_ORDER_ID' });
   const trackingEvidence = await captureTrackingEvidence(cdp, orderId);
@@ -734,6 +743,15 @@ async function safeTSubmit(cdp, job) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_CONFIRMATION_CHECKBOX_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(500);
+  // Second independent gate immediately before the irreversible submit click.
+  // A stale/previously queued job must never rely on the Seller Central UI alone.
+  const finalWindow = safeTExternalWindow(job);
+  if (!finalWindow.allowed) {
+    return bridgeResult('BLOCKED_UNTIL', {
+      reason: finalWindow.reason, block_reason: finalWindow.reason,
+      next_allowed_at: finalWindow.next_allowed_at || null, retry_safe: true,
+    });
+  }
   const canSubmit = await cdp.evaluate(`!document.querySelector('kat-button.SubmitButton')?.hasAttribute('disabled')`);
   if (!canSubmit) return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_SUBMIT_STILL_DISABLED', evidence: await evidence(cdp, 'safet-v1') });
   if (!(await cdp.clickKat('kat-button.SubmitButton'))) {
