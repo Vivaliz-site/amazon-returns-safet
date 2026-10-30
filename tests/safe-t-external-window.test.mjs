@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { safeTExternalWindow } from '../scripts/amazon-returns/safe-t-external-window.mjs';
 const now = Date.parse('2026-10-30T23:30:00Z');
 for (const [program, order_at, refund_at, expected] of [
@@ -16,4 +17,9 @@ assert.equal(safeTExternalWindow({ case: { program: 'FBA_ONSITE', refund_at: '20
 assert.equal(safeTExternalWindow({ case: { program: 'FBA_ONSITE', order_at: '2026-08-11 16:13:06', refund_at: '2026-09-99 23:33:01' } }, now).allowed, false);
 assert.equal(safeTExternalWindow({ case: { program: 'UNKNOWN' } }, now).allowed, false);
 assert.equal(safeTExternalWindow({ case: { program: 'STANDARD' } }, now).allowed, true);
+const worker = fs.readFileSync(new URL('../scripts/amazon-returns/seller-central-bridge-worker.mjs', import.meta.url), 'utf8');
+const finalGate = worker.indexOf('const finalWindow = safeTExternalWindow(job)');
+const irreversibleClick = worker.indexOf("cdp.clickKat('kat-button.SubmitButton')");
+assert.ok(finalGate > 0 && irreversibleClick > finalGate,
+  'Final external-window gate must remain before the irreversible SAFE-T submit click');
 console.log('safe-t-external-window-test: OK');
