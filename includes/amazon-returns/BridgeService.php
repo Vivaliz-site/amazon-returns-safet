@@ -8,6 +8,7 @@ require_once __DIR__ . '/AmazonRequestedWait.php';
 require_once __DIR__ . '/TenantPersistence.php';
 require_once __DIR__ . '/Runtime.php';
 require_once __DIR__ . '/SafeTStatusService.php';
+require_once __DIR__ . '/SafeTExternalWindow.php';
 
 final class SvAmazonReturnsBridgeService
 {
@@ -75,9 +76,29 @@ final class SvAmazonReturnsBridgeService
                 $this->p->outbox->markSuperseded((int)$row['id'],'SELLER_SUPPORT_SCOPE_SUPERSEDED');
                 continue;
             }
+            // Never dispatch a queued D+45 SAFE-T write before Amazon's external clock.
+            // Derive order_at from the scoped, append-only ORDER_SYNCED timeline.
+            if(strtoupper((string)($row['kind']??''))==='SAFE_T_SUBMIT'){
+                $events=$this->p->events->eventsForCase((int)$row['case_id']);
+                $gate=SvAmazonSafeTExternalWindow::inspect(
+                    $case,$events,new DateTimeImmutable('now',new DateTimeZone('UTC'))
+                );
+                if($gate['allowed']!==true){
+                    $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+                    $next=isset($gate['not_before']) && is_string($gate['not_before'])
+                        ? new DateTimeImmutable($gate['not_before'],new DateTimeZone('UTC'))
+                        : $now->modify('+24 hours');
+                    if($next<=$now)$next=$now->modify('+24 hours');
+                    $this->p->outbox->defer(
+                        (int)$row['id'],$next,'SAFE_T_EXTERNAL_'.(string)$gate['reason'],true
+                    );
+                    continue;
+                }
+                $case['order_at']=$gate['order_at'];
+            }
             $job=SvAmazonReturnsRemoteBridge::jobEnvelope($row,$case,$flags);
             foreach([
-                'physical_status','state','program','refund_at','seller_debit_at',
+                'physical_status','state','program','order_at','refund_at','seller_debit_at',
                 'eligibility_at','appeal_deadline_at',
             ] as $field){
                 $job['case'][$field]=$case[$field] ?? null;
