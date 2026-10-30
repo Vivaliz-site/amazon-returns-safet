@@ -33,6 +33,15 @@ $conflicting=SvAmazonSafeTExternalWindow::inspect(
     ['program'=>'FBA_ONSITE','refund_at'=>'2026-09-07 23:33:01'],
     [externalOrder('2026-08-11 16:13:06'),externalOrder('2026-08-12 16:13:06')],$now);
 externalWindowSame(false,$conflicting['allowed'],'Conflicting order dates must fail closed');
+$invalidOrder=SvAmazonSafeTExternalWindow::inspect(
+    ['program'=>'FBA_ONSITE','refund_at'=>'2026-09-07 23:33:01'],
+    [externalOrder('2026-08-11 16:13:06'),externalOrder('2026-99-11 16:13:06')],$now);
+externalWindowSame(false,$invalidOrder['allowed'],'Invalid competing ORDER_SYNCED date must fail closed');
+$bridgeSource=file_get_contents(__DIR__.'/../includes/amazon-returns/BridgeService.php');
+externalWindowSame(true,is_string($bridgeSource)
+    && str_contains($bridgeSource,'SvAmazonSafeTExternalWindow::inspect')
+    && str_contains($bridgeSource,"'order_at','refund_at'"),
+    'Server pull must enforce the independent window and forward proven order date');
 $badRefund=SvAmazonSafeTExternalWindow::inspect(
     ['program'=>'DELIVERY_BY_AMAZON','refund_at'=>'2026-09-99 23:33:01'],
     [externalOrder('2026-08-11 16:13:06')],$now);
