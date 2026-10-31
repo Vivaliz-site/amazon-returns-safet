@@ -224,6 +224,16 @@ function evidence(state) {
   return { ...safe, snapshot_sha256: sha(JSON.stringify(safe)) };
 }
 
+async function waitForSafeTClaimOrderIdentity(cdp, orderId, timeoutMs = 15000) {
+  const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 15000);
+  let state = await cdp.pageState();
+  while (!String(state.text || '').includes(orderId) && Date.now() < deadline) {
+    await sleep(500);
+    state = await cdp.pageState();
+  }
+  return state;
+}
+
 async function safeTDiscovery(job) {
   const orderId = clean(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return result('FAILED', { reason: 'ORDER_ID_REQUIRED_FOR_DISCOVERY' });
@@ -247,6 +257,7 @@ async function safeTDiscovery(job) {
     auth = page.auth;
     if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: page.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
     if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: page.reason || 'CAPTCHA_PRESENT', evidence: evidence(state) });
+    state = await waitForSafeTClaimOrderIdentity(cdp, orderId);
     if (!String(state.text || '').includes(orderId)) return result('UI_DRIFT', { reason: 'DISCOVERED_CLAIM_ORDER_MISMATCH', evidence: evidence(state) });
     const read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
     return result('ACCEPTED', { external_id: safeTId, retry_safe: true, reason: 'SAFE_T_DISCOVERED_BY_ORDER', evidence: evidence(state), read });
@@ -262,10 +273,20 @@ async function safeTRead(job) {
   const cdp = await Cdp.connect();
   try {
     const page = await authenticatedPage(cdp, `${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 5500);
-    const state = page.state;
+    let state = page.state;
     const auth = page.auth;
     if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: page.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
     if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: page.reason || 'CAPTCHA_PRESENT', evidence: evidence(state) });
+    if (/^\d{3}-\d{7}-\d{7}$/.test(orderId)) {
+      state = await waitForSafeTClaimOrderIdentity(cdp, orderId);
+      if (!String(state.text || '').includes(orderId)) {
+        return result('UI_DRIFT', {
+          reason: 'SAFE_T_READ_ORDER_IDENTITY_NOT_READY',
+          retry_safe: true,
+          evidence: evidence(state),
+        });
+      }
+    }
     const read = parseSafeTStatus(state.text || '', { safe_t_id: safeTId, order_id: orderId });
     return result('ACCEPTED', {
       external_id: safeTId,
@@ -274,6 +295,69 @@ async function safeTRead(job) {
       evidence: evidence(state),
       read,
     });
+  } finally {
+    await cdp.close();
+  }
+}
+
+async function discoverActionableSupportCases() {
+  const cdp = await Cdp.connect();
+  try {
+    const page = await authenticatedPage(cdp, CASE_LOBBY, 4500);
+    const state = page.state;
+    if (page.auth === 'AUTH_REQUIRED') throw new Error(page.reason || 'SELLER_SUPPORT_DISCOVERY_AUTH_REQUIRED');
+    if (page.auth === 'HUMAN_CHALLENGE') throw new Error(page.reason || 'SELLER_SUPPORT_DISCOVERY_HUMAN_CHALLENGE');
+    const raw = await cdp.evaluate(`(async()=>{
+      const actionable=new Set(['PENDINGSELLERACTION','AWAITINGSELLERACTION','PENDINGMERCHANTACTION','AWAITINGMERCHANTACTION']);
+      const normalize=value=>String(value||'').toUpperCase().replace(/[^A-Z0-9]+/g,'');
+      const rows=[];
+      for(let index=0;index<10;index++){
+        const response=await fetch('/hill/hillservice/mons-api/SearchForCases',{
+          method:'POST',credentials:'include',headers:{'content-type':'application/json'},
+          body:JSON.stringify({page:index,searchPageSize:50,sortBy:'CreationDate',sortByOrder:'DESC',getCountOnly:false,caseFilters:{caseOwner:'MerchantCases'}})
+        });
+        if(!response.ok)throw new Error('SEARCH_FOR_CASES_HTTP_'+response.status);
+        const search=await response.json();
+        const pageRows=Array.isArray(search.caseSearchResultList)?search.caseSearchResultList:[];
+        for(const row of pageRows){
+          const caseId=String(row?.caseId||'').trim();
+          const caseStatus=String(row?.status||'').trim();
+          if(/^\\d{8,14}$/.test(caseId) && actionable.has(normalize(caseStatus)))rows.push({caseId,caseStatus});
+        }
+        if(pageRows.length<50)break;
+      }
+      const items=[];
+      const seen=new Set();
+      for(const row of rows){
+        if(seen.has(row.caseId))continue;
+        seen.add(row.caseId);
+        const response=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(row.caseId)+'&timeZone=UTC&pageSize=20',{credentials:'include'});
+        if(!response.ok)continue;
+        const detail=await response.json();
+        const serialized=JSON.stringify(detail);
+        const orders=[...new Set(serialized.match(/\\d{3}-\\d{7}-\\d{7}/g)||[])];
+        if(orders.length!==1)continue;
+        const values=[];
+        const walk=value=>{
+          if(typeof value==='string'){const v=value.replace(/\\s+/g,' ').trim();if(v)values.push(v);return;}
+          if(Array.isArray(value)){for(const item of value)walk(item);return;}
+          if(value&&typeof value==='object'){for(const item of Object.values(value))walk(item);}
+        };
+        walk(detail);
+        items.push({
+          case_id:row.caseId,
+          case_status:String(detail?.viewCaseMetaData?.caseStatus||row.caseStatus||'').trim(),
+          latest_text:[...new Set(values)].join(' ').slice(0,12000),
+          order_id:orders[0],
+        });
+      }
+      return JSON.stringify({items});
+    })()`);
+    let parsed={};
+    try { parsed=JSON.parse(raw||'{}'); } catch {}
+    const items=Array.isArray(parsed.items)?parsed.items:[];
+    if(items.length===0)return { status:'OK', accepted:0, skipped:0 };
+    return await bridge('discover_support_actions',{items});
   } finally {
     await cdp.close();
   }
@@ -450,6 +534,10 @@ async function main() {
   }
   try {
     if (process.argv.includes('--drain')) {
+      if (BROWSER && PROFILE) {
+        const discovery = await discoverActionableSupportCases();
+        log('support_action_discovery', { status: discovery.status || 'OK' });
+      }
       while (!quiesceRequested() && await runOnce()) {}
       return;
     }

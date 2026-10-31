@@ -59,7 +59,7 @@ try{
     sv_amz_status_reply(['status'=>'INVALID_JSON'],400);
 }
 $operation=strtolower(trim((string)($input['operation'] ?? '')));
-if(!in_array($operation,['heartbeat','pull','result'],true)){
+if(!in_array($operation,['heartbeat','pull','result','discover_support_actions'],true)){
     sv_amz_status_reply(['status'=>'INVALID_OPERATION'],400);
 }
 
@@ -89,6 +89,13 @@ try{
     if($operation==='pull'){
         sv_amz_status_service_reply(
             $service->pull(new DateTimeImmutable('now',new DateTimeZone('UTC')))
+        );
+    }
+
+    if($operation==='discover_support_actions'){
+        $items=is_array($input['items'] ?? null)?$input['items']:[];
+        sv_amz_status_service_reply(
+            $service->discoverSupportActions($items,new DateTimeImmutable('now',new DateTimeZone('UTC')))
         );
     }
 

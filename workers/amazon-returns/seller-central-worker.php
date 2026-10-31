@@ -5,7 +5,7 @@ declare(strict_types=1);
 final class SvAmazonSellerCentralWorker
 {
     private const KINDS = ['SAFE_T_READ','SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_READ','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'];
-    private const STATUSES = ['ACCEPTED','BLOCKED_UNTIL','ALREADY_EXISTS','AUTH_REQUIRED','HUMAN_CHALLENGE','UI_DRIFT','NOT_FOUND','FAILED'];
+    private const STATUSES = ['ACCEPTED','BLOCKED_UNTIL','ALREADY_EXISTS','AUTH_REQUIRED','HUMAN_CHALLENGE','HUMAN_INTERVENTION_REQUIRED','UI_DRIFT','NOT_FOUND','FAILED'];
 
     /** @param callable(array<string,mixed>):array<string,mixed>|null $runner */
     public function execute(array $outboxRow, ?callable $runner = null): array

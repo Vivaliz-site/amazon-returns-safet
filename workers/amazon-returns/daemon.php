@@ -24,6 +24,7 @@ require_once __DIR__ . '/../../includes/amazon-returns/FinancialRefresh.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialRevalidation.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialCheckEvidence.php';
 require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
+require_once __DIR__ . '/../../includes/amazon-returns/AgeClosure.php';
 require_once __DIR__ . '/../../includes/amazon-returns/LearnedRuleOutcome.php';
 require_once __DIR__ . '/seller-central-worker.php';
 
@@ -98,6 +99,9 @@ class SvAmazonReturnsDaemon
                 $due,$gmailCursorState,$gmailTaskCursor,$now
             );
         }
+        $due=SvAmazonReturnsRuntime::deferFailedGmailReconciliation(
+            $due,$this->persistence->cursors->load('OPERATIONAL_TASK','gmail_refund_reconciliation'),$now
+        );
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
         $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
         $results=['bootstrap'=>$bootstrap];
@@ -350,16 +354,25 @@ class SvAmazonReturnsDaemon
         ];
         if($ingestEnabled){
             $ingestor=new SvAmazonGmailIngestor();
-            $cursor=SvAmazonGmailIngestor::loadCursor($this->persistence->cursors,'history_id');
-            $catchup=trim((string)$cursor)!=='';
+            $cursorState=$this->persistence->cursors->load(
+                'GMAIL',SvAmazonGmailIngestor::HISTORY_CURSOR_KEY
+            );
+            $cursor=is_array($cursorState)?trim((string)($cursorState['value'] ?? '')):'';
+            $catchup=$cursor!=='';
             if($catchup){
                 $pulled=$gmail->pullIncrementalBatch(
-                    $cursor,self::GMAIL_CATCHUP_HISTORY_PAGE_SIZE,self::GMAIL_CATCHUP_MESSAGE_LIMIT
+                    $cursor,
+                    self::GMAIL_CATCHUP_HISTORY_PAGE_SIZE,
+                    self::GMAIL_CATCHUP_MESSAGE_LIMIT,
+                    [
+                        'observed_at'=>$cursorState['observed_at'] ?? null,
+                        'metadata'=>is_array($cursorState['metadata'] ?? null)?$cursorState['metadata']:[],
+                    ]
                 );
                 $newCursor=(string)$pulled['checkpoint_cursor'];
                 $hasMore=($pulled['has_more'] ?? false)===true;
             }else{
-                $pulled=$gmail->pull($cursor);
+                $pulled=$gmail->pull(null);
                 $newCursor=(string)$pulled['cursor'];
                 $hasMore=false;
             }
@@ -372,12 +385,13 @@ class SvAmazonReturnsDaemon
                 $this->persistence->cursors,
                 'history_id',
                 $newCursor,
-                [
+                array_filter([
                     'message_count'=>$ingested['messages'],
                     'event_count'=>$ingested['events'],
                     'recovered_cursor'=>$pulled['recovered_cursor'] ?? false,
                     'has_more'=>$hasMore,
-                ]
+                    'gmail_recovery'=>is_array($pulled['recovery'] ?? null)?$pulled['recovery']:null,
+                ],static fn(mixed $value):bool=>$value!==null)
             );
             $result['messages']=$ingested['messages'];
             $result['events']=$ingested['events'];
@@ -496,6 +510,7 @@ class SvAmazonReturnsDaemon
     /** @return array<string,mixed> */
     private function runScheduler(DateTimeImmutable $now): array
     {
+        $ageClosure=(new SvAmazonAgeClosure($this->persistence))->run($now);
         $cases=$this->persistence->cases->openCases(500);
         $knownCaseIds=[];
         foreach($cases as $caseRow){
@@ -602,7 +617,7 @@ class SvAmazonReturnsDaemon
             }
         }
         return [
-            'status'=>'OK','cases'=>count($cases),'decisions'=>$decisions,
+            'status'=>'OK','cases'=>count($cases),'age_closure'=>$ageClosure,'decisions'=>$decisions,
             'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,'superseded_writes'=>$supersededWrites,
             'financial_checks_requested'=>$financialChecks,
             'decision_audit'=>$decisionAudit,
@@ -625,6 +640,8 @@ class SvAmazonReturnsDaemon
         $safeTEvents=0;
         $safeTEmpty=0;
         $safeTFailures=0;
+        $failedOrderIds=[];
+        $failureClasses=[];
         $throttleMs=max(
             0,min(10000,(int)$this->config->get('AMAZON_RETURNS_SP_API_THROTTLE_MS','2100'))
         );
@@ -658,20 +675,26 @@ class SvAmazonReturnsDaemon
                             is_array($safeT['response_sha256']??null)?$safeT['response_sha256']:[]
                         );
                         $safeTEvents+=(int)($persisted['persisted']??0);
-                    }catch(Throwable){
+                    }catch(Throwable $e){
                         $safeTFailures++;
                         $financeComplete=false;
+                        $failedOrderIds[$orderId]=true;
+                        $failureClasses[$e::class]=($failureClasses[$e::class]??0)+1;
                     }
                 }
                 $this->recordFinanceSource($orderId,$financeComplete);
                 $synced++;
-            }catch(Throwable){
+            }catch(Throwable $e){
                 $failures++;
+                $failedOrderIds[$orderId]=true;
+                $failureClasses[$e::class]=($failureClasses[$e::class]??0)+1;
                 try{$this->recordFinanceSource($orderId,false);}catch(Throwable){}
             }
             if($throttleMs>0 && $index<count($orders)-1)usleep($throttleMs*1000);
         }
-        $scan=SvAmazonFinancialRefresh::recordAttempted($this->persistence,$batch,$failures+$safeTFailures);
+        $scan=SvAmazonFinancialRefresh::recordAttempted(
+            $this->persistence,$batch,$failures+$safeTFailures,array_keys($failedOrderIds)
+        );
         return [
             'status'=>($failures>0||$safeTFailures>0)?'PARTIAL':'OK','orders'=>count($orders),
             'initial_scan_complete'=>$scan['initial_scan_complete'],
@@ -681,6 +704,8 @@ class SvAmazonReturnsDaemon
             'synced'=>$synced,'persisted_cases'=>$persistedCases,'failures'=>$failures,
             'safe_t_reads'=>$safeTReads,'safe_t_events'=>$safeTEvents,
             'safe_t_empty'=>$safeTEmpty,'safe_t_failures'=>$safeTFailures,
+            'retry_orders'=>count($scan['retry_order_ids']??[]),
+            'failure_classes'=>$failureClasses,
         ];
     }
 
@@ -983,6 +1008,28 @@ class SvAmazonReturnsDaemon
     }
 }
 
+/** @param array<string,mixed> $result @return list<array<string,mixed>> */
+function sv_amazon_returns_decision_audit_chunks(array $result): array
+{
+    $rows=$result['results']['scheduler']['decision_audit'] ?? null;
+    if(!is_array($rows) || $rows===[])return [];
+    $parts=array_chunk(array_values($rows),8);
+    $chunks=[];
+    $total=count($parts);
+    foreach($parts as $index=>$part){
+        $chunks[]=[
+            'at'=>$result['at'] ?? gmdate(DATE_ATOM),
+            'event'=>'decision_audit_chunk',
+            'tenant_id'=>$result['tenant_id'] ?? null,
+            'amazon_connection_id'=>$result['amazon_connection_id'] ?? null,
+            'chunk'=>$index+1,
+            'chunks'=>$total,
+            'rows'=>$part,
+        ];
+    }
+    return $chunks;
+}
+
 function sv_amazon_returns_daemon_main(array $argv): int
 {
     $once=in_array('--once',$argv,true);
@@ -1008,6 +1055,11 @@ function sv_amazon_returns_daemon_main(array $argv): int
     }
     do{
         $result=$daemon->runOnce();
+        foreach(sv_amazon_returns_decision_audit_chunks($result) as $auditChunk){
+            fwrite(STDOUT,json_encode(
+                $auditChunk,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
+            ).PHP_EOL);
+        }
         fwrite(STDOUT,json_encode(
             $result,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
         ).PHP_EOL);

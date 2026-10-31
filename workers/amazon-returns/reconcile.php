@@ -57,28 +57,42 @@ final class SvAmazonReturnsReconcileWorker
             ];
         }
 
-        if (in_array($state, [SvAmazonReturnStates::RECEIVED_OK, SvAmazonReturnStates::CLOSED_LOSS], true)) {
+        if ($state === SvAmazonReturnStates::RECEIVED_OK) {
+            if (self::hasFinancialExposure($case)) {
+                return [
+                    'reconciled_credit_amount'=>$credit,
+                    'state'=>$state,
+                    'terminal_reason'=>null,
+                    'closed_at'=>null,
+                    'next_action_at'=>$case['next_action_at'] ?? null,
+                ];
+            }
             $projected = null;
-            if ($state === SvAmazonReturnStates::RECEIVED_OK && $events !== []
-                && ($existingClosedAt === null || $existingReason === null)) {
+            if ($events !== [] && ($existingClosedAt === null || $existingReason === null)) {
                 $candidate = SvAmazonReturnProjector::projectFrom($case, $events);
                 if (($candidate['state'] ?? null) === SvAmazonReturnStates::RECEIVED_OK) {
                     $projected = $candidate;
                 }
             }
-            $closedAt = $existingClosedAt
-                ?? self::nonEmptyText($projected['closed_at'] ?? null)
-                ?? $now->format('Y-m-d H:i:s');
-            $reason = $existingReason
-                ?? self::nonEmptyText($projected['terminal_reason'] ?? null)
-                ?? ($state === SvAmazonReturnStates::RECEIVED_OK
-                    ? 'PHYSICAL_RETURN_RECEIVED'
-                    : 'EMAIL_REVIEW_FINAL_DENIAL');
             return [
                 'reconciled_credit_amount'=>$credit,
                 'state'=>$state,
-                'terminal_reason'=>$reason,
-                'closed_at'=>$closedAt,
+                'terminal_reason'=>$existingReason
+                    ?? self::nonEmptyText($projected['terminal_reason'] ?? null)
+                    ?? 'PHYSICAL_RETURN_RECEIVED',
+                'closed_at'=>$existingClosedAt
+                    ?? self::nonEmptyText($projected['closed_at'] ?? null)
+                    ?? $now->format('Y-m-d H:i:s'),
+                'next_action_at'=>null,
+            ];
+        }
+
+        if ($state === SvAmazonReturnStates::CLOSED_LOSS) {
+            return [
+                'reconciled_credit_amount'=>$credit,
+                'state'=>$state,
+                'terminal_reason'=>$existingReason ?? 'EMAIL_REVIEW_FINAL_DENIAL',
+                'closed_at'=>$existingClosedAt ?? $now->format('Y-m-d H:i:s'),
                 'next_action_at'=>null,
             ];
         }
@@ -90,6 +104,16 @@ final class SvAmazonReturnsReconcileWorker
             'closed_at'=>null,
             'next_action_at'=>$case['next_action_at'] ?? null,
         ];
+    }
+
+    /** @param array<string,mixed> $case */
+    private static function hasFinancialExposure(array $case): bool
+    {
+        $expected=(float)($case['expected_reimbursement_amount'] ?? 0);
+        $refund=(float)($case['refund_amount'] ?? 0);
+        if(max($expected,$refund)>0.005)return true;
+        return self::nonEmptyText($case['refund_at'] ?? null)!==null
+            || self::nonEmptyText($case['seller_debit_at'] ?? null)!==null;
     }
 
     private static function nonEmptyText(mixed $value): ?string

@@ -23,6 +23,7 @@ final class SvAmazonReturnsRemoteBridge
         'SUPERSEDED',
         'AUTH_REQUIRED',
         'HUMAN_CHALLENGE',
+        'HUMAN_INTERVENTION_REQUIRED',
         'UI_DRIFT',
         'NOT_FOUND',
         'FAILED',
@@ -64,6 +65,17 @@ final class SvAmazonReturnsRemoteBridge
         return hash_equals($expected, trim((string)$m[1]));
     }
 
+    public static function staleScopedSupportUpdate(array $row, array $case): bool
+    {
+        if (strtoupper(trim((string)($row['kind'] ?? ''))) !== 'SELLER_SUPPORT_UPDATE') return false;
+        $payload = is_array($row['payload'] ?? null) ? $row['payload'] : [];
+        $scoped = self::nullableString($payload['support_case_id'] ?? null);
+        $current = self::nullableString($case['support_case_id'] ?? null);
+        if ($scoped === null || $current === null) return false;
+        if (preg_match('/^\\d{8,14}$/D', $scoped) !== 1 || preg_match('/^\\d{8,14}$/D', $current) !== 1) return false;
+        return !hash_equals($scoped, $current);
+    }
+
     /** @return array<string,mixed> */
     public static function jobEnvelope(array $row, array $case, array $writeFlags): array
     {
@@ -77,6 +89,11 @@ final class SvAmazonReturnsRemoteBridge
             throw new InvalidArgumentException('Seller Central bridge job lacks server-bound ownership.');
         }
         $payload = is_array($row['payload'] ?? null) ? $row['payload'] : [];
+        $supportCaseId=self::nullableString($case['support_case_id'] ?? null);
+        if(in_array($kind,['SELLER_SUPPORT_READ','SELLER_SUPPORT_UPDATE'],true)){
+            $scoped=self::nullableString($payload['support_case_id'] ?? null);
+            if($scoped!==null && preg_match('/^\\d{8,14}$/D',$scoped)===1)$supportCaseId=$scoped;
+        }
         return [
             'tenant_id'=>$tenantId,
             'amazon_connection_id'=>$connectionId,
@@ -93,10 +110,11 @@ final class SvAmazonReturnsRemoteBridge
                 'asin' => (string)($case['asin'] ?? ''),
                 'sku' => (string)($case['sku'] ?? ''),
                 'program' => (string)($case['program'] ?? ''),
+                'order_at' => self::nullableString($case['order_at'] ?? null),
                 'physical_status' => (string)($case['physical_status'] ?? ''),
                 'refund_at' => self::nullableString($case['refund_at'] ?? null),
                 'safe_t_id' => self::nullableString($case['safe_t_id'] ?? null),
-                'support_case_id' => self::nullableString($case['support_case_id'] ?? null),
+                'support_case_id' => $supportCaseId,
                 'quantity_refunded' => (int)($case['quantity_refunded'] ?? 0),
                 'quantity_received' => (int)($case['quantity_received'] ?? 0),
             ],
@@ -113,17 +131,22 @@ final class SvAmazonReturnsRemoteBridge
         }
         $submitted = ($result['submitted'] ?? false) === true;
         $externalId = self::nullableString($result['external_id'] ?? null);
-        if ($submitted && $externalId === null) {
+        $retrySafe = ($result['retry_safe'] ?? false) === true;
+        $reason = self::nullableString($result['reason'] ?? null);
+        $submittedWithoutReadback = $status === 'UI_DRIFT'
+            && $retrySafe
+            && $reason === 'SUPPORT_WRITE_WITHOUT_READBACK_ID';
+        if ($submitted && $externalId === null && !$submittedWithoutReadback) {
             throw new RuntimeException('Submitted Seller Central write requires external read-back ID.');
         }
         return [
             'status' => $status,
             'submitted' => $submitted,
             'external_id' => $externalId,
-            'retry_safe' => ($result['retry_safe'] ?? false) === true,
+            'retry_safe' => $retrySafe,
             'block_reason' => self::nullableString($result['block_reason'] ?? null),
             'next_allowed_at' => self::nullableString($result['next_allowed_at'] ?? null),
-            'reason' => self::nullableString($result['reason'] ?? null),
+            'reason' => $reason,
             'evidence' => is_array($result['evidence'] ?? null) ? $result['evidence'] : [],
             'support' => is_array($result['support'] ?? null) ? SvAmazonSellerSupportStatus::normalize($result['support']) : null,
             'read' => is_array($result['read'] ?? null) ? SvAmazonSafeTStatus::normalize($result['read']) : null,

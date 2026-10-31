@@ -4,8 +4,8 @@ function ssrrAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeExce
 $worker=(string)file_get_contents(__DIR__.'/../scripts/amazon-returns/seller-central-bridge-worker.mjs');
 foreach([
   "Input.dispatchMouseEvent",
-  "SUPPORT_CASE_OPENED_VIA_CHAT",
-  "SUPPORT_CHAT_START_MISSING",
+  "SUPPORT_CASE_OPENED_VIA_EMAIL",
+  "SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION",
   "SUPPORT_CASE_NOT_REOPENABLE",
   "answered cases cannot be reopened after 5 days with no activity",
 ] as $needle){ssrrAssert(str_contains($worker,$needle),'Runtime Seller Support remediation missing: '.$needle);}
@@ -14,9 +14,9 @@ ssrrAssert(str_contains($worker,"DOM.getBoxModel"),'Trusted iframe clicks must d
 $contactStart=strpos($worker,'async function contactSupportAndReadBack');
 $contactEnd=strpos($worker,'async function fillGeneralSupportIssue',$contactStart);
 $contact=substr($worker,$contactStart,$contactEnd-$contactStart);
-ssrrAssert(str_contains($contact,'channel = await clickHillChat(cdp)'),'Live Phone/Chat-only Hill form must fall back to trusted Chat.');
-ssrrAssert(str_contains($contact,"findSupportCase(cdp, job, { includeTerminal: true })"),'Chat/email writes require authoritative case-ID readback before success.');
-ssrrAssert(!str_contains($contact,'SUPPORT_CHAT_COMPLETION_NOT_IMPLEMENTED'),'Observed Chat-only Hill form can no longer be left unimplemented.');
+ssrrAssert(!str_contains($contact,'clickHillChat(cdp)'),'Unattended Seller Support runtime must never start a live Chat session.');
+ssrrAssert(str_contains($contact,"findSupportCase(cdp, job, { includeTerminal: true, excludeCaseIds: [...preWriteCaseIds] })"),'Chat/email writes require authoritative case-ID readback that cannot reuse a pre-write terminal case.');
+ssrrAssert(str_contains($contact,"bridgeResult('BLOCKED_UNTIL'"),'Chat-only Hill form must fail closed instead of being abandoned after opening.');
 $fbaStart=strpos($worker,'async function supportOpen');
 $fba=substr($worker,$fbaStart);
 ssrrAssert(str_contains($fba,"clickFirstFrameTextWhenReady(cdp, ['FBA related','A-to-z Claims'], 15000)"),'FBA route must advance the observed post-contact associate category.');
@@ -32,8 +32,13 @@ ssrrAssert(str_contains($worker,'async frameButtonReadyByText(label)'),'Seller S
 ssrrAssert(str_contains($worker,'async frameOptionSelectedByText(label)'),'Seller Support must recognize a selected contact option while waiting for the next actionable control.');
 ssrrAssert(str_contains($fba,'SUPPORT_CONTACT_SELECTED_CONTINUE_MISSING'),'FBA recovery must explicitly advance the selected contact option through Continue.');
 ssrrAssert(str_contains($worker,'async function supportOpen(cdp, job, options = {})'),'Seller Support open flow must accept bounded fallback options.');
-ssrrAssert(str_contains($worker,'options.forceFreshCase !== true'),'Fresh-case fallback must not reconcile the terminal case that just proved non-reopenable.');
-ssrrAssert(str_contains($worker,"return await supportOpen(cdp, job, { forceFreshCase: true });"),'A non-reopenable support update with a valid route must continue recovery in a fresh case instead of stopping as superseded.');
+ssrrAssert(str_contains($worker,'options.forceFreshCase !== true'),'Fresh-case fallback must not reconcile a terminal case when an explicitly separate support-open action is already authorized.');
+$nonReopenableStart=strpos($worker,"if (supportBody.includes('answered cases cannot be reopened after 5 days with no activity')");
+$nonReopenableEnd=strpos($worker,'const narrative = narrativeFor(job, 9000);',$nonReopenableStart);
+$nonReopenable=substr($worker,$nonReopenableStart,$nonReopenableEnd-$nonReopenableStart);
+ssrrAssert(str_contains($nonReopenable,"bridgeResult('HUMAN_INTERVENTION_REQUIRED'"),'A non-reopenable Seller Support update must surface an explicit human-intervention status.');
+ssrrAssert(str_contains($nonReopenable,"reason: 'SUPPORT_CASE_NOT_REOPENABLE'"),'The human-intervention result must preserve the non-reopenable support reason.');
+ssrrAssert(!str_contains($nonReopenable,'supportOpen(cdp, job'),'A non-reopenable Seller Support update must not create a duplicate fresh support case.');
 ssrrAssert(str_contains($fba,'SUPPORT_CONTACT_ADDITIONAL_INFO_NOT_WRITABLE'),'FBA recovery must fill the observed required additional-information field before Continue.');
 ssrrAssert(str_contains($worker,'async fillFrameTextareaTrusted(selector, value)'),'Required Seller Support textarea input must use trusted browser input rather than synthetic DOM-only events.');
 ssrrAssert(str_contains($fba,'if (!additionalInfoReady)'),'FBA recovery must wait for the asynchronous additional-information field before attempting Continue.');

@@ -30,8 +30,8 @@ final class SvAmazonErpInvoiceLookup
         return '/home/ubuntu/amazon-returns-deploy/shared/erp.env';
     }
 
-    /** @return array<string,mixed>|null */
-    public function findOrderByInvoiceNumber(string $invoiceNumber): ?array
+    /** @return list<array<string,mixed>> */
+    public function findOrdersByInvoiceNumber(string $invoiceNumber): array
     {
         $invoiceNumber=trim($invoiceNumber);
         if(preg_match('/^[0-9]{1,20}$/D',$invoiceNumber)!==1){
@@ -54,10 +54,29 @@ final class SvAmazonErpInvoiceLookup
             if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$orderId)!==1)continue;
             $matches[$orderId][]=$row;
         }
-        if($matches===[])return null;
-        if(count($matches)!==1)throw new UnexpectedValueException('ERP invoice maps to multiple Amazon orders.');
-        $orderId=(string)array_key_first($matches);
-        return $this->saleProjection($matches[$orderId][0],$orderId,$invoiceNumber);
+        if($matches===[])return [];
+        ksort($matches,SORT_STRING);
+        $resolved=[];
+        foreach($matches as $orderId=>$orderRows){
+            usort($orderRows,static function(array $a,array $b):int{
+                $seriesA=trim((string)($a['serie']??''));
+                $seriesB=trim((string)($b['serie']??''));
+                $bySeries=$seriesA<=>$seriesB;
+                if($bySeries!==0)return $bySeries;
+                return trim((string)($a['id']??''))<=>trim((string)($b['id']??''));
+            });
+            $resolved[]=$this->saleProjection($orderRows[0],(string)$orderId,$invoiceNumber);
+        }
+        return $resolved;
+    }
+
+    /** @return array<string,mixed>|null */
+    public function findOrderByInvoiceNumber(string $invoiceNumber): ?array
+    {
+        $resolved=$this->findOrdersByInvoiceNumber($invoiceNumber);
+        if($resolved===[])return null;
+        if(count($resolved)!==1)throw new UnexpectedValueException('ERP invoice maps to multiple Amazon orders.');
+        return $resolved[0];
     }
 
     /** @return array<string,mixed>|null */

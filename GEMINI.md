@@ -1,4 +1,23 @@
+<!-- EXTREME_AUDIT_UI_FIRST_HARD_GATE_V1 -->
+> **AUDITORIA EXTREMA V5 = UI REAL OBRIGATORIA.** Antes de declarar `APTO` ou `CONCLUIDO`, o proprio agente percorre cada jornada material na interface grafica real (navegacao, cliques, preenchimento, resultado visivel, reload/revisita, persistencia e evidencia visual com ambiente/release). API, terminal, SQL, codigo, screenshot isolado, mocks e testes apenas headless nao substituem prova pela UI. A auditoria inclui investigacao, correcao e reauditoria visual apos reparo. Nao ocultar uma UI marcando `browser.required=false` ou `journey.ui=false`. Somente componentes comprovadamente sem UI podem usar excecao com inventario negativo documentado e evidencias. Em bloqueio de sessao, esgotar rotas autorizadas; nao burlar MFA/permissaos. Leia e obedeça a secao `EXTREME_AUDIT_UI_FIRST_HARD_GATE_V1` de `AGENTS.md` antes da tarefa.
+<!-- /EXTREME_AUDIT_UI_FIRST_HARD_GATE_V1 -->
+
+<!-- AUDIT_EXTERNAL_REMEDIATION_V1 -->
+> **AUDITORIA EXTERNA:** também é corretiva. Auditor com acesso autorizado corrige, testa e reaudita; auditor read-only não encerra em relatório, devendo encaminhar achados a executor autorizado até correção + revalidação independente ou bloqueio externo comprovado.
+<!-- /AUDIT_EXTERNAL_REMEDIATION_V1 -->
+
+<!-- DIAGNOSTIC_REMEDIATE_VALIDATE_GLOBAL_V1 -->
+> **DIAGNÓSTICO CORRETIVO GLOBAL:** diagnóstico confirmado obriga correção segura, prevenção pertinente, testes e validação real/E2E aplicável antes de `CONCLUIDO`; enquanto houver ação executável, permanecer `RUNNING`.
+<!-- /DIAGNOSTIC_REMEDIATE_VALIDATE_GLOBAL_V1 -->
+
+<!-- GEMINI_READ_AGENTS_FIRST_V1 -->
+> **BOOTSTRAP OBRIGATÓRIO DO GEMINI:** antes de analisar, planejar, editar, executar comandos, usar navegador, abrir PR, fazer merge, deploy ou validar qualquer tarefa, leia integralmente o `AGENTS.md` da raiz deste repositório e siga suas regras. Releia em retomadas ou quando o arquivo mudar. Em conflito, `AGENTS.md` prevalece.
+
 # Protocolo IA-to-CLI obrigatório
+
+<!-- GLOBAL_BROWSER_VM_POLICY_V2 -->
+> **NAVEGAÇÃO GLOBAL — VM OBRIGATÓRIA; WINDOWS PROIBIDO PARA BROWSER:** qualquer navegador, automação browser, sessão gráfica, Playwright/Selenium/CDP, Chrome/Chromium/Edge/Opera, CAPTCHA, MFA, consentimento ou validação visual deve usar por padrão e obrigatoriamente a VM backend `always-free-arm-1787907847-26` (`10.0.1.38`) e o Browser Worker privado. Para intervenção humana, usar `https://shopvivaliz.com.br/admin/browser-worker.php`. **Fred-Win (`LAPTOP-NIG4IFUU`) e `DESKTOP-KOCEPSV` não são destinos nem fallback para navegação.** Não perguntar qual máquina usar para browser: use a VM. Exceção somente se o proprietário ordenar explicitamente, na tarefa atual, o uso de um Windows específico para aquela navegação. Se a VM estiver indisponível, reparar o caminho VM/OCI Bastion/túnel privado ou registrar bloqueio real; nunca migrar silenciosamente para Windows. Workflows/relays Windows de browser são legado e não devem ser executados até serem migrados. A regra não proíbe Windows para tarefas não-browser que realmente dependam dele.
+
 
 Antes de qualquer alteração, carregue e siga integralmente o protocolo canônico:
 
@@ -12,3 +31,13 @@ Em qualquer Auditoria Extrema, leia primeiro `AUDIT_POLICY.md` e todo o conjunto
 
 <!-- EXECUTION_PROVENANCE_POLICY_V1 -->
 Leia e cumpra EXECUTION-PROVENANCE-POLICY.md antes de qualquer execucao material.
+
+<!-- GLOBAL_TASK_CONTINUITY_V8 -->
+## Global task continuity V8
+
+Every repository task that can mutate code, infrastructure, data, CI, or deployment MUST create and maintain a durable checkpoint through `python3 scripts/agent_task_state.py`. This adapter targets the canonical A1 controller and stamps `repository=Vivaliz-site/amazon-returns-safet`.
+
+Required lifecycle: `start` before substantive work; `progress` after material progress or before handing off; `ready` + `complete` only after fresh verification. A recoverable error remains `RUNNING`. `BLOCKED_EXTERNAL` is allowed only with objective external evidence and exhausted safe alternatives.
+
+If the canonical controller is unavailable, the adapter fails closed. Do not create an unmonitored local substitute. Restore/use the A1 control plane before continuing work that depends on interruption recovery. Detached recovery does not reopen the same ChatGPT conversation.
+<!-- /GLOBAL_TASK_CONTINUITY_V8 -->

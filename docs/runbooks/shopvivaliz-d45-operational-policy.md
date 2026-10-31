@@ -9,6 +9,30 @@ A day-only Brazilian date starts at 00:00 America/Sao_Paulo; an explicit instruc
 Amazon's announcement describes 60 days after customer refund for applicable FBA Onsite/DBA orders from 2026-04-21, and 45 days for older orders. That evidence remains distinct from this owner's D+45 first-attempt instruction.
 The Amazon eligibility check must still run. Record BLOCKED_UNTIL and the date actually returned; never bypass an eligibility block, CAPTCHA or authentication requirement.
 
+## Automatic administrative close at D+90 (owner instruction 2026-10-11)
+
+At or after 90 elapsed UTC days from the *customer refund timestamp* `refund_at`,
+the routine scheduler closes unresolved internal recovery cases as `CLOSED_LOSS`,
+with terminal reason `OWNER_ADMINISTRATIVE_CLOSURE_AFTER_90D`. It does **not**
+credit the seller, mark the case `RECOVERED`, erase a partial credit, cancel an
+Amazon SAFE-T/support ticket, or overwrite the Amazon correspondence.
+
+Do **not** close `RECEIVED_OK`, any case with an explicitly confirmed physical
+receipt (including warehouse `PHYSICAL_RECEIVED` evidence), already recovered or
+closed cases, or cases with an in-flight outbox task (`PENDING`/`PROCESSING`).
+In-flight cases remain eligible for a subsequent scheduler pass after the task
+finishes. Cases without a confirmed refund timestamp are not aged by guesswork.
+
+Each closure and its original state, cutoff, refundable amount, already
+reconciled credit and unrecovered balance are persisted atomically in
+`CASE_CLOSED_ADMIN_90D` (`INTERNAL`) with a scoped, deterministic idempotency
+key. Concurrent delayed Gmail/support/financial state updates must not reopen a
+previously closed `CLOSED_LOSS` case. All source and evidence histories remain.
+
+This is an *administrative loss closure*, not an Amazon eligibility rule and not
+an authorization to submit or retry claims after their official deadlines.
+Existing D+45 opening, external eligibility and writing controls remain unchanged.
+
 ## Channel and evidence safeguards
 Use SAFE-T only for applicable seller-fulfilled claims. Lost/damaged shipment, standard FBA, physical damage, existing appeal, active support and email reply each require their appropriate channel and evidence; D+45 alone is not authorization to use the wrong channel.
 An existing claim is resumed, not submitted as a new duplicate. A valid appeal window is required. If Amazon asks the seller to wait beyond the official internal SAFE-T appeal deadline, the internal appeal deadline preempts that wait and the existing SAFE-T is appealed while the window is still open. If that deadline is missing, fail closed to human review; if it already expired during the conflicting wait, record the missed-window conflict instead of pretending an internal appeal is still available.

@@ -94,4 +94,58 @@ $resolved=$resolver->findOrderByInvoiceNumber('002214');
 erpInvoiceSame('702-5144267-2415462',$resolved['order_id'] ?? null,'Denied Amazon invoice access must fall back to ERP.');
 erpInvoiceSame(1,$erpFallback->calls,'ERP fallback must run exactly once after Amazon permission denial.');
 
+$multiCalls=[];
+$multiHttp=static function(string $method,string $url,array $headers,?string $body) use (&$multiCalls): array {
+    $multiCalls[]=compact('method','url','headers','body');
+    return [
+        'status'=>200,
+        'json'=>[
+            'itens'=>[
+                [
+                    'id'=>382140959,'numero'=>'003043','serie'=>'10','situacao'=>'6','tipo'=>'S',
+                    'ecommerce'=>['nome'=>'Amazon Onsite','numeroPedidoEcommerce'=>'702-0646566-5244224'],
+                ],
+                [
+                    'id'=>352726265,'numero'=>'003043','serie'=>'420','situacao'=>'6','tipo'=>'S',
+                    'ecommerce'=>['nome'=>'Amazon Classic','numeroPedidoEcommerce'=>'702-3845142-2739414'],
+                ],
+            ],
+            'paginacao'=>['limit'=>100,'offset'=>0,'total'=>2],
+        ],
+    ];
+};
+$multiErp=new SvAmazonErpInvoiceLookup(['TINY_ACCESS_TOKEN'=>'test-token'],$multiHttp);
+$multi=$multiErp->findOrdersByInvoiceNumber('3043');
+erpInvoiceSame(2,count($multi),'Repeated invoice number across ERP series must resolve every distinct Amazon order.');
+erpInvoiceSame(
+    ['702-0646566-5244224','702-3845142-2739414'],
+    array_values(array_map(static fn(array $row):string=>(string)($row['order_id']??''),$multi)),
+    'Repeated invoice number must keep deterministic Amazon order candidates.'
+);
+$ambiguous=false;
+try{$multiErp->findOrderByInvoiceNumber('3043');}
+catch(UnexpectedValueException){$ambiguous=true;}
+erpInvoiceSame(true,$ambiguous,'Legacy single-result ERP API must still fail closed on ambiguous invoice numbers.');
+
+final class BrokenAmazonInvoiceLookup {
+    public function findOrderByInvoiceNumber(string $invoiceNumber): ?array {
+        throw new RuntimeException('Amazon LWA credentials incomplete.');
+    }
+}
+final class MultiErpInvoiceLookup {
+    public int $calls=0;
+    /** @param list<array<string,mixed>> $results */
+    public function __construct(private array $results) {}
+    /** @return list<array<string,mixed>> */
+    public function findOrdersByInvoiceNumber(string $invoiceNumber): array {
+        $this->calls++;
+        return $this->results;
+    }
+}
+$multiFallback=new MultiErpInvoiceLookup($multi);
+$multiResolver=new SvAmazonInvoiceRemoteLookup(new BrokenAmazonInvoiceLookup(),$multiFallback);
+$resolvedMany=$multiResolver->findOrdersByInvoiceNumber('3043');
+erpInvoiceSame(2,count($resolvedMany),'Missing Amazon LWA runtime must not prevent read-only ERP invoice resolution.');
+erpInvoiceSame(1,$multiFallback->calls,'ERP multi-order fallback must run exactly once when Amazon runtime is unavailable.');
+
 echo "erp-invoice-fallback-test: OK\n";

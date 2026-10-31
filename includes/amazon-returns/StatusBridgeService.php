@@ -51,6 +51,7 @@ final class SvAmazonReturnsStatusBridgeService
     public function ensureJobs(DateTimeImmutable $now): int
     {
         $this->p->outbox->supersedeTerminalReadJobs('TERMINAL_CASE_NO_LONGER_REQUIRES_READ');
+        $this->p->outbox->supersedeDiscoveryJobsForKnownSafeT('SAFE_T_ID_ALREADY_KNOWN');
         $ensured=0;
         foreach($this->p->cases->casesWithSafeTId(250) as $case){
             $caseId=(int)($case['id'] ?? 0);
@@ -101,6 +102,49 @@ final class SvAmazonReturnsStatusBridgeService
         return $ensured;
     }
 
+    /**
+     * @param list<array<string,mixed>> $items
+     * @return array<string,mixed>
+     */
+    public function discoverSupportActions(array $items,DateTimeImmutable $now): array
+    {
+        if(count($items)>50)return ['status'=>'TOO_MANY_ITEMS','http_status'=>413];
+        $accepted=0;$skipped=0;$seen=[];
+        foreach($items as $item){
+            if(!is_array($item)){$skipped++;continue;}
+            $orderId=trim((string)($item['order_id']??''));
+            if(preg_match('/^\d{3}-\d{7}-\d{7}$/D',$orderId)!==1){$skipped++;continue;}
+            try{$support=SvAmazonSellerSupportStatus::normalize($item);}catch(Throwable){$skipped++;continue;}
+            $normalizedStatus=preg_replace('/[^A-Z0-9]+/','',strtoupper($support['case_status'])) ?? '';
+            if(!in_array($normalizedStatus,['PENDINGSELLERACTION','AWAITINGSELLERACTION','PENDINGMERCHANTACTION','AWAITINGMERCHANTACTION'],true)){
+                $skipped++;continue;
+            }
+            $case=$this->p->cases->findSingleByOrder($orderId);
+            if(!is_array($case)){$skipped++;continue;}
+            $caseId=(int)($case['id']??0);
+            if($caseId<1){$skipped++;continue;}
+            $dedupe=$caseId.'|'.$support['case_id'].'|'.$support['content_fingerprint'];
+            if(isset($seen[$dedupe]))continue;
+            $seen[$dedupe]=true;
+            $timeline=$this->p->events->eventsForCase($caseId);
+            $plan=SvAmazonSellerSupportStatus::observationPlan($caseId,$support,$timeline);
+            if($plan['append']){
+                $this->p->events->append([
+                    'case_id'=>$caseId,
+                    'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED',
+                    'source'=>'SELLER_CENTRAL',
+                    'source_event_id'=>$support['case_id'].'|'.$support['case_status'].'|ACTION_DISCOVERY',
+                    'idempotency_key'=>$plan['idempotency_key'],
+                    'occurred_at'=>$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+                    'payload'=>$support+['discovered_via'=>'CASE_LOBBY_ACTION_SCAN'],
+                    'evidence_sha256'=>null,
+                ]);
+                $accepted++;
+            }
+        }
+        return ['status'=>'OK','accepted'=>$accepted,'skipped'=>$skipped];
+    }
+
     /** @return array<string,mixed> */
     public function pull(DateTimeImmutable $now): array
     {
@@ -138,7 +182,7 @@ final class SvAmazonReturnsStatusBridgeService
         $row=$this->p->outbox->findOwned($jobId);
         $kind=is_array($row)?strtoupper((string)($row['kind'] ?? '')):'';
         if(!is_array($row)
-            || !in_array($kind,['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'],true)
+            || !in_array($kind,['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ','SELLER_SUPPORT_UPDATE'],true)
             || !hash_equals((string)$row['idempotency_key'],$idempotencyKey)){
             return ['status'=>'JOB_NOT_FOUND','http_status'=>404];
         }
@@ -153,7 +197,7 @@ final class SvAmazonReturnsStatusBridgeService
         if($kind==='SELLER_SUPPORT_READ' && $status==='ACCEPTED' && is_array($result['support'] ?? null)){
             return $this->completeSupportObservation($row,$result);
         }
-        if($kind==='SELLER_SUPPORT_READ' && $status==='NOT_FOUND'
+        if(in_array($kind,['SELLER_SUPPORT_READ','SELLER_SUPPORT_UPDATE'],true) && $status==='NOT_FOUND'
             && (string)($result['reason'] ?? '')==='SELLER_SUPPORT_CASE_IDENTITY_MISMATCH'){
             return $this->completeSupportIdentityMismatch($row,$result);
         }
@@ -186,6 +230,16 @@ final class SvAmazonReturnsStatusBridgeService
         ];
     }
 
+    /** @param array<string,mixed> $row @param array<string,mixed> $case */
+    private function supportCaseIdForRow(array $row,array $case): string
+    {
+        $payload=is_array($row['payload']??null)?$row['payload']:[];
+        $scoped=trim((string)($payload['support_case_id']??''));
+        if(preg_match('/^\\d{8,14}$/D',$scoped)===1)return $scoped;
+        $primary=trim((string)($case['support_case_id']??''));
+        return preg_match('/^\\d{8,14}$/D',$primary)===1?$primary:'';
+    }
+
     /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */
     private function completeSupportIdentityMismatch(array $row,array $result): array
     {
@@ -202,9 +256,11 @@ final class SvAmazonReturnsStatusBridgeService
             $case=$this->p->cases->find($caseId);
             if(!is_array($case))throw new RuntimeException('Owned Seller Support case disappeared.');
             $known=trim((string)($case['support_case_id'] ?? ''));
-            if($known==='' || !hash_equals($known,$mismatchedId)){
+            $expected=$this->supportCaseIdForRow($row,$case);
+            if($expected==='' || !hash_equals($expected,$mismatchedId)){
                 throw new RuntimeException('Seller Support identity changed during mismatch recovery.');
             }
+            $clearPrimary=$known!=='' && hash_equals($known,$mismatchedId);
             $this->p->events->append([
                 'case_id'=>$caseId,
                 'event_type'=>'SELLER_SUPPORT_IDENTITY_MISMATCH',
@@ -218,17 +274,17 @@ final class SvAmazonReturnsStatusBridgeService
                     'support_case_id'=>$mismatchedId,
                     'order_id'=>(string)($case['amazon_order_id'] ?? ''),
                     'reason'=>'SELLER_SUPPORT_CASE_IDENTITY_MISMATCH',
-                    'binding_cleared'=>true,
+                    'binding_cleared'=>$clearPrimary,
                 ],
                 'evidence_sha256'=>$snapshot,
             ]);
-            $this->p->cases->update($caseId,['support_case_id'=>null]);
+            if($clearPrimary)$this->p->cases->update($caseId,['support_case_id'=>null]);
             $this->p->outbox->markSucceeded((int)$row['id']);
             $db->commit();
             return [
                 'status'=>'ACK','job_id'=>(int)$row['id'],
                 'result_status'=>'NOT_FOUND','completed'=>true,
-                'support_case_id_cleared'=>$mismatchedId,
+                'support_case_id_cleared'=>$clearPrimary?$mismatchedId:null,
             ];
         }catch(Throwable $e){
             if($db->inTransaction())$db->rollBack();
@@ -243,8 +299,8 @@ final class SvAmazonReturnsStatusBridgeService
         $caseId=(int)$row['case_id'];
         $case=$this->p->cases->find($caseId);
         if(!is_array($case))return ['status'=>'JOB_NOT_FOUND','http_status'=>404];
-        $known=trim((string)($case['support_case_id'] ?? ''));
-        if($known==='' || !hash_equals($known,$support['case_id']))throw new RuntimeException('Seller Support observation identity did not match the scoped case.');
+        $expected=$this->supportCaseIdForRow($row,$case);
+        if($expected==='' || !hash_equals($expected,$support['case_id']))throw new RuntimeException('Seller Support observation identity did not match the scoped case.');
         $snapshot=$result['evidence']['snapshot_sha256'] ?? null;
         if(!is_string($snapshot) || preg_match('/^[a-f0-9]{64}$/i',$snapshot)!==1)$snapshot=null;
         $timeline=$this->p->events->eventsForCase($caseId);

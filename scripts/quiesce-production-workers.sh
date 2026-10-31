@@ -31,14 +31,38 @@ qw_thaw_units() {
     done
 }
 
+qw_unit_state() {
+    local unit="$1"
+    systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true
+}
+
 qw_unit_running() {
     local unit="$1" state
-    state="$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)"
+    state="$(qw_unit_state "$unit")"
     case "$state" in
         active|activating|reloading|deactivating) return 0 ;;
         inactive|failed) return 1 ;;
     esac
     systemctl is-active --quiet "$unit"
+}
+
+qw_unit_transitioning() {
+    local unit="$1" state
+    state="$(qw_unit_state "$unit")"
+    case "$state" in
+        activating|reloading|deactivating) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+qw_any_unit_transitioning() {
+    local unit
+    for unit in "$@"; do
+        if qw_unit_transitioning "$unit"; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 quiesce_workers() {
@@ -94,6 +118,12 @@ quiesce_workers() {
             sleep "$poll_seconds"
             continue
         fi
+        if qw_any_unit_transitioning "${services[@]}"; then
+            printf 'worker_quiesce_waiting_for_unit_transition=true\n'
+            sleep "$poll_seconds"
+            continue
+        fi
+
         frozen=()
         for unit in "${services[@]}"; do
             if qw_unit_running "$unit"; then

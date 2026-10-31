@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
+import { safeTExternalWindow } from './safe-t-external-window.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
@@ -14,6 +15,7 @@ const WORKER_ID = process.env.SELLER_CENTRAL_WORKER_ID || 'seller-central-browse
 const POLL_MS = Math.max(10000, Number(process.env.SELLER_CENTRAL_BRIDGE_POLL_MS || 30000));
 const QUIESCE_MARKER = process.env.AMAZON_RETURNS_QUIESCE_MARKER || '/run/amazon-returns-seller-central.quiesce';
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
+const SAFE_T_APPEAL_FIELD_WAIT_MS = 15000;
 const HELP_URL = 'https://sellercentral.amazon.com.br/help/center?redirectSource=Hill';
 const CASE_LOBBY = 'https://sellercentral.amazon.com.br/cu/case-lobby';
 const supportHistoryRaw = Number(process.env.SELLER_CENTRAL_SUPPORT_CASE_HISTORY_LIMIT || 500);
@@ -223,6 +225,85 @@ class Cdp {
     return true;
   }
 
+  async fillDeepSupportTextarea(value) {
+    const expected=String(value??'');
+    if(expected==='')return false;
+    const evaluated=await this.send('Runtime.evaluate',{
+      expression:`(()=>{const roots=[];const scan=root=>{if(!root||roots.includes(root))return;roots.push(root);for(const frame of root.querySelectorAll?.('iframe')||[]){try{scan(frame.contentDocument)}catch{}}for(const e of root.querySelectorAll?.('*')||[]){if(e.shadowRoot)scan(e.shadowRoot)}};scan(document);const usable=h=>{if(!h||h.disabled===true||h.hasAttribute?.('disabled')||h.getAttribute?.('aria-disabled')==='true')return false;const placeholder=(h.getAttribute?.('placeholder')||h.getAttribute?.('aria-label')||'').toLowerCase();return !placeholder.includes('feedback')};for(const root of roots){for(const host of root.querySelectorAll?.('kat-textarea')||[]){if(!usable(host))continue;const textarea=host.shadowRoot?.querySelector('textarea');if(usable(textarea))return textarea}for(const textarea of root.querySelectorAll?.('textarea')||[]){if(usable(textarea))return textarea}}return null})()`,
+      returnByValue:false,
+      awaitPromise:true,
+    });
+    const objectId=evaluated?.result?.objectId;
+    if(!objectId)return false;
+    try{
+      const result=await this.send('Runtime.callFunctionOn',{
+        objectId,
+        functionDeclaration:`function(expected){if(!this||this.tagName!=='TEXTAREA'||this.disabled)return false;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')?.set;if(typeof setter!=='function')return false;setter.call(this,expected);this.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertText',data:expected}));this.dispatchEvent(new Event('change',{bubbles:true,composed:true}));return this.value===expected}`,
+        arguments:[{value:expected}],
+        returnByValue:true,
+        awaitPromise:true,
+      });
+      return result?.result?.value===true;
+    }catch{return false}finally{await this.send('Runtime.releaseObject',{objectId}).catch(()=>{});}
+  }
+
+  async clickButtonTrustedByText(labels) {
+    const wanted=[...new Set((Array.isArray(labels)?labels:[labels]).map(v=>String(v??'').trim()).filter(Boolean))];
+    if(wanted.length===0)return '';
+    const normalizedWanted=wanted.map(value=>value.toLowerCase());
+    const frameTree=await this.send('Page.getFrameTree').catch(()=>null);
+    const frameIds=[];
+    const visitFrame=node=>{
+      const frameId=node?.frame?.id;
+      if(frameId)frameIds.push(frameId);
+      for(const child of node?.childFrames||[])visitFrame(child);
+    };
+    visitFrame(frameTree?.frameTree);
+    const visible=[];
+    for(const frameId of frameIds){
+      const tree=await this.send('Accessibility.getFullAXTree',{frameId}).catch(()=>null);
+      for(const node of tree?.nodes||[]){
+        if(node?.ignored===true || !node?.backendDOMNodeId)continue;
+        const role=String(node?.role?.value||'').trim().toLowerCase();
+        if(!['button','link'].includes(role))continue;
+        const name=String(node?.name?.value||'').trim();
+        if(!normalizedWanted.includes(name.toLowerCase()))continue;
+        const disabled=(node?.properties||[]).some(property=>property?.name==='disabled' && property?.value?.value===true);
+        if(disabled)continue;
+        const resolved=await this.send('DOM.resolveNode',{backendNodeId:node.backendDOMNodeId}).catch(()=>null);
+        const objectId=resolved?.object?.objectId;
+        if(!objectId)continue;
+        const usable=await this.send('Runtime.callFunctionOn',{
+          objectId,
+          functionDeclaration:"function(){const style=getComputedStyle(this),rect=this.getBoundingClientRect();return !this.disabled&&this.getAttribute?.('aria-disabled')!=='true'&&style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity||1)>0&&rect.width>0&&rect.height>0&&this.getClientRects().length>0}",
+          returnByValue:true,
+          awaitPromise:true,
+        }).catch(()=>null);
+        if(usable?.result?.value===true)visible.push({objectId,name});
+        else await this.send('Runtime.releaseObject',{objectId}).catch(()=>{});
+      }
+    }
+    if(visible.length===1){
+      const {objectId}=visible[0];
+      try{
+        await this.send('DOM.scrollIntoViewIfNeeded',{objectId});await sleep(120);
+        const box=await this.send('DOM.getBoxModel',{objectId});const q=box?.model?.content;
+        if(!Array.isArray(q)||q.length<8)return '';
+        const x=(Number(q[0])+Number(q[2])+Number(q[4])+Number(q[6]))/4;
+        const y=(Number(q[1])+Number(q[3])+Number(q[5])+Number(q[7]))/4;
+        if(!Number.isFinite(x)||!Number.isFinite(y))return '';
+        await this.send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y,button:'none'});
+        await this.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});
+        await this.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});
+        return 'CLICKED';
+      }catch{return ''}finally{
+        for(const item of visible)await this.send('Runtime.releaseObject',{objectId:item.objectId}).catch(()=>{});
+      }
+    }
+    for(const item of visible)await this.send('Runtime.releaseObject',{objectId:item.objectId}).catch(()=>{});
+    return '';
+  }
+
   async frameButtonReadyByText(label) {
     return (await this.evaluate(`(()=>{const label=${JSON.stringify(label)};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const host of d.querySelectorAll('kat-button,button')){const text=(host.getAttribute('label')||host.innerText||'').trim();if(text!==label)continue;const button=host.tagName==='KAT-BUTTON'?host.shadowRoot?.querySelector('button'):host;if(button&&!button.disabled)return true}}return false})()`)) === true;
   }
@@ -365,7 +446,7 @@ function bridgeResult(status, extra = {}) {
 }
 
 async function supportFrameSnapshot(cdp) {
-  return await cdp.evaluate(`(()=>{const out={buttons:[],inputs:[]};for(const f of document.querySelectorAll('iframe')){const d=f.contentDocument;if(!d)continue;for(const h of d.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.innerText||'').trim();if(label&&out.buttons.length<24)out.buttons.push(label.slice(0,80))}for(const h of d.querySelectorAll('kat-input,input')){const placeholder=(h.getAttribute('placeholder')||'').trim();if(placeholder&&out.inputs.length<16)out.inputs.push(placeholder.slice(0,80))}}return out})()`);
+  return await cdp.evaluate(`(()=>{const out={buttons:[],inputs:[]};const roots=[];const scan=root=>{if(!root||roots.includes(root))return;roots.push(root);for(const frame of root.querySelectorAll?.('iframe')||[]){try{scan(frame.contentDocument)}catch{}}for(const e of root.querySelectorAll?.('*')||[]){if(e.shadowRoot)scan(e.shadowRoot)}};scan(document);const buttonSelector='kat-button,button,kat-link,[role="button"],input[type="submit"],input[type="button"]';for(const root of roots){for(const h of root.querySelectorAll?.(buttonSelector)||[]){const label=(h.getAttribute?.('label')||h.getAttribute?.('aria-label')||h.getAttribute?.('title')||h.getAttribute?.('value')||h.innerText||'').trim();if(label&&out.buttons.length<32&&!out.buttons.includes(label.slice(0,80)))out.buttons.push(label.slice(0,80))}for(const h of root.querySelectorAll?.('kat-input,input,kat-textarea,textarea')||[]){const placeholder=(h.getAttribute?.('placeholder')||h.getAttribute?.('aria-label')||'').trim();if(placeholder&&out.inputs.length<20&&!out.inputs.includes(placeholder.slice(0,80)))out.inputs.push(placeholder.slice(0,80))}}return out})()`);
 }
 
 async function evidence(cdp, uiContract) {
@@ -519,16 +600,38 @@ async function selectSafeTSubreason(cdp, value) {
   const expected=String(value||'').trim();
   if (!expected) return false;
   for (let attempt=0; attempt<12; attempt++) {
-    const directExact=(await cdp.evaluate(`(()=>{const expected=${JSON.stringify(expected)};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const valueOf=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>valueOf(option)===expected);if(exact.length>1)return -1;if(exact.length!==1)return 0;exact[0].click();return 1})()`));
+    const directExact=(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const expected=${JSON.stringify(expected)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const isInteractive=element=>{try{if(!element||element.hidden||element.getAttribute('aria-hidden')==='true'||element.hasAttribute('disabled'))return false;const style=getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity||1)<=0)return false;const rect=element.getBoundingClientRect();return rect.width>0&&rect.height>0&&element.getClientRects().length>0}catch{return false}};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const semantic=[];for(const root of roots){for(const host of root.querySelectorAll?.('kat-dropdown')||[]){const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));if(hints.some(h=>meta.includes(h)))semantic.push(host)}}const interactiveDropdowns=semantic.filter(isInteractive);const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const valueOf=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>valueOf(option)===expected);if(exact.length>1)return -1;const interactiveExact=exact.filter(isInteractive);if(interactiveDropdowns.length!==1||interactiveExact.length!==1)return 0;interactiveExact[0].click();return 1})()`));
     if (directExact===1) return true;
     if (directExact===-1) return false;
-    const opened=(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const matches=[];for(const root of roots){for(const host of root.querySelectorAll?.('kat-dropdown')||[]){const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));if(!hints.some(h=>meta.includes(h)))continue;matches.push(host)}}if(matches.length!==1)return false;const host=matches[0];const trigger=host.shadowRoot?.querySelector('button,[role=button],input')||host;if(trigger.disabled||host.hasAttribute('disabled'))return false;trigger.click();return true})()`))===true;
+    const trustedOwnerPoint=await cdp.evaluate(`(()=>{const expected=${JSON.stringify(expected)};const roots=[];const add=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const e of r.querySelectorAll?.('*')||[])if(e.shadowRoot)add(e.shadowRoot)};add(document);const options=roots.flatMap(r=>[...(r.querySelectorAll?.('kat-option,option,[role="option"]')||[])]);const exact=options.filter(o=>String(o.getAttribute?.('value')??o.value??o.dataset?.value??'').trim()===expected);if(exact.length!==1)return null;let owner=exact[0].closest?.('kat-dropdown');if(!owner){let n=exact[0];for(let i=0;i<8;i++){const h=n?.getRootNode?.()?.host;if(!h)break;if(h.tagName==='KAT-DROPDOWN'){owner=h;break}n=h}}if(!owner||owner.hidden||owner.hasAttribute('disabled'))return null;owner.scrollIntoView({block:'center'});const r=owner.getBoundingClientRect();if(r.width<=0||r.height<=0)return null;return {x:r.left+r.width/2,y:r.top+r.height/2}})()`);
+    if(trustedOwnerPoint&&Number.isFinite(trustedOwnerPoint.x)&&Number.isFinite(trustedOwnerPoint.y)){
+      await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:trustedOwnerPoint.x,y:trustedOwnerPoint.y,button:'none'});
+      await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',x:trustedOwnerPoint.x,y:trustedOwnerPoint.y,button:'left',clickCount:1});
+      await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:trustedOwnerPoint.x,y:trustedOwnerPoint.y,button:'left',clickCount:1});
+      await sleep(300);
+      const trustedOptionPoint=await cdp.evaluate(`(()=>{const expected=${JSON.stringify(expected)};const roots=[];const add=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const e of r.querySelectorAll?.('*')||[])if(e.shadowRoot)add(e.shadowRoot)};add(document);const options=roots.flatMap(r=>[...(r.querySelectorAll?.('kat-option,option,[role="option"]')||[])]);const exact=options.filter(o=>String(o.getAttribute?.('value')??o.value??o.dataset?.value??'').trim()===expected);if(exact.length!==1)return null;const o=exact[0];const s=getComputedStyle(o),r=o.getBoundingClientRect();if(o.hidden||o.getAttribute('aria-hidden')==='true'||s.display==='none'||s.visibility==='hidden'||r.width<=0||r.height<=0)return null;return {x:r.left+r.width/2,y:r.top+r.height/2}})()`);
+      if(trustedOptionPoint&&Number.isFinite(trustedOptionPoint.x)&&Number.isFinite(trustedOptionPoint.y)){
+        await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:trustedOptionPoint.x,y:trustedOptionPoint.y,button:'none'});
+        await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',x:trustedOptionPoint.x,y:trustedOptionPoint.y,button:'left',clickCount:1});
+        await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:trustedOptionPoint.x,y:trustedOptionPoint.y,button:'left',clickCount:1});
+        await sleep(200);
+        const trustedSelected=(await cdp.evaluate(`(()=>{const expected=${JSON.stringify(expected)};const roots=[];const add=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const e of r.querySelectorAll?.('*')||[])if(e.shadowRoot)add(e.shadowRoot)};add(document);const options=roots.flatMap(r=>[...(r.querySelectorAll?.('kat-option,option,[role="option"]')||[])]);const exact=options.filter(o=>String(o.getAttribute?.('value')??o.value??o.dataset?.value??'').trim()===expected);if(exact.length!==1)return false;let owner=exact[0].closest?.('kat-dropdown');if(!owner){let n=exact[0];for(let i=0;i<8;i++){const h=n?.getRootNode?.()?.host;if(!h)break;if(h.tagName==='KAT-DROPDOWN'){owner=h;break}n=h}}const v=String(owner?.value??owner?.getAttribute?.('value')??'').trim();return v===expected||exact[0].selected===true||exact[0].hasAttribute?.('selected')===true})()`))===true;
+        if(trustedSelected)return true;
+      }
+    }
+    const ownerOpened=await cdp.evaluate(`(()=>{const expected=${JSON.stringify(expected)};const isInteractive=element=>{try{if(!element||element.hidden||element.getAttribute('aria-hidden')==='true'||element.hasAttribute('disabled'))return false;const style=getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity||1)<=0)return false;const rect=element.getBoundingClientRect();return rect.width>0&&rect.height>0&&element.getClientRects().length>0}catch{return false}};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const valueOf=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>valueOf(option)===expected);if(exact.length!==1)return 0;const ownerDropdown=option=>{const lightOwner=option.closest?.('kat-dropdown');if(lightOwner)return lightOwner;let node=option;for(let depth=0;depth<8;depth++){const root=node?.getRootNode?.();const host=root?.host;if(!host)return null;if(host.tagName==='KAT-DROPDOWN')return host;node=host}return null};const owner=ownerDropdown(exact[0]);if(!owner||!isInteractive(owner))return 0;const ownerTrigger=owner.shadowRoot?.querySelector('button,[role=button],input')||owner;if(!isInteractive(ownerTrigger))return 0;ownerTrigger.click();return 1})()`);
+    if(ownerOpened===1){
+      await sleep(300);
+      const ownerSelected=(await cdp.evaluate(`(()=>{const expected=${JSON.stringify(expected)};const isInteractive=element=>{try{if(!element||element.hidden||element.getAttribute('aria-hidden')==='true'||element.hasAttribute('disabled'))return false;const style=getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity||1)<=0)return false;const rect=element.getBoundingClientRect();return rect.width>0&&rect.height>0&&element.getClientRects().length>0}catch{return false}};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const valueOf=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>valueOf(option)===expected);if(exact.length!==1)return false;const ownerDropdown=option=>{const lightOwner=option.closest?.('kat-dropdown');if(lightOwner)return lightOwner;let node=option;for(let depth=0;depth<8;depth++){const root=node?.getRootNode?.();const host=root?.host;if(!host)return null;if(host.tagName==='KAT-DROPDOWN')return host;node=host}return null};const owner=ownerDropdown(exact[0]);if(!owner||!isInteractive(owner)||!isInteractive(exact[0]))return false;exact[0].click();return true})()`))===true;
+      if(ownerSelected)return true;
+    }
+    const opened=(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const isInteractive=element=>{try{if(!element||element.hidden||element.getAttribute('aria-hidden')==='true'||element.hasAttribute('disabled'))return false;const style=getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity||1)<=0)return false;const rect=element.getBoundingClientRect();return rect.width>0&&rect.height>0&&element.getClientRects().length>0}catch{return false}};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const matches=[];for(const root of roots){for(const host of root.querySelectorAll?.('kat-dropdown')||[]){const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));if(!hints.some(h=>meta.includes(h))||!isInteractive(host))continue;matches.push(host)}}if(matches.length!==1)return false;const host=matches[0];const trigger=host.shadowRoot?.querySelector('button,[role=button],input')||host;if(!isInteractive(trigger))return false;trigger.click();return true})()`))===true;
     if (!opened) {
       if (attempt+1<12) await sleep(500);
       continue;
     }
     await sleep(300);
-    const selected=(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const expected=${JSON.stringify(expected)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const dropdowns=[];for(const root of roots){for(const host of root.querySelectorAll?.('kat-dropdown')||[]){const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));if(hints.some(h=>meta.includes(h)))dropdowns.push(host)}}if(dropdowns.length!==1)return false;const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const optionValue=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>optionValue(option)===expected);if(exact.length!==1)return false;exact[0].click();return true})()`))===true;
+    const selected=(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const expected=${JSON.stringify(expected)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const isInteractive=element=>{try{if(!element||element.hidden||element.getAttribute('aria-hidden')==='true'||element.hasAttribute('disabled'))return false;const style=getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity||1)<=0)return false;const rect=element.getBoundingClientRect();return rect.width>0&&rect.height>0&&element.getClientRects().length>0}catch{return false}};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const dropdowns=[];for(const root of roots){for(const host of root.querySelectorAll?.('kat-dropdown')||[]){const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));if(hints.some(h=>meta.includes(h))&&isInteractive(host))dropdowns.push(host)}}if(dropdowns.length!==1)return false;const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const optionValue=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>optionValue(option)===expected);if(exact.length!==1)return false;if(!isInteractive(exact[0]))return false;exact[0].click();return true})()`))===true;
     if (selected) return true;
     if (attempt+1<12) await sleep(500);
   }
@@ -536,9 +639,10 @@ async function selectSafeTSubreason(cdp, value) {
 }
 
 async function safeTSubreasonDiagnostics(cdp, value) {
+  const hints=['subcategoria','subcategory','sub category','subreason'];
   const expected=String(value||'').trim();
   try {
-    return String(await cdp.evaluate(`(()=>{const expected=${JSON.stringify(expected)};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const dropdowns=roots.flatMap(root=>[...(root.querySelectorAll?.('kat-dropdown')||[])]);const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const valueOf=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>valueOf(option)===expected).length;return ['d='+dropdowns.length,'r='+roots.length,'o='+options.length,'e='+exact].join(';')})()`)).slice(0,220);
+    return String(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const expected=${JSON.stringify(expected)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const isInteractive=element=>{try{if(!element||element.hidden||element.getAttribute('aria-hidden')==='true'||element.hasAttribute('disabled'))return false;const style=getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity||1)<=0)return false;const rect=element.getBoundingClientRect();return rect.width>0&&rect.height>0&&element.getClientRects().length>0}catch{return false}};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const dropdowns=roots.flatMap(root=>[...(root.querySelectorAll?.('kat-dropdown')||[])]);const semantic=dropdowns.filter(host=>{const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));return hints.some(h=>meta.includes(h))});const interactiveSemantic=semantic.filter(isInteractive);const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const valueOf=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>valueOf(option)===expected);const visibleExact=exact.filter(isInteractive).length;return ['d='+dropdowns.length,'s='+semantic.length,'i='+interactiveSemantic.length,'r='+roots.length,'o='+options.length,'e='+exact.length,'ve='+visibleExact].join(';')})()`)).slice(0,220);
   } catch {
     return 'SUBREASON_DIAG_UNAVAILABLE';
   }
@@ -547,6 +651,14 @@ async function safeTSubreasonDiagnostics(cdp, value) {
 async function safeTSubmit(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
+  // First fail-closed gate: do not even enter the SAFE-T creation flow early.
+  const openingWindow = safeTExternalWindow(job);
+  if (!openingWindow.allowed) {
+    return bridgeResult('BLOCKED_UNTIL', {
+      reason: openingWindow.reason, block_reason: openingWindow.reason,
+      next_allowed_at: openingWindow.next_allowed_at || null, retry_safe: true,
+    });
+  }
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'INVALID_ORDER_ID' });
   const trackingEvidence = await captureTrackingEvidence(cdp, orderId);
@@ -631,14 +743,40 @@ async function safeTSubmit(cdp, job) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_CONFIRMATION_CHECKBOX_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(500);
+  // Second independent gate immediately before the irreversible submit click.
+  // A stale/previously queued job must never rely on the Seller Central UI alone.
+  const finalWindow = safeTExternalWindow(job);
+  if (!finalWindow.allowed) {
+    return bridgeResult('BLOCKED_UNTIL', {
+      reason: finalWindow.reason, block_reason: finalWindow.reason,
+      next_allowed_at: finalWindow.next_allowed_at || null, retry_safe: true,
+    });
+  }
   const canSubmit = await cdp.evaluate(`!document.querySelector('kat-button.SubmitButton')?.hasAttribute('disabled')`);
   if (!canSubmit) return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_SUBMIT_STILL_DISABLED', evidence: await evidence(cdp, 'safet-v1') });
   if (!(await cdp.clickKat('kat-button.SubmitButton'))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_SUBMIT_BUTTON_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(7000);
-  const readBack = await cdp.evaluate(`(()=>{const href=location.href;const body=document.body?.innerText||'';const fromUrl=href.match(/\/claim\/(\d{5}-\d{5}-\d{7})/);const fromBody=body.match(/(?:ID da reivindicação SAFE-T[:\s]*|SAFE-T[:\s]+)(\d{5}-\d{5}-\d{7})/i);return fromUrl?.[1]||fromBody?.[1]||''})()`);
+  const readBack = await cdp.evaluate(`(()=>{const href=location.href;const body=document.body?.innerText||'';const claimMarker='/claim/';const claimPos=href.indexOf(claimMarker);const fromUrl=claimPos>=0?href.slice(claimPos+claimMarker.length).split(/[/?#]/,1)[0]:'';const fromBody=(body.match(new RegExp('(?:ID da reivindicação SAFE-T[:\\s]*|SAFE-T[:\\s]+)([0-9]{5}-[0-9]{5}-[0-9]{7})','i'))||[])[1]||'';const valid=v=>/^[0-9]{5}-[0-9]{5}-[0-9]{7}$/.test(String(v||''));return valid(fromUrl)?fromUrl:(valid(fromBody)?fromBody:'')})()`);
   if (!text(readBack)) {
+    await cdp.navigate(`${SAFE_T_BASE}?pageSize=100&dateFilterValue=90`, 5500);
+    const discoveredRaw = await cdp.evaluate(`JSON.stringify([...document.querySelectorAll('div[id^="claim-content-wrapper-"]')].map(e=>{const safe=(e.id.match(/\\d{5}-\\d{5}-\\d{7}/)||[])[0]||'';const href=e.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';const order=(href.match(/\\d{3}-\\d{7}-\\d{7}/)||[])[0]||'';return {safe,order}}).filter(x=>x.order===${JSON.stringify(orderId)}))`);
+    let discoveredMatches=[];
+    try { discoveredMatches=JSON.parse(text(discoveredRaw)||'[]'); } catch {}
+    const discoveredIds=[...new Set(discoveredMatches.map(row=>text(row?.safe)).filter(value=>/^\\d{5}-\\d{5}-\\d{7}$/.test(value)))];
+    if (discoveredIds.length===1) {
+      return bridgeResult('ACCEPTED', {
+        submitted: true,
+        external_id: discoveredIds[0],
+        retry_safe: true,
+        reason: 'SAFE_T_SUBMITTED_AND_DISCOVERED_BY_ORDER',
+        evidence: withTrackingEvidence(await evidence(cdp, 'safet-v1'), trackingEvidence, uploadResult),
+      });
+    }
+    if (discoveredIds.length>1) {
+      return bridgeResult('FAILED', { reason: 'MULTIPLE_SAFE_T_CLAIMS_AFTER_SUBMIT', submitted: false, retry_safe: false, evidence: await evidence(cdp, 'safet-v1') });
+    }
     return bridgeResult('FAILED', { reason: 'SAFE_T_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: await evidence(cdp, 'safet-v1') });
   }
   return bridgeResult('ACCEPTED', {
@@ -648,6 +786,16 @@ async function safeTSubmit(cdp, job) {
     reason: 'SAFE_T_SUBMITTED_AND_READ_BACK',
     evidence: withTrackingEvidence(await evidence(cdp, 'safet-v1'), trackingEvidence, uploadResult),
   });
+}
+
+async function waitForSafeTAppealField(cdp) {
+  const deadline = Date.now() + SAFE_T_APPEAL_FIELD_WAIT_MS;
+  do {
+    const present = await cdp.evaluate(`Boolean(document.querySelector('kat-textarea.description-textbox'))`);
+    if (present) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(500);
+  } while (true);
 }
 
 async function safeTAppeal(cdp, job) {
@@ -663,7 +811,7 @@ async function safeTAppeal(cdp, job) {
   const narrative = narrativeFor(job, 1500);
   const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative)})`);
   if (already) return bridgeResult('ALREADY_EXISTS', { external_id: safeTId, retry_safe: true, evidence: await evidence(cdp, 'safet-v1') });
-  const hasField = await cdp.evaluate(`Boolean(document.querySelector('kat-textarea.description-textbox'))`);
+  const hasField = await waitForSafeTAppealField(cdp);
   if (!hasField) {
     const state = await cdp.pageState();
     return bridgeResult('BLOCKED_UNTIL', { reason: 'SAFE_T_APPEAL_FIELD_UNAVAILABLE', block_reason: text(state.text).slice(-1200), retry_safe: true, evidence: await evidence(cdp, 'safet-v1') });
@@ -679,7 +827,9 @@ async function safeTAppeal(cdp, job) {
     }
   }
   const sendSelector = 'kat-button.right-floated[label="Enviar"]';
-  if (!(await cdp.clickKat(sendSelector))) {
+  const legacySend = await cdp.clickKat(sendSelector);
+  const semanticSend = legacySend ? '' : text(await cdp.clickButtonTrustedByText(['Send','Enviar']));
+  if (!legacySend && !semanticSend) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_APPEAL_SEND_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(5000);
@@ -696,18 +846,22 @@ async function safeTAppeal(cdp, job) {
   });
 }
 
-async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeTerminal = false, cutoffEpochSeconds = null } = {}) {
+async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeTerminal = false, cutoffEpochSeconds = null, excludeCaseIds = [], minimumCreationEpochSeconds = null } = {}) {
   const orderId = text(job.case?.order_id);
   const safeTId = text(job.case?.safe_t_id);
   const needles = [orderId, safeTId].filter(Boolean);
   if (needles.length === 0) return null;
   const preferred = /^\d{8,14}$/.test(text(preferredCaseId)) ? text(preferredCaseId) : '';
+  const excludedCaseIds = [...new Set((Array.isArray(excludeCaseIds) ? excludeCaseIds : []).map(text).filter(value => /^\d{8,14}$/.test(value)))];
   const cutoff = Number(cutoffEpochSeconds);
+  const minimumCreation = Number(minimumCreationEpochSeconds);
   const raw = await cdp.evaluate(`(async()=>{
     const needles=${JSON.stringify(needles)};
     const preferred=${JSON.stringify(preferred)};
+    const excluded=new Set(${JSON.stringify(excludedCaseIds)});
     const includeTerminal=${includeTerminal === true ? 'true' : 'false'};
     const cutoffSeconds=${Number.isFinite(cutoff) && cutoff > 0 ? cutoff : 'null'};
+    const minimumCreationSeconds=${Number.isFinite(minimumCreation) && minimumCreation > 0 ? minimumCreation : 'null'};
     const scanBudgetMs=${SUPPORT_CASE_LOOKUP_SCAN_BUDGET_MS};
     const scanStartedAt=Date.now();
     const budgetExceeded=()=>Date.now()-scanStartedAt>=scanBudgetMs;
@@ -715,6 +869,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
     const terminal=new Set(${JSON.stringify(SUPPORT_CASE_TERMINAL_STATUSES)});
     const activeSupportStatus=value=>{const status=String(value||'').trim().toUpperCase();return status!==''&&!terminal.has(status)};
     const supportStatusAllowed=value=>includeTerminal ? true : activeSupportStatus(value);
+    const creationAllowed=item=>{if(!Number.isFinite(minimumCreationSeconds)||minimumCreationSeconds<=0)return true;const created=Number(item?.creationDate);return Number.isFinite(created)&&created>=minimumCreationSeconds};
     const validCaseId=value=>{const candidate=String(value||'');return candidate.length>=8&&candidate.length<=14&&[...candidate].every(ch=>ch>='0'&&ch<='9')};
     const limit=${SUPPORT_CASE_HISTORY_LIMIT};
     const pageSize=50;
@@ -752,7 +907,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
       if(search.error)return JSON.stringify({status:'UNAVAILABLE',reason:search.error});
       for(const item of search.rows){
         const caseId=String(item.caseId||'');
-        if(!validCaseId(caseId)||!supportStatusAllowed(item.status))continue;
+        if(!validCaseId(caseId)||excluded.has(caseId)||!supportStatusAllowed(item.status)||!creationAllowed(item))continue;
         const preferredCandidate=preferred&&caseId===preferred;
         const relevantCandidate=relevant.test(String(item.shortDescription||''));
         if(!preferredCandidate&&!relevantCandidate)continue;
@@ -783,12 +938,13 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
         if(!Number.isFinite(created))return JSON.stringify({status:'UNAVAILABLE',reason:'SEARCH_CREATION_DATE_INVALID'});
         dated.push({item,created});
       }
-      const recent=dated.filter(entry=>entry.created>=cutoffSeconds).map(entry=>entry.item);
+      const recent=dated.filter(entry=>entry.created>=cutoffSeconds&&creationAllowed(entry.item)).map(entry=>entry.item);
       for(const item of recent){
+        const caseId=String(item.caseId||'');
         const summary=JSON.stringify(item);
-        if(needles.some(n=>summary.includes(n))&&supportStatusAllowed(item.status))return JSON.stringify({status:'FOUND',case_id:String(item.caseId||'')});
+        if(!excluded.has(caseId)&&needles.some(n=>summary.includes(n))&&supportStatusAllowed(item.status))return JSON.stringify({status:'FOUND',case_id:caseId});
       }
-      const candidates=recent.filter(item=>supportStatusAllowed(item.status)&&relevant.test(String(item.shortDescription||'')));
+      const candidates=recent.filter(item=>!excluded.has(String(item.caseId||''))&&supportStatusAllowed(item.status)&&relevant.test(String(item.shortDescription||'')));
       for(const item of candidates){
         if(budgetExceeded())return budgetResult();
         try{
@@ -960,6 +1116,13 @@ async function supportCaseReadbackSnapshot(cdp) {
   return await cdp.evaluate(`(()=>{const out=[];const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){out.push({url:d.location?.href||'',links:[...d.querySelectorAll('a[href]')].map(a=>({href:a.href||'',text:(a.innerText||'').trim().slice(0,120)})).filter(x=>/case|support/i.test(x.href+x.text)).slice(0,30),text:(d.body?.innerText||'').slice(0,5000)})}return out})()`);
 }
 
+function sellerSupportCaseLogUnavailable(value) {
+  const body=text(value).toLowerCase();
+  return body.includes('case log system is currently unavailable')
+    || body.includes('sistema de registro de casos') && body.includes('indisponível')
+    || body.includes('sistema de registro de casos') && body.includes('indisponivel');
+}
+
 function sellerSupportUnavailableResult() {
   return bridgeResult('BLOCKED_UNTIL', {
     block_reason: 'SELLER_SUPPORT_CURRENTLY_UNAVAILABLE',
@@ -1056,8 +1219,159 @@ async function hillSupportUnavailable(cdp) {
   return await hillPopupSupportState() === 'UNAVAILABLE';
 }
 
+
+async function connectLatestHillChatPopup(excludedCaseIds = []) {
+  const excluded = new Set((Array.isArray(excludedCaseIds) ? excludedCaseIds : []).map(text).filter(Boolean));
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    let targets = [];
+    try {
+      const response = await fetch(`${CDP_BASE}/json/list`, { signal: AbortSignal.timeout(2500) });
+      if (response.ok) targets = await response.json();
+    } catch {}
+    if (Array.isArray(targets)) {
+      const popup = [...targets].reverse().find(row => row?.type === 'page'
+        && text(row?.url).includes('/hill/website/chat')
+        && text(row?.webSocketDebuggerUrl)
+        && !excluded.has(supportCaseIdFromHillTargetUrl(row?.url)));
+      if (popup) {
+        const ws = new WebSocket(popup.webSocketDebuggerUrl);
+        await new Promise((resolve, reject) => {
+          ws.addEventListener('open', resolve, { once: true });
+          ws.addEventListener('error', reject, { once: true });
+        });
+        return { cdp: new Cdp(ws, null, 10000), caseId: supportCaseIdFromHillTargetUrl(popup.url) };
+      }
+    }
+    await sleep(500);
+  }
+  return null;
+}
+
+function supportedLiveChatReply(job, message) {
+  const body = text(message).toLowerCase();
+  const physical = text(job.case?.physical_status).toUpperCase();
+  const orderId = text(job.case?.order_id);
+  const amount = text(job.case?.refund_amount);
+  if (!body) return '';
+  if (/^(olá|ola|hello|hi|boa tarde|bom dia|boa noite)[!. ]*$/i.test(text(message))) {
+    return 'Olá. Estou acompanhando o atendimento e posso fornecer as informações deste caso.';
+  }
+  if (physical === 'NOT_RECEIVED' && /(receb|receive|retorn|return|produto|item)/i.test(body)) {
+    return `Não, não recebemos o produto de volta${orderId ? ` referente ao pedido ${orderId}` : ''}. Solicito o ressarcimento do valor devido ao vendedor.`;
+  }
+  if (orderId && /(pedido|order)/i.test(body)) return `O pedido é ${orderId}.`;
+  if (amount && /(valor|amount|reembolso|refund)/i.test(body)) return `O valor registrado para este reembolso é R$ ${amount}.`;
+  if (/(aguarde|wait|momento|moment)/i.test(body)) return '__WAIT__';
+  if (/(mais alguma|anything else|algo mais)/i.test(body)) return 'Não. Solicito apenas a análise e o ressarcimento devido ao vendedor conforme as evidências deste caso.';
+  return '';
+}
+
+
+async function sendHillChatMessage(chat, message, timeoutMs = 20000) {
+  const expected = text(message);
+  if (!expected) return false;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ready = (await chat.evaluate(`(()=>{const t=document.querySelector('textarea[placeholder*="Write here and press Enter"],textarea[aria-label*="Write here and press Enter"]');return !!(t&&!t.disabled)})()`)) === true;
+    if (ready) break;
+    await sleep(400);
+  }
+  const filled = (await chat.evaluate(`(()=>{const expected=${JSON.stringify(expected)};const t=document.querySelector('textarea[placeholder*="Write here and press Enter"],textarea[aria-label*="Write here and press Enter"]');if(!t||t.disabled)return false;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')?.set;if(typeof setter!=='function')return false;setter.call(t,expected);t.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:expected}));t.dispatchEvent(new Event('change',{bubbles:true}));t.focus();return t.value===expected})()`)) === true;
+  if (!filled) return false;
+  await chat.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  await chat.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  await sleep(500);
+  return (await chat.evaluate(`(()=>{const t=document.querySelector('textarea[placeholder*="Write here and press Enter"],textarea[aria-label*="Write here and press Enter"]');return !t||t.value===''})()`)) === true;
+}
+
+async function attendHillChat(cdp, job, excludedCaseIds = []) {
+  const clicked = await clickHillChat(cdp);
+  if (!clicked) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_START_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  const popup = await connectLatestHillChatPopup(excludedCaseIds);
+  if (!popup) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_POPUP_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  const chat = popup.cdp;
+  const narrative = narrativeFor(job, 9000);
+  try {
+    const initial = await chat.pageState(18000);
+    const initialText = text(initial?.text);
+    if (!(await sendHillChatMessage(chat, narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_MESSAGE_NOT_WRITABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    let lastText = initialText;
+    const deadline = Date.now() + 5 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await sleep(1500);
+      const state = await chat.pageState(24000).catch(() => null);
+      if (!state) break;
+      const current = text(state.text);
+      if (current === lastText) continue;
+      const delta = current.startsWith(lastText) ? current.slice(lastText.length).trim() : current.slice(Math.max(0, current.length - 2000)).trim();
+      lastText = current;
+      if (!delta || delta.includes(narrative.slice(0, 120))) continue;
+      if (/(chat ended|conversation ended|atendimento encerrado|conversa encerrada|case has been created|caso foi criado)/i.test(delta)) break;
+      const reply = supportedLiveChatReply(job, delta);
+      if (reply === '__WAIT__') continue;
+      if (!reply) {
+        return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_UNSUPPORTED_AGENT_QUESTION', retry_safe: true, external_id: popup.caseId || null, evidence: await evidence(cdp, 'help-v1') });
+      }
+      if (!(await sendHillChatMessage(chat, reply))) return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_REPLY_NOT_WRITABLE', retry_safe: true, external_id: popup.caseId || null, evidence: await evidence(cdp, 'help-v1') });
+    }
+    const caseId = popup.caseId || await currentSupportCaseId(cdp);
+    if (caseId && await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240), 30000)) {
+      return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason: 'SUPPORT_CHAT_ATTENDED_AND_READ_BACK_CONFIRMED', evidence: await evidence(cdp, 'help-v1') });
+    }
+    return bridgeResult('HUMAN_INTERVENTION_REQUIRED', { reason: 'SELLER_SUPPORT_CHAT_READ_BACK_NOT_CONFIRMED', retry_safe: true, external_id: caseId || null, evidence: await evidence(cdp, 'help-v1') });
+  } finally {
+    await chat.close().catch(() => {});
+  }
+}
+
 async function currentSupportCaseId(cdp) {
   return text(await cdp.evaluate(`(()=>{const docs=[document];for(const f of document.querySelectorAll('iframe')){if(f.contentDocument)docs.push(f.contentDocument);const h=f.contentDocument?.querySelector('spl-hill-form');const d=h?.shadowRoot?.querySelector('iframe')?.contentDocument;if(d)docs.push(d)}for(const d of docs){for(const a of d.querySelectorAll('a[href*="caseID="]')){const m=(a.href||'').match(/[?&]caseID=(\\d{8,14})/);if(m)return m[1]}const body=d.body?.innerText||'';const m=body.match(/(?:ID do caso|Case ID)[:\\s#-]*(\\d{8,14})/i);if(m)return m[1]}return ''})()`));
+}
+
+function supportReplyCanonicalText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function supportReplyEquivalentText(haystack, narrative) {
+  const rawBody = String(haystack ?? '');
+  const rawExpected = String(narrative ?? '');
+  const body = supportReplyCanonicalText(rawBody);
+  const expected = supportReplyCanonicalText(rawExpected);
+  if (!body || !expected) return false;
+  if (body.includes(expected)) return true;
+
+  const orderId = rawExpected.match(/\b\d{3}-\d{7}-\d{7}\b/)?.[0] || '';
+  if (orderId && !rawBody.includes(orderId)) return false;
+
+  const clauses = rawExpected
+    .split(/[.!?]+/)
+    .map(supportReplyCanonicalText)
+    .filter(clause => clause.length >= 24);
+  if (clauses.length < 3) return false;
+
+  const matched = clauses.filter(clause => body.includes(clause)).length;
+  return matched >= 3 && (matched / clauses.length) >= 0.6;
+}
+
+async function supportCaseContainsText(cdp, caseId, needle) {
+  const candidate=text(caseId), expected=text(needle);
+  if(!/^\d{8,14}$/.test(candidate)||!expected)return false;
+  const canonicalSource=supportReplyCanonicalText.toString();
+  const equivalentSource=supportReplyEquivalentText.toString();
+  return (await cdp.evaluate(`(async()=>{try{const supportReplyCanonicalText=${canonicalSource};const supportReplyEquivalentText=${equivalentSource};const response=await fetch('/hill/hillservice/mons-api/ViewCase?caseId='+encodeURIComponent(${JSON.stringify(candidate)})+'&timeZone=UTC&pageSize=50',{credentials:'include'});if(!response.ok)return false;const detail=await response.json();return supportReplyEquivalentText(JSON.stringify(detail||{}),${JSON.stringify(expected)})}catch{return false}})()`))===true;
+}
+
+async function waitForSupportCaseText(cdp, caseId, needle, timeoutMs=20000) {
+  const deadline=Date.now()+Math.max(1000,Number(timeoutMs)||20000);
+  do{if(await supportCaseContainsText(cdp,caseId,needle))return true;await sleep(1000)}while(Date.now()<deadline);
+  return false;
 }
 
 async function supportCaseMatchesJob(cdp, job, caseId) {
@@ -1069,19 +1383,21 @@ async function supportCaseMatchesJob(cdp, job, caseId) {
 
 async function contactSupportAndReadBack(cdp, job) {
   const popupCaseIdsBeforeWrite = await hillPopupSupportCaseIds();
+  const preWriteCaseIds = new Set([...popupCaseIdsBeforeWrite, text(job.case?.support_case_id)].filter(id => /^\d{8,14}$/.test(id)));
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline && !(await hillContactReady(cdp))) await sleep(750);
   if (!(await hillContactReady(cdp))) {
     if (await hillPopupSupportState() === 'UNAVAILABLE') return sellerSupportUnavailableResult();
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
-  let channel = await submitHillEmail(cdp, job);
+  const channel = await submitHillEmail(cdp, job);
   if (channel !== 'Email') {
-    if (!(await hillChatReady(cdp))) {
-      return bridgeResult('UI_DRIFT', { reason: channel || 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-    }
-    channel = await clickHillChat(cdp);
-    if (!channel) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CHAT_START_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    if (await hillChatReady(cdp)) return await attendHillChat(cdp, job, popupCaseIdsBeforeWrite);
+    return bridgeResult('UI_DRIFT', {
+      reason: channel || 'SUPPORT_CONTACT_CHANNEL_UNAVAILABLE',
+      retry_safe: true,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
   }
   await sleep(1500);
   if (await hillSupportUnavailable(cdp)) {
@@ -1094,8 +1410,8 @@ async function contactSupportAndReadBack(cdp, job) {
   }
   await sleep(1500);
   let caseId = await currentSupportCaseId(cdp);
-  if (caseId && !(await supportCaseMatchesJob(cdp, job, caseId))) caseId = '';
-  const excludedPopupCaseIds = [...popupCaseIdsBeforeWrite];
+  if (caseId && (preWriteCaseIds.has(caseId) || !(await supportCaseMatchesJob(cdp, job, caseId)))) caseId = '';
+  const excludedPopupCaseIds = [...preWriteCaseIds];
   for (let attempt = 0; !caseId && attempt < 8; attempt++) {
     const popupCaseId = await hillPopupSupportCaseId(excludedPopupCaseIds);
     if (popupCaseId) {
@@ -1109,20 +1425,35 @@ async function contactSupportAndReadBack(cdp, job) {
   }
   for (let attempt = 0; !caseId && attempt < 5; attempt++) {
     try {
-      caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
+      caseId = text(await findSupportCase(cdp, job, { includeTerminal: true, excludeCaseIds: [...preWriteCaseIds] }));
     } catch (error) {
       if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
-        return bridgeResult('FAILED', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', lookup_reason: text(error?.lookupReason || 'UNKNOWN'), submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', lookup_phase: 'POST_WRITE_RECONCILIATION', lookup_reason: text(error?.lookupReason || 'UNKNOWN'), submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
       }
       throw error;
     }
     if (!caseId) await sleep(4000);
   }
   if (!/^\d{8,14}$/.test(caseId)) {
-    return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
   }
-  const reason = channel === 'Email' ? 'SUPPORT_CASE_OPENED_VIA_EMAIL' : 'SUPPORT_CASE_OPENED_VIA_CHAT';
-  return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason, evidence: await evidence(cdp, 'help-v1') });
+  const narrative = narrativeFor(job, 9000);
+  if (!(await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240)))) {
+    return bridgeResult('UI_DRIFT', {
+      reason: 'SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK',
+      submitted: true,
+      external_id: caseId,
+      retry_safe: true,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
+  }
+  return bridgeResult('ACCEPTED', {
+    submitted: true,
+    external_id: caseId,
+    retry_safe: true,
+    reason: 'SUPPORT_CASE_OPENED_VIA_EMAIL',
+    evidence: await evidence(cdp, 'help-v1'),
+  });
 }
 async function fillGeneralSupportIssue(cdp, job, narrative) {
   const orderId = text(job.case?.order_id);
@@ -1155,25 +1486,36 @@ async function submitDirectSupportCaseAndReadBack(cdp, job, narrative) {
   if (!(await waitForDirectSupportCaseDetails(cdp, narrative, 15000))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_DIRECT_CASE_DETAILS_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
+  const popupCaseIdsBeforeWrite = await hillPopupSupportCaseIds();
+  const preWriteCaseIds = new Set([...popupCaseIdsBeforeWrite, text(job.case?.support_case_id)].filter(id => /^\d{8,14}$/.test(id)));
   if (!(await cdp.clickFrameButtonTrustedByText('Create a case'))) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_DIRECT_CREATE_BUTTON_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
   await sleep(2500);
   let caseId = await currentSupportCaseId(cdp);
-  if (caseId && !(await supportCaseMatchesJob(cdp, job, caseId))) caseId = '';
+  if (caseId && (preWriteCaseIds.has(caseId) || !(await supportCaseMatchesJob(cdp, job, caseId)))) caseId = '';
   for (let attempt = 0; !caseId && attempt < 6; attempt++) {
     try {
-      caseId = text(await findSupportCase(cdp, job, { includeTerminal: true }));
+      caseId = text(await findSupportCase(cdp, job, { includeTerminal: true, excludeCaseIds: [...preWriteCaseIds] }));
     } catch (error) {
       if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
-        return bridgeResult('FAILED', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', lookup_reason: text(error?.lookupReason || 'UNKNOWN'), submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+        return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE', lookup_phase: 'POST_WRITE_RECONCILIATION', lookup_reason: text(error?.lookupReason || 'UNKNOWN'), submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
       }
       throw error;
     }
     if (!caseId) await sleep(3000);
   }
   if (!/^\d{8,14}$/.test(caseId)) {
-    return bridgeResult('FAILED', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: false, retry_safe: false, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+  }
+  if (!(await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240)))) {
+    return bridgeResult('UI_DRIFT', {
+      reason: 'SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK',
+      submitted: true,
+      external_id: caseId,
+      retry_safe: true,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
   }
   return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason: 'SUPPORT_CASE_OPENED_DIRECTLY', evidence: await evidence(cdp, 'help-v1') });
 }
@@ -1302,17 +1644,36 @@ async function openFbaSupportCardWithRetry(cdp) {
 async function supportOpen(cdp, job, options = {}) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
-  const supportRoute = supportRouteFor(job);
+  const supportRoute = text(options.supportRoute || supportRouteFor(job)).toUpperCase();
   if (!supportRoute) return bridgeResult('FAILED', { reason: 'SUPPORT_ROUTE_UNSUPPORTED', retry_safe: false });
   const decisionReason = text(job.payload?.decision?.reason).toUpperCase();
   const physicalStatus = text(job.case?.physical_status).toUpperCase();
   if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION' && physicalStatus === 'RECEIVED_OK') {
     return bridgeResult('SUPERSEDED', { reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN', retry_safe: false });
   }
-  const retryReconciliation = Number(job.attempt_count || 0) > 1 && options.forceFreshCase !== true;
+  const retryReconciliation = Number(job.attempt_count || 0) > 1;
+  const lookupOptions = retryReconciliation ? { includeTerminal: true } : {};
+  const priorSupportCaseId = text(job.case?.support_case_id);
+  const reconcileKnownCase = options.forceFreshCase !== true;
+  if (!reconcileKnownCase && /^\d{8,14}$/.test(priorSupportCaseId)) {
+    lookupOptions.excludeCaseIds = [priorSupportCaseId];
+    const createdAt = text(job.created_at);
+    const normalizedCreatedAt = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(createdAt)
+      ? `${createdAt.replace(' ', 'T')}Z`
+      : createdAt;
+    const createdAtMs = Date.parse(normalizedCreatedAt);
+    if (!Number.isFinite(createdAtMs)) {
+      return bridgeResult('UI_DRIFT', {
+        reason: 'SUPPORT_FRESH_CASE_EPISODE_CUTOFF_UNAVAILABLE',
+        retry_safe: true,
+        evidence: await evidence(cdp, 'help-v1'),
+      });
+    }
+    lookupOptions.minimumCreationEpochSeconds = Math.floor(createdAtMs / 1000);
+  }
   let existing;
   try {
-    existing = await findSupportCase(cdp, job, retryReconciliation ? { includeTerminal: true } : {});
+    existing = await findSupportCase(cdp, job, lookupOptions);
   } catch (error) {
     if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
       return bridgeResult('UI_DRIFT', {
@@ -1325,7 +1686,7 @@ async function supportOpen(cdp, job, options = {}) {
   }
   if (existing) return bridgeResult('ALREADY_EXISTS', {
     external_id: existing, retry_safe: true,
-    ...(retryReconciliation ? { reason: 'SUPPORT_RETRY_RECONCILED_TERMINAL_CASE' } : {}),
+    reason: retryReconciliation ? 'SUPPORT_RETRY_RECONCILED_TERMINAL_CASE' : 'SUPPORT_CASE_ALREADY_EXISTS',
     evidence: await evidence(cdp, 'help-v1')
   });
   const orderId = text(job.case?.order_id);
@@ -1483,16 +1844,52 @@ async function ensureSupportReplyComposer(cdp) {
   const deadline = Date.now() + 15000;
   let triggered = false;
   while (Date.now() < deadline) {
-    const selector = text(await cdp.evaluate(`(()=>{const usable=h=>{if(!h||h.disabled===true||h.hasAttribute('disabled'))return false;const placeholder=(h.getAttribute('placeholder')||'').toLowerCase();return !placeholder.includes('feedback')};const kat=[...document.querySelectorAll('kat-textarea')].find(usable);if(kat)return 'kat-textarea';const native=[...document.querySelectorAll('textarea')].find(usable);return native?'textarea':''})()`));
-    if (selector) return selector;
+    const ready = (await cdp.evaluate(`(()=>{const roots=[];const scan=root=>{if(!root||roots.includes(root))return;roots.push(root);for(const frame of root.querySelectorAll?.('iframe')||[]){try{scan(frame.contentDocument)}catch{}}for(const e of root.querySelectorAll?.('*')||[]){if(e.shadowRoot)scan(e.shadowRoot)}};scan(document);const usable=h=>{if(!h||h.disabled===true||h.hasAttribute?.('disabled')||h.getAttribute?.('aria-disabled')==='true')return false;const placeholder=(h.getAttribute?.('placeholder')||h.getAttribute?.('aria-label')||'').toLowerCase();return !placeholder.includes('feedback')};for(const root of roots){for(const host of root.querySelectorAll?.('kat-textarea')||[]){if(!usable(host))continue;const textarea=host.shadowRoot?.querySelector('textarea');if(usable(textarea))return true}for(const textarea of root.querySelectorAll?.('textarea')||[]){if(usable(textarea))return true}}return false})()`))===true;
+    if (ready) return true;
     if (!triggered) {
-      const opened = text(await cdp.evaluate(`(()=>{const labels=${JSON.stringify(triggerLabels)};for(const h of document.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.getAttribute('aria-label')||h.innerText||'').trim();if(!labels.includes(label))continue;const b=h.tagName==='KAT-BUTTON'?(h.shadowRoot?.querySelector('button')||h):h;if(b&&!b.disabled){b.click();return label}}return ''})()`));
+      const opened = text(await cdp.clickButtonTrustedByText(triggerLabels));
       if (opened) triggered = true;
     }
     await sleep(500);
   }
-  return '';
+  return false;
 }
+async function supportReplyChannels(cdp, caseId) {
+  const candidate = text(caseId);
+  if (!/^\d{8,14}$/.test(candidate)) return { status: 'INVALID', channels: [] };
+  const raw = await cdp.evaluate(`(async()=>{try{const caseId=${JSON.stringify(candidate)};const response=await fetch('/hill/hillservice/mons-api/GetReplyChannels?caseId='+encodeURIComponent(caseId),{credentials:'include'});if(!response.ok)return JSON.stringify({status:'HTTP_ERROR',http_status:response.status,channels:[]});const body=await response.json();return JSON.stringify({status:'OK',channels:Array.isArray(body?.channels)?body.channels.map(channel=>String(channel?.type||'').trim()).filter(Boolean):[],cis_enabled:body?.cisEnabled===true,can_reply:body?.partnerInformation?.canReplyCase===true})}catch{return JSON.stringify({status:'UNAVAILABLE',channels:[]})}})()`);
+  try {
+    const result = JSON.parse(String(raw || '{}'));
+    return {
+      status: text(result.status || 'UNAVAILABLE'),
+      channels: Array.isArray(result.channels) ? result.channels.map(text).filter(Boolean) : [],
+      cis_enabled: result.cis_enabled === true,
+      can_reply: result.can_reply === true,
+      http_status: Number(result.http_status || 0),
+    };
+  } catch {
+    return { status: 'UNAVAILABLE', channels: [] };
+  }
+}
+
+async function submitSupportEmailReplyApi(cdp, caseId, narrative) {
+  const channels = await supportReplyChannels(cdp, caseId);
+  if (channels.status !== 'OK' || channels.can_reply !== true) {
+    return { status: 'UNAVAILABLE', channels: channels.channels || [], attempted: false };
+  }
+  if (!channels.channels.includes('Email')) {
+    const liveOnly = channels.channels.length > 0
+      && channels.channels.every(channel => channel === 'Chat' || channel === 'Phone');
+    return { status: liveOnly ? 'LIVE_ONLY' : 'UNAVAILABLE', channels: channels.channels, attempted: false };
+  }
+  const resultRaw = await cdp.evaluate(`(async()=>{try{const caseId=${JSON.stringify(text(caseId))};const narrative=${JSON.stringify(text(narrative))};const cisEnabled=${channels.cis_enabled === true ? 'true' : 'false'};const response=await fetch('/hill/hillservice/mons-api/ReplyCase',{method:'POST',credentials:'include',headers:{'content-type':'application/json','client-id':'viewCase','enforce-waf-captcha-for-bot':'true','origin-referrer':location.origin},body:JSON.stringify({caseId,channelType:'Email',formData:{formFields:{describeIssue:narrative},emailData:{attachments:[]}},enforceWafCaptcha:false,cisEnabled})});return JSON.stringify({status:response.ok?'ACCEPTED':'HTTP_ERROR',http_status:response.status})}catch{return JSON.stringify({status:'UNAVAILABLE',http_status:0})}})()`);
+  let result;
+  try { result = JSON.parse(String(resultRaw || '{}')); } catch { result = { status: 'UNAVAILABLE', http_status: 0 }; }
+  if (result.status !== 'ACCEPTED') return { status: result.status || 'UNAVAILABLE', channels: channels.channels, http_status: Number(result.http_status || 0), attempted: true };
+  const confirmed = await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240));
+  return { status: confirmed ? 'ACCEPTED' : 'UNCONFIRMED', channels: channels.channels, http_status: Number(result.http_status || 0), attempted: true };
+}
+
 async function supportUpdate(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -1501,32 +1898,94 @@ async function supportUpdate(cdp, job) {
   await cdp.navigate(`https://sellercentral.amazon.com.br/cu/case-dashboard/view-case?caseID=${encodeURIComponent(caseId)}`, 5000);
   const auth = await authGate(cdp, 'help-v1', `https://sellercentral.amazon.com.br/cu/case-dashboard/view-case?caseID=${encodeURIComponent(caseId)}`, 5000);
   if (auth) return auth;
+  if (!(await supportCaseMatchesJob(cdp, job, caseId))) {
+    return bridgeResult('NOT_FOUND', { reason: 'SELLER_SUPPORT_CASE_IDENTITY_MISMATCH', external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+  }
   const supportPage = await cdp.pageState(18000);
   const supportBody = text(supportPage?.text).toLowerCase();
+  if (sellerSupportCaseLogUnavailable(supportBody)) return sellerSupportUnavailableResult();
   if (supportBody.includes('answered cases cannot be reopened after 5 days with no activity')
       || supportBody.includes('casos respondidos não podem ser reabertos após 5 dias sem atividade')
       || supportBody.includes('casos respondidos nao podem ser reabertos apos 5 dias sem atividade')) {
-    if (supportRouteFor(job)) {
-      return await supportOpen(cdp, job, { forceFreshCase: true });
-    }
-    return bridgeResult('SUPERSEDED', { reason: 'SUPPORT_CASE_NOT_REOPENABLE', retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
+    return bridgeResult('HUMAN_INTERVENTION_REQUIRED', {
+      reason: 'SUPPORT_CASE_NOT_REOPENABLE',
+      external_id: caseId,
+      retry_safe: false,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
   }
   const narrative = narrativeFor(job, 9000);
-  const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
-  if (already) return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
-  const selector = await ensureSupportReplyComposer(cdp);
-  if (!text(selector)) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
-  if (selector === 'kat-textarea') {
-    if (!(await cdp.setKat('kat-textarea', narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
-  } else {
-    const ok = await cdp.evaluate(`(()=>{const i=[...document.querySelectorAll('textarea')].find(h=>{if(h.disabled===true||h.hasAttribute('disabled'))return false;const placeholder=(h.getAttribute('placeholder')||'').toLowerCase();return !placeholder.includes('feedback')});if(!i)return false;const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;setter.call(i,${JSON.stringify(narrative)});i.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:${JSON.stringify(narrative)}}));i.dispatchEvent(new Event('change',{bubbles:true}));return i.value===${JSON.stringify(narrative)}})()`);
-    if (!ok) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_NATIVE_REPLY_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
+  if (await supportCaseContainsText(cdp, caseId, narrative.slice(0, 240))) {
+    return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, reason: 'SUPPORT_UPDATE_READBACK_CONFIRMED', evidence: await evidence(cdp, 'help-v1') });
   }
-  const sent = await cdp.evaluate(`(()=>{const labels=['Send','Send message','Reply','Enviar','Enviar mensagem','Responder'];for(const h of document.querySelectorAll('kat-button,button')){const label=(h.getAttribute('label')||h.innerText||'').trim();if(!labels.includes(label))continue;const b=h.tagName==='KAT-BUTTON'?h.shadowRoot?.querySelector('button'):h;if(b&&!b.disabled){b.click();return label}}return ''})()`);
-  if (!text(sent)) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_SEND_MISSING', evidence: await evidence(cdp, 'help-v1') });
-  await sleep(5000);
-  const confirmed = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
-  if (!confirmed) return bridgeResult('FAILED', { reason: 'SUPPORT_REPLY_NOT_CONFIRMED', retry_safe: false, evidence: await evidence(cdp, 'help-v1') });
+  const already = await cdp.evaluate(`(document.body?.innerText||'').includes(${JSON.stringify(narrative.slice(0, 240))})`);
+  if (already) return bridgeResult('ALREADY_EXISTS', { external_id: caseId, retry_safe: true, reason: 'SUPPORT_UPDATE_READBACK_CONFIRMED', evidence: await evidence(cdp, 'help-v1') });
+  const apiReply = await submitSupportEmailReplyApi(cdp, caseId, narrative);
+  if (apiReply.status === 'ACCEPTED') {
+    return bridgeResult('ACCEPTED', {
+      submitted: true,
+      external_id: caseId,
+      retry_safe: true,
+      reason: 'SUPPORT_CASE_UPDATED_VIA_REPLY_API_AND_READ_BACK',
+      evidence: await evidence(cdp, 'help-v1'),
+    });
+  }
+  if (apiReply.attempted === true) {
+    if (apiReply.status === 'HTTP_ERROR') {
+      const appearedAfterHttpError = await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240));
+      if (appearedAfterHttpError) {
+        return bridgeResult('ACCEPTED', {
+          submitted: true,
+          external_id: caseId,
+          retry_safe: true,
+          reason: 'SUPPORT_REPLY_HTTP_ERROR_BUT_READ_BACK_CONFIRMED',
+          evidence: await evidence(cdp, 'help-v1'),
+        });
+      }
+    } else if (apiReply.status !== 'UNCONFIRMED') {
+      return bridgeResult('FAILED', { reason: 'SUPPORT_REPLY_API_FAILED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
+    }
+  }
+  const channels = Array.isArray(apiReply.channels) ? apiReply.channels : [];
+  if (apiReply.status === 'LIVE_ONLY' && (channels.includes('Chat') || channels.includes('Phone'))) {
+    const freshFallback = await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'GENERAL_ORDER_SUPPORT' });
+    const generalFallbackNeedsFba = (
+      (freshFallback.status === 'BLOCKED_UNTIL'
+        && freshFallback.reason === 'SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION')
+      || (freshFallback.status === 'UI_DRIFT'
+        && freshFallback.reason === 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED')
+    );
+    if (generalFallbackNeedsFba && supportRouteFor(job) === 'FBA_RETURNS_REIMBURSEMENT') {
+      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' });
+    }
+    return freshFallback;
+  }
+  const composerReady = await ensureSupportReplyComposer(cdp);
+  if (!composerReady) {
+    const latestSupportPage = await cdp.pageState(18000);
+    if (sellerSupportCaseLogUnavailable(latestSupportPage?.text)) return sellerSupportUnavailableResult();
+    const supportRoute = supportRouteFor(job);
+    if (supportRoute) {
+      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute });
+    }
+    return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
+  }
+  if (!(await cdp.fillDeepSupportTextarea(narrative))) return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_NOT_WRITABLE', evidence: await evidence(cdp, 'help-v1') });
+  const sendLabels=['Send','Send message','Submit','Send to Amazon','Enviar','Enviar mensagem','Enviar resposta','Enviar para a Amazon'];
+  const sent = await cdp.clickButtonTrustedByText(sendLabels);
+  if (!text(sent)) {
+    const freshFallback = await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'GENERAL_ORDER_SUPPORT' });
+    const generalFallbackNeedsFba = (
+      (freshFallback.status === 'BLOCKED_UNTIL' && freshFallback.reason === 'SELLER_SUPPORT_LIVE_CHAT_REQUIRES_ATTENDED_SESSION')
+      || (freshFallback.status === 'UI_DRIFT' && freshFallback.reason === 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED')
+    );
+    if (generalFallbackNeedsFba && supportRouteFor(job) === 'FBA_RETURNS_REIMBURSEMENT') {
+      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' });
+    }
+    return freshFallback;
+  }
+  const confirmed = await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240));
+  if (!confirmed) return bridgeResult('FAILED', { reason: 'SUPPORT_REPLY_NOT_CONFIRMED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   return bridgeResult('ACCEPTED', {
     submitted: true,
     external_id: caseId,
@@ -1575,7 +2034,7 @@ async function runOnce() {
     result = await executeJob(job);
   } catch (error) {
     log('job_exception', { ...job, status: 'FAILED', reason: `UNHANDLED_${error?.name || 'ERROR'}:${text(error?.message).slice(0, 240)}` });
-    result = bridgeResult('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: false });
+    result = bridgeResult('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: true });
   }
   await bridge('result', { job_id: job.job_id, idempotency_key: job.idempotency_key, result });
   log('job_result', { ...job, ...result });

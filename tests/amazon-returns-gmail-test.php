@@ -342,7 +342,7 @@ $recoveryOverflowApi = new SvAmazonGmailApiClient(
     recoveryTransport(['m-r1', 'm-r2', 'm-r3'], '900')
 );
 $recoveryOverflowError = '';
-try { $recoveryOverflowApi->pullIncrementalBatch('100', 50, 2); } catch (RuntimeException $e) { $recoveryOverflowError = $e->getMessage(); }
+try { $recoveryOverflowApi->pullIncrementalBatch('100', 50, 2, ['observed_at'=>'2026-09-16 12:00:00']); } catch (RuntimeException $e) { $recoveryOverflowError = $e->getMessage(); }
 gmAssert($recoveryOverflowError !== '', '404 recovery with more bootstrap messages than the limit must fail closed instead of silently truncating and advancing the checkpoint.');
 
 // When the bootstrap recovery set fits within the limit, recovery must still fully succeed.
@@ -350,7 +350,7 @@ $recoveryOkApi = new SvAmazonGmailApiClient(
     new SvAmazonReturnsConfig(['GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token']),
     recoveryTransport(['m-r1', 'm-r2'], '900')
 );
-$recoveryOkBatch = $recoveryOkApi->pullIncrementalBatch('100', 50, 5);
+$recoveryOkBatch = $recoveryOkApi->pullIncrementalBatch('100', 50, 5, ['observed_at'=>'2026-09-16 12:00:00']);
 gmSame(2, count($recoveryOkBatch['messages']), 'A recovery set within the message limit must fetch every bootstrap message.');
 gmSame('900', $recoveryOkBatch['checkpoint_cursor'], 'A fully covered recovery must checkpoint to the current mailbox history id.');
 gmSame(false, $recoveryOkBatch['has_more'], 'A fully covered recovery has no remaining work.');

@@ -1,9 +1,9 @@
 [Unit]
-Description=Run ShopVivaliz Seller Central browser cycle continuously without overlap
+Description=Run ShopVivaliz Seller Central browser cycle every 8 hours without overlap
 
 [Timer]
 OnBootSec=2m
-OnUnitInactiveSec=5m
+OnUnitInactiveSec=8h
 Persistent=true
 AccuracySec=30s
 RandomizedDelaySec=30s

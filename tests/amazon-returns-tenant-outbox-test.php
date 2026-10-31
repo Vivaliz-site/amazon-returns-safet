@@ -48,6 +48,13 @@ final class TenantOutboxMemoryPdo extends PDO
 
     public function prepare(string $query, array $options = []): PDOStatement|false
     {
+        foreach($this->responses as $index=>$response){
+            $needle=$response['sql_contains']??null;
+            if(!is_string($needle) || $needle==='' || !str_contains($query,$needle))continue;
+            array_splice($this->responses,$index,1);
+            unset($response['sql_contains']);
+            return new TenantOutboxMemoryStatement($this,$query,$response);
+        }
         return new TenantOutboxMemoryStatement($this, $query, array_shift($this->responses) ?? []);
     }
 
@@ -130,6 +137,13 @@ foreach(['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'] as $readKind){
 }
 toAssert(!str_contains($terminalSweep,'SAFE_T_SUBMIT'),'Terminal read sweep must never touch external write kinds.');
 toAssert(str_contains($terminalSweep, "o.status='PENDING' OR (o.status='PROCESSING' AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND))"), 'Terminal read sweep must keep a live PROCESSING lease and only supersede stale processing reads.');
+$db->queue(['row_count'=>2]);
+toAssert(method_exists($outbox,'supersedeDiscoveryJobsForKnownSafeT'),'Outbox must clear discovery jobs once SAFE-T identity is known.');
+toSame(2,$outbox->supersedeDiscoveryJobsForKnownSafeT('SAFE_T_ID_ALREADY_KNOWN'),'Known SAFE-T sweep must report superseded stale discovery jobs.');
+$knownSafeTSweep=$db->executed[array_key_last($db->executed)]['sql']??'';
+toAssert(str_contains($knownSafeTSweep, "o.kind='SAFE_T_DISCOVERY'"),'Known SAFE-T sweep must only target discovery jobs.');
+toAssert(str_contains($knownSafeTSweep, "c.safe_t_id IS NOT NULL"),'Known SAFE-T sweep must require a persisted SAFE-T identity.');
+toAssert(!str_contains($knownSafeTSweep,'SAFE_T_READ'),'Known SAFE-T sweep must preserve ordinary claim reads.');
 $key = $outbox->deterministicKey('SAFE_T_SUBMIT', 77, 'policy-12|2026-07-16');
 toSame(
     hash('sha256', 'tenant:1|connection:10|SAFE_T_SUBMIT|77|policy-12|2026-07-16'),
@@ -182,6 +196,176 @@ $attemptedReactivation = array_values(array_filter(
     static fn(array $execution): bool => str_contains((string)($execution['sql'] ?? ''), "SET status='PENDING'")
 ));
 toSame([], $attemptedReactivation, 'A superseded action with any prior attempt must never be reactivated automatically.');
+
+$scopeDb = new TenantOutboxMemoryPdo();
+$scopeOutbox = new SvAmazonTenantReturnsOutbox($scopeDb, $context);
+$scopeKey = $scopeOutbox->deterministicKey('SELLER_SUPPORT_UPDATE', 77, 'support-scope-22449931941');
+$scopePayload = ['order_id'=>'702-9207715-8524262','support_case_id'=>'22449931941'];
+$scopeDb->queue(['fetch'=>['id'=>77]]);
+$scopeDb->queue(['throw'=>outboxDuplicate()]);
+$scopeDb->queue(['fetch'=>[
+    'id'=>406,'status'=>'SUPERSEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>'SELLER_SUPPORT_SCOPE_SUPERSEDED',
+    'payload_json'=>'{"order_id":"702-9207715-8524262","support_case_id":"22449931941"}',
+]]);
+$scopeDb->queue(['row_count'=>1]);
+$scopeRevived = $scopeOutbox->enqueueResult('SELLER_SUPPORT_UPDATE',77,$scopePayload,$scopeKey);
+toSame(406,$scopeRevived['id']??null,'A scope-superseded Seller Support update must keep its original outbox identity.');
+toSame(true,$scopeRevived['enqueued']??null,'A scope-superseded update must be rearmed when the exact same support scope becomes current again.');
+$scopeReactivation = array_values(array_filter(
+    $scopeDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame(1,count($scopeReactivation),'Scope recovery must perform exactly one guarded reactivation.');
+toAssert(str_contains((string)($scopeReactivation[0]['sql']??''),"last_error='SELLER_SUPPORT_SCOPE_SUPERSEDED'"),'Scope recovery SQL must be guarded by the exact pre-write supersede reason.');
+toAssert(
+    str_contains((string)($scopeReactivation[0]['sql']??''),'CAST(payload_json AS CHAR)=:previous_payload_json'),
+    'Scope recovery must compare the native MySQL JSON payload through its serialized text representation.'
+);
+
+$scopeMismatchDb = new TenantOutboxMemoryPdo();
+$scopeMismatchOutbox = new SvAmazonTenantReturnsOutbox($scopeMismatchDb,$context);
+$scopeMismatchDb->queue(['fetch'=>['id'=>77]]);
+$scopeMismatchDb->queue(['throw'=>outboxDuplicate()]);
+$scopeMismatchDb->queue(['fetch'=>[
+    'id'=>407,'status'=>'SUPERSEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>'SELLER_SUPPORT_SCOPE_SUPERSEDED',
+    'payload_json'=>'{"order_id":"702-9207715-8524262","support_case_id":"22450149561"}',
+]]);
+$scopeMismatch = $scopeMismatchOutbox->enqueueResult('SELLER_SUPPORT_UPDATE',77,$scopePayload,$scopeKey);
+toSame(false,$scopeMismatch['enqueued']??null,'A superseded update from a different Seller Support scope must remain inert.');
+$scopeMismatchReactivation = array_values(array_filter(
+    $scopeMismatchDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame([],$scopeMismatchReactivation,'Scope recovery must never reactivate a different support thread.');
+
+$legacyFalseSuccessDb = new TenantOutboxMemoryPdo();
+$legacyFalseSuccessOutbox = new SvAmazonTenantReturnsOutbox($legacyFalseSuccessDb,$context);
+$legacyFalseSuccessKey = $legacyFalseSuccessOutbox->deterministicKey('SELLER_SUPPORT_UPDATE',77,'legacy-unconfirmed-update');
+$legacyFalseSuccessPayload = ['order_id'=>'702-6823050-9173862','support_case_id'=>'22426419421'];
+$legacyFalseSuccessDb->queue(['fetch'=>['id'=>77]]);
+$legacyFalseSuccessDb->queue(['throw'=>outboxDuplicate()]);
+$legacyFalseSuccessDb->queue(['fetch'=>[
+    'id'=>408,'status'=>'SUCCEEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>null,
+    'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421"}',
+]]);
+$legacyFalseSuccessDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}'],
+    ],
+]);
+$legacyFalseSuccessDb->queue(['row_count'=>1]);
+$legacyFalseSuccess = $legacyFalseSuccessOutbox->enqueueResult(
+    'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$legacyFalseSuccessKey
+);
+toSame(408,$legacyFalseSuccess['id']??null,'A legacy false-success Seller Support update must preserve its outbox identity.');
+toSame(true,$legacyFalseSuccess['enqueued']??null,'A legacy SUCCEEDED update backed only by unconfirmed ALREADY_EXISTS must be rearmed when the same decision is current.');
+$legacyFalseSuccessReactivation = array_values(array_filter(
+    $legacyFalseSuccessDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame(1,count($legacyFalseSuccessReactivation),'Legacy false success recovery must perform one guarded reactivation.');
+toAssert(str_contains((string)($legacyFalseSuccessReactivation[0]['sql']??''),"status='SUCCEEDED'"),'Legacy false success recovery must only rewrite a still-SUCCEEDED row.');
+
+$confirmedSuccessDb = new TenantOutboxMemoryPdo();
+$confirmedSuccessOutbox = new SvAmazonTenantReturnsOutbox($confirmedSuccessDb,$context);
+$confirmedSuccessKey = $confirmedSuccessOutbox->deterministicKey('SELLER_SUPPORT_UPDATE',77,'confirmed-update');
+$confirmedSuccessDb->queue(['fetch'=>['id'=>77]]);
+$confirmedSuccessDb->queue(['throw'=>outboxDuplicate()]);
+$confirmedSuccessDb->queue(['fetch'=>[
+    'id'=>409,'status'=>'SUCCEEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>null,
+    'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421"}',
+]]);
+$confirmedSuccessDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":"SUPPORT_UPDATE_READBACK_CONFIRMED","submitted":false,"external_id":"22426419421"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":"SUPPORT_UPDATE_READBACK_CONFIRMED","submitted":false,"external_id":"22426419421"}'],
+    ],
+]);
+$confirmedSuccess = $confirmedSuccessOutbox->enqueueResult(
+    'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$confirmedSuccessKey
+);
+toSame(false,$confirmedSuccess['enqueued']??null,'An update with explicit Seller Central readback proof must remain terminal and must never be rearmed.');
+$confirmedSuccessReactivation = array_values(array_filter(
+    $confirmedSuccessDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame([],$confirmedSuccessReactivation,'Explicit Seller Central readback proof must prevent duplicate delivery.');
+
+$priorSubmittedDb = new TenantOutboxMemoryPdo();
+$priorSubmittedOutbox = new SvAmazonTenantReturnsOutbox($priorSubmittedDb,$context);
+$priorSubmittedKey = $priorSubmittedOutbox->deterministicKey('SELLER_SUPPORT_UPDATE',77,'prior-submitted-update');
+$priorSubmittedDb->queue(['fetch'=>['id'=>77]]);
+$priorSubmittedDb->queue(['throw'=>outboxDuplicate()]);
+$priorSubmittedDb->queue(['fetch'=>[
+    'id'=>410,'status'=>'SUCCEEDED','attempt_count'=>2,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>null,
+    'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421"}',
+]]);
+$priorSubmittedDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421"}'],
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"UI_DRIFT","reason":"SUPPORT_WRITE_WITHOUT_READBACK_ID","submitted":true,"external_id":"22426419421"}'],
+    ],
+]);
+$priorSubmittedDb->queue(['row_count'=>1]);
+$priorSubmitted = $priorSubmittedOutbox->enqueueResult(
+    'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$priorSubmittedKey
+);
+toSame(false,$priorSubmitted['enqueued']??null,'Any prior submitted Seller Support result must prevent rearming even when a newer legacy ALREADY_EXISTS result is ambiguous.');
+$priorSubmittedReactivation = array_values(array_filter(
+    $priorSubmittedDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame([],$priorSubmittedReactivation,'Full result history with any submitted write must preserve the terminal outbox state and prevent duplicate delivery.');
+$crossOutboxSubmittedDb = new TenantOutboxMemoryPdo();
+$crossOutboxSubmittedOutbox = new SvAmazonTenantReturnsOutbox($crossOutboxSubmittedDb,$context);
+$crossOutboxSubmittedKey = $crossOutboxSubmittedOutbox->deterministicKey('SELLER_SUPPORT_UPDATE',77,'cross-outbox-submitted-update');
+$crossOutboxSubmittedDb->queue(['fetch'=>['id'=>77]]);
+$crossOutboxSubmittedDb->queue(['throw'=>outboxDuplicate()]);
+$crossOutboxSubmittedDb->queue(['fetch'=>[
+    'id'=>411,'status'=>'SUCCEEDED','attempt_count'=>2,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>null,
+    'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421","write_snapshot":{"content_sha256":"66e1fb8f89e80cb942671afbeba5ba157ae598af7512b4ba6310ae4314457dad"}}',
+]]);
+$crossOutboxSubmittedDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421","write_content_sha256":"66e1fb8f89e80cb942671afbeba5ba157ae598af7512b4ba6310ae4314457dad"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421","write_content_sha256":"66e1fb8f89e80cb942671afbeba5ba157ae598af7512b4ba6310ae4314457dad"}'],
+    ],
+]);
+$crossOutboxSubmittedDb->queue([
+    'sql_contains'=>'source_event_id<>:source_event_id',
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ACCEPTED","reason":"SUPPORT_CASE_OPENED_VIA_EMAIL","submitted":true,"external_id":"22426419421","write_content_sha256":"66e1fb8f89e80cb942671afbeba5ba157ae598af7512b4ba6310ae4314457dad"}'],
+    ],
+]);
+$crossOutboxSubmittedDb->queue([
+    'sql_contains'=>"SET status='PENDING'",
+    'row_count'=>1,
+]);
+$crossOutboxSubmitted = $crossOutboxSubmittedOutbox->enqueueResult(
+    'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$crossOutboxSubmittedKey
+);
+toSame(false,$crossOutboxSubmitted['enqueued']??null,'A submitted Seller Support update in another outbox row with the same content and support scope must prevent legacy false-success rearming.');
+$crossOutboxReactivation = array_values(array_filter(
+    $crossOutboxSubmittedDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame([],$crossOutboxReactivation,'Cross-outbox delivery evidence must block duplicate Seller Support delivery.');
 
 $pendingRow = [
     'id'=>301,'tenant_id'=>1,'amazon_connection_id'=>10,'case_id'=>77,'kind'=>'SAFE_T_SUBMIT',
@@ -259,6 +443,17 @@ foreach ($db->executed as $execution) {
     toSame(1, $execution['params'][':tenant_id'] ?? null, 'Every outbox SQL execution must bind tenant_id.');
     toSame(10, $execution['params'][':amazon_connection_id'] ?? null, 'Every outbox SQL execution must bind amazon_connection_id.');
 }
+
+$rearmDb = new TenantOutboxMemoryPdo();
+$rearmOutbox = new SvAmazonTenantReturnsOutbox($rearmDb, $context);
+$rearmDb->queue(['row_count'=>2]);
+toSame(2, $rearmOutbox->reactivateSafeDeferredExternalWrites(), 'Current live drift fixes must wake their deferred outbox rows immediately after an outbox stack revision.');
+$rearmExecution = $rearmDb->executed[array_key_last($rearmDb->executed)] ?? [];
+$rearmSql = (string)($rearmExecution['sql'] ?? '');
+$rearmParams = $rearmExecution['params'] ?? [];
+toAssert(str_contains($rearmSql, "kind='SAFE_T_APPEAL'"), 'SAFE-T appeal recovery must be eligible for controlled reactivation.');
+toSame('UI_DRIFT: SAFE_T_APPEAL_SEND_MISSING', $rearmParams[':safe_t_appeal_send_missing'] ?? null, 'SAFE-T appeal Send drift must be explicitly rearmable.');
+toSame('UI_DRIFT: SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED', $rearmParams[':support_general_troubleshooter_exhausted'] ?? null, 'Seller Support exhausted troubleshooter drift must be explicitly rearmable.');
 
 $source = (string)file_get_contents(__DIR__ . '/../includes/amazon-returns/TenantOutbox.php');
 foreach (['FOR UPDATE SKIP LOCKED','tenant_id','amazon_connection_id','MAX_ATTEMPTS','LEASE_SECONDS'] as $needle) {

@@ -13,23 +13,30 @@ final class SvAmazonGmailApiClient
     private $sleep;
     /** @var callable():int */
     private $jitter;
+    /** @var callable(string,array<string,mixed>):array<string,mixed> */
+    private $oauthTransport;
     private ?string $accessToken = null;
+    private int $oauthCandidateIndex = 0;
+    private bool $directAccessToken = false;
 
     /**
      * @param callable(string,string,array<string,string>,?array):array<string,mixed>|null $transport
      * @param callable(int):void|null $sleep
      * @param callable():int|null $jitter
+     * @param callable(string,array<string,mixed>):array<string,mixed>|null $oauthTransport
      */
     public function __construct(
         private ?SvAmazonReturnsConfig $config = null,
         ?callable $transport = null,
         ?callable $sleep = null,
-        ?callable $jitter = null
+        ?callable $jitter = null,
+        ?callable $oauthTransport = null
     ) {
         $this->config ??= new SvAmazonReturnsConfig();
         $this->transport = $transport ?? [$this, 'httpJson'];
         $this->sleep = $sleep ?? static function(int $microseconds): void { usleep($microseconds); };
         $this->jitter = $jitter ?? static fn(): int => random_int(0, 999999);
+        $this->oauthTransport = $oauthTransport ?? [$this, 'httpForm'];
     }
 
     /** @return array{message_id:string,thread_id:string} */
@@ -123,7 +130,12 @@ final class SvAmazonGmailApiClient
      *
      * @return array{messages:list<array<string,mixed>>,checkpoint_cursor:string,mailbox_history_id:string,has_more:bool,recovered_cursor:bool}
      */
-    public function pullIncrementalBatch(?string $cursor, int $historyPageSize, int $messageLimit): array
+    public function pullIncrementalBatch(
+        ?string $cursor,
+        int $historyPageSize,
+        int $messageLimit,
+        array $cursorContext=[]
+    ): array
     {
         $historyPageSize = max(1, min(500, $historyPageSize));
         $messageLimit = max(1, $messageLimit);
@@ -134,19 +146,47 @@ final class SvAmazonGmailApiClient
         if ($mailboxHistoryId === '') throw new RuntimeException('Gmail profile did not return historyId.');
 
         if ($cursor === '') {
-            return ['messages'=>[],'checkpoint_cursor'=>$mailboxHistoryId,'mailbox_history_id'=>$mailboxHistoryId,'has_more'=>false,'recovered_cursor'=>false];
+            return [
+                'messages'=>[],
+                'checkpoint_cursor'=>$mailboxHistoryId,
+                'mailbox_history_id'=>$mailboxHistoryId,
+                'has_more'=>false,
+                'recovered_cursor'=>false,
+                'recovery'=>null,
+            ];
+        }
+
+        $contextMetadata=is_array($cursorContext['metadata'] ?? null)?$cursorContext['metadata']:[];
+        $persistedRecovery=is_array($contextMetadata['gmail_recovery'] ?? null)
+            ? $contextMetadata['gmail_recovery'] : null;
+        if($persistedRecovery!==null){
+            return $this->pullExpiredHistoryRecoveryBatch(
+                $cursor,
+                $mailboxHistoryId,
+                $messageLimit,
+                $persistedRecovery
+            );
         }
 
         try {
-            $data = $this->request('GET', '/history', ['startHistoryId'=>$cursor,'historyTypes'=>'messageAdded','maxResults'=>(string)$historyPageSize]);
+            $data = $this->request('GET', '/history', [
+                'startHistoryId'=>$cursor,
+                'historyTypes'=>'messageAdded',
+                'maxResults'=>(string)$historyPageSize,
+            ]);
         } catch (RuntimeException $e) {
             if (!str_contains($e->getMessage(), 'HTTP 404')) throw $e;
-            $recoveryIds = array_values(array_unique($this->bootstrapMessageIds(7)));
-            if (count($recoveryIds) > $messageLimit) {
-                throw new RuntimeException('Gmail 404 recovery message set exceeds bounded message limit.');
-            }
-            $messages = $this->fetchMessagesByIds($recoveryIds);
-            return ['messages'=>$messages,'checkpoint_cursor'=>$mailboxHistoryId,'mailbox_history_id'=>$mailboxHistoryId,'has_more'=>false,'recovered_cursor'=>true];
+            $after=$this->recoveryAfterDate($cursorContext['observed_at'] ?? null);
+            return $this->pullExpiredHistoryRecoveryBatch(
+                $cursor,
+                $mailboxHistoryId,
+                $messageLimit,
+                [
+                    'after'=>$after,
+                    'page'=>'',
+                    'target_history_id'=>$mailboxHistoryId,
+                ]
+            );
         }
 
         $records = array_values(array_filter($data['history'] ?? [], 'is_array'));
@@ -182,15 +222,76 @@ final class SvAmazonGmailApiClient
         $hasMore = $truncated || $nextPageToken !== '';
         if (!$hasMore) $checkpoint = $mailboxHistoryId;
 
-        $messages = $this->fetchMessagesByIds($coveredIds);
-
         return [
-            'messages'=>$messages,
+            'messages'=>$this->fetchMessagesByIds($coveredIds),
             'checkpoint_cursor'=>$checkpoint,
             'mailbox_history_id'=>$mailboxHistoryId,
             'has_more'=>$hasMore,
             'recovered_cursor'=>false,
+            'recovery'=>null,
         ];
+    }
+
+    /** @param array<string,mixed> $recovery @return array<string,mixed> */
+    private function pullExpiredHistoryRecoveryBatch(
+        string $cursor,
+        string $mailboxHistoryId,
+        int $messageLimit,
+        array $recovery
+    ): array {
+        $after=trim((string)($recovery['after'] ?? ''));
+        $target=trim((string)($recovery['target_history_id'] ?? ''));
+        $page=trim((string)($recovery['page'] ?? ''));
+        if(preg_match('/^\\d{4}\\/\\d{2}\\/\\d{2}$/D',$after)!==1){
+            throw new RuntimeException('Gmail expired history recovery date is invalid.');
+        }
+        if($target==='' || preg_match('/^[0-9]+$/D',$target)!==1){
+            throw new RuntimeException('Gmail expired history recovery target is invalid.');
+        }
+
+        $query=[
+            'q'=>'after:'.$after.' (from:donotreply@amazon.com OR from:amazon.com.br OR from:Safe-T-Review@amazon.com)',
+            'maxResults'=>(string)$messageLimit,
+        ];
+        if($page!=='')$query['pageToken']=$page;
+        $data=$this->request('GET','/messages',$query);
+        $ids=[];
+        foreach(($data['messages'] ?? []) as $message){
+            if(!is_array($message))continue;
+            $id=trim((string)($message['id'] ?? ''));
+            if($id!=='')$ids[$id]=true;
+        }
+        if(count($ids)>$messageLimit){
+            throw new RuntimeException('Gmail expired history recovery page exceeds bounded message limit.');
+        }
+        $next=trim((string)($data['nextPageToken'] ?? ''));
+        $hasMore=$next!=='';
+        return [
+            'messages'=>$this->fetchMessagesByIds(array_keys($ids)),
+            'checkpoint_cursor'=>$hasMore?$cursor:$target,
+            'mailbox_history_id'=>$mailboxHistoryId,
+            'has_more'=>$hasMore,
+            'recovered_cursor'=>true,
+            'recovery'=>$hasMore?[
+                'after'=>$after,
+                'page'=>$next,
+                'target_history_id'=>$target,
+            ]:null,
+        ];
+    }
+
+    private function recoveryAfterDate(mixed $observedAt): string
+    {
+        if(!is_string($observedAt) || trim($observedAt)===''){
+            throw new RuntimeException('Gmail expired history cursor lacks observed_at recovery anchor.');
+        }
+        try{
+            $at=(new DateTimeImmutable(trim($observedAt),new DateTimeZone('UTC')))
+                ->setTimezone(new DateTimeZone('UTC'));
+        }catch(Throwable){
+            throw new RuntimeException('Gmail expired history cursor has invalid observed_at recovery anchor.');
+        }
+        return $at->modify('-1 day')->format('Y/m/d');
     }
 
     /** @return list<array<string,mixed>> */
@@ -354,6 +455,7 @@ final class SvAmazonGmailApiClient
         $url = 'https://gmail.googleapis.com/gmail/v1/users/me' . $path;
         if ($query !== []) $url .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
         $attempt=0;
+        $permissionFallbackUsed=false;
         do {
             $response = ($this->transport)(
                 $method,
@@ -366,6 +468,10 @@ final class SvAmazonGmailApiClient
             if ($status >= 200 && $status < 300) return $json;
             $reason = trim((string)($json['error']['errors'][0]['reason'] ?? $json['error']['status'] ?? ''));
             $reason = preg_replace('/[^A-Za-z0-9_.-]/', '', $reason) ?? '';
+            if (strtoupper($method)==='GET' && $status===403 && $reason==='insufficientPermissions' && !$permissionFallbackUsed) {
+                $permissionFallbackUsed=true;
+                if($this->advanceReadCredential())continue;
+            }
             if ($this->shouldRetryRead($method,$status,$reason) && $attempt < self::READ_RATE_LIMIT_RETRIES) {
                 $baseSeconds=1 << $attempt;
                 $jitter=max(0,min(999999,(int)($this->jitter)()));
@@ -389,21 +495,93 @@ final class SvAmazonGmailApiClient
     {
         if ($this->accessToken !== null) return $this->accessToken;
         $direct = $this->config->get('GMAIL_OAUTH_ACCESS_TOKEN');
-        if ($direct !== '') return $this->accessToken = $direct;
-
-        $clientId = $this->config->first('GMAIL_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_ID');
-        $clientSecret = $this->config->first('GMAIL_OAUTH_CLIENT_SECRET','GOOGLE_OAUTH_CLIENT_SECRET');
-        $refreshToken = $this->config->first('GMAIL_OAUTH_REFRESH_TOKEN','GOOGLE_OAUTH_REFRESH_TOKEN');
-        if ($clientId === '' || $clientSecret === '' || $refreshToken === '') {
-            throw new RuntimeException('Gmail OAuth credentials are incomplete.');
+        if ($direct !== '') {
+            $this->directAccessToken=true;
+            return $this->accessToken = $direct;
         }
-        $response = $this->httpForm(
-            'https://oauth2.googleapis.com/token',
-            ['client_id'=>$clientId,'client_secret'=>$clientSecret,'refresh_token'=>$refreshToken,'grant_type'=>'refresh_token']
+
+        $this->directAccessToken=false;
+        return $this->accessToken = $this->refreshFromCandidates(
+            self::oauthCredentialCandidates($this->config),0
         );
-        $token = trim((string)($response['access_token'] ?? ''));
-        if ($token === '') throw new RuntimeException('Gmail OAuth did not return access_token.');
-        return $this->accessToken = $token;
+    }
+
+    /** @return list<array{client_id:string,client_secret:string,refresh_token:string}> */
+    private static function oauthCredentialCandidates(SvAmazonReturnsConfig $config): array
+    {
+        $candidates = [
+            [
+                'client_id'=>$config->first('GMAIL_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_ID'),
+                'client_secret'=>$config->first('GMAIL_OAUTH_CLIENT_SECRET','GOOGLE_OAUTH_CLIENT_SECRET'),
+                'refresh_token'=>$config->get('GMAIL_OAUTH_REFRESH_TOKEN'),
+            ],
+            [
+                'client_id'=>$config->first('GOOGLE_OAUTH_CLIENT_ID','GMAIL_OAUTH_CLIENT_ID'),
+                'client_secret'=>$config->first('GOOGLE_OAUTH_CLIENT_SECRET','GMAIL_OAUTH_CLIENT_SECRET'),
+                'refresh_token'=>$config->get('GOOGLE_OAUTH_REFRESH_TOKEN'),
+            ],
+        ];
+        $result=[];$seen=[];
+        foreach($candidates as $candidate){
+            if($candidate['client_id']==='' || $candidate['client_secret']==='' || $candidate['refresh_token']==='')continue;
+            $fingerprint=hash('sha256',implode("\0",[
+                $candidate['client_id'],$candidate['client_secret'],$candidate['refresh_token']
+            ]));
+            if(isset($seen[$fingerprint]))continue;
+            $seen[$fingerprint]=true;
+            $result[]=$candidate;
+        }
+        return $result;
+    }
+
+    private function advanceReadCredential(): bool
+    {
+        if($this->directAccessToken)return false;
+        $candidates=self::oauthCredentialCandidates($this->config);
+        $next=$this->oauthCandidateIndex+1;
+        if(!isset($candidates[$next]))return false;
+        $this->accessToken=$this->refreshFromCandidates(array_slice($candidates,$next),$next);
+        return true;
+    }
+
+    /** @param list<array{client_id:string,client_secret:string,refresh_token:string}> $candidates */
+    private function refreshFromCandidates(array $candidates,int $baseIndex=0): string
+    {
+        if($candidates===[])throw new RuntimeException('Gmail OAuth credentials are incomplete.');
+        $lastIndex=count($candidates)-1;
+        foreach($candidates as $index=>$candidate){
+            try{
+                $response=($this->oauthTransport)(
+                    'https://oauth2.googleapis.com/token',
+                    [
+                        'client_id'=>$candidate['client_id'],
+                        'client_secret'=>$candidate['client_secret'],
+                        'refresh_token'=>$candidate['refresh_token'],
+                        'grant_type'=>'refresh_token',
+                    ]
+                );
+                $token=trim((string)($response['access_token']??''));
+                if($token==='')throw new RuntimeException('Gmail OAuth did not return access_token.');
+                $this->oauthCandidateIndex=$baseIndex+$index;
+                return $token;
+            }catch(RuntimeException $e){
+                if($index===$lastIndex || !self::isInvalidGrantFailure($e))throw $e;
+            }
+        }
+        throw new RuntimeException('Gmail OAuth credentials are incomplete.');
+    }
+
+    private static function isInvalidGrantFailure(RuntimeException $error): bool
+    {
+        return preg_match('/(?:^|\\s)error=invalid_grant(?:[.\\s]|$)/D',$error->getMessage())===1;
+    }
+
+    private static function oauthFailureCode(mixed $json): string
+    {
+        if (!is_array($json)) return '';
+        $error = trim((string)($json['error'] ?? ''));
+        $error = preg_replace('/[^A-Za-z0-9_.-]/', '', $error) ?? '';
+        return substr($error, 0, 80);
     }
 
     /** @return array<string,mixed> */
@@ -428,7 +606,9 @@ final class SvAmazonGmailApiClient
         if (!is_string($raw)) throw new RuntimeException('Gmail OAuth transport failed: ' . $error);
         $json = json_decode($raw, true);
         if ($status < 200 || $status >= 300 || !is_array($json)) {
-            throw new RuntimeException('Gmail OAuth HTTP ' . $status . '.');
+            $reason = self::oauthFailureCode($json);
+            $suffix = $reason !== '' ? ' error=' . $reason : '';
+            throw new RuntimeException('Gmail OAuth HTTP ' . $status . $suffix . '.');
         }
         return $json;
     }
