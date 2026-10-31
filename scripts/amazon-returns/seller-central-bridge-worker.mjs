@@ -1651,7 +1651,7 @@ async function supportOpen(cdp, job, options = {}) {
   if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION' && physicalStatus === 'RECEIVED_OK') {
     return bridgeResult('SUPERSEDED', { reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN', retry_safe: false });
   }
-  const retryReconciliation = Number(job.attempt_count || 0) > 1;
+  const retryReconciliation = job.retry_reconciliation === true;
   const lookupOptions = retryReconciliation ? { includeTerminal: true } : {};
   const priorSupportCaseId = text(job.case?.support_case_id);
   const reconcileKnownCase = options.forceFreshCase !== true;
@@ -1671,18 +1671,21 @@ async function supportOpen(cdp, job, options = {}) {
     }
     lookupOptions.minimumCreationEpochSeconds = Math.floor(createdAtMs / 1000);
   }
+  const shouldScanExisting = reconcileKnownCase || retryReconciliation;
   let existing;
-  try {
-    existing = await findSupportCase(cdp, job, lookupOptions);
-  } catch (error) {
-    if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
-      return bridgeResult('UI_DRIFT', {
-        reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE',
-        lookup_phase: retryReconciliation ? 'RETRY_RECONCILIATION' : 'PRE_WRITE',
-        lookup_reason: text(error?.lookupReason || 'UNKNOWN'), retry_safe: true, evidence: await evidence(cdp, 'help-v1')
-      });
+  if (shouldScanExisting) {
+    try {
+      existing = await findSupportCase(cdp, job, lookupOptions);
+    } catch (error) {
+      if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
+        return bridgeResult('UI_DRIFT', {
+          reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE',
+          lookup_phase: retryReconciliation ? 'RETRY_RECONCILIATION' : 'PRE_WRITE',
+          lookup_reason: text(error?.lookupReason || 'UNKNOWN'), retry_safe: true, evidence: await evidence(cdp, 'help-v1')
+        });
+      }
+      throw error;
     }
-    throw error;
   }
   if (existing) return bridgeResult('ALREADY_EXISTS', {
     external_id: existing, retry_safe: true,
