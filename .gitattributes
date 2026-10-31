@@ -1,0 +1,4 @@
+docs/quality/GLOBAL_AUDIT_MANIFEST.json whitespace=cr-at-eol
+docs/quality/AUDIT_UI_EVIDENCE_INTEGRITY_V2.md whitespace=cr-at-eol
+scripts/audit_ui_evidence_gate.py whitespace=cr-at-eol
+tests/test_audit_ui_evidence_gate.py whitespace=cr-at-eol

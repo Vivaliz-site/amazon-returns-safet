@@ -349,4 +349,75 @@ gicSame('OK', $probe7['status'] ?? null, 'C7: bounded Gmail history probe must r
 gicSame(1, $historyMaxResults, 'C7: history probe must inspect at most one history record, never the legacy 500-record path.');
 gicSame('700', gicCursorValue($pdo7), 'C7: history probe must remain read-only and never advance the persisted Gmail checkpoint.');
 
+
+
+// --- C8: expired history cursor must recover the full checkpoint gap in bounded resumable pages ---
+$recoveryQueries = [];
+$transport8 = static function (string $method, string $url, array $headers, ?array $body = null) use (&$recoveryQueries): array {
+    if (str_contains($url, '/profile')) return ['status'=>200,'json'=>['historyId'=>'900']];
+    if (str_contains($url, '/history?')) return ['status'=>404,'json'=>['error'=>['status'=>'NOT_FOUND']]];
+    if (str_contains($url, '/messages?')) {
+        parse_str((string)parse_url($url, PHP_URL_QUERY), $query);
+        $recoveryQueries[]=$query;
+        $page=(string)($query['pageToken'] ?? '');
+        if ($page==='') {
+            $rows=[];
+            for($i=1;$i<=25;$i++)$rows[]=['id'=>'m-c8-'.$i];
+            return ['status'=>200,'json'=>['messages'=>$rows,'nextPageToken'=>'recover-page-2']];
+        }
+        if ($page==='recover-page-2') {
+            return ['status'=>200,'json'=>['messages'=>[
+                ['id'=>'m-c8-26'],['id'=>'m-c8-27'],['id'=>'m-c8-28'],['id'=>'m-c8-29'],['id'=>'m-c8-30'],
+            ]]];
+        }
+        throw new RuntimeException('C8 unexpected recovery page token.');
+    }
+    if (preg_match('~/messages/(m-c8-[0-9]+)~',$url,$m)===1) {
+        return ['status'=>200,'json'=>gicMessageJson($m[1],GIC_NEUTRAL_SUBJECT)];
+    }
+    throw new RuntimeException('Unexpected URL in C8: '.$url);
+};
+$gmail8=new SvAmazonGmailApiClient(gicConfig(),$transport8);
+$recoveryContext=['observed_at'=>'2026-09-16 12:00:00','metadata'=>[]];
+$recover1=$gmail8->pullIncrementalBatch('700',25,25,$recoveryContext);
+gicSame(true,$recover1['recovered_cursor']??null,'C8 pass 1: expired history must enter explicit recovery mode.');
+gicSame(true,$recover1['has_more']??null,'C8 pass 1: a second recovery page must keep catch-up incomplete.');
+gicSame('700',$recover1['checkpoint_cursor']??null,'C8 pass 1: expired history ID must remain authoritative until every recovery page is ingested.');
+gicSame(25,count($recover1['messages']??[]),'C8 pass 1: recovery must stay bounded to the normal 25-message batch.');
+gicSame('recover-page-2',$recover1['recovery']['page']??null,'C8 pass 1: next recovery page must be persisted explicitly.');
+gicSame('900',$recover1['recovery']['target_history_id']??null,'C8 pass 1: recovery must pin the mailbox history target captured before replay.');
+gicAssert(str_contains((string)($recoveryQueries[0]['q']??''),'after:2026/09/15'),'C8 pass 1: recovery must cover the checkpoint date with a one-day conservative margin.');
+gicAssert(!str_contains((string)($recoveryQueries[0]['q']??''),'newer_than:7d'),'C8: stale-cursor recovery must never collapse an older gap to seven days.');
+
+$recover2=$gmail8->pullIncrementalBatch('700',25,25,[
+    'observed_at'=>'2026-09-16 12:00:00',
+    'metadata'=>['gmail_recovery'=>$recover1['recovery']],
+]);
+gicSame(true,$recover2['recovered_cursor']??null,'C8 pass 2: recovery remains explicit through its final page.');
+gicSame(false,$recover2['has_more']??null,'C8 pass 2: final recovery page must end catch-up.');
+gicSame('900',$recover2['checkpoint_cursor']??null,'C8 pass 2: history cursor may advance only after the full recovery search is drained.');
+gicSame(5,count($recover2['messages']??[]),'C8 pass 2: final recovery page must ingest all remaining messages.');
+gicSame(null,$recover2['recovery']??null,'C8 pass 2: completed recovery must clear transient recovery metadata.');
+
+
+
+// --- C9: daemon must persist expired-cursor recovery state across independent runs ---
+$pdo9=new GmailCatchupPdo();
+gicSeedCursor($pdo9,'700');
+$gmail9=new SvAmazonGmailApiClient(gicConfig(),$transport8);
+$daemon9=new GmailCatchupDaemon($pdo9,new SvAmazonTenantContext(1,1),gicConfig(),$gmail9);
+$recoverRun1=(new ReflectionMethod($daemon9,'runGmail'))->invoke($daemon9);
+gicSame(true,$recoverRun1['has_more']??null,'C9 pass 1: daemon must keep expired-cursor recovery incomplete while another page remains.');
+gicSame('700',gicCursorValue($pdo9),'C9 pass 1: daemon must not advance the authoritative history ID before recovery drains.');
+$recoveryMeta1=json_decode((string)($pdo9->cursorRows['GMAIL|history_id_v2']['metadata_json']??''),true);
+gicSame('recover-page-2',$recoveryMeta1['gmail_recovery']['page']??null,'C9 pass 1: recovery page token must survive process boundaries.');
+gicSame('900',$recoveryMeta1['gmail_recovery']['target_history_id']??null,'C9 pass 1: pinned history target must survive process boundaries.');
+gicSame(0,$pdo9->claims,'C9 pass 1: incomplete expired-cursor recovery must not claim Gmail write jobs.');
+
+$recoverRun2=(new ReflectionMethod($daemon9,'runGmail'))->invoke($daemon9);
+gicSame(false,$recoverRun2['has_more']??null,'C9 pass 2: final recovery page must end catch-up.');
+gicSame('900',gicCursorValue($pdo9),'C9 pass 2: daemon may promote to the pinned history target only after recovery drains.');
+$recoveryMeta2=json_decode((string)($pdo9->cursorRows['GMAIL|history_id_v2']['metadata_json']??''),true);
+gicAssert(!isset($recoveryMeta2['gmail_recovery']),'C9 pass 2: completed recovery metadata must be cleared.');
+
 echo "gmail-incremental-catchup-test: OK\n";

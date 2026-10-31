@@ -164,15 +164,86 @@ try{
 
     if($queryKind===SvAmazonCaseReferenceSearch::INVOICE){
         $invoiceNumber=$query;
-        $spApi=new SvAmazonReturnsSpApi();
-        $invoiceLookup=(new SvAmazonInvoiceRemoteLookup($spApi))
-            ->findOrderByInvoiceNumber($invoiceNumber);
-        if(!is_array($invoiceLookup)){
+        $invoiceLookups=(new SvAmazonInvoiceRemoteLookup())
+            ->findOrdersByInvoiceNumber($invoiceNumber);
+        if($invoiceLookups===[]){
             sv_amz_intake_lookup_reply([
                 'success'=>true,'cases'=>[],'source'=>'invoice_remote','synced'=>false,
             ]);
         }
-        $orderId=trim((string)($invoiceLookup['order_id']??''));
+
+        $projected=[];
+        $synced=false;
+        $financialRefreshed=true;
+        $syncFailures=[];
+        $sourceKinds=[];
+        foreach($invoiceLookups as $candidateLookup){
+            if(!is_array($candidateLookup))continue;
+            $candidateOrderId=trim((string)($candidateLookup['order_id']??''));
+            if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$candidateOrderId)!==1)continue;
+            $sourceKinds[(string)($candidateLookup['source']??'')]=true;
+            $candidateCases=$p->cases->forOrder($candidateOrderId);
+            $order=null;
+            $transactions=[];
+            if($candidateCases===[]){
+                try{
+                    if(!$spApi instanceof SvAmazonReturnsSpApi)$spApi=new SvAmazonReturnsSpApi();
+                    $order=$spApi->syncOrder($candidateOrderId);
+                    try{
+                        $financial=$spApi->listTransactions($candidateOrderId);
+                        $transactions=is_array($financial['transactions']??null)
+                            ? array_values(array_filter($financial['transactions'],'is_array')) : [];
+                    }catch(Throwable $financialError){
+                        $financialRefreshed=false;
+                        error_log('[amazon-returns-intake-lookup-financial] '.get_class($financialError).': '.$financialError->getMessage());
+                    }
+                    $synced=true;
+                }catch(Throwable $syncError){
+                    $syncFailures[]=$syncError;
+                    error_log('[amazon-returns-intake-invoice-candidate] order='.$candidateOrderId.' class='.get_class($syncError));
+                    continue;
+                }
+            }
+
+            $db->beginTransaction();
+            try{
+                if(is_array($order)){
+                    SvAmazonSpApiEventSink::persist($p,$order,$transactions);
+                    sv_amz_intake_lookup_persist_product_titles($p,$order);
+                }
+                $candidateCases=$p->cases->forOrder($candidateOrderId);
+                foreach($candidateCases as $case){
+                    $caseId=(int)($case['id']??0);
+                    if($caseId>0)$p->events->append(
+                        SvAmazonInvoiceSearch::evidenceEvent($caseId,$candidateLookup)
+                    );
+                }
+                $caseIds=array_values(array_filter(array_map(
+                    static fn(array $row):int=>(int)($row['id']??0),$candidateCases
+                ),static fn(int $id):bool=>$id>0));
+                foreach(sv_amz_intake_lookup_project($p,$caseIds) as $row){
+                    $projected[(int)($row['id']??0)]=$row;
+                }
+                $db->commit();
+            }catch(Throwable $candidateError){
+                if($db->inTransaction())$db->rollBack();
+                throw $candidateError;
+            }
+        }
+
+        if($projected===[] && $syncFailures!==[])throw $syncFailures[0];
+        $sourceKeys=array_keys($sourceKinds);
+        $remoteSource=$sourceKeys!==[] && count($sourceKeys)===1
+            ? ($sourceKeys[0]==='ERP_OLIST_INVOICE'?'erp_invoice':($sourceKeys[0]==='SP_API_INVOICES'?'amazon_invoice':'invoice_remote'))
+            : 'invoice_remote';
+        sv_amz_intake_lookup_reply([
+            'success'=>true,
+            'cases'=>array_values($projected),
+            'source'=>$remoteSource,
+            'synced'=>$synced,
+            'partial'=>$syncFailures!==[],
+            'financial_refreshed'=>$financialRefreshed,
+        ]);
     }elseif($queryKind===SvAmazonCaseReferenceSearch::RETURN_TRACKING){
         if((($config->readiness()['gmail']['ready']??false)!==true)){
             sv_amz_intake_lookup_reply([

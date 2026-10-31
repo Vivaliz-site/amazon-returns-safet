@@ -60,7 +60,7 @@ final class SvAmazonReturnStates
     /** @return list<string> */
     public static function terminal(): array
     {
-        return [self::RECEIVED_OK, self::RECOVERED, self::CLOSED_LOSS];
+        return [self::RECOVERED, self::CLOSED_LOSS];
     }
 
     public static function isValid(string $state): bool
@@ -142,5 +142,23 @@ final class SvAmazonReturnPrograms
     public static function all(): array
     {
         return [self::UNKNOWN, self::FBA, self::STANDARD, self::FBA_ONSITE, self::DELIVERY_BY_AMAZON];
+    }
+
+    public static function applyAccountFulfillmentOverride(string $observed,string $override=''): string
+    {
+        $observed=strtoupper(trim($observed));
+        if(!in_array($observed,self::all(),true))$observed=self::UNKNOWN;
+        $override=strtoupper(trim($override));
+        if($override===''){
+            $runtime=getenv('AMAZON_RETURNS_FULFILLMENT_PROGRAM_OVERRIDE');
+            $override=is_string($runtime)?strtoupper(trim($runtime)):'';
+        }
+        if($override==='')return $observed;
+        if($override!==self::FBA_ONSITE){
+            throw new InvalidArgumentException('Unsupported Amazon Returns fulfillment program override.');
+        }
+        return in_array($observed,[self::UNKNOWN,self::FBA],true)
+            ? self::FBA_ONSITE
+            : $observed;
     }
 }

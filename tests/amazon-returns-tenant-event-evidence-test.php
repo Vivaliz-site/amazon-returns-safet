@@ -120,6 +120,23 @@ eeSame(1, count($eventRows), 'Event read must return only scoped rows.');
 eeSame('77.98', $eventRows[0]['payload']['amount'] ?? null, 'Event payload JSON must decode.');
 eeAssert(!array_key_exists('payload_json', $eventRows[0]), 'Raw event payload JSON must not escape the store.');
 
+$db->queue(['rows'=>[[
+    'id'=>102,'tenant_id'=>1,'amazon_connection_id'=>10,'case_id'=>42,
+    'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL','source_event_id'=>'88',
+    'idempotency_key'=>hash('sha256','bridge-result-88'),'occurred_at'=>'2026-09-04 12:10:00',
+    'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"UI_DRIFT","reason":"SUPPORT_WRITE_WITHOUT_READBACK_ID","submitted":true}',
+    'evidence_sha256'=>null,'created_at'=>'2026-09-04 12:10:01',
+]]]);
+$sourceRows=$events->eventsForSourceEventId(42,'88','SELLER_CENTRAL_ACTION_RESULT');
+eeSame(1,count($sourceRows),'Source-event lookup must return the matching scoped event only.');
+eeSame('UI_DRIFT',$sourceRows[0]['payload']['status']??null,'Source-event lookup must decode payload JSON.');
+$sourceLookup=$db->executed[array_key_last($db->executed)]??[];
+eeAssert(str_contains((string)($sourceLookup['sql']??''),'source_event_id=:source_event_id'),'Source-event lookup must filter by immutable source event identity.');
+eeAssert(str_contains((string)($sourceLookup['sql']??''),'event_type=:event_type'),'Source-event lookup must allow an exact event-type filter.');
+eeSame('88',$sourceLookup['params'][':source_event_id']??null,'Source-event lookup must bind the requested source event ID.');
+eeSame('SELLER_CENTRAL_ACTION_RESULT',$sourceLookup['params'][':event_type']??null,'Source-event lookup must bind the requested event type.');
+
+
 $baseEvidence = [
     'kind'=>'WAREHOUSE_PHOTO',
     'source'=>'ADMIN_INTAKE',

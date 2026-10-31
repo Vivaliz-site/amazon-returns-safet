@@ -78,9 +78,9 @@ final class SvAmazonFinancialReconciler
         $residualToleranceApplied = $releasedExplicitCredit
             && $expected > 0
             && $legacyGap > 0
-            && ($legacyGap * 100) < ($expected * 5);
+            && ($legacyGap * 100) < ($expected * 15);
         // A released explicit reimbursement only settles a short payment when the residual
-        // is below the approved 5% tolerance. Exactly 5% or more remains recoverable.
+        // is below the approved 15% tolerance. Exactly 15% or more remains recoverable.
         // The historical no-baseline behavior remains limited to a single refunded unit.
         $explicitSettled = $residualToleranceApplied
             || ($singleRefundedUnit && $releasedExplicitCredit && ($expected <= 0 || $legacyGap === 0));

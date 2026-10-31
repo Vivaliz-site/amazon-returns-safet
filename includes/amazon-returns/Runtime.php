@@ -283,6 +283,25 @@ final class SvAmazonReturnsRuntime
         return ($metadata['has_more'] ?? false)===true;
     }
 
+    /**
+     * A failed Gmail evidence reconciliation must remain FAILED without
+     * retrying every daemon tick when a code revision is still unapplied.
+     * Recheck hourly so a reauthorized Gmail credential can recover automatically.
+     *
+     * @param list<string> $due
+     * @param array<string,mixed>|null $lastAttempt
+     * @return list<string>
+     */
+    public static function deferFailedGmailReconciliation(
+        array $due, ?array $lastAttempt, DateTimeImmutable $now
+    ): array {
+        if (!in_array('gmail_refund_reconciliation',$due,true)) return $due;
+        if (strtoupper(trim((string)($lastAttempt['metadata']['status'] ?? ''))) !== 'FAILED') return $due;
+        $last=self::timestamp($lastAttempt['observed_at'] ?? null);
+        if ($last===null || $now->setTimezone(new DateTimeZone('UTC'))->getTimestamp()-$last->getTimestamp()>=3600) return $due;
+        return array_values(array_filter($due,static fn(string $task):bool=>$task!=='gmail_refund_reconciliation'));
+    }
+
     /** @param list<string> $due @return list<string> */
     public static function reconcileGmailCatchupSchedule(
         array $due,
@@ -465,6 +484,7 @@ final class SvAmazonReturnsRuntime
         $policySeeds=SvAmazonReturnPolicySeeder::ensure($p->policies);
         $policyAudit=$policySeeds>0 ? SvAmazonReturnPolicySeeder::auditDefinitions($p->policies->allActive()) : ['valid'=>true,'policy_key'=>null];
         if(!$policyAudit['valid'])throw new RuntimeException('Active operational policy does not match approved opening rule.');
+        $prematureReceivedOkReopened=$p->cases->reopenPrematureReceivedOkClosures();
         self::refreshKnownActionCases($p);
         return [
             'status'=>'OK',
@@ -473,6 +493,7 @@ final class SvAmazonReturnsRuntime
             'schema_tables'=>count(SvAmazonReturnsSchema::statements()),
             'policy_seeds'=>$policySeeds,
             'policy_audit'=>$policyAudit,
+            'premature_received_ok_reopened'=>$prematureReceivedOkReopened,
             'next_known_action_at'=>self::nextKnownWakeAt(self::$knownActionCases),
         ];
     }
@@ -518,16 +539,24 @@ final class SvAmazonReturnsRuntime
             $operationalHealth['blockers'][]='OUTBOX_UI_DRIFT_REASON_'.$reasonCode;
         }
         $erpIncomplete=$p->erpSalesReturns->countIncomplete();
+        $erpStaleWaitingInvoices=$p->erpSalesReturns->countStaleWaitingInvoices();
         $erpBreakdown=$p->erpSalesReturns->healthBreakdown();
         $supportIdentityCollisions=$p->cases->countSupportCaseCrossOrderDuplicateGroups();
+        $prematureReceivedOkClosures=$p->cases->countPrematureReceivedOkClosures();
         if($erpIncomplete>0){
             $operationalHealth['blockers'][]='TASK_ERP_SALES_RETURNS_INCOMPLETE';
+        }
+        if($erpStaleWaitingInvoices>0){
+            $operationalHealth['blockers'][]='ERP_SALES_RETURN_INVOICE_RECONCILIATION_STALE';
         }
         if(array_sum($erpBreakdown['duplicate_groups']??[])>0){
             $operationalHealth['blockers'][]='ERP_SALES_RETURN_DUPLICATE_IDENTIFIERS';
         }
         if($supportIdentityCollisions>0){
             $operationalHealth['blockers'][]='SELLER_SUPPORT_CROSS_ORDER_IDENTITY_COLLISION';
+        }
+        if($prematureReceivedOkClosures>0){
+            $operationalHealth['blockers'][]='PREMATURE_RECEIVED_OK_FINANCIAL_CLOSURE';
         }
         $operationalHealth['blockers']=array_values(array_unique($operationalHealth['blockers']));
         $businessHealth=SvAmazonBusinessHealth::evaluate($config->enabled(),$config->mode(),$readiness,$writeFlags,$browserLiveness,$operationalHealth['blockers']);
@@ -544,8 +573,10 @@ final class SvAmazonReturnsRuntime
             'ui_drift_reason_codes'=>$uiDriftReasonCodes,
             'pending_reviews'=>$p->reviews->countOpen(),
             'erp_sales_return_incomplete'=>$erpIncomplete,
+            'erp_sales_return_stale_waiting_invoice'=>$erpStaleWaitingInvoices,
             'erp_sales_return_breakdown'=>$erpBreakdown,
             'seller_support_cross_order_duplicate_groups'=>$supportIdentityCollisions,
+            'premature_received_ok_financial_closures'=>$prematureReceivedOkClosures,
             'rule_conflicts'=>$p->reviews->countOpenByReason('LEARNED_RULE_CONFLICT'),
             'rule_applications'=>$p->ruleApplications->countAll(),
             'ai_suggestion_failures'=>$p->reviews->countAiFailures(),

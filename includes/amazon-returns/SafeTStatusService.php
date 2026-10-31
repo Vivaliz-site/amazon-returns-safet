@@ -56,7 +56,7 @@ final class SvAmazonSafeTStatusService
     public static function nextState(string $currentState, string $claimStatus, bool $appealDenied = false): string
     {
         $claimStatus=strtoupper(trim($claimStatus));
-        if(in_array($currentState,['RECOVERED','RECEIVED_OK'],true))return $currentState;
+        if($currentState==='RECOVERED')return $currentState;
         if($claimStatus==='DENIED'){
             if(in_array($currentState,['EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','CLOSED_LOSS'],true))return $currentState;
             if($appealDenied)return 'APPEAL_DENIED_FINAL';
@@ -77,7 +77,9 @@ final class SvAmazonSafeTStatusService
     {
         $current=(string)($case['state']??'');
         $status=strtoupper(trim((string)($read['claim_status']??'UNKNOWN')));
-        $next=self::nextState($current,$status,(bool)($read['appeal_denied']??false));
+        $appealDenied=(bool)($read['appeal_denied']??false)
+            || ($current==='APPEAL_SUBMITTED' && $status==='DENIED' && (bool)($read['appeal_submitted']??false));
+        $next=self::nextState($current,$status,$appealDenied);
         $fingerprint=trim((string)($read['decision_fingerprint']??''));
         $last=trim((string)($case['last_denial_fingerprint']??''));
         $repeat=(int)($case['repeated_denial_count']??0);
@@ -101,6 +103,40 @@ final class SvAmazonSafeTStatusService
             $patch['next_action_at']=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
         }
         return $patch;
+    }
+
+    /**
+     * Reconcile an already-observed final denial when a SAFE-T appeal write succeeds.
+     *
+     * @param list<array<string,mixed>> $events
+     * @return array<string,mixed>
+     */
+    public static function reconcileAfterAppealSubmission(
+        array $case,
+        array $events,
+        DateTimeImmutable $now
+    ): array {
+        $safeTId=trim((string)($case['safe_t_id']??''));
+        if($safeTId==='')return [];
+
+        for($i=count($events)-1;$i>=0;$i--){
+            $event=$events[$i]??null;
+            if(!is_array($event) || ($event['event_type']??'')!=='SAFE_T_STATUS_OBSERVED')continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if(trim((string)($payload['safe_t_id']??''))!==$safeTId)continue;
+            if(strtoupper(trim((string)($payload['claim_status']??'UNKNOWN')))!=='DENIED')continue;
+            if(!(bool)($payload['appeal_submitted']??false))continue;
+
+            $appealCase=$case;
+            $appealCase['state']='APPEAL_SUBMITTED';
+            $patch=self::projection($appealCase,$payload,false,$now);
+            if(($patch['state']??null)==='APPEAL_DENIED_FINAL'){
+                $patch['next_action_at']=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+            }
+            return $patch;
+        }
+
+        return [];
     }
 
     public static function repeatCount(?string $previousFingerprint, int $currentCount, ?string $newFingerprint): int

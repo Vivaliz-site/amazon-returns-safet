@@ -37,14 +37,26 @@ final class SvAmazonGmailParser
         $quantityRefunded = null;
         $review = null;
         $returnTrackingId = null;
+        $supportCaseId = null;
+        $sellerActionRequired = false;
+        $supportExcerpt = null;
+
+        $isSellerSupport = preg_match('/(?:\\[?Case\\s+ID\\s*:\\s*|\\bCASE\\s+)([0-9]{8,14})\\b/iu', $combined, $supportMatch) === 1
+            && (stripos($from, 'merch.service') !== false || preg_match('/(?:Seller\\s+Support|Suporte\\s+ao\\s+Vendedor|Selling\\s+Partner\\s+Support)/iu', $combined) === 1);
+        if ($isSellerSupport) {
+            $eventType = 'SELLER_SUPPORT_EMAIL';
+            $supportCaseId = $supportMatch[1];
+            $sellerActionRequired = preg_match('/(?:need\\s+more\\s+information|provide\\s+the\\s+details|respond\\s+to\\s+this\\s+message|precisamos\\s+de\\s+(?:uma\\s+)?confirma[cç][aã]o|aguardo\\s+seu\\s+retorno|aguardamos\\s+seu\\s+retorno|responda|responder)/iu', $combined) === 1;
+            $supportExcerpt = mb_substr($this->canonicalText($body), 0, 1200, 'UTF-8');
+        }
 
         $isReviewChannel = stripos($from, 'safe-t-review@amazon.com') !== false
             || preg_match('/revis[aã]o\s+detalhada.*SAFE-T/iu', $subject) === 1;
-        if ($isReviewChannel && preg_match('/\b([0-9]{5}-[0-9]{5}-[0-9]{7})\b/', $combined, $match) === 1) {
+        if ($eventType === null && $isReviewChannel && preg_match('/\b([0-9]{5}-[0-9]{5}-[0-9]{7})\b/', $combined, $match) === 1) {
             $eventType = 'SAFE_T_EMAIL_REVIEW_RESPONSE';
             $safeTId = $match[1];
             $review = $this->reviewAnalyzer->analyze($message, ['terminal_close_allowed'=>false]);
-        } elseif (preg_match('/\bReembolso\s+de\s+([0-9]+(?:[\.,][0-9]{1,2})?)\s+BRL\s+iniciado\s+para\s+o\s+pedido\b/iu', $subject, $match) === 1) {
+        } elseif ($eventType === null && preg_match('/\bReembolso\s+de\s+([0-9]+(?:[\.,][0-9]{1,2})?)\s+BRL\s+iniciado\s+para\s+o\s+pedido\b/iu', $subject, $match) === 1) {
             $eventType = 'REFUND_ISSUED_EMAIL';
             $amount = $this->normalizeAmount($match[1]);
             $currency = 'BRL';
@@ -78,7 +90,7 @@ final class SvAmazonGmailParser
         }
 
         $contentSha = hash('sha256', $this->canonicalText($subject) . "\n" . $this->canonicalText($body));
-        $identityParts = ['gmail',$messageId,$eventType,$orderId,$safeTId ?? ''];
+        $identityParts = ['gmail',$messageId,$eventType,$orderId,$safeTId ?? '',$supportCaseId ?? ''];
         return [[
             'event_type'=>$eventType,
             'source'=>'GMAIL',
@@ -89,6 +101,9 @@ final class SvAmazonGmailParser
             'rfc_message_id'=>trim((string)($message['rfc_message_id'] ?? '')),
             'order_id'=>$orderId,
             'safe_t_id'=>$safeTId,
+            'support_case_id'=>$supportCaseId,
+            'seller_action_required'=>$sellerActionRequired,
+            'support_excerpt'=>$supportExcerpt,
             'occurred_at'=>$this->normalizeDate($message['received_at'] ?? $message['email_ts'] ?? null),
             'amount'=>$amount,
             'currency'=>$currency,

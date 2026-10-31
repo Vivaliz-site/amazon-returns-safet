@@ -22,7 +22,9 @@ final class GatePersistence{
     public function __construct(){ $this->learnedRules=new GateRules();$this->reviews=new GateReviews();$this->cases=new GateCases();$this->ruleApplications=new GateApps();$this->events=new GateEvents(); }
 }
 $p=new GatePersistence();
-$engine=new SvAmazonSafeTDecisionEngine(null,new DateTimeImmutable('2026-09-09T22:00:00Z'));
+// Keep coordinator decisions on the fixture clock; otherwise D+90 makes this test fail as real time advances.
+$testNow=new DateTimeImmutable('2026-09-09T22:00:00Z');
+$engine=new SvAmazonSafeTDecisionEngine(null,$testNow);
 $coordinator=new SvAmazonDecisionCoordinator($engine,$p,new SvAmazonReturnsConfig());
 $case=[
     'id'=>1,'amazon_order_id'=>'701-0630116-9129834','safe_t_id'=>null,
@@ -30,7 +32,7 @@ $case=[
     'refund_at'=>'2026-09-02 02:05:29','seller_debit_at'=>'2026-09-02 02:05:29','refund_initiator'=>SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
     'expected_reimbursement_amount'=>'81.00','reconciled_credit_amount'=>'0.00','marketplace_id'=>'A2Q3Y263D00KWC','program'=>SvAmazonReturnPrograms::FBA,
 ];
-$decision=$coordinator->nextAction($case,[],['eligible'=>false,'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED]);
+$decision=$coordinator->nextAction($case,[],['eligible'=>false,'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED],$testNow);
 gateSame('CHECK_FINANCES',$decision['action'],'classic FBA must stay automatic');
 gateSame([['case_id'=>1,'patch'=>['state'=>SvAmazonReturnStates::CREDIT_PENDING]]],$p->cases->updates,'automatic finance route must clear the stale human-review state');
 $p->cases->updates=[];
@@ -41,7 +43,7 @@ $case2=[
     'expected_reimbursement_amount'=>'57.09','reconciled_credit_amount'=>'0.00','marketplace_id'=>'A2Q3Y263D00KWC','program'=>SvAmazonReturnPrograms::DELIVERY_BY_AMAZON,
 ];
 $policy2=['eligible'=>false,'state'=>SvAmazonReturnStates::AWAITING_RETURN,'eligibility_at'=>'2026-09-26 00:47:36','policy_version_id'=>1];
-$decision2=$coordinator->nextAction($case2,[],$policy2);
+$decision2=$coordinator->nextAction($case2,[],$policy2,$testNow);
 gateSame('WAIT',$decision2['action'],'not-yet-eligible deterministic case must not require review');
 gateSame('NOT_YET_ELIGIBLE',$decision2['reason'],'future eligibility must remain automatic');
 gateSame([['case_id'=>2,'patch'=>['state'=>SvAmazonReturnStates::AWAITING_RETURN]]],$p->cases->updates,'resolved review gate must adopt the deterministic policy state');
@@ -52,7 +54,7 @@ $case3=[
     'refund_at'=>null,'seller_debit_at'=>null,'refund_initiator'=>SvAmazonRefundInitiators::UNKNOWN,
     'expected_reimbursement_amount'=>'0.00','reconciled_credit_amount'=>'0.00','marketplace_id'=>'A2Q3Y263D00KWC','program'=>SvAmazonReturnPrograms::FBA,
 ];
-$decision3=$coordinator->nextAction($case3,[],['eligible'=>false,'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED]);
+$decision3=$coordinator->nextAction($case3,[],['eligible'=>false,'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED],$testNow);
 gateSame('CHECK_FINANCES',$decision3['action'],'classic FBA without refund evidence must still use automatic finance discovery');
 gateSame([['case_id'=>3,'patch'=>['state'=>SvAmazonReturnStates::AWAITING_RETURN]]],$p->cases->updates,'automatic finance discovery must clear a stale review gate even before a refund baseline exists');
 $p->cases->updates=[];
@@ -62,7 +64,7 @@ $case4=[
     'refund_at'=>'2026-04-28 21:06:57','seller_debit_at'=>'2026-04-28 21:06:57','refund_initiator'=>SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,
     'expected_reimbursement_amount'=>'106.14','reconciled_credit_amount'=>'0.00','marketplace_id'=>'A2Q3Y263D00KWC','program'=>SvAmazonReturnPrograms::FBA,
 ];
-$decision4=$coordinator->nextAction($case4,[],['eligible'=>false,'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED]);
+$decision4=$coordinator->nextAction($case4,[],['eligible'=>false,'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED],$testNow);
 gateSame('WAIT',$decision4['action'],'expired recovery window must remain non-writing wait');
 gateSame('RECOVERY_WINDOW_EXPIRED',$decision4['reason'],'expired recovery window must remain explicit');
 gateSame([['case_id'=>4,'patch'=>['state'=>SvAmazonReturnStates::CREDIT_PENDING]]],$p->cases->updates,'expired automatic case with unrecovered financial exposure must not retain a human-review state');
@@ -79,7 +81,7 @@ $policy5=['eligible'=>true,'state'=>SvAmazonReturnStates::SAFE_T_ELIGIBLE,'eligi
 $base5=(new SvAmazonSafeTDecisionEngine())->nextAction($case5,[],$policy5,new DateTimeImmutable('2026-09-09T22:00:00Z'));
 $context5=SvAmazonReviewContext::build($case5,[],$policy5,$base5);
 $p5->learnedRules->rows=[['id'=>51,'version'=>1,'status'=>'ACTIVE','match'=>['review_reason'=>$context5['signature']['review_reason'],'refund_initiator'=>'UNKNOWN'],'effect'=>['action'=>'CHECK_FINANCES','parameters'=>['date_binding'=>'NONE']]]];
-$decision5=$coordinator5->nextAction($case5,[],$policy5);
+$decision5=$coordinator5->nextAction($case5,[],$policy5,$testNow);
 gateSame('CHECK_FINANCES',$decision5['action'],'approved learned rule must resolve to its automatic action');
 gateSame([5],$p5->reviews->resolved,'learned automatic decision must resolve any stale open review episode');
 gateSame([['case_id'=>5,'patch'=>['state'=>SvAmazonReturnStates::SAFE_T_ELIGIBLE]]],$p5->cases->updates,'learned automatic decision must clear the persisted review gate');

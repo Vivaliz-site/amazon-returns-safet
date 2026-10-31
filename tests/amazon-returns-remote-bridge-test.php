@@ -92,6 +92,57 @@ $discoveryJob = SvAmazonReturnsRemoteBridge::jobEnvelope(array_replace($row, ['k
 rbSame('SAFE_T_DISCOVERY', $discoveryJob['action'], 'Read-only SAFE-T discovery must be an approved bridge action.');
 rbSame(false, $discoveryJob['write_enabled'], 'SAFE-T discovery must never require or imply a write flag.');
 
+$currentWriteHash=hash('sha256','current-seller-support-write');
+$oldWriteHash=hash('sha256','older-seller-support-write');
+$retryRow=[
+    'id'=>88,
+    'case_id'=>77,
+    'kind'=>'SELLER_SUPPORT_UPDATE',
+    'attempt_count'=>3,
+    'payload'=>[
+        'write_snapshot'=>['content_sha256'=>$currentWriteHash],
+    ],
+];
+$oldAmbiguousEvent=[
+    'event_type'=>'SELLER_CENTRAL_ACTION_RESULT',
+    'source'=>'SELLER_CENTRAL',
+    'source_event_id'=>'88',
+    'payload'=>[
+        'action'=>'SELLER_SUPPORT_UPDATE',
+        'status'=>'UI_DRIFT',
+        'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID',
+        'submitted'=>true,
+        'write_content_sha256'=>$oldWriteHash,
+    ],
+];
+rbSame(
+    false,
+    SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$oldAmbiguousEvent]),
+    'A high attempt count with an ambiguous older write hash must be a new Seller Support episode, not retry reconciliation.'
+);
+$currentAmbiguousEvent=$oldAmbiguousEvent;
+$currentAmbiguousEvent['payload']['write_content_sha256']=$currentWriteHash;
+rbSame(
+    true,
+    SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$currentAmbiguousEvent]),
+    'Only a submitted-without-readback event for the exact current write hash may authorize retry reconciliation.'
+);
+$postWriteLookupEvent=$currentAmbiguousEvent;
+$postWriteLookupEvent['payload']['reason']='SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE';
+rbSame(
+    true,
+    SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$postWriteLookupEvent]),
+    'A failed post-write lookup must authorize reconciliation before a new write for the exact current hash.'
+);
+$confirmedEvent=$currentAmbiguousEvent;
+$confirmedEvent['payload']['status']='ACCEPTED';
+$confirmedEvent['payload']['reason']='SUPPORT_CASE_UPDATED_AND_READ_BACK';
+rbSame(
+    false,
+    SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$currentAmbiguousEvent,$confirmedEvent]),
+    'A confirmed result for the current write hash must suppress retry reconciliation even if an earlier ambiguous submit exists.'
+);
+
 $valid = SvAmazonReturnsRemoteBridge::validateResult([
     'status' => 'ACCEPTED',
     'submitted' => true,
@@ -120,17 +171,55 @@ rbSame('DENIED', $readValid['read']['claim_status'], 'SAFE-T status read must su
 rbSame('2026-09-08 16:23:00', $readValid['read']['appeal_deadline_at'], 'Seller Central appeal deadline must normalize to UTC.');
 rbAssert(preg_match('/^[a-f0-9]{64}$/', (string)$readValid['read']['decision_fingerprint']) === 1, 'Decision text must receive a deterministic fingerprint.');
 
-$thrown = false;
-try {
-    SvAmazonReturnsRemoteBridge::validateResult([
-        'status' => 'ACCEPTED',
-        'submitted' => true,
-        'external_id' => null,
-    ]);
-} catch (RuntimeException) {
-    $thrown = true;
+$uncertainWrite = SvAmazonReturnsRemoteBridge::validateResult([
+    'status' => 'UI_DRIFT',
+    'submitted' => true,
+    'external_id' => null,
+    'retry_safe' => true,
+    'reason' => 'SUPPORT_WRITE_WITHOUT_READBACK_ID',
+]);
+rbSame('UI_DRIFT', $uncertainWrite['status'], 'Post-write read-back uncertainty must be accepted as UI drift.');
+rbSame(true, $uncertainWrite['submitted'], 'Post-write uncertainty must preserve that the Seller Central write may already have been submitted.');
+rbSame(null, $uncertainWrite['external_id'], 'Unreconciled post-write result must preserve a null external ID.');
+
+$postWriteLookupFailure = SvAmazonReturnsRemoteBridge::validateResult([
+    'status' => 'UI_DRIFT',
+    'submitted' => true,
+    'external_id' => null,
+    'retry_safe' => true,
+    'reason' => 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE',
+]);
+rbSame(
+    'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE',
+    $postWriteLookupFailure['reason'],
+    'A failed post-write lookup must be durably classified as ambiguous submitted evidence.'
+);
+rbSame(true, $postWriteLookupFailure['submitted'], 'Post-write lookup failure must preserve submitted=true.');
+
+$humanIntervention = SvAmazonReturnsRemoteBridge::validateResult([
+    'status' => 'HUMAN_INTERVENTION_REQUIRED',
+    'submitted' => false,
+    'external_id' => '22403666441',
+    'retry_safe' => false,
+    'reason' => 'SUPPORT_CASE_NOT_REOPENABLE',
+]);
+rbSame('HUMAN_INTERVENTION_REQUIRED', $humanIntervention['status'], 'Seller Support non-reopenable cases must cross the bridge as an explicit human intervention state.');
+rbSame('SUPPORT_CASE_NOT_REOPENABLE', $humanIntervention['reason'], 'Human intervention must preserve its review reason.');
+
+foreach ([
+    ['status'=>'ACCEPTED','submitted'=>true,'external_id'=>null,'retry_safe'=>true,'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID'],
+    ['status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>false,'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID'],
+    ['status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>true,'reason'=>'SUPPORT_REPLY_FIELD_MISSING'],
+    ['status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>false,'reason'=>'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE'],
+] as $invalidSubmittedWithoutId) {
+    $thrown = false;
+    try {
+        SvAmazonReturnsRemoteBridge::validateResult($invalidSubmittedWithoutId);
+    } catch (RuntimeException) {
+        $thrown = true;
+    }
+    rbAssert($thrown, 'Only approved retry-safe post-write UI drift may be submitted without an external ID.');
 }
-rbAssert($thrown, 'Submitted write without external read-back ID must be rejected.');
 
 $thrown = false;
 try {

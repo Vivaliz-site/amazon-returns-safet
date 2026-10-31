@@ -2,6 +2,12 @@
 set -Eeuo pipefail
 
 [[ "$(id -u)" -eq 0 ]] || { echo 'run as root' >&2; exit 2; }
+# Origin is retired as a worker owner; require an explicit coordinated rollback to remove this fence.
+if [[ -e /etc/shopvivaliz/migration/origin-workers-fenced ]]; then
+    echo 'provision_blocked=origin_workers_fenced' >&2
+    exit 75
+fi
+
 exec 9>/run/lock/amazon-returns-provision.lock
 flock -n 9 || { echo 'production_provision_locked=1' >&2; exit 75; }
 repo="${AMAZON_RETURNS_REPO:-/home/ubuntu/amazon-returns-safet}"
@@ -65,7 +71,7 @@ install -d -o root -g www-data -m 0770 "$shared"
 install -d -o www-data -g www-data -m 0750 "$shared/evidence"
 install -d -o root -g root -m 0700 "$shared/private"
 install -d -o ubuntu -g www-data -m 0750 "$release"
-rsync -a --delete --exclude=.git --exclude=.env "$repo/" "$release/"
+rsync -a --delete --exclude=.git --exclude=.env --exclude=.worktrees "$repo/" "$release/"
 printf '%s\n' "$(runuser -u ubuntu -- git -C "$repo" rev-parse HEAD)" > "$release/.release-sha"
 
 copy_source_key() {

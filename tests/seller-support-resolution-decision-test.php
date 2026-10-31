@@ -148,4 +148,165 @@ $noSafeTIdResult=$engine->nextAction($noSafeTIdCase,[$noSafeTIdObserved],$policy
 ssrdSame('BLOCKED_REVIEW',$noSafeTIdResult['action']??null,'Support-directed email review without a linked SAFE-T ID must block for human review, never send an email review with nothing to reference.');
 ssrdSame('SUPPORT_RESOLUTION_SAFE_T_ID_MISSING',$noSafeTIdResult['reason']??null,'Missing SAFE-T ID on a support-directed email review must be named explicitly.');
 
+
+
+// A newer active sibling must supersede an older terminal sibling that still
+// looks semantically actionable. Otherwise the engine keeps targeting a
+// closed case while Amazon is already working the newer sibling.
+$newerActiveSiblingCase=$case;
+$newerActiveSiblingCase['id']=8;
+$newerActiveSiblingCase['amazon_order_id']='702-3172035-4814644';
+$newerActiveSiblingCase['support_case_id']='22403466041';
+$newerActiveSiblingCase['state']='SUPPORT_ESCALATION';
+$newerActiveSiblingCase['refund_at']='2026-08-20 12:00:00';
+$newerActiveSiblingCase['seller_debit_at']='2026-08-20 12:00:00';
+$newerActiveSiblingCase['expected_reimbursement_amount']='72.78';
+$newerActiveSiblingCase['reconciled_credit_amount']='0.00';
+
+$newerActiveFinance=$finance;
+$newerActiveFinance['id']=3001;
+$newerActiveFinance['case_id']=8;
+$newerActiveFinance['occurred_at']='2026-10-07 02:08:00';
+$newerActiveFinance['payload']['outstanding_amount']='72.78';
+
+$staleClosedSibling=[
+    'id'=>3002,'case_id'=>8,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 02:10:00','payload'=>[
+        'case_id'=>'22403466041','case_status'=>'RESOLVED',
+        'latest_text'=>"Because we haven't received a response from you, we assume that your issue is resolved.",
+    ],
+];
+$newerActiveSibling=[
+    'id'=>3003,'case_id'=>8,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 02:11:00','payload'=>[
+        'case_id'=>'22403666441','case_status'=>'PENDINGAMAZONACTION',
+        'latest_text'=>'A Amazon está analisando o ressarcimento deste pedido.',
+    ],
+];
+$newerActiveSiblingDecision=$engine->nextAction(
+    $newerActiveSiblingCase,
+    [$newerActiveFinance,$staleClosedSibling,$newerActiveSibling],
+    $policy,
+    new DateTimeImmutable('2026-10-07 02:12:00',new DateTimeZone('UTC'))
+);
+ssrdSame(
+    'WAIT',
+    $newerActiveSiblingDecision['action']??null,
+    'A newer active Seller Support sibling must suppress a stale closed sibling response.'
+);
+ssrdSame(
+    'SUPPORT_ESCALATION_ALREADY_ACTIVE',
+    $newerActiveSiblingDecision['reason']??null,
+    'The newer active sibling must remain authoritative while Amazon is acting.'
+);
+
+// When sibling observations arrive in the same discovery second, the current
+// persisted support binding must win the tie. Otherwise the engine can target
+// a sibling that the bridge will correctly reject as scope-superseded.
+$sameSecondCase=$case;
+$sameSecondCase['id']=9;
+$sameSecondCase['amazon_order_id']='702-9207715-8524262';
+$sameSecondCase['support_case_id']='22450149561';
+$sameSecondCase['state']='SUPPORT_ESCALATION';
+$sameSecondCase['expected_reimbursement_amount']='485.75';
+$sameSecondCase['reconciled_credit_amount']='262.85';
+
+$currentBindingObservation=[
+    'id'=>4001,'case_id'=>9,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 16:35:09','payload'=>[
+        'case_id'=>'22450149561','case_status'=>'PENDINGMERCHANTACTION',
+        'latest_text'=>'This is a reminder to let you know that we need more information to resolve your case.',
+    ],
+];
+$siblingObservation=[
+    'id'=>4002,'case_id'=>9,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 16:35:09','payload'=>[
+        'case_id'=>'22449931941','case_status'=>'PENDINGMERCHANTACTION',
+        'latest_text'=>'This is a reminder to let you know that we need more information to resolve your case.',
+    ],
+];
+$sameSecondDecision=$engine->nextAction(
+    $sameSecondCase,
+    [$currentBindingObservation,$siblingObservation],
+    $policy,
+    new DateTimeImmutable('2026-10-07 16:36:00',new DateTimeZone('UTC'))
+);
+ssrdSame('SELLER_SUPPORT_UPDATE',$sameSecondDecision['action']??null,'Seller action required must remain actionable.');
+ssrdSame('22450149561',$sameSecondDecision['support_case_id']??null,'Current Seller Support binding must win a same-second sibling tie.');
+
+// An active newer sibling must also suppress the APPEAL_DENIED_FINAL fallback.
+$activeAfterDenied=$case;
+$activeAfterDenied['id']=10;
+$activeAfterDenied['amazon_order_id']='702-1808735-0608208';
+$activeAfterDenied['program']='FBA';
+$activeAfterDenied['safe_t_id']='37495-60041-8543443';
+$activeAfterDenied['state']=SvAmazonReturnStates::APPEAL_DENIED_FINAL;
+$activeAfterDenied['latest_denial_text']='Recurso negado. Decisão final mantida.';
+$activeAfterDenied['support_case_id']='22144771981';
+$activeAfterDenied['refund_at']='2026-08-03 18:22:13';
+$activeAfterDenied['seller_debit_at']='2026-08-03 18:22:13';
+$activeAfterDenied['expected_reimbursement_amount']='68.57';
+$activeAfterDenied['reconciled_credit_amount']='0.00';
+
+$oldDeniedSupport=[
+    'id'=>5001,'case_id'=>10,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 19:20:00','payload'=>[
+        'case_id'=>'22144771981','case_status'=>'RESOLVED',
+        'latest_text'=>'Caso anterior encerrado.',
+    ],
+];
+$activeInternalReview=[
+    'id'=>5002,'case_id'=>10,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 19:23:30','payload'=>[
+        'case_id'=>'22455791871','case_status'=>'PENDINGAMAZONACTION',
+        'latest_text'=>'Recebemos sua solicitação SAFE-T e encaminhamos para a equipe interna. Aguarde nossa atualização.',
+    ],
+];
+$activeAfterDeniedDecision=$engine->nextAction(
+    $activeAfterDenied,
+    [$oldDeniedSupport,$activeInternalReview],
+    $policy,
+    new DateTimeImmutable('2026-10-07 19:24:00',new DateTimeZone('UTC'))
+);
+ssrdSame('WAIT',$activeAfterDeniedDecision['action']??null,'An active Seller Support sibling must suppress a duplicate post-denial review write.');
+ssrdSame('SUPPORT_ESCALATION_ALREADY_ACTIVE',$activeAfterDeniedDecision['reason']??null,'Amazon-owned active support work must remain authoritative after final appeal denial.');
+ssrdSame('22455791871',$activeAfterDeniedDecision['support_case_id']??null,'Wait must identify the active sibling that Amazon is currently handling.');
+
+$nonReopenableCase=$case;
+$nonReopenableCase['id']=11;
+$nonReopenableCase['amazon_order_id']='703-9999999-9999999';
+$nonReopenableCase['program']='FBA';
+$nonReopenableCase['safe_t_id']='99999-99999-9999999';
+$nonReopenableCase['state']=SvAmazonReturnStates::APPEAL_DENIED_FINAL;
+$nonReopenableCase['latest_denial_text']='Recurso negado. Decisão final mantida.';
+$nonReopenableCase['support_case_id']='22999999999';
+$nonReopenableCase['refund_at']='2026-08-03 18:22:13';
+$nonReopenableCase['seller_debit_at']='2026-08-03 18:22:13';
+$nonReopenableCase['expected_reimbursement_amount']='123.30';
+$nonReopenableCase['reconciled_credit_amount']='0.00';
+
+$nonReopenableObservation=[
+    'id'=>6001,'case_id'=>11,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-20 00:12:30','payload'=>[
+        'case_id'=>'22999999999','case_status'=>'RESOLVED',
+        'latest_text'=>'Para solicitar o ressarcimento referente a este pedido, você deve abrir uma reivindicação SAFE-T.',
+    ],
+];
+$nonReopenableResult=[
+    'id'=>6002,'case_id'=>11,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 12:01:39','payload'=>[
+        'action'=>'SELLER_SUPPORT_UPDATE','status'=>'SUPERSEDED',
+        'reason'=>'SUPPORT_CASE_NOT_REOPENABLE','submitted'=>false,'retry_safe'=>false,
+        'external_id'=>null,
+    ],
+];
+$nonReopenableDecision=$engine->nextAction(
+    $nonReopenableCase,
+    [$nonReopenableObservation,$nonReopenableResult],
+    $policy,
+    new DateTimeImmutable('2026-10-08 08:20:00',new DateTimeZone('UTC'))
+);
+ssrdSame('BLOCKED_REVIEW',$nonReopenableDecision['action']??null,'A Seller Support case proven non-reopenable must block repeated writes instead of re-entering the same recovery loop.');
+ssrdSame('SUPPORT_CASE_NOT_REOPENABLE',$nonReopenableDecision['reason']??null,'The terminal non-reopenable reason must survive into the next decision.');
+
 echo "seller-support-resolution-decision-test: OK\n";

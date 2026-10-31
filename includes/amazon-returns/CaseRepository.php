@@ -157,7 +157,7 @@ final class SvAmazonReturnCaseRepository
         }
         foreach(['safe_t_id','state','program','physical_status'] as $field){if(!isset($filters[$field]))continue;$where[]='c.'.$field.'=:'.$field;$params[':'.$field]=$filters[$field];}
         if(isset($filters['review_status'])){$where[]='EXISTS (SELECT 1 FROM amazon_return_reviews r WHERE r.tenant_id=c.tenant_id AND r.amazon_connection_id=c.amazon_connection_id AND r.case_id=c.id AND r.status=:review_status)';$params[':review_status']=$filters['review_status'];}
-        $concluded="(c.closed_at IS NOT NULL OR c.state IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK'))";
+        $concluded="(c.closed_at IS NOT NULL OR c.state IN ('RECOVERED','CLOSED_LOSS'))";
         if(($filters['bucket']??null)==='closed')$where[]=$concluded;
         elseif(($filters['bucket']??null)==='system')$where[]="NOT $concluded AND NOT EXISTS (SELECT 1 FROM amazon_return_reviews br WHERE br.tenant_id=c.tenant_id AND br.amazon_connection_id=c.amazon_connection_id AND br.case_id=c.id AND br.status='OPEN')";
         elseif(($filters['bucket']??null)==='attention')$where[]="(NOT $concluded OR EXISTS (SELECT 1 FROM amazon_return_reviews br WHERE br.tenant_id=c.tenant_id AND br.amazon_connection_id=c.amazon_connection_id AND br.case_id=c.id AND br.status='OPEN'))";
@@ -371,7 +371,7 @@ final class SvAmazonReturnCaseRepository
         $eligible="c.state IN ('SAFE_T_ELIGIBLE','SAFE_T_READY') AND c.safe_t_id IS NULL";
         $expired="c.refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY) AND c.appeal_deadline_at IS NOT NULL AND c.appeal_deadline_at<UTC_TIMESTAMP() AND c.state IN ('SAFE_T_DENIED','SAFE_T_INFO_REQUESTED','APPEAL_REQUIRED') AND NOT EXISTS (SELECT 1 FROM amazon_return_outbox o WHERE o.tenant_id=c.tenant_id AND o.amazon_connection_id=c.amazon_connection_id AND o.case_id=c.id AND o.kind='SAFE_T_APPEAL' AND o.status IN ('PENDING','PROCESSING','SUCCEEDED'))";
         $creditMismatch="c.closed_at IS NULL AND c.state<>'RECOVERED' AND c.reconciled_credit_amount>0 AND $exposure<=0";
-        $concluded="c.closed_at IS NOT NULL OR c.state IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK')";
+        $concluded="c.closed_at IS NOT NULL OR c.state IN ('RECOVERED','CLOSED_LOSS')";
         $stmt=$this->prepare("SELECT COUNT(*) total_cases,"
             ."COALESCE(SUM(GREATEST($exposure,0)),0) at_risk,"
             ."COALESCE(SUM(CASE WHEN c.state IN ('SAFE_T_ELIGIBLE','SAFE_T_READY') THEN GREATEST($exposure,0) ELSE 0 END),0) eligible_now,"
@@ -409,7 +409,7 @@ final class SvAmazonReturnCaseRepository
             'SELECT c.id,c.amazon_order_id,c.state,c.physical_status,c.safe_t_id,c.next_action_at,c.appeal_deadline_at,c.eligibility_at,'
             ."$exposure outstanding_amount,c.updated_at FROM amazon_return_cases c "
             ."WHERE c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id "
-            ."AND c.closed_at IS NULL AND c.state NOT IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK') "
+            ."AND c.closed_at IS NULL AND c.state NOT IN ('RECOVERED','CLOSED_LOSS') "
             ."AND NOT EXISTS (SELECT 1 FROM amazon_return_reviews r WHERE r.tenant_id=c.tenant_id AND r.amazon_connection_id=c.amazon_connection_id AND r.case_id=c.id AND r.status='OPEN') "
             ."ORDER BY CASE WHEN $due IS NOT NULL AND $due<UTC_TIMESTAMP() THEN 0 ELSE 1 END,$due IS NULL,$due,$exposure DESC,c.updated_at DESC LIMIT ".$limit
         );
@@ -430,7 +430,7 @@ final class SvAmazonReturnCaseRepository
             ."$kind due_kind,$due due_at,$exposure outstanding_amount "
             .'FROM amazon_return_cases c '
             .'WHERE c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id '
-            ."AND c.closed_at IS NULL AND c.state NOT IN ('RECOVERED','CLOSED_LOSS','RECEIVED_OK') "
+            ."AND c.closed_at IS NULL AND c.state NOT IN ('RECOVERED','CLOSED_LOSS') "
             .'AND (c.appeal_deadline_at IS NOT NULL OR c.next_action_at IS NOT NULL OR c.eligibility_at IS NOT NULL) '
             ."ORDER BY CASE WHEN $due<UTC_TIMESTAMP() THEN 0 ELSE 1 END,$due,$exposure DESC,c.id DESC LIMIT ".$limit
         );
@@ -461,6 +461,43 @@ final class SvAmazonReturnCaseRepository
         );
         $stmt->execute($this->scopeParams());
         return max(0, (int)$stmt->fetchColumn());
+    }
+
+    public function countPrematureReceivedOkClosures(): int
+    {
+        $outstanding="GREATEST((CASE WHEN expected_reimbursement_amount>0 THEN expected_reimbursement_amount ELSE refund_amount END)-reconciled_credit_amount,0)";
+        $stmt=$this->prepare(
+            "SELECT COUNT(*) FROM amazon_return_cases WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id AND state='RECEIVED_OK' "
+            . "AND closed_at IS NOT NULL AND $outstanding>0.005"
+        );
+        $stmt->execute($this->scopeParams());
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
+    public function reopenPrematureReceivedOkClosures(): int
+    {
+        $outstanding="GREATEST((CASE WHEN expected_reimbursement_amount>0 THEN expected_reimbursement_amount ELSE refund_amount END)-reconciled_credit_amount,0)";
+        $stmt=$this->prepare(
+            "SELECT id,next_action_at FROM amazon_return_cases WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id AND state='RECEIVED_OK' "
+            . "AND closed_at IS NOT NULL AND $outstanding>0.005 ORDER BY id"
+        );
+        $stmt->execute($this->scopeParams());
+        $reopened=0;
+        foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row){
+            if(!is_array($row))continue;
+            $id=(int)($row['id']??0);
+            if($id<1)continue;
+            $next=trim((string)($row['next_action_at']??''));
+            $this->update($id,[
+                'closed_at'=>null,
+                'terminal_reason'=>null,
+                'next_action_at'=>$next!==''?$next:gmdate('Y-m-d H:i:s'),
+            ]);
+            $reopened++;
+        }
+        return $reopened;
     }
     public function earliestObservedDate(): ?string
     {
@@ -496,6 +533,83 @@ final class SvAmazonReturnCaseRepository
         return $id;
     }
 
+    /**
+     * Internal loss-closure candidate lookup, scoped to one connection.
+     * Confirmed warehouse receipts are excluded even before their projection.
+     * @return list<int>
+     */
+    public function agedUnreceivedCaseIds(string $cutoff, int $limit=250): array
+    {
+        $limit=max(1,min(500,$limit));
+        $stmt=$this->prepare(
+            'SELECT c.id FROM amazon_return_cases c WHERE ' . self::ageClosureEligibility()
+            . ' ORDER BY c.refund_at,c.id LIMIT ' . $limit
+        );
+        $stmt->execute($this->scopeParams([':cutoff'=>$cutoff]));
+        return array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /** @return array<string,mixed>|null */
+    public function lockAgedUnreceivedCase(int $caseId,string $cutoff): ?array
+    {
+        $caseId=$this->positiveId($caseId,'Case ID');
+        $driver=(string)$this->db->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $stmt=$this->prepare(
+            'SELECT c.* FROM amazon_return_cases c WHERE c.id=:id AND '
+            . self::ageClosureEligibility() . ' LIMIT 1'
+            . ($driver==='mysql' ? ' FOR UPDATE' : '')
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId,':cutoff'=>$cutoff]));
+        $row=$stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row)?$row:null;
+    }
+
+    public function hasPendingAgeCloseOutbox(int $caseId): bool
+    {
+        $caseId=$this->positiveId($caseId,'Case ID');
+        $driver=(string)$this->db->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $stmt=$this->prepare(
+            "SELECT id FROM amazon_return_outbox "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND case_id=:id AND status IN ('PENDING','PROCESSING') LIMIT 1"
+            . ($driver==='mysql' ? ' FOR UPDATE' : '')
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId]));
+        return $stmt->fetchColumn()!==false;
+    }
+
+    public function closeAgedUnreceivedCase(int $caseId,array $snapshot,string $closedAt,string $reason): bool
+    {
+        $caseId=$this->positiveId($caseId,'Case ID');
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_cases SET state='CLOSED_LOSS',"
+            . "terminal_reason=:reason,closed_at=:closed_at,"
+            . "next_action_at=NULL,updated_at=:updated_at "
+            . "WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND state=:previous_state AND refund_at=:refund_at AND closed_at IS NULL"
+        );
+        $stmt->execute($this->scopeParams([
+            ':id'=>$caseId,
+            ':reason'=>$reason,
+            ':closed_at'=>$closedAt,
+            ':updated_at'=>$closedAt,
+            ':previous_state'=>(string)($snapshot['state']??''),
+            ':refund_at'=>(string)($snapshot['refund_at']??''),
+        ]));
+        return $stmt->rowCount()===1;
+    }
+
+    private static function ageClosureEligibility(): string
+    {
+        return "c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id "
+            . "AND c.closed_at IS NULL AND c.refund_at IS NOT NULL AND c.refund_at<=:cutoff "
+            . "AND c.state NOT IN ('RECOVERED','RECEIVED_OK','CLOSED_LOSS') "
+            . "AND c.physical_status<>'RECEIVED_OK' AND c.quantity_received=0 "
+            . "AND NOT EXISTS (SELECT 1 FROM amazon_return_events e "
+            . "WHERE e.tenant_id=c.tenant_id AND e.amazon_connection_id=c.amazon_connection_id "
+            . "AND e.case_id=c.id AND e.event_type='PHYSICAL_RECEIVED' AND e.source='WAREHOUSE')";
+    }
+
     /** @param array<string,mixed> $patch */
     public function update(int $caseId, array $patch): void
     {
@@ -515,9 +629,16 @@ final class SvAmazonReturnCaseRepository
             $sets[] = '`' . $field . '`=' . $parameter;
             $params[$parameter] = $this->normalizeField($field, $value);
         }
+        // A stale Gmail/support/financial worker may finish after an owner closes
+        // an old loss. Never allow its outdated state projection to reopen the
+        // audited CLOSED_LOSS row. Non-terminal financial fields remain patchable.
+        $terminalPatch = array_key_exists('state',$patch)
+            || array_key_exists('closed_at',$patch)
+            || array_key_exists('terminal_reason',$patch);
         $stmt = $this->prepare(
             'UPDATE amazon_return_cases SET ' . implode(',', $sets) . ',updated_at=UTC_TIMESTAMP() '
             . 'WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
+            . ($terminalPatch ? " AND NOT (state='CLOSED_LOSS' AND closed_at IS NOT NULL)" : '')
         );
         $stmt->execute($params);
         if ($stmt->rowCount() === 0 && $this->find($caseId) === null) {

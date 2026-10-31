@@ -58,6 +58,7 @@ ppAssert(str_contains($script,'expected_cases" -eq 0'),'A zero live case snapsho
 ppAssert(str_contains($script,'printf -v verify_cmd'),'Operator migration commands must be shell-quoted before printing.');
 ppAssert(str_contains($script,'%q'),'Operator migration command values must use shell-safe quoting.');
 ppAssert(str_contains($script,'.release-sha'),'Provisioning must record the deployed target commit.');
+ppAssert(str_contains($script,'--exclude=.worktrees'),'Release assembly must exclude local Git worktrees that are not part of the committed artifact.');
 ppAssert(str_contains($script,'python3-certbot-dns-cloudflare'),'Provisioning must support Cloudflare DNS-01 instead of relying on origin port 80.');
 ppAssert(str_contains($script,'--dns-cloudflare'),'TLS issuance must use Cloudflare DNS validation.');
 ppAssert(str_contains($script,'CLOUDFLARE_DNS_API_TOKEN_FILE'),'TLS bootstrap must accept the DNS token from a protected file.');

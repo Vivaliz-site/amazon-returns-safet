@@ -47,6 +47,14 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
         return max(0,(int)$stmt->fetchColumn());
     }
 
+    public function countStaleWaitingInvoices(): int
+    {
+        $stmt=$this->sql(
+            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status='RETURN_CREATED_WAITING_INVOICE' AND (last_checked_at IS NULL OR last_checked_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR))"
+        );
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
     /** @return list<array{amazon_order_id:string,status:string,last_error_code:?string}> */
     public function incompleteAuditRows(): array
     {

@@ -66,23 +66,20 @@ final class SvAmazonTenantReturnsOutbox
         }
 
         $existing = $this->prepare(
-            'SELECT id,status,attempt_count,kind,case_id,last_error FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
+            'SELECT id,status,attempt_count,kind,case_id,last_error,payload_json FROM amazon_return_outbox WHERE tenant_id=:tenant_id '
             . 'AND amazon_connection_id=:amazon_connection_id AND idempotency_key=:idempotency_key LIMIT 1'
         );
         $existing->execute($this->scopeParams([':idempotency_key'=>$idempotencyKey]));
         $row = $existing->fetch(PDO::FETCH_ASSOC);
         $id = is_array($row) ? (int)($row['id'] ?? 0) : 0;
         if ($id < 1) throw new RuntimeException('Scoped duplicate outbox action could not be resolved.');
-        $temporaryDecisionSupersede = str_starts_with((string)($row['last_error'] ?? ''), 'SUPERSEDED_BY_CURRENT_DECISION:');
-        if ((string)($row['status'] ?? '') === 'SUPERSEDED'
-            && ((int)($row['attempt_count'] ?? -1) === 0 || $temporaryDecisionSupersede)
-            && (string)($row['kind'] ?? '') === $kind
-            && (int)($row['case_id'] ?? 0) === $caseId) {
-            $reactivate = $this->prepare(
+        $legacyUnconfirmedSupportSuccess=$this->legacyUnconfirmedSellerSupportSuccess($row);
+        if($legacyUnconfirmedSupportSuccess){
+            $reactivate=$this->prepare(
                 "UPDATE amazon_return_outbox SET status='PENDING',payload_json=:payload_json,available_at=UTC_TIMESTAMP(),"
                 . "locked_at=NULL,last_error=NULL,updated_at=UTC_TIMESTAMP() WHERE id=:id "
                 . "AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
-                . "AND status='SUPERSEDED' AND (attempt_count=0 OR last_error LIKE 'SUPERSEDED_BY_CURRENT_DECISION:%') AND kind=:kind AND case_id=:case_id"
+                . "AND status='SUCCEEDED' AND kind=:kind AND case_id=:case_id"
             );
             $reactivate->execute($this->scopeParams([
                 ':id'=>$id,
@@ -90,6 +87,44 @@ final class SvAmazonTenantReturnsOutbox
                 ':kind'=>$kind,
                 ':case_id'=>$caseId,
             ]));
+            return ['id'=>$id,'enqueued'=>$reactivate->rowCount()===1];
+        }
+        $temporaryDecisionSupersede = str_starts_with((string)($row['last_error'] ?? ''), 'SUPERSEDED_BY_CURRENT_DECISION:');
+        $scopeSupersede=false;
+        $previousPayloadJson=(string)($row['payload_json']??'');
+        if((string)($row['status']??'')==='SUPERSEDED'
+            && (string)($row['kind']??'')==='SELLER_SUPPORT_UPDATE'
+            && (string)($row['last_error']??'')==='SELLER_SUPPORT_SCOPE_SUPERSEDED'){
+            $previousPayload=json_decode($previousPayloadJson,true);
+            $previousScope=is_array($previousPayload)?trim((string)($previousPayload['support_case_id']??'')):'';
+            $currentScope=trim((string)($payload['support_case_id']??''));
+            $scopeSupersede=preg_match('/^\d{8,14}$/D',$previousScope)===1
+                && preg_match('/^\d{8,14}$/D',$currentScope)===1
+                && hash_equals($previousScope,$currentScope);
+        }
+        if ((string)($row['status'] ?? '') === 'SUPERSEDED'
+            && ((int)($row['attempt_count'] ?? -1) === 0 || $temporaryDecisionSupersede || $scopeSupersede)
+            && (string)($row['kind'] ?? '') === $kind
+            && (int)($row['case_id'] ?? 0) === $caseId) {
+            $reactivationGuard="(attempt_count=0 OR last_error LIKE 'SUPERSEDED_BY_CURRENT_DECISION:%'";
+            $reactivationParams=[
+                ':id'=>$id,
+                ':payload_json'=>json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                ':kind'=>$kind,
+                ':case_id'=>$caseId,
+            ];
+            if($scopeSupersede){
+                $reactivationGuard.=" OR (last_error='SELLER_SUPPORT_SCOPE_SUPERSEDED' AND CAST(payload_json AS CHAR)=:previous_payload_json)";
+                $reactivationParams[':previous_payload_json']=$previousPayloadJson;
+            }
+            $reactivationGuard.=')';
+            $reactivate = $this->prepare(
+                "UPDATE amazon_return_outbox SET status='PENDING',payload_json=:payload_json,available_at=UTC_TIMESTAMP(),"
+                . "locked_at=NULL,last_error=NULL,updated_at=UTC_TIMESTAMP() WHERE id=:id "
+                . "AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+                . "AND status='SUPERSEDED' AND ".$reactivationGuard." AND kind=:kind AND case_id=:case_id"
+            );
+            $reactivate->execute($this->scopeParams($reactivationParams));
             return ['id'=>$id,'enqueued'=>$reactivate->rowCount()===1];
         }
         return ['id'=>$id,'enqueued'=>false];
@@ -182,6 +217,21 @@ final class SvAmazonTenantReturnsOutbox
         return max(0,$stmt->rowCount());
     }
 
+    public function supersedeDiscoveryJobsForKnownSafeT(string $reason): int
+    {
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_outbox o JOIN amazon_return_cases c ON c.id=o.case_id "
+            . "AND c.tenant_id=o.tenant_id AND c.amazon_connection_id=o.amazon_connection_id "
+            . "SET o.status='SUPERSEDED',o.locked_at=NULL,o.last_error=:last_error,o.updated_at=UTC_TIMESTAMP() "
+            . "WHERE o.tenant_id=:tenant_id AND o.amazon_connection_id=:amazon_connection_id "
+            . "AND c.safe_t_id IS NOT NULL AND c.safe_t_id<>'' "
+            . "AND (o.status='PENDING' OR (o.status='PROCESSING' AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL " . self::LEASE_SECONDS . " SECOND))) "
+            . "AND o.kind='SAFE_T_DISCOVERY'"
+        );
+        $stmt->execute($this->scopeParams([':last_error'=>$this->errorMessage($reason)]));
+        return max(0,$stmt->rowCount());
+    }
+
     public function countPendingProcessing(): int
     {
         $stmt=$this->prepare(
@@ -240,20 +290,29 @@ final class SvAmazonTenantReturnsOutbox
             . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
             . "AND status='PENDING' AND available_at>UTC_TIMESTAMP() AND locked_at IS NULL AND ("
             . "(kind='SAFE_T_SUBMIT' AND last_error IN (:safe_t_order_input_missing,:safe_t_eligibility_button_missing,:safe_t_item_selection_not_accepted,:safe_t_subreason_option_missing)) OR "
-            . "(kind='SELLER_SUPPORT_OPEN' AND last_error=:lookup_error) OR "
+            . "(kind='SAFE_T_APPEAL' AND last_error=:safe_t_appeal_send_missing) OR "
+            . "(kind='SELLER_SUPPORT_OPEN' AND last_error IN "
+            . "(:lookup_error,:support_open_write_without_readback,:support_open_legacy_write_without_readback)) OR "
             . "(kind='SELLER_SUPPORT_UPDATE' AND last_error IN "
-            . "(:reply_send_missing,:reply_field_missing,:reply_field_not_writable,:native_reply_not_writable)))"
+            . "(:reply_send_missing,:reply_field_missing,:reply_field_not_writable,:native_reply_not_writable,:reply_not_confirmed,:support_general_troubleshooter_exhausted,:support_update_write_without_readback,:support_update_legacy_write_without_readback)))"
         );
         $stmt->execute($this->scopeParams([
             ':safe_t_order_input_missing'=>'UI_DRIFT: SAFE_T_ORDER_INPUT_MISSING',
             ':safe_t_eligibility_button_missing'=>'UI_DRIFT: SAFE_T_ELIGIBILITY_BUTTON_MISSING',
             ':safe_t_item_selection_not_accepted'=>'UI_DRIFT: SAFE_T_ITEM_SELECTION_NOT_ACCEPTED',
             ':safe_t_subreason_option_missing'=>'UI_DRIFT: SAFE_T_SUBREASON_OPTION_MISSING',
+            ':safe_t_appeal_send_missing'=>'UI_DRIFT: SAFE_T_APPEAL_SEND_MISSING',
             ':lookup_error'=>'UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE',
+            ':support_open_write_without_readback'=>'UI_DRIFT: SUPPORT_WRITE_WITHOUT_READBACK_ID',
+            ':support_open_legacy_write_without_readback'=>'FAILED: SUPPORT_WRITE_WITHOUT_READBACK_ID',
+            ':support_update_write_without_readback'=>'UI_DRIFT: SUPPORT_WRITE_WITHOUT_READBACK_ID',
+            ':support_update_legacy_write_without_readback'=>'FAILED: SUPPORT_WRITE_WITHOUT_READBACK_ID',
             ':reply_send_missing'=>'UI_DRIFT: SUPPORT_REPLY_SEND_MISSING',
             ':reply_field_missing'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_MISSING',
             ':reply_field_not_writable'=>'UI_DRIFT: SUPPORT_REPLY_FIELD_NOT_WRITABLE',
             ':native_reply_not_writable'=>'UI_DRIFT: SUPPORT_NATIVE_REPLY_NOT_WRITABLE',
+            ':reply_not_confirmed'=>'FAILED: SUPPORT_REPLY_NOT_CONFIRMED',
+            ':support_general_troubleshooter_exhausted'=>'UI_DRIFT: SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED',
         ]));
         return max(0,$stmt->rowCount());
     }
@@ -566,6 +625,83 @@ final class SvAmazonTenantReturnsOutbox
         $stmt = $this->db->prepare($sql);
         if (!$stmt instanceof PDOStatement) throw new RuntimeException('Could not prepare scoped outbox statement.');
         return $stmt;
+    }
+
+    /** @param array<string,mixed> $row */
+    private function legacyUnconfirmedSellerSupportSuccess(array $row): bool
+    {
+        if((string)($row['status']??'')!=='SUCCEEDED'
+            || (string)($row['kind']??'')!=='SELLER_SUPPORT_UPDATE'
+            || (int)($row['id']??0)<1
+            || (int)($row['case_id']??0)<1){
+            return false;
+        }
+        $stmt=$this->prepare(
+            "SELECT payload_json FROM amazon_return_events WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id "
+            . "AND event_type='SELLER_CENTRAL_ACTION_RESULT' AND source='SELLER_CENTRAL' "
+            . "AND source_event_id=:source_event_id ORDER BY id DESC"
+        );
+        $stmt->execute($this->scopeParams([
+            ':case_id'=>(int)$row['case_id'],
+            ':source_event_id'=>(string)$row['id'],
+        ]));
+        $events=array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+        if($events===[])return false;
+        $ambiguousUnconfirmed=false;
+        foreach($events as $event){
+            try{$payload=self::decodePayloadStatic($event['payload_json']??null);}catch(Throwable){return false;}
+            $action=strtoupper(trim((string)($payload['action']??'')));
+            if($action!=='SELLER_SUPPORT_UPDATE')continue;
+            $status=strtoupper(trim((string)($payload['status']??'')));
+            $reason=strtoupper(trim((string)($payload['reason']??'')));
+            $submitted=($payload['submitted']??false)===true;
+            if($submitted
+                || $status==='ACCEPTED'
+                || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED')){
+                return false;
+            }
+            if($status==='ALREADY_EXISTS' && !$submitted){
+                $ambiguousUnconfirmed=true;
+            }
+        }
+        return $ambiguousUnconfirmed && !$this->matchingSellerSupportWriteAlreadySubmitted($row);
+    }
+
+    /** @param array<string,mixed> $row */
+    private function matchingSellerSupportWriteAlreadySubmitted(array $row): bool
+    {
+        try{$outboxPayload=self::decodePayloadStatic($row['payload_json']??null);}catch(Throwable){return false;}
+        $targetHash=strtolower(trim((string)($outboxPayload['write_snapshot']['content_sha256']??'')));
+        if(preg_match('/^[a-f0-9]{64}$/D',$targetHash)!==1)return false;
+        $targetSupportCase=trim((string)($outboxPayload['support_case_id']
+            ?? ($outboxPayload['decision']['support_case_id']??'')));
+        $stmt=$this->prepare(
+            "SELECT payload_json FROM amazon_return_events WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id "
+            . "AND event_type='SELLER_CENTRAL_ACTION_RESULT' AND source='SELLER_CENTRAL' "
+            . "AND source_event_id<>:source_event_id ORDER BY id DESC"
+        );
+        $stmt->execute($this->scopeParams([
+            ':case_id'=>(int)$row['case_id'],
+            ':source_event_id'=>(string)$row['id'],
+        ]));
+        foreach(array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array')) as $event){
+            try{$payload=self::decodePayloadStatic($event['payload_json']??null);}catch(Throwable){continue;}
+            if(strtoupper(trim((string)($payload['action']??'')))!=='SELLER_SUPPORT_UPDATE')continue;
+            $candidateHash=strtolower(trim((string)($payload['write_content_sha256']??'')));
+            if(preg_match('/^[a-f0-9]{64}$/D',$candidateHash)!==1 || !hash_equals($targetHash,$candidateHash))continue;
+            $candidateSupportCase=trim((string)($payload['external_id']??''));
+            if($targetSupportCase!=='' && $candidateSupportCase!=='' && !hash_equals($targetSupportCase,$candidateSupportCase))continue;
+            $status=strtoupper(trim((string)($payload['status']??'')));
+            $reason=strtoupper(trim((string)($payload['reason']??'')));
+            if(($payload['submitted']??false)===true
+                || $status==='ACCEPTED'
+                || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED')){
+                return true;
+            }
+        }
+        return false;
     }
 
     private function positiveId(int $value, string $label): int

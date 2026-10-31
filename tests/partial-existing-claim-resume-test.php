@@ -42,6 +42,14 @@ $accepted=[
 $duplicate=SvAmazonReturnActionRouter::decide($case,[$status,$accepted,$finance],['eligible'=>false],$now);
 pecrSame('WAIT',$duplicate['action']??null,'Accepted appeal must suppress duplicate partial-balance appeal');
 pecrSame('APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$duplicate['reason']??null,'Duplicate suppression must remain auditable');
+$statusAfter=$status;
+$statusAfter['id']=4;
+$statusAfter['occurred_at']='2026-09-09 00:19:47';
+$statusAfter['payload']['appeal_submitted']=true;
+$afterAccepted=SvAmazonReturnActionRouter::decide($case,[$status,$accepted,$statusAfter,$finance],['eligible'=>false],$now);
+pecrSame('WAIT',$afterAccepted['action']??null,'A later APPROVED page with appeal_submitted=true must keep the accepted appeal in wait state.');
+pecrSame('APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$afterAccepted['reason']??null,'The wait reason must identify the already-submitted appeal, not only that a SAFE-T exists.');
+
 $staleFinance=$finance;
 $staleFinance["id"]=4;
 $staleFinance["occurred_at"]="2026-09-08 11:00:00";

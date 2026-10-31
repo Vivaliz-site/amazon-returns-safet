@@ -63,9 +63,14 @@ final class SvAmazonReturnActionRouter
         }
         if($claim!==''
             && strtoupper(trim((string)($message['payload']['claim_status']??'')))==='APPROVED'
+            && self::hasOutstandingCredit($case)
+            && self::acceptedAppeal($events,$claim)){
+            return self::decision('WAIT','APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$case);
+        }
+        if($claim!==''
+            && strtoupper(trim((string)($message['payload']['claim_status']??'')))==='APPROVED'
             && ($message['payload']['appeal_submitted']??null)===false
             && self::hasOutstandingCredit($case)){
-            if(self::acceptedAppeal($events,$claim))return self::decision('WAIT','APPEAL_ALREADY_SUBMITTED_AWAITING_RESPONSE',$case);
             if(!self::freshUnpaidFinance($events,$now->modify('-2 hours'),$now)){
                 return self::decision('CHECK_FINANCES','APPROVED_PARTIAL_CREDIT_VERIFY_FINANCES',$case);
             }

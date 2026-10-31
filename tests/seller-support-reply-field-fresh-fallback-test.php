@@ -1,0 +1,37 @@
+<?php
+declare(strict_types=1);
+function ssrfAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeException($message);}
+$worker=(string)file_get_contents(__DIR__.'/../scripts/amazon-returns/seller-central-bridge-worker.mjs');
+
+$updateStart=strpos($worker,'async function supportUpdate');
+$updateEnd=$updateStart===false?false:strpos($worker,'async function executeJob',$updateStart);
+ssrfAssert($updateStart!==false&&$updateEnd!==false,'supportUpdate must remain independently auditable.');
+$update=substr($worker,(int)$updateStart,(int)$updateEnd-(int)$updateStart);
+$composer=strpos($update,'if (!composerReady)');
+$fieldMissing=strpos($update,"reason: 'SUPPORT_REPLY_FIELD_MISSING'");
+ssrfAssert($composer!==false&&$fieldMissing!==false&&$composer<$fieldMissing,'Reply-field-missing branch must remain auditable.');
+$composerBlock=substr($update,(int)$composer,(int)$fieldMissing-(int)$composer);
+ssrfAssert(str_contains($composerBlock,'supportRouteFor(job)'),'Missing reply field must consult the existing Seller Support route.');
+ssrfAssert(str_contains($composerBlock,'supportOpen(cdp, job, { forceFreshCase: true, supportRoute'),'Missing reply field with a known route must fall back to a fresh Seller Support case.');
+
+$openStart=strpos($worker,'async function supportOpen');
+$openEnd=$openStart===false?false:strpos($worker,'async function supportUpdate',$openStart);
+ssrfAssert($openStart!==false&&$openEnd!==false,'supportOpen must remain independently auditable.');
+$open=substr($worker,(int)$openStart,(int)$openEnd-(int)$openStart);
+ssrfAssert(str_contains($open,'const reconcileKnownCase = options.forceFreshCase !== true;'),'Fresh-case mode must explicitly disable reconciliation of the known stale thread.');
+ssrfAssert(str_contains($open,'const shouldScanExisting = reconcileKnownCase || retryReconciliation;'),'A non-retry forceFreshCase flow must skip pre-write sibling discovery instead of oscillating between existing merchant-action cases.');
+ssrfAssert(str_contains($open,'if (shouldScanExisting)'),'Existing-case lookup must be gated by normal dedupe or a server-authorized retry episode.');
+ssrfAssert(str_contains($open,'if (!reconcileKnownCase'),'Fresh-case lookup must exclude the stale support case ID.');
+ssrfAssert(str_contains($open,'excludeCaseIds'),'Fresh-case lookup must exclude the stale support case ID while still reconciling any new sibling.');
+ssrfAssert(str_contains($open,'const retryReconciliation = job.retry_reconciliation === true;'),'A server-authorized retry after a potentially submitted fresh-case write must enter reconciliation even when forceFreshCase is true.');
+ssrfAssert(str_contains($open,"retryReconciliation ? { includeTerminal: true } : {}"),'Retry reconciliation must include terminal sibling cases so a quickly closed created case cannot be duplicated.');
+ssrfAssert(str_contains($open,'minimumCreationEpochSeconds'),'Fresh-case reconciliation must ignore sibling cases that predate the current outbox recovery episode.');
+ssrfAssert(str_contains($open,'job.created_at'),'Fresh-case reconciliation must anchor its sibling cutoff to the current outbox creation timestamp.');
+$scanStart=strpos($worker,'async function scanSupportCaseHistory');
+$scanEnd=$scanStart===false?false:strpos($worker,'async function findSupportCase',$scanStart);
+ssrfAssert($scanStart!==false&&$scanEnd!==false,'Support-case history scanner must remain independently auditable.');
+$scan=substr($worker,(int)$scanStart,(int)$scanEnd-(int)$scanStart);
+ssrfAssert(str_contains($scan,'minimumCreationEpochSeconds'),'Support-case scanner must accept an episode creation floor.');
+ssrfAssert(str_contains($scan,'creationAllowed'),'Support-case scanner must apply the episode creation floor to deterministic and paginated matches.');
+
+echo "seller-support-reply-field-fresh-fallback-test: OK\n";

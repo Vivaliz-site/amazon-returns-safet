@@ -1,10 +1,10 @@
 # Estado da Auditoria
 
-**Status:** APTO
+**Status corrente:** NÃO APTO — auditoria extrema V5 em andamento em 2026-09-24.
 
-Auditoria extrema contraditória concluída em 2026-09-19 conforme `EXTREME_AUDIT_PROTOCOL.md`, `AUDIT_RUNTIME_PARITY_V1.md` e as guardas específicas do projeto.
+O SHA atualmente implantado é `069fdf712498a5eca81870eeaeee6a4d4a4396ef`. A evidência live de 2026-09-24 mostra health `DEGRADED`, com falha de Gmail OAuth/refund reconciliation e outbox SAFE-T em `UI_DRIFT: SAFE_T_SUBREASON_OPTION_MISSING`. A certificação histórica abaixo não cobre este SHA nem este estado operacional e não pode ser reutilizada como prova de aptidão corrente.
 
-## Última auditoria válida
+## Última auditoria historicamente válida
 - Data: 2026-09-19.
 - Commit/SHA auditado e implantado: `0c37b423eec3a67f2b00f1a52e811537edafa274`.
 - Release: `/home/ubuntu/amazon-returns-deploy/releases/20260919T054547Z-0c37b423eec3`.

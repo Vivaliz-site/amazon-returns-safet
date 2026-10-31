@@ -18,30 +18,51 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
+      - name: Determine impacted suites (unknown changes stay full)
+        id: impact
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            python3 scripts/ci-impact-selection.py --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+          else
+            python3 scripts/ci-impact-selection.py --force-full --github-output "$GITHUB_OUTPUT"
+          fi
+      - name: Test impact-selection fail-closed policy
+        run: python3 -m unittest tests/test_ci_impact_selection.py -v
       - uses: shivammathur/setup-php@v2
+        if: steps.impact.outputs.php == 'true'
         with:
           php-version: '8.3'
           extensions: mbstring, pdo_mysql, curl
       - uses: actions/setup-node@v4
+        if: steps.impact.outputs.node == 'true'
         with:
           node-version: '24'
       - name: PHP tests
+        if: steps.impact.outputs.php == 'true'
         run: |
           set -e
           for test in tests/*.php; do php "$test"; done
           php scripts/audit-tenant-sql.php
           php tests/amazon-returns-tenant-isolation-test.php
       - name: Node tests
+        if: steps.impact.outputs.node == 'true'
         run: |
           set -e
           node --test tests/*.test.mjs
       - name: TOTP tests
+        if: steps.impact.outputs.totp == 'true'
         run: |
           set -e
           python3 tests/totp-current.test.py
           python3 -m py_compile scripts/amazon-returns/totp-current.py
       - name: Continuity controller tests
+        if: steps.impact.outputs.continuity == 'true'
         run: |
           set -e
           python3 -m unittest discover -s tests/continuity -p 'test_*.py' -v
@@ -55,7 +76,12 @@ jobs:
           bash -n scripts/install-continuity-controller.sh
           bash -n scripts/provision-continuity-gemini-env.sh
           bash -n scripts/provision-continuity-publisher-key.sh
-      - name: Syntax and security contracts
+      - name: "Governance: issue_comment listener guard"
+        run: |
+          set -e
+          python3 scripts/governance/check-issue-comment-listeners.py .github/workflows
+      - name: Syntax contracts for coupled application changes
+        if: steps.impact.outputs.mode == 'full'
         run: |
           set -e
           find includes api admin workers scripts -name '*.php' -print0 | xargs -0 -n1 php -l
@@ -74,8 +100,18 @@ jobs:
           bash -n scripts/amazon-returns/run-seller-central-daily.sh
           bash -n scripts/provision-seller-central-browser-host.sh
           bash -n scripts/provision-amazon-totp-authenticator.sh
+      - name: Always enforce secret, SSH and diff hygiene
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
           if git grep -n -E 'StrictHostKeyChecking=no|BEGIN OPENSSH PRIVATE KEY|otpauth://' -- scripts deploy includes api admin workers; then
             echo 'Prohibited secret/SSH weakening marker found.' >&2
             exit 1
           fi
-          git diff --check HEAD^
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            git diff --check "$BASE_SHA...$HEAD_SHA"
+          else
+            git diff --check HEAD^
+          fi

@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-repo="${AMAZON_RETURNS_REPO:-/home/ubuntu/amazon-returns-deploy-source}"
+repo="${AMAZON_RETURNS_REPO:-/home/ubuntu/amazon-returns-auto-deploy-source}"
 deploy_root="${AMAZON_RETURNS_DEPLOY_ROOT:-/home/ubuntu/amazon-returns-deploy}"
 repo_name='Vivaliz-site/amazon-returns-safet'
 continuity_config='/etc/agent-continuity/config.json'
 
 [[ "$(id -u)" -eq 0 ]] || { echo 'auto-deploy requires root' >&2; exit 2; }
+# Ownership moved to Marina: never run source-side deploy or service bootstrap once fenced.
+if [[ -e /etc/shopvivaliz/migration/origin-workers-fenced ]]; then
+    echo 'auto_deploy_skipped=origin_workers_fenced'
+    exit 0
+fi
+
 [[ -d "$repo/.git" ]] || { echo 'target checkout missing' >&2; exit 2; }
 if [[ -n "$(runuser -u ubuntu -- git -C "$repo" status --porcelain)" ]]; then
     echo auto_deploy_skipped=dirty_checkout
@@ -119,8 +125,11 @@ if [[ "$target_sha" == "$deployed_sha" ]]; then
     exit 0
 fi
 
-checks="$(runuser -u ubuntu -- gh api -H 'Accept: application/vnd.github+json' "/repos/$repo_name/commits/$target_sha/check-runs")"
-if ! jq -e '.total_count > 0 and ([.check_runs[] | select(.status != "completed" or .conclusion != "success")] | length == 0)' >/dev/null <<<"$checks"; then
+check_fetcher="$repo/scripts/fetch-github-check-runs.py"
+[[ -r "$check_fetcher" ]] || { echo 'check-runs fetcher missing' >&2; exit 2; }
+checks="$(runuser -u ubuntu -- python3 "$check_fetcher" "$repo_name" "$target_sha")"
+check_gate="$repo/scripts/ci-check-runs-green.jq"
+if ! jq -e -f "$check_gate" >/dev/null <<<"$checks"; then
     retry_seller_central_browser_if_failed
     echo 'auto_deploy_skipped=ci_not_green'
     exit 0

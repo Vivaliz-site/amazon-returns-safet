@@ -49,6 +49,123 @@ final class SvAmazonExternalWritePayload
                 .'o ressarcimento correspondente. Solicito o ressarcimento devido ao vendedor.';
         }
         if($action==='SELLER_SUPPORT_UPDATE'
+            && $reason==='SUPPORT_REQUESTED_SELLER_RESPONSE'){
+            $latest=mb_strtolower(trim((string)($decision['support_latest_text']??'')),'UTF-8');
+            $program=strtoupper(trim((string)($case['program']??'')));
+            $asksFulfillmentMode=(str_contains($latest,'seller flex') || str_contains($latest,'fba onsite') || str_contains($latest,'fba clássico') || str_contains($latest,'fba classico'));
+            if($asksFulfillmentMode && in_array($program,['FBA','FBA_ONSITE'],true)){
+                $mode=$program==='FBA_ONSITE'
+                    ? 'FBA Onsite (Seller Flex), em que preparamos e embalamos o pedido em nosso local'
+                    : 'FBA Clássico, enviado diretamente pelos centros de distribuição da Amazon';
+                $negative=$program==='FBA_ONSITE'?'FBA Clássico':'FBA Onsite/Seller Flex';
+                return 'Sobre o pedido '.$order.'. Confirmamos que este produto utiliza '.$mode.'. '
+                    .'Não utilizamos '.$negative.' para este item. '
+                    .'Por favor, prossigam com a análise e o ressarcimento solicitado neste chamado.';
+            }
+            $returnMention='(?:retorn(?:ou|ar|ado|ada|aram|em|e)?(?:\\s+fisicamente)?|recebid[oa]\\s+de\\s+volta)';
+            $returnRequest='(?:confirme|confirmar|informe|informar|indique|indicar|diga|dizer|esclareça|esclarecer|favor\\s+(?:confirmar|informar|indicar)|(?:pode|poderia)\\s+(?:nos\\s+)?(?:confirmar|informar|indicar|dizer)|precisamos\\s+(?:entender|confirmar|saber)|gostaríamos\\s+de\\s+saber|solicitamos(?:\\s+que)?(?:\\s+nos)?\\s+(?:confirme|informe|indique))';
+            $returnQuestionContext=(
+                preg_match('/'.$returnRequest.'[^.!?]{0,80}\\b(?:se|caso)\\b[^.!?]{0,140}'.$returnMention.'/u',$latest)===1
+                || preg_match('/(?:item|produto|unidade)[^.!?]{0,60}\\bfoi\\s+recebid[oa]\\s+de\\s+volta[^.!?]{0,80}\\?/u',$latest)===1
+                || preg_match('/(?:item|produto|unidade)[^.!?]{0,60}\\bretorn(?:ou|aram)\\b[^.!?]{0,100}\\?/u',$latest)===1
+                || preg_match('/\\bretornou\\s+fisicamente\\b[^.!?]{0,100}\\?/u',$latest)===1
+            );
+            $mentionsReturnOutcome=(
+                str_contains($latest,'retornou fisicamente')
+                || str_contains($latest,'recebido de volta')
+                || str_contains($latest,'recebida de volta')
+                || (
+                    str_contains($latest,'retorn')
+                    && (str_contains($latest,'centro de distribuição') || str_contains($latest,'centro de distribuicao'))
+                )
+            );
+            $asksReturnOutcome=(
+                (
+                    str_contains($latest,'danific')
+                    && (str_contains($latest,'retorn') || str_contains($latest,'devolu'))
+                    && (str_contains($latest,'não retorn') || str_contains($latest,'nao retorn') || str_contains($latest,'estoque'))
+                )
+                || ($returnQuestionContext && $mentionsReturnOutcome)
+            );
+            $asksNonReceiptEvidence=(
+                str_contains($latest,'evidên')
+                || str_contains($latest,'eviden')
+                || str_contains($latest,'evidence')
+            );
+            $asksHistoricalAddress=(
+                str_contains($latest,'endereço')
+                || str_contains($latest,'endereco')
+                || str_contains($latest,'address')
+            );
+            $physicalStatus=strtoupper(trim((string)($case['physical_status']??'')));
+            $quantityReceived=(int)($case['quantity_received']??0);
+            if($asksNonReceiptEvidence && $asksHistoricalAddress
+                && $physicalStatus==='NOT_RECEIVED' && $quantityReceived===0){
+                $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
+                $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
+                $outstanding=max(0.0,$expected-$credited);
+                return 'Sobre o pedido '.$order.', SAFE-T '.$safeT.'. Confirmamos que não recebemos fisicamente a devolução; '
+                    .'nosso registro do caso continua indicando que a devolução não foi recebida e a quantidade recebida permanece 0. '
+                    .'A conciliação financeira mais recente confirma saldo pendente de '.self::brl($outstanding).' para nós, vendedores. '
+                    .'Não temos no registro deste caso o endereço histórico de devolução cadastrado no período; por isso, não podemos afirmar um endereço sem evidência. '
+                    .'Solicitamos que a Amazon informe o endereço de devolução efetivamente utilizado, a transportadora, o código de rastreio, '
+                    .'a data e hora da entrega, a identificação do recebedor e o comprovante de entrega ao vendedor. '
+                    .'Até que exista evidência de entrega física ao vendedor ou conciliação integral do crédito, o ressarcimento permanece pendente para nós.';
+            }
+            if($asksReturnOutcome && $physicalStatus==='NOT_RECEIVED' && $quantityReceived===0){
+                $quantity=max(1,(int)($case['quantity_refunded']??$case['quantity_ordered']??1));
+                $returnFact=$quantity===1
+                    ? 'Confirmamos que a unidade não retornou ao nosso estoque após a tentativa de devolução. '
+                    : 'Confirmamos que as '.$quantity.' unidades não retornaram ao nosso estoque após a tentativa de devolução. ';
+                $receiptFact=$quantity===1
+                    ? 'A unidade não foi recebida de volta em nosso estoque. '
+                    : 'As unidades não foram recebidas de volta em nosso estoque. ';
+                return 'Sobre o pedido '.$order.'. '.$returnFact
+                    .'Não estamos informando dano após recebimento; '.$receiptFact
+                    .'Por favor, prossigam com a investigação e o ressarcimento solicitado neste chamado.';
+            }
+            $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
+            $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
+            $outstanding=max(0.0,$expected-$credited);
+            return 'Sobre o pedido '.$order.'. Nós estamos solicitando o nosso ressarcimento como vendedores. '
+                .'A conciliação financeira mais recente confirma valor esperado de '.self::brl($expected).', crédito efetivamente conciliado de '.self::brl($credited)
+                .' e saldo pendente de '.self::brl($outstanding).'. '
+                .'O problema que estamos reportando é o ressarcimento pendente em nossa conta de vendedor; não estamos reportando uma mensagem de erro na interface, portanto não há captura de erro aplicável. '
+                .'Solicitamos a reabertura ou continuidade deste chamado e a investigação do ressarcimento. '
+                .'Caso a Amazon considere que o crédito já foi efetuado, solicitamos que informe o valor, a data do crédito, o ID da transação e/ou do ressarcimento e o relatório financeiro em que ele aparece.';
+        }
+        if($action==='SELLER_SUPPORT_UPDATE'
+            && $reason==='SUPPORT_TOPIC_MISMATCH_REIMBURSEMENT_RECOVERY'){
+            $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
+            $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
+            $outstanding=max(0.0,$expected-$credited);
+            return 'Sobre o pedido '.$order.'. Nós identificamos que a resposta anterior deste chamado tratou de outro assunto e não resolveu nossa solicitação de ressarcimento. '
+                .'Nossa solicitação atual é exclusivamente sobre o saldo do vendedor ainda não ressarcido. '
+                .'A conciliação financeira mais recente confirma valor esperado de '.self::brl($expected).', crédito conciliado de '.self::brl($credited).' e saldo pendente de '.self::brl($outstanding).'. '
+                .'Solicitamos a continuidade deste atendimento para investigar e pagar o ressarcimento devido. '
+                .'Caso a Amazon considere o valor já pago, solicitamos a data, o valor, o ID da transação e/ou do ressarcimento e o relatório financeiro correspondente.';
+        }
+        if($action==='SELLER_SUPPORT_UPDATE'
+            && $reason==='SUPPORT_CLAIMED_REIMBURSEMENT_NOT_RECONCILED'){
+            $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
+            $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
+            $outstanding=max(0.0,$expected-$credited);
+            return 'Sobre o pedido '.$order.'. Nós verificamos novamente nossa conciliação financeira e o ressarcimento informado pela Amazon ainda não está conciliado em nossa conta de vendedor. '
+                .'Valor esperado: '.self::brl($expected).'. Crédito conciliado: '.self::brl($credited).'. Saldo pendente: '.self::brl($outstanding).'. '
+                .'Solicitamos que a Amazon informe a data do crédito, o valor efetivamente creditado, o ID da transação financeira e/ou do ressarcimento e o relatório em que o lançamento aparece. '
+                .'Enquanto esses dados não forem identificados e conciliados, o ressarcimento permanece pendente para nós.';
+        }
+        if($action==='SELLER_SUPPORT_UPDATE'
+            && $reason==='SUPPORT_REIMBURSEMENT_DENIAL_REBUTTAL'){
+            $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
+            $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
+            $outstanding=max(0.0,$expected-$credited);
+            return 'Sobre o pedido '.$order.'. Nós contestamos a negativa do ressarcimento porque o saldo do vendedor continua pendente após nova conciliação financeira. '
+                .'Valor esperado: '.self::brl($expected).'. Crédito conciliado: '.self::brl($credited).'. Saldo pendente: '.self::brl($outstanding).'. '
+                .'Solicitamos revisão manual e a indicação objetiva do fundamento da inelegibilidade aplicado a este pedido. '
+                .'Se a Amazon entende que o item foi devolvido, recebido ou já ressarcido, solicitamos a evidência correspondente, incluindo rastreio/comprovante de entrega ou identificação do crédito financeiro.';
+        }
+        if($action==='SELLER_SUPPORT_UPDATE'
             && $reason==='SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT'){
             $expected=max(0.0,(float)($case['expected_reimbursement_amount']??0));
             $credited=max(0.0,(float)($case['reconciled_credit_amount']??0));
@@ -61,6 +178,16 @@ final class SvAmazonExternalWritePayload
                 .'Caso a Amazon considere que esse ressarcimento já foi efetuado, solicitamos que informe o valor creditado em nossa conta de vendedor, '
                 .'a data do crédito, o ID da transação financeira e/ou o ID do ressarcimento, além do relatório ou evento financeiro em que esse crédito aparece. '
                 .'Enquanto não houver a identificação e conciliação desse crédito em nossa conta de vendedor, consideramos o ressarcimento pendente.';
+        }
+        if($action==='SELLER_SUPPORT_UPDATE'
+            && $reason==='SUPPORT_RETURN_NOT_RECEIVED_REBUTTAL'){
+            return 'Pedido '.$order.', SAFE-T '.$safeT.'. Nós não recebemos fisicamente o produto. '
+                .'A resposta da Amazon afirma que o item foi devolvido e usa essa suposta devolução para aplicar o prazo de 7 dias, '
+                .'mas essa informação não comprova que o item foi entregue a nós, vendedores. '
+                .'O próprio histórico deste caso registra que o produto não retornou ao nosso estoque. '
+                .'Solicitamos a revisão da decisão. Caso a Amazon considere que houve entrega ao vendedor, favor apresentar '
+                .'a data e hora da entrega, a transportadora, o rastreio, o endereço de entrega, a identificação do recebedor e o comprovante de entrega. '
+                .'Um evento de retorno à Amazon ou à transportadora não equivale a entrega ao vendedor.';
         }
         if(in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
             && $reason==='CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION'){

@@ -29,8 +29,9 @@ final class SvAmazonSellerSupportStatus
     public static function readKey(int $caseId,string $supportCaseId,DateTimeInterface $now): string
     {
         if($caseId<1 || preg_match('/^\d{8,14}$/',trim($supportCaseId))!==1)throw new InvalidArgumentException('Seller Support read key requires case and support case ID.');
-        $day=DateTimeImmutable::createFromInterface($now)->setTimezone(new DateTimeZone('UTC'))->format('Ymd');
-        return hash('sha256','seller-support-read|'.$caseId.'|'.trim($supportCaseId).'|'.$day);
+        $ts=DateTimeImmutable::createFromInterface($now)->setTimezone(new DateTimeZone('UTC'))->getTimestamp();
+        $bucket=intdiv($ts,7200)*7200;
+        return hash('sha256','seller-support-read|'.$caseId.'|'.trim($supportCaseId).'|'.gmdate('YmdHi',$bucket));
     }
 
     /** @param list<array<string,mixed>> $timeline */
@@ -55,15 +56,21 @@ final class SvAmazonSellerSupportStatus
             if($type!=='SELLER_CENTRAL_ACTION_RESULT' || $source!=='SELLER_CENTRAL')continue;
             $action=strtoupper(trim((string)($payload['action']??'')));
             $status=strtoupper(trim((string)($payload['status']??'')));
-            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
-                || !in_array($status,['ACCEPTED','ALREADY_EXISTS'],true))continue;
+            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))continue;
+            $reason=strtoupper(trim((string)($payload['reason']??'')));
+            $confirmedWrite=($status==='ACCEPTED' && ($payload['submitted']??false)===true)
+                || ($status==='ALREADY_EXISTS' && (
+                    $action==='SELLER_SUPPORT_OPEN'
+                    || $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED'
+                ));
+            if(!$confirmedWrite)continue;
             $external=trim((string)($payload['external_id']??''));
             if($external!=='' && $external!==$supportCaseId)continue;
             if($rank>$latestWriteRank){$latestWrite=$event;$latestWriteRank=$rank;}
         }
         if($latestWrite===null || $latestWriteRank<=$latestObservationRank)return $daily;
         $eventId=(int)($latestWrite['id']??0);
-        return hash('sha256','seller-support-read-after-write|'.$caseId.'|'.$supportCaseId.'|'.$eventId);
+        return hash('sha256','seller-support-read-after-write|'.$caseId.'|'.$supportCaseId.'|'.$eventId.'|'.$daily);
     }
 
     /** @return array{append:bool,idempotency_key:string} */
@@ -96,33 +103,90 @@ final class SvAmazonSellerSupportStatus
         $sellerAction=self::sellerActionPending($support['case_status']);
         $text=mb_strtolower($support['latest_text'],'UTF-8');
         if($terminal && str_contains($text,'safe-t-review@amazon.com'))return 'EMAIL_REVIEW';
-        if(($terminal || $sellerAction) && self::directsSafeTSubmission($text))return 'SAFE_T_SUBMIT';
+        $safeT=str_contains($text,'safe-t') || str_contains($text,'safet');
+        $appeal=preg_match('/(?:appeal|apela[cç][aã]o|recurso|recorr)/u',$text)===1;
+        $submissionDirective=self::directsSafeTSubmission($text);
+        // A future, conditional appeal instruction is not evidence that an
+        // existing SAFE-T claim has been denied or must now be appealed.
+        $explicitAppeal=preg_match('/(?:deve\s+ser\s+recorrid[oa]|(?:apresente|interponha|recorra|deve\s+recorrer|precisa\s+recorrer|submit\s+an?\s+appeal|appeal\s+directly|precisar[aá]\s+enviar\s+uma?\s+apela[cç][aã]o).{0,120}(?:safe-?t|safet))/u',$text)===1;
+        if($terminal && $safeT && $appeal && ($explicitAppeal || !$submissionDirective))return 'SAFE_T_APPEAL';
+        if($terminal && self::unrelatedTopic($text))return 'UNRELATED_TOPIC';
+        if(($terminal || $sellerAction) && $submissionDirective)return 'SAFE_T_SUBMIT';
+        if($terminal && self::closedForMissingSellerResponse($text))return 'SELLER_ACTION_REQUIRED';
         if(!$terminal){
+            if($sellerAction && self::returnNotReceivedDispute($text))return 'RETURN_NOT_RECEIVED_DISPUTE';
             if($sellerAction && self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
+            if($sellerAction)return 'SELLER_ACTION_REQUIRED';
             return 'ACTIVE';
         }
         $money=preg_match('/(?:reembols|reimbursement|cr[eé]dito|credit)/u',$text)===1;
         $processed=preg_match('/(?:processad|processed|successful|sucesso|emitid|issued)/u',$text)===1;
         $delay=preg_match('/(?:4\s*(?:a|to|[-–])\s*5\s*(?:dias\s*[uú]teis|business\s*days)|reimbursement\s*id|id\s*(?:do|de)?\s*reembolso)/u',$text)===1;
         if($money && $processed && $delay)return 'REIMBURSEMENT_PROCESSING';
-        $safeT=str_contains($text,'safe-t') || str_contains($text,'safet');
-        $appeal=preg_match('/(?:appeal|recurso|recorr)/u',$text)===1;
-        if($safeT && $appeal)return 'SAFE_T_APPEAL';
+        if(self::sellerReimbursementClaimed($text))return 'SELLER_REIMBURSEMENT_CLAIMED';
+        if(self::reimbursementDenied($text))return 'REIMBURSEMENT_DENIED';
+        if(self::returnNotReceivedDispute($text))return 'RETURN_NOT_RECEIVED_DISPUTE';
         if(self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
         return 'TERMINAL_AMBIGUOUS';
+    }
+
+    public static function duplicateCaseReference(array $support): ?string
+    {
+        $support=self::normalize($support);
+        if(!self::isTerminalStatus($support['case_status']))return null;
+        $text=mb_strtolower($support['latest_text'],'UTF-8');
+        if(preg_match('/(?:mesma\s+solicita[cç][aã]o|caso\s+duplicad|duplicate(?:d)?\s+case|same\s+(?:request|issue))/u',$text)!==1)return null;
+        if(preg_match('/(?:id\s+do\s+caso\s+anterior|previous\s+case(?:\s+id)?|prior\s+case(?:\s+id)?)[^0-9]{0,40}(\d{8,14})/u',$text,$match)!==1)return null;
+        return (string)$match[1];
     }
 
     private static function directsSafeTSubmission(string $text): bool
     {
         if(!str_contains($text,'safe-t') && !str_contains($text,'safet'))return false;
         return preg_match('/(?:necess[aá]ri[oa]|deve(?:mos)?|precisa(?:mos)?|orientad[oa]s?|instru[ií]d[oa]s?).{0,140}(?:registr|abrir|criar|protocol|enviar|submit|file|open).{0,180}(?:safe-?t|safet)/u',$text)===1
-            || preg_match('/(?:registr|abrir|criar|protocol|enviar|submit|file|open).{0,100}(?:nova?\s+)?(?:reivindica[cç][aã]o|claim).{0,100}(?:safe-?t|safet)/u',$text)===1;
+            || preg_match('/(?:registr|abrir|criar|protocol|enviar|submit|file|open).{0,100}(?:nova?\s+)?(?:reivindica[cç][aã]o|reclama[cç][aã]o|claim).{0,100}(?:safe-?t|safet)/u',$text)===1
+            || preg_match('/(?:melhor\s+forma|forma\s+adequada|processo\s+correto|canal\s+adequado).{0,180}(?:reclama[cç][aã]o|reivindica[cç][aã]o|claim)?\s*(?:safe-?t|safet)/u',$text)===1
+            || preg_match('/(?:atrav[eé]s|por\s+meio).{0,100}(?:reclama[cç][aã]o|reivindica[cç][aã]o|claim)\s*(?:safe-?t|safet)/u',$text)===1;
     }
 
     private static function sellerActionPending(string $status): bool
     {
         $normalized=preg_replace('/[^A-Z0-9]+/','',strtoupper(trim($status))) ?? '';
-        return in_array($normalized,['PENDINGSELLERACTION','AWAITINGSELLERACTION'],true);
+        return in_array($normalized,['PENDINGSELLERACTION','AWAITINGSELLERACTION','PENDINGMERCHANTACTION','AWAITINGMERCHANTACTION'],true);
+    }
+
+    private static function closedForMissingSellerResponse(string $text): bool
+    {
+        $missingReply=preg_match('/(?:haven.t|have\s+not|did\s+not).{0,100}(?:receiv\w*).{0,80}(?:response|reply)|(?:n[aã]o|nao).{0,80}(?:receb\w*).{0,80}(?:resposta|retorno)|(?:n[aã]o|nao).{0,40}(?:houve|teve).{0,40}(?:resposta|atividade)|(?:sem).{0,40}(?:resposta|atividade)/u',$text)===1;
+        $closure=preg_match('/(?:closed|close|reopen|encerr\w*|fech\w*|reabr\w*)/u',$text)===1;
+        return $missingReply && $closure;
+    }
+
+
+    private static function unrelatedTopic(string $text): bool
+    {
+        return preg_match('/(?:feedback\s+removal|remo[cç][aã]o\s+de\s+feedback|remover\s+feedback|pedido\s+de\s+remo[cç][aã]o\s+de\s+feedback)/u',$text)===1;
+    }
+
+    private static function sellerReimbursementClaimed(string $text): bool
+    {
+        $sellerMoney=preg_match('/(?:ressarcimento|reembolso\s+fba|seller\s+reimbursement|pagamento|cr[eé]dito)/u',$text)===1;
+        $claimed=preg_match('/(?:problema.{0,80}resolvid|ressarcimento.{0,100}(?:resolvid|processad|efetuad|creditad)|pagamento.{0,100}(?:efetuad|realizad)|cr[eé]dito.{0,100}(?:aplicad|efetuad|creditad)|(?:resolved|processed|credited|paid).{0,100}(?:reimbursement|payment|seller))/u',$text)===1;
+        return $sellerMoney && $claimed;
+    }
+
+    private static function reimbursementDenied(string $text): bool
+    {
+        $reimbursement=preg_match('/(?:ressarcimento|reembolso\s+fba|reimbursement)/u',$text)===1;
+        $denied=preg_match('/(?:n[aã]o\s+[ée]\s+eleg[ií]vel|ineleg[ií]vel|not\s+eligible|reembolso.{0,80}negad|ressarcimento.{0,80}negad|reimbursement.{0,80}denied|decis[aã]o\s+[ée]\s+definitiva)/u',$text)===1;
+        return $reimbursement && $denied;
+    }
+
+    private static function returnNotReceivedDispute(string $text): bool
+    {
+        $returnAsserted=preg_match('/(?:item|produto|devolu[cç][aã]o).{0,100}(?:foi\\s+)?devolvid[oa].{0,80}(?:\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4}|data\\s+de\\s+devolu[cç][aã]o)|(?:returned|return).{0,100}(?:item|product).{0,80}(?:date|\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4})/u',$text)===1;
+        $deadline=preg_match('/(?:7\\s*dias|7\\s*days|seven\\s+days).{0,180}(?:devolu[cç][aã]o|returned|return)|(?:devolu[cç][aã]o|returned|return).{0,180}(?:7\\s*dias|7\\s*days|seven\\s+days)/u',$text)===1;
+        return $returnAsserted && $deadline;
     }
 
     private static function buyerRefundOnly(string $text): bool
