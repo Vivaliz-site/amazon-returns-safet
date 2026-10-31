@@ -28,6 +28,10 @@ final class SvAmazonReturnsRemoteBridge
         'NOT_FOUND',
         'FAILED',
     ];
+    private const SUPPORT_SUBMITTED_WITHOUT_READBACK_REASONS = [
+        'SUPPORT_WRITE_WITHOUT_READBACK_ID',
+        'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE',
+    ];
 
     /**
      * Resolves the raw Authorization header value across server SAPIs.
@@ -103,7 +107,7 @@ final class SvAmazonReturnsRemoteBridge
             }
             if($submitted
                 && $status==='UI_DRIFT'
-                && $reason==='SUPPORT_WRITE_WITHOUT_READBACK_ID'){
+                && in_array($reason,self::SUPPORT_SUBMITTED_WITHOUT_READBACK_REASONS,true)){
                 $ambiguous=true;
             }
         }
@@ -169,7 +173,7 @@ final class SvAmazonReturnsRemoteBridge
         $reason = self::nullableString($result['reason'] ?? null);
         $submittedWithoutReadback = $status === 'UI_DRIFT'
             && $retrySafe
-            && $reason === 'SUPPORT_WRITE_WITHOUT_READBACK_ID';
+            && in_array($reason, self::SUPPORT_SUBMITTED_WITHOUT_READBACK_REASONS, true);
         if ($submitted && $externalId === null && !$submittedWithoutReadback) {
             throw new RuntimeException('Submitted Seller Central write requires external read-back ID.');
         }

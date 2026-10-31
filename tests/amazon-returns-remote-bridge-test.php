@@ -127,6 +127,13 @@ rbSame(
     SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$currentAmbiguousEvent]),
     'Only a submitted-without-readback event for the exact current write hash may authorize retry reconciliation.'
 );
+$postWriteLookupEvent=$currentAmbiguousEvent;
+$postWriteLookupEvent['payload']['reason']='SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE';
+rbSame(
+    true,
+    SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$postWriteLookupEvent]),
+    'A failed post-write lookup must authorize reconciliation before a new write for the exact current hash.'
+);
 $confirmedEvent=$currentAmbiguousEvent;
 $confirmedEvent['payload']['status']='ACCEPTED';
 $confirmedEvent['payload']['reason']='SUPPORT_CASE_UPDATED_AND_READ_BACK';
@@ -175,6 +182,20 @@ rbSame('UI_DRIFT', $uncertainWrite['status'], 'Post-write read-back uncertainty 
 rbSame(true, $uncertainWrite['submitted'], 'Post-write uncertainty must preserve that the Seller Central write may already have been submitted.');
 rbSame(null, $uncertainWrite['external_id'], 'Unreconciled post-write result must preserve a null external ID.');
 
+$postWriteLookupFailure = SvAmazonReturnsRemoteBridge::validateResult([
+    'status' => 'UI_DRIFT',
+    'submitted' => true,
+    'external_id' => null,
+    'retry_safe' => true,
+    'reason' => 'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE',
+]);
+rbSame(
+    'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE',
+    $postWriteLookupFailure['reason'],
+    'A failed post-write lookup must be durably classified as ambiguous submitted evidence.'
+);
+rbSame(true, $postWriteLookupFailure['submitted'], 'Post-write lookup failure must preserve submitted=true.');
+
 $humanIntervention = SvAmazonReturnsRemoteBridge::validateResult([
     'status' => 'HUMAN_INTERVENTION_REQUIRED',
     'submitted' => false,
@@ -189,6 +210,7 @@ foreach ([
     ['status'=>'ACCEPTED','submitted'=>true,'external_id'=>null,'retry_safe'=>true,'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID'],
     ['status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>false,'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID'],
     ['status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>true,'reason'=>'SUPPORT_REPLY_FIELD_MISSING'],
+    ['status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>false,'reason'=>'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE'],
 ] as $invalidSubmittedWithoutId) {
     $thrown = false;
     try {
@@ -196,7 +218,7 @@ foreach ([
     } catch (RuntimeException) {
         $thrown = true;
     }
-    rbAssert($thrown, 'Only retry-safe SUPPORT_WRITE_WITHOUT_READBACK_ID UI drift may be submitted without an external ID.');
+    rbAssert($thrown, 'Only approved retry-safe post-write UI drift may be submitted without an external ID.');
 }
 
 $thrown = false;
