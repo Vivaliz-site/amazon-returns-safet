@@ -1,3 +1,8 @@
+<!-- GEPETO_EVERY_TASK_V2 -->
+## Gepeto e Superpowers: leitura e evidencia em toda tarefa
+Antes de executar ou retomar qualquer tarefa, consultar a politica [GEPETO-POLICY.md](GEPETO-POLICY.md) e as instrucoes atuais do repositorio. Acionar Gepeto e Superpowers quando disponiveis no runtime; se ausentes, registrar GEPETO_UNAVAILABLE/SUPERPOWERS_UNAVAILABLE e aplicar o metodo equivalente sem simular ferramenta, agente extra, permissao ou revisao independente. Preservar gates de seguranca, identidade, lease/fencing e evidencias de validacao.
+<!-- /GEPETO_EVERY_TASK_V2 -->
+
 <!-- AUDIT_UI_EVIDENCE_INTEGRITY_V2 -->
 ## Gate V5: interface real, evidencias validadas e zero abandono
 
