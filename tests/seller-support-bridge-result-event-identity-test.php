@@ -19,11 +19,16 @@ brieAssert($key!==SvAmazonReturnsBridgeService::bridgeResultEventIdempotencyKey(
 $preWrite=$result;$preWrite['submitted']=false;$preWrite['reason']='SUPPORT_UI_DRIFT_BEFORE_WRITE';
 $preWriteKey=SvAmazonReturnsBridgeService::bridgeResultEventIdempotencyKey($scope,$row,$preWrite,'evidence-A');
 brieAssert($preWriteKey!==$key,'A pre-write UI drift and a submitted-without-readback result must be separate events in one episode.');
+$postWriteLookupFailure=$result;$postWriteLookupFailure['reason']='SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE';
+$postWriteLookupKey=SvAmazonReturnsBridgeService::bridgeResultEventIdempotencyKey($scope,$row,$postWriteLookupFailure,'evidence-A');
+brieAssert($postWriteLookupKey!==$preWriteKey,'A post-write lookup failure must not collide with earlier pre-write UI drift.');
 $retryRow=['kind'=>'SELLER_SUPPORT_UPDATE','payload'=>['write_snapshot'=>['content_sha256'=>$result['write_content_sha256']]]];
 $preWriteEvent=['event_type'=>'SELLER_CENTRAL_ACTION_RESULT','payload'=>$preWrite];
 $ambiguousEvent=['event_type'=>'SELLER_CENTRAL_ACTION_RESULT','payload'=>$result];
+$postWriteLookupEvent=['event_type'=>'SELLER_CENTRAL_ACTION_RESULT','payload'=>$postWriteLookupFailure];
 brieAssert(!SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$preWriteEvent]),'A pre-write UI drift must not authorize a retry write.');
 brieAssert(SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$preWriteEvent,$ambiguousEvent]),'A distinct ambiguous submit may authorize reconciliation for the exact current write hash.');
-$confirmedEvent=$ambiguousEvent;$confirmedEvent['payload']['status']='ACCEPTED';$confirmedEvent['payload']['reason']='SUPPORT_UPDATE_READBACK_CONFIRMED';
+brieAssert(SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$preWriteEvent,$postWriteLookupEvent]),'A post-write lookup failure must authorize reconciliation for the exact current write hash.');
+$confirmedEvent=$postWriteLookupEvent;$confirmedEvent['payload']['status']='ACCEPTED';$confirmedEvent['payload']['reason']='SUPPORT_UPDATE_READBACK_CONFIRMED';
 brieAssert(!SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$preWriteEvent,$ambiguousEvent,$confirmedEvent]),'A readback-confirmed event must suppress further retry reconciliation.');
 echo "seller-support-bridge-result-event-identity-test: OK\n";
