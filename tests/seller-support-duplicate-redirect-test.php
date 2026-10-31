@@ -41,12 +41,20 @@ $resolvedReference['payload']['latest_text']='A investigação deste caso foi co
 $resolvedDecision=$engine->nextAction($case,[$old,$resolvedReference,$current],['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'],new DateTimeImmutable('2026-10-08 03:20:00',new DateTimeZone('UTC')));
 ssdrAssert(($resolvedDecision['action']??null)!=='SELLER_SUPPORT_UPDATE','A newer resolved observation on the referenced case must suppress replay of an older unanswered prompt.');
 
-$acceptedReply=[
+$falseAccepted=[
     'id'=>825666,'case_id'=>13225,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL',
     'occurred_at'=>'2026-10-03 11:00:00','payload'=>[
         'action'=>'SELLER_SUPPORT_UPDATE','status'=>'ACCEPTED','submitted'=>true,'external_id'=>'22354106631',
+        'reason'=>'SUPPORT_CASE_OPENED_VIA_EMAIL',
     ],
 ];
+$falseAcceptedDecision=$engine->nextAction($case,[$old,$falseAccepted,$current],['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'],new DateTimeImmutable('2026-10-08 03:20:00',new DateTimeZone('UTC')));
+ssdrSame('SELLER_SUPPORT_UPDATE',$falseAcceptedDecision['action']??null,'An ACCEPTED fallback without destination readback must not suppress the unanswered seller action.');
+
+$acceptedReply=$falseAccepted;
+$acceptedReply['id']=825667;
+$acceptedReply['occurred_at']='2026-10-03 11:05:00';
+$acceptedReply['payload']['reason']='SUPPORT_CASE_UPDATED_VIA_REPLY_API_AND_READ_BACK';
 $answeredDecision=$engine->nextAction($case,[$old,$acceptedReply,$current],['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'],new DateTimeImmutable('2026-10-08 03:20:00',new DateTimeZone('UTC')));
 ssdrAssert(($answeredDecision['action']??null)!=='SELLER_SUPPORT_UPDATE','A confirmed outbound reply on the referenced case must suppress replay of the older unanswered prompt.');
 

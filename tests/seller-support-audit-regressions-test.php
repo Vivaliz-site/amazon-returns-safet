@@ -97,6 +97,7 @@ $acceptedAfterChat=[
     'occurred_at'=>'2026-09-30 10:06:00',
     'payload'=>[
         'action'=>'SELLER_SUPPORT_UPDATE','status'=>'ACCEPTED','submitted'=>true,
+        'reason'=>'SUPPORT_CASE_UPDATED_VIA_REPLY_API_AND_READ_BACK',
         'external_id'=>'22144700811',
     ],
 ];
