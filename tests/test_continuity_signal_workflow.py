@@ -20,7 +20,7 @@ class SafeContinuitySignalTests(unittest.TestCase):
 
     def test_global_manifest_does_not_reinstate_retired_solange_repo(self):
         manifest = json.loads((ROOT / "docs/quality/GLOBAL_AUDIT_MANIFEST.json").read_text(encoding="utf-8"))
-        repositories = manifest.get("governed_repositories", [])
+        repositories = manifest.get("required_repositories", [])
         self.assertNotIn("fredmourao-ai/solange-rolla", repositories)
         self.assertIn("fredmourao-ai/solange-rolla-consultorio", repositories)
 
