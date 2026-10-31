@@ -179,7 +179,7 @@ final class SvAmazonReturnsBridgeService
         ];
         $supportUpdateDeliveryConfirmed=$kind!=='SELLER_SUPPORT_UPDATE'
             || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED')
-            || ($status==='ACCEPTED' && in_array($reason,$supportUpdateAcceptedReasons,true));
+            || ($status==='ACCEPTED' && ($result['submitted'] ?? false)===true && in_array($reason,$supportUpdateAcceptedReasons,true));
         $success=in_array($status,['ACCEPTED','ALREADY_EXISTS'],true)
             && $supportUpdateDeliveryConfirmed;
         if($success){

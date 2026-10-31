@@ -20,5 +20,9 @@ ssdpAssert(str_contains($worker,"reason: 'SUPPORT_CASE_ALREADY_EXISTS'"),'A fall
 ssdpAssert(str_contains($bridge,"SUPPORT_UPDATE_FALLBACK_READBACK_CONFIRMED"),'Bridge completion must recognize only explicitly read-back fallback updates.');
 ssdpAssert(str_contains($bridge,'$supportUpdateAcceptedReasons'),'Bridge must keep an explicit allowlist of accepted Seller Support update proof reasons.');
 ssdpAssert(!str_contains($bridge,"|| \$status==='ACCEPTED'"),'Bridge must not treat every ACCEPTED Seller Support update as delivery proof.');
+$proofStart=strpos($bridge,'$supportUpdateDeliveryConfirmed');
+$proofEnd=strpos($bridge,'$success=',$proofStart);
+$proof=substr($bridge,$proofStart,$proofEnd-$proofStart);
+ssdpAssert(str_contains($proof,'submitted'),'Accepted Seller Support updates must require submitted=true as write proof.');
 
 echo "seller-support-delivery-proof-test: OK\n";
