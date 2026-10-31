@@ -27,7 +27,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/repository-governance-validate.sh ci
       - name: Regression contract for agent instructions and manual gate
-        run: python3 -m unittest tests/test_agent_plugin_policy.py -v
+        run: python3 -m unittest tests/test_agent_plugin_policy.py tests/test_continuity_signal_workflow.py -v
       - name: Verify audit evidence
         run: |
           test -s artifacts/audit-governance-self-test/report.json
