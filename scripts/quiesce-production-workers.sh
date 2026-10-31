@@ -68,7 +68,8 @@ qw_any_unit_transitioning() {
 qw_unit_has_pending_job() {
     local unit="$1" job
     job="$(systemctl show --property=Job --value "$unit" 2>/dev/null || true)"
-    [[ -n "$job" && "$job" != "0" ]]
+    # Job is a numeric systemd job id; ignore unexpected mock/garbled values.
+    [[ "$job" =~ ^[1-9][0-9]*$ ]]
 }
 
 quiesce_workers() {
