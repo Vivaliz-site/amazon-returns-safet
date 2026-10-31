@@ -130,6 +130,20 @@ $uncertainWrite = SvAmazonReturnsRemoteBridge::validateResult([
 rbSame('UI_DRIFT', $uncertainWrite['status'], 'Post-write read-back uncertainty must be accepted as UI drift.');
 rbSame(true, $uncertainWrite['submitted'], 'Post-write uncertainty must preserve that the Seller Central write may already have been submitted.');
 rbSame(null, $uncertainWrite['external_id'], 'Unreconciled post-write result must preserve a null external ID.');
+$withEventIdentity=SvAmazonReturnsRemoteBridge::validateResult([
+    'status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>true,
+    'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID','result_event_id'=>str_repeat('b',32),
+]);
+rbSame(str_repeat('b',32),$withEventIdentity['result_event_id'],'Validated immutable result identity must survive result normalization.');
+$invalidResultEventIdentityRejected=false;
+try {
+    SvAmazonReturnsRemoteBridge::validateResult([
+        'status'=>'UI_DRIFT','result_event_id'=>'untrusted-not-a-digest',
+    ]);
+} catch (RuntimeException) {
+    $invalidResultEventIdentityRejected=true;
+}
+rbAssert($invalidResultEventIdentityRejected,'Invalid result episode identity must fail closed.');
 
 $humanIntervention = SvAmazonReturnsRemoteBridge::validateResult([
     'status' => 'HUMAN_INTERVENTION_REQUIRED',

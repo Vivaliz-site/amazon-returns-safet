@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 import { safeTExternalWindow } from './safe-t-external-window.mjs';
@@ -1651,7 +1651,7 @@ async function supportOpen(cdp, job, options = {}) {
   if (decisionReason === 'CLASSIC_FBA_UNPAID_AFTER_FINANCE_RECONCILIATION' && physicalStatus === 'RECEIVED_OK') {
     return bridgeResult('SUPERSEDED', { reason: 'PHYSICAL_RETURN_RECEIVED_BEFORE_SUPPORT_OPEN', retry_safe: false });
   }
-  const retryReconciliation = Number(job.attempt_count || 0) > 1;
+  const retryReconciliation = job.retry_reconciliation === true;
   const lookupOptions = retryReconciliation ? { includeTerminal: true } : {};
   const priorSupportCaseId = text(job.case?.support_case_id);
   const reconcileKnownCase = options.forceFreshCase !== true;
@@ -1687,6 +1687,14 @@ async function supportOpen(cdp, job, options = {}) {
   if (existing) return bridgeResult('ALREADY_EXISTS', {
     external_id: existing, retry_safe: true,
     reason: retryReconciliation ? 'SUPPORT_RETRY_RECONCILED_TERMINAL_CASE' : 'SUPPORT_CASE_ALREADY_EXISTS',
+    evidence: await evidence(cdp, 'help-v1')
+  });
+  // A prior support write may have succeeded even if Seller Central does not
+  // expose it in read-back. Never create another claim in this indeterminate
+  // episode; require reviewed manual reconciliation instead.
+  if (retryReconciliation) return bridgeResult('HUMAN_INTERVENTION_REQUIRED', {
+    reason: 'SUPPORT_AMBIGUOUS_PRIOR_SUBMISSION_UNRESOLVED',
+    retry_safe: false,
     evidence: await evidence(cdp, 'help-v1')
   });
   const orderId = text(job.case?.order_id);
@@ -2036,6 +2044,9 @@ async function runOnce() {
     log('job_exception', { ...job, status: 'FAILED', reason: `UNHANDLED_${error?.name || 'ERROR'}:${text(error?.message).slice(0, 240)}` });
     result = bridgeResult('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: true });
   }
+  // One immutable outcome ID per executed action. A re-POST of the same payload
+  // must reuse this result; new executions must not collapse distinct outcomes.
+  result.result_event_id = randomBytes(16).toString('hex');
   await bridge('result', { job_id: job.job_id, idempotency_key: job.idempotency_key, result });
   log('job_result', { ...job, ...result });
   const drainBlocked = ['AUTH_REQUIRED','HUMAN_CHALLENGE'].includes(result.status);

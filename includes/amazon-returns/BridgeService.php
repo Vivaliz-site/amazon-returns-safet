@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/RemoteBridge.php';
+require_once __DIR__ . '/BridgeResultEventId.php';
 require_once __DIR__ . '/AmazonRequestedWait.php';
 require_once __DIR__ . '/TenantPersistence.php';
 require_once __DIR__ . '/Runtime.php';
@@ -97,6 +98,12 @@ final class SvAmazonReturnsBridgeService
                 $case['order_at']=$gate['order_at'];
             }
             $job=SvAmazonReturnsRemoteBridge::jobEnvelope($row,$case,$flags);
+            if(in_array((string)($row['kind']??''),['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){
+                $events=$this->p->events->eventsForCase((int)$row['case_id']);
+                $job['retry_reconciliation']=SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible(
+                    $row,$events
+                );
+            }
             foreach([
                 'physical_status','state','program','order_at','refund_at','seller_debit_at',
                 'eligibility_at','appeal_deadline_at',
@@ -367,10 +374,9 @@ final class SvAmazonReturnsBridgeService
     {
         $status=(string)$result['status'];
         $externalId=$result['external_id'];
-        $key=hash('sha256',implode('|',[
-            'seller-central-result',$this->p->context()->scopeKey(),
-            (string)$row['idempotency_key'],$status,(string)($externalId ?? ''),
-        ]));
+        $key=SvAmazonBridgeResultEventId::key(
+            $this->p->context()->scopeKey(),$row,$result
+        );
         $snapshot=$result['evidence']['snapshot_sha256'] ?? null;
         if(!is_string($snapshot) || preg_match('/^[a-f0-9]{64}$/i',$snapshot)!==1){
             $snapshot=null;
@@ -401,6 +407,7 @@ final class SvAmazonReturnsBridgeService
                 'next_allowed_at'=>$result['next_allowed_at'],
                 'reason'=>$this->safeText($result['reason'] ?? null),
                 'outbox_id'=>(int)$row['id'],
+                'result_event_id'=>$result['result_event_id'] ?? null,
                 'write_content_sha256'=>$writeContentSha256,
             ],
             'evidence_sha256'=>$snapshot,

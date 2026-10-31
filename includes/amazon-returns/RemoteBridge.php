@@ -76,6 +76,47 @@ final class SvAmazonReturnsRemoteBridge
         return !hash_equals($scoped, $current);
     }
 
+    /**
+     * Read-back reconciliation requires proof of an ambiguous submitted write
+     * for this exact outbox and content hash, not a counter inherited from a
+     * rearmed Seller Support job. Never authorize retry from a pre-write drift.
+     * @param list<array<string,mixed>> $events
+     */
+    public static function supportRetryReconciliationEligible(array $row,array $events): bool
+    {
+        $kind=strtoupper(trim((string)($row['kind']??'')));
+        if(!in_array($kind,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))return false;
+        $payload=is_array($row['payload']??null)?$row['payload']:[];
+        $snapshot=is_array($payload['write_snapshot']??null)?$payload['write_snapshot']:[];
+        $currentHash=strtolower(trim((string)($snapshot['content_sha256']??'')));
+        if(preg_match('/^[a-f0-9]{64}$/D',$currentHash)!==1)return false;
+        $sourceEventId=(string)($row['id']??'');
+        if($sourceEventId==='' || !ctype_digit($sourceEventId))return false;
+        $ambiguous=false;
+        $confirmed=false;
+        foreach($events as $event){
+            if((string)($event['source_event_id']??'')!==$sourceEventId)continue;
+            if(strtoupper((string)($event['source']??''))!=='SELLER_CENTRAL')continue;
+            if(strtoupper((string)($event['event_type']??''))!=='SELLER_CENTRAL_ACTION_RESULT')continue;
+            $data=is_array($event['payload']??null)?$event['payload']:[];
+            if(strtoupper(trim((string)($data['action']??'')))!==$kind)continue;
+            $hash=strtolower(trim((string)($data['write_content_sha256']??'')));
+            if(!hash_equals($currentHash,$hash))continue;
+            $status=strtoupper(trim((string)($data['status']??'')));
+            $reason=strtoupper(trim((string)($data['reason']??'')));
+            $submitted=($data['submitted']??false)===true;
+            if(($status==='ACCEPTED' && $submitted)
+                || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED')){
+                $confirmed=true;
+            }
+            if($submitted && $status==='UI_DRIFT'
+                && $reason==='SUPPORT_WRITE_WITHOUT_READBACK_ID'){
+                $ambiguous=true;
+            }
+        }
+        return $ambiguous && !$confirmed;
+    }
+
     /** @return array<string,mixed> */
     public static function jobEnvelope(array $row, array $case, array $writeFlags): array
     {
@@ -133,6 +174,12 @@ final class SvAmazonReturnsRemoteBridge
         $externalId = self::nullableString($result['external_id'] ?? null);
         $retrySafe = ($result['retry_safe'] ?? false) === true;
         $reason = self::nullableString($result['reason'] ?? null);
+        $resultEventId = $result['result_event_id'] ?? null;
+        if ($resultEventId !== null
+            && (!is_string($resultEventId)
+                || preg_match('/^[a-f0-9]{32}$/D', $resultEventId) !== 1)) {
+            throw new RuntimeException('Invalid Seller Central bridge result event ID.');
+        }
         $submittedWithoutReadback = $status === 'UI_DRIFT'
             && $retrySafe
             && $reason === 'SUPPORT_WRITE_WITHOUT_READBACK_ID';
@@ -147,6 +194,7 @@ final class SvAmazonReturnsRemoteBridge
             'block_reason' => self::nullableString($result['block_reason'] ?? null),
             'next_allowed_at' => self::nullableString($result['next_allowed_at'] ?? null),
             'reason' => $reason,
+            'result_event_id' => $resultEventId,
             'evidence' => is_array($result['evidence'] ?? null) ? $result['evidence'] : [],
             'support' => is_array($result['support'] ?? null) ? SvAmazonSellerSupportStatus::normalize($result['support']) : null,
             'read' => is_array($result['read'] ?? null) ? SvAmazonSafeTStatus::normalize($result['read']) : null,
