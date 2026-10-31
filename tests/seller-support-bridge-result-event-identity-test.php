@@ -1,0 +1,29 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__ . '/../includes/amazon-returns/BridgeService.php';
+require_once __DIR__ . '/../includes/amazon-returns/RemoteBridge.php';
+function brieAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeException($message);}
+$scope='tenant-1:connection-10';
+$row=['id'=>88,'idempotency_key'=>hash('sha256','outbox-scope'),'attempt_count'=>2];
+$result=['action'=>'SELLER_SUPPORT_UPDATE','status'=>'UI_DRIFT','submitted'=>true,'external_id'=>null,'retry_safe'=>true,'reason'=>'SUPPORT_WRITE_WITHOUT_READBACK_ID','write_content_sha256'=>hash('sha256','write-A')];
+$key=SvAmazonReturnsBridgeService::bridgeResultEventIdempotencyKey($scope,$row,$result,'evidence-A');
+brieAssert($key===SvAmazonReturnsBridgeService::bridgeResultEventIdempotencyKey($scope,$row,$result,'evidence-A'),'The same immutable outcome must deduplicate.');
+$changedReason=$result;$changedReason['reason']='SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE';
+brieAssert($key!==SvAmazonReturnsBridgeService::bridgeResultEventIdempotencyKey($scope,$row,$changedReason,'evidence-A'),'Different reasons in the same outcome status must have distinct event identities.');
+$changedSubmission=$result;$changedSubmission['submitted']=false;
+brieAssert($key!==SvAmazonReturnsBridgeService::bridgeResultEventIdempotencyKey($scope,$row,$changedSubmission,'evidence-A'),'Submitted and pre-write outcomes must have distinct event identities.');
+$changedHash=$result;$changedHash['write_content_sha256']=hash('sha256','write-B');
+brieAssert($key!==SvAmazonReturnsBridgeService::bridgeResultEventIdempotencyKey($scope,$row,$changedHash,'evidence-A'),'Different write episodes must have distinct event identities.');
+$changedAttempt=$row;$changedAttempt['attempt_count']=3;
+brieAssert($key!==SvAmazonReturnsBridgeService::bridgeResultEventIdempotencyKey($scope,$changedAttempt,$result,'evidence-A'),'A later bridge attempt must not collide with an earlier outcome.');
+$preWrite=$result;$preWrite['submitted']=false;$preWrite['reason']='SUPPORT_UI_DRIFT_BEFORE_WRITE';
+$preWriteKey=SvAmazonReturnsBridgeService::bridgeResultEventIdempotencyKey($scope,$row,$preWrite,'evidence-A');
+brieAssert($preWriteKey!==$key,'A pre-write UI drift and a submitted-without-readback result must be separate events in one episode.');
+$retryRow=['kind'=>'SELLER_SUPPORT_UPDATE','payload'=>['write_snapshot'=>['content_sha256'=>$result['write_content_sha256']]]];
+$preWriteEvent=['event_type'=>'SELLER_CENTRAL_ACTION_RESULT','payload'=>$preWrite];
+$ambiguousEvent=['event_type'=>'SELLER_CENTRAL_ACTION_RESULT','payload'=>$result];
+brieAssert(!SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$preWriteEvent]),'A pre-write UI drift must not authorize a retry write.');
+brieAssert(SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$preWriteEvent,$ambiguousEvent]),'A distinct ambiguous submit may authorize reconciliation for the exact current write hash.');
+$confirmedEvent=$ambiguousEvent;$confirmedEvent['payload']['status']='ACCEPTED';$confirmedEvent['payload']['reason']='SUPPORT_UPDATE_READBACK_CONFIRMED';
+brieAssert(!SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible($retryRow,[$preWriteEvent,$ambiguousEvent,$confirmedEvent]),'A readback-confirmed event must suppress further retry reconciliation.');
+echo "seller-support-bridge-result-event-identity-test: OK\n";
