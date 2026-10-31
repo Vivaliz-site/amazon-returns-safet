@@ -97,6 +97,17 @@ final class SvAmazonReturnsBridgeService
                 $case['order_at']=$gate['order_at'];
             }
             $job=SvAmazonReturnsRemoteBridge::jobEnvelope($row,$case,$flags);
+            if(in_array((string)($row['kind']??''),['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){
+                $retryEvents=$this->p->events->eventsForSourceEventId(
+                    (int)$row['case_id'],
+                    (string)$row['id'],
+                    'SELLER_CENTRAL_ACTION_RESULT'
+                );
+                $job['retry_reconciliation']=SvAmazonReturnsRemoteBridge::supportRetryReconciliationEligible(
+                    $row,
+                    $retryEvents
+                );
+            }
             foreach([
                 'physical_status','state','program','order_at','refund_at','seller_debit_at',
                 'eligibility_at','appeal_deadline_at',
@@ -362,15 +373,49 @@ final class SvAmazonReturnsBridgeService
         }
     }
 
+    /**
+     * Immutable identity for one bridge outcome. The attempt number distinguishes executions only;
+     * retry authorization is derived from exact event evidence and the current write hash.
+     * @param array<string,mixed> $row
+     * @param array<string,mixed> $outcome
+     */
+    public static function bridgeResultEventIdempotencyKey(
+        string $scopeKey,
+        array $row,
+        array $outcome,
+        ?string $evidenceSha256
+    ): string {
+        $fields = [
+            'action', 'resume_scope', 'status', 'submitted', 'external_id', 'retry_safe',
+            'block_reason', 'next_allowed_at', 'reason', 'write_content_sha256',
+        ];
+        $stableOutcome = [];
+        foreach ($fields as $field) {
+            $stableOutcome[$field] = $outcome[$field] ?? null;
+        }
+        $identity = [
+            'schema' => 'SELLER_CENTRAL_RESULT_V2',
+            'scope_key' => trim($scopeKey),
+            'outbox_id' => (int)($row['id'] ?? 0),
+            'outbox_idempotency_key' => strtolower(trim((string)($row['idempotency_key'] ?? ''))),
+            'write_attempt' => max(0, (int)($row['attempt_count'] ?? 0)),
+            'outcome' => $stableOutcome,
+            'evidence_sha256' => $evidenceSha256,
+        ];
+        return hash(
+            'sha256',
+            'seller-central-result-v2|' . json_encode(
+                $identity,
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+            )
+        );
+    }
+
     /** @param array<string,mixed> $row @param array<string,mixed> $result */
     private function appendResultEvent(array $row,array $result): int
     {
         $status=(string)$result['status'];
         $externalId=$result['external_id'];
-        $key=hash('sha256',implode('|',[
-            'seller-central-result',$this->p->context()->scopeKey(),
-            (string)$row['idempotency_key'],$status,(string)($externalId ?? ''),
-        ]));
         $snapshot=$result['evidence']['snapshot_sha256'] ?? null;
         if(!is_string($snapshot) || preg_match('/^[a-f0-9]{64}$/i',$snapshot)!==1){
             $snapshot=null;
@@ -383,6 +428,23 @@ final class SvAmazonReturnsBridgeService
         }else{
             $writeContentSha256=strtolower($writeContentSha256);
         }
+        $eventPayload=[
+            'action'=>(string)$row['kind'],
+            'resume_scope'=>SvAmazonRequestedWait::jobResumeScope($row),
+            'status'=>$status,
+            'submitted'=>$result['submitted'],
+            'external_id'=>$externalId,
+            'retry_safe'=>$result['retry_safe'],
+            'block_reason'=>$this->safeText($result['block_reason'] ?? null),
+            'next_allowed_at'=>$result['next_allowed_at'],
+            'reason'=>$this->safeText($result['reason'] ?? null),
+            'outbox_id'=>(int)$row['id'],
+            'write_attempt'=>(int)($row['attempt_count'] ?? 0),
+            'write_content_sha256'=>$writeContentSha256,
+        ];
+        $key=self::bridgeResultEventIdempotencyKey(
+            $this->p->context()->scopeKey(),$row,$eventPayload,$snapshot
+        );
         return $this->p->events->append([
             'case_id'=>(int)$row['case_id'],
             'event_type'=>'SELLER_CENTRAL_ACTION_RESULT',
@@ -390,19 +452,7 @@ final class SvAmazonReturnsBridgeService
             'source_event_id'=>(string)$row['id'],
             'idempotency_key'=>$key,
             'occurred_at'=>gmdate('Y-m-d H:i:s'),
-            'payload'=>[
-                'action'=>(string)$row['kind'],
-                'resume_scope'=>SvAmazonRequestedWait::jobResumeScope($row),
-                'status'=>$status,
-                'submitted'=>$result['submitted'],
-                'external_id'=>$externalId,
-                'retry_safe'=>$result['retry_safe'],
-                'block_reason'=>$this->safeText($result['block_reason'] ?? null),
-                'next_allowed_at'=>$result['next_allowed_at'],
-                'reason'=>$this->safeText($result['reason'] ?? null),
-                'outbox_id'=>(int)$row['id'],
-                'write_content_sha256'=>$writeContentSha256,
-            ],
+            'payload'=>$eventPayload,
             'evidence_sha256'=>$snapshot,
         ]);
     }

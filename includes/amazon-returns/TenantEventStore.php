@@ -90,6 +90,42 @@ final class SvAmazonTenantReturnEventStore
         return $rows;
     }
 
+    /** @return list<array<string,mixed>> */
+    public function eventsForSourceEventId(int $caseId,string $sourceEventId,?string $eventType=null): array
+    {
+        $caseId=$this->positiveId($caseId,'case ID');
+        $sourceEventId=$this->bounded(trim($sourceEventId),'source event ID',191);
+        $params=$this->scopeParams([
+            ':case_id'=>$caseId,
+            ':source_event_id'=>$sourceEventId,
+        ]);
+        $eventTypeSql='';
+        if($eventType!==null){
+            $eventType=$this->bounded(trim($eventType),'event type',64);
+            $eventTypeSql=' AND event_type=:event_type';
+            $params[':event_type']=$eventType;
+        }
+        $stmt=$this->prepare(
+            'SELECT id,tenant_id,amazon_connection_id,case_id,event_type,source,source_event_id,'
+            . 'idempotency_key,occurred_at,payload_json,evidence_sha256,created_at '
+            . 'FROM amazon_return_events WHERE tenant_id=:tenant_id '
+            . 'AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id '
+            . 'AND source_event_id=:source_event_id'
+            . $eventTypeSql
+            . ' ORDER BY occurred_at,id'
+        );
+        $stmt->execute($params);
+        $rows=array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+        foreach($rows as &$row){
+            $json=$row['payload_json']??null;
+            if(!is_string($json))throw new UnexpectedValueException('Event payload is not JSON text.');
+            $row['payload']=json_decode($json,true,512,JSON_THROW_ON_ERROR);
+            unset($row['payload_json']);
+        }
+        unset($row);
+        return $rows;
+    }
+
     /** @return list<int> */
     public function caseIdsForReference(string $term,bool $exact): array
     {

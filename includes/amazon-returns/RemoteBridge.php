@@ -28,6 +28,10 @@ final class SvAmazonReturnsRemoteBridge
         'NOT_FOUND',
         'FAILED',
     ];
+    private const SUPPORT_SUBMITTED_WITHOUT_READBACK_REASONS = [
+        'SUPPORT_WRITE_WITHOUT_READBACK_ID',
+        'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE',
+    ];
 
     /**
      * Resolves the raw Authorization header value across server SAPIs.
@@ -74,6 +78,40 @@ final class SvAmazonReturnsRemoteBridge
         if ($scoped === null || $current === null) return false;
         if (preg_match('/^\\d{8,14}$/D', $scoped) !== 1 || preg_match('/^\\d{8,14}$/D', $current) !== 1) return false;
         return !hash_equals($scoped, $current);
+    }
+
+    /** @param list<array<string,mixed>> $events */
+    public static function supportRetryReconciliationEligible(array $row,array $events): bool
+    {
+        $kind=strtoupper(trim((string)($row['kind']??'')));
+        if(!in_array($kind,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))return false;
+        $payload=is_array($row['payload']??null)?$row['payload']:[];
+        $snapshot=is_array($payload['write_snapshot']??null)?$payload['write_snapshot']:[];
+        $currentHash=strtolower(trim((string)($snapshot['content_sha256']??'')));
+        if(preg_match('/^[a-f0-9]{64}$/D',$currentHash)!==1)return false;
+        $ambiguous=false;
+        $confirmed=false;
+        foreach($events as $event){
+            if(strtoupper(trim((string)($event['event_type']??'')))!=='SELLER_CENTRAL_ACTION_RESULT')continue;
+            $eventPayload=is_array($event['payload']??null)?$event['payload']:[];
+            if(strtoupper(trim((string)($eventPayload['action']??'')))!==$kind)continue;
+            $eventHash=strtolower(trim((string)($eventPayload['write_content_sha256']??'')));
+            if(!hash_equals($currentHash,$eventHash))continue;
+            $status=strtoupper(trim((string)($eventPayload['status']??'')));
+            $reason=strtoupper(trim((string)($eventPayload['reason']??'')));
+            $submitted=($eventPayload['submitted']??false)===true;
+            if($status==='ACCEPTED'
+                || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED')){
+                $confirmed=true;
+                continue;
+            }
+            if($submitted
+                && $status==='UI_DRIFT'
+                && in_array($reason,self::SUPPORT_SUBMITTED_WITHOUT_READBACK_REASONS,true)){
+                $ambiguous=true;
+            }
+        }
+        return $ambiguous && !$confirmed;
     }
 
     /** @return array<string,mixed> */
@@ -135,7 +173,7 @@ final class SvAmazonReturnsRemoteBridge
         $reason = self::nullableString($result['reason'] ?? null);
         $submittedWithoutReadback = $status === 'UI_DRIFT'
             && $retrySafe
-            && $reason === 'SUPPORT_WRITE_WITHOUT_READBACK_ID';
+            && in_array($reason, self::SUPPORT_SUBMITTED_WITHOUT_READBACK_REASONS, true);
         if ($submitted && $externalId === null && !$submittedWithoutReadback) {
             throw new RuntimeException('Submitted Seller Central write requires external read-back ID.');
         }
