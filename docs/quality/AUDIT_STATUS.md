@@ -60,3 +60,11 @@ Baixo e operacional. Estados externos legítimos continuam existindo — por exe
 
 ## Regra de validade
 Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edafa274` e o runtime observado em 2026-09-19. Mudanças em bridges, write profile, OAuth, políticas, workers, esquema, filas, regras de decisão ou integrações externas críticas exigem nova auditoria contraditória antes de reutilizar o veredito `APTO`.
+
+## 2026-10-31 — #532: verificador de escrita falha fechado para env inacessivel
+
+- RED: `scripts/write-profile-check.php --env-file=...` ignorava arquivo explicitamente inacessivel/ausente e gerava flags baseadas em defaults de producao; leitura pelo usuario `ubuntu` divergia do daemon `www-data`.
+- Correcao SAFE proposta: exigir arquivo regular, legivel e validamente lido quando `--env-file` for fornecido; caso contrario retornar exit 2 e `WRITE_PROFILE_CHECK=FAIL reason=ENV_FILE_UNREADABLE`, sem imprimir URL, path, segredos ou flags. Nenhuma leitura de dados clinicos/financeiros ou operacao externa.
+- Testes: RED sintetico mostrou resultado indevido; GREEN isolado com PHP lint e fixture de arquivo legivel/ilegivel e kill-switch; `tests/write-profile-test.php` cobre regressao de parametro vazio, arquivo ausente, diretorio e kill-switch. Gates oficiais e deploy ainda exigidos.
+- P0 externo previamente contido na Marina com `AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH=1`, sete write gates false como `www-data`. Patch de diagnostico nao reabilita SAFE-T nem processa outbox, nao fecha elegibilidade/refunds/credito.
+- Estado NAO_APTO ate checks exatos, merge/deploy canonicos e reconciliacao Seller Central/Financeiro.
