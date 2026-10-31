@@ -272,4 +272,41 @@ ssrdSame('WAIT',$activeAfterDeniedDecision['action']??null,'An active Seller Sup
 ssrdSame('SUPPORT_ESCALATION_ALREADY_ACTIVE',$activeAfterDeniedDecision['reason']??null,'Amazon-owned active support work must remain authoritative after final appeal denial.');
 ssrdSame('22455791871',$activeAfterDeniedDecision['support_case_id']??null,'Wait must identify the active sibling that Amazon is currently handling.');
 
+$nonReopenableCase=$case;
+$nonReopenableCase['id']=11;
+$nonReopenableCase['amazon_order_id']='703-9999999-9999999';
+$nonReopenableCase['program']='FBA';
+$nonReopenableCase['safe_t_id']='99999-99999-9999999';
+$nonReopenableCase['state']=SvAmazonReturnStates::APPEAL_DENIED_FINAL;
+$nonReopenableCase['latest_denial_text']='Recurso negado. Decisão final mantida.';
+$nonReopenableCase['support_case_id']='22999999999';
+$nonReopenableCase['refund_at']='2026-08-03 18:22:13';
+$nonReopenableCase['seller_debit_at']='2026-08-03 18:22:13';
+$nonReopenableCase['expected_reimbursement_amount']='123.30';
+$nonReopenableCase['reconciled_credit_amount']='0.00';
+
+$nonReopenableObservation=[
+    'id'=>6001,'case_id'=>11,'event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-09-20 00:12:30','payload'=>[
+        'case_id'=>'22999999999','case_status'=>'RESOLVED',
+        'latest_text'=>'Para solicitar o ressarcimento referente a este pedido, você deve abrir uma reivindicação SAFE-T.',
+    ],
+];
+$nonReopenableResult=[
+    'id'=>6002,'case_id'=>11,'event_type'=>'SELLER_CENTRAL_ACTION_RESULT','source'=>'SELLER_CENTRAL',
+    'occurred_at'=>'2026-10-07 12:01:39','payload'=>[
+        'action'=>'SELLER_SUPPORT_UPDATE','status'=>'SUPERSEDED',
+        'reason'=>'SUPPORT_CASE_NOT_REOPENABLE','submitted'=>false,'retry_safe'=>false,
+        'external_id'=>null,
+    ],
+];
+$nonReopenableDecision=$engine->nextAction(
+    $nonReopenableCase,
+    [$nonReopenableObservation,$nonReopenableResult],
+    $policy,
+    new DateTimeImmutable('2026-10-08 08:20:00',new DateTimeZone('UTC'))
+);
+ssrdSame('BLOCKED_REVIEW',$nonReopenableDecision['action']??null,'A Seller Support case proven non-reopenable must block repeated writes instead of re-entering the same recovery loop.');
+ssrdSame('SUPPORT_CASE_NOT_REOPENABLE',$nonReopenableDecision['reason']??null,'The terminal non-reopenable reason must survive into the next decision.');
+
 echo "seller-support-resolution-decision-test: OK\n";

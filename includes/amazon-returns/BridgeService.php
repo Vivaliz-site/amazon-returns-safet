@@ -7,6 +7,8 @@ require_once __DIR__ . '/RemoteBridge.php';
 require_once __DIR__ . '/AmazonRequestedWait.php';
 require_once __DIR__ . '/TenantPersistence.php';
 require_once __DIR__ . '/Runtime.php';
+require_once __DIR__ . '/SafeTStatusService.php';
+require_once __DIR__ . '/SafeTExternalWindow.php';
 
 final class SvAmazonReturnsBridgeService
 {
@@ -74,9 +76,29 @@ final class SvAmazonReturnsBridgeService
                 $this->p->outbox->markSuperseded((int)$row['id'],'SELLER_SUPPORT_SCOPE_SUPERSEDED');
                 continue;
             }
+            // Never dispatch a queued D+45 SAFE-T write before Amazon's external clock.
+            // Derive order_at from the scoped, append-only ORDER_SYNCED timeline.
+            if(strtoupper((string)($row['kind']??''))==='SAFE_T_SUBMIT'){
+                $events=$this->p->events->eventsForCase((int)$row['case_id']);
+                $gate=SvAmazonSafeTExternalWindow::inspect(
+                    $case,$events,new DateTimeImmutable('now',new DateTimeZone('UTC'))
+                );
+                if($gate['allowed']!==true){
+                    $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+                    $next=isset($gate['not_before']) && is_string($gate['not_before'])
+                        ? new DateTimeImmutable($gate['not_before'],new DateTimeZone('UTC'))
+                        : $now->modify('+24 hours');
+                    if($next<=$now)$next=$now->modify('+24 hours');
+                    $this->p->outbox->defer(
+                        (int)$row['id'],$next,'SAFE_T_EXTERNAL_'.(string)$gate['reason'],true
+                    );
+                    continue;
+                }
+                $case['order_at']=$gate['order_at'];
+            }
             $job=SvAmazonReturnsRemoteBridge::jobEnvelope($row,$case,$flags);
             foreach([
-                'physical_status','state','program','refund_at','seller_debit_at',
+                'physical_status','state','program','order_at','refund_at','seller_debit_at',
                 'eligibility_at','appeal_deadline_at',
             ] as $field){
                 $job['case'][$field]=$case[$field] ?? null;
@@ -125,8 +147,15 @@ final class SvAmazonReturnsBridgeService
                 'status'=>'ACK','job_id'=>$jobId,'result_status'=>$status,'completed'=>true,
             ];
         }
-        if($kind==='SELLER_SUPPORT_UPDATE' && $status==='ALREADY_EXISTS'
-            && (string)($result['reason'] ?? '')!=='SUPPORT_UPDATE_READBACK_CONFIRMED'){
+        $supportScopeOnly=in_array($kind,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
+            && (
+                ($status==='ALREADY_EXISTS'
+                    && (string)($result['reason'] ?? '')!=='SUPPORT_UPDATE_READBACK_CONFIRMED')
+                || ($status==='UI_DRIFT'
+                    && (string)($result['reason'] ?? '')==='SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK'
+                    && ($result['submitted'] ?? false)===true)
+            );
+        if($supportScopeOnly){
             return $this->completeSupportExistingCaseDiscovery($row,$result);
         }
         $reason=(string)($result['reason'] ?? '');
@@ -214,7 +243,7 @@ final class SvAmazonReturnsBridgeService
             $this->p->outbox->markSuperseded($jobId,'SELLER_SUPPORT_SCOPE_SUPERSEDED');
             $db->commit();
             return [
-                'status'=>'ACK','job_id'=>$jobId,'result_status'=>'ALREADY_EXISTS',
+                'status'=>'ACK','job_id'=>$jobId,'result_status'=>(string)($result['status'] ?? 'ALREADY_EXISTS'),
                 'completed'=>true,'delivery_confirmed'=>false,'scope_reconciled'=>true,
                 'support_case_id'=>$supportId,
             ];
@@ -311,6 +340,8 @@ final class SvAmazonReturnsBridgeService
                     'state'=>SvAmazonReturnStates::SAFE_T_SUBMITTED,
                 ]);
             }elseif($kind==='SAFE_T_APPEAL'){
+                $case=$this->p->cases->find($caseId);
+                if(!is_array($case))throw new RuntimeException('Owned SAFE-T appeal case disappeared.');
                 $appealPatch=[
                     'state'=>SvAmazonReturnStates::APPEAL_SUBMITTED,
                 ];

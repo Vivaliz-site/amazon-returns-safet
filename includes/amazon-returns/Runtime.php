@@ -283,6 +283,25 @@ final class SvAmazonReturnsRuntime
         return ($metadata['has_more'] ?? false)===true;
     }
 
+    /**
+     * A failed Gmail evidence reconciliation must remain FAILED without
+     * retrying every daemon tick when a code revision is still unapplied.
+     * Recheck hourly so a reauthorized Gmail credential can recover automatically.
+     *
+     * @param list<string> $due
+     * @param array<string,mixed>|null $lastAttempt
+     * @return list<string>
+     */
+    public static function deferFailedGmailReconciliation(
+        array $due, ?array $lastAttempt, DateTimeImmutable $now
+    ): array {
+        if (!in_array('gmail_refund_reconciliation',$due,true)) return $due;
+        if (strtoupper(trim((string)($lastAttempt['metadata']['status'] ?? ''))) !== 'FAILED') return $due;
+        $last=self::timestamp($lastAttempt['observed_at'] ?? null);
+        if ($last===null || $now->setTimezone(new DateTimeZone('UTC'))->getTimestamp()-$last->getTimestamp()>=3600) return $due;
+        return array_values(array_filter($due,static fn(string $task):bool=>$task!=='gmail_refund_reconciliation'));
+    }
+
     /** @param list<string> $due @return list<string> */
     public static function reconcileGmailCatchupSchedule(
         array $due,

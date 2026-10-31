@@ -41,6 +41,24 @@ final class SvAmazonSafeTDecisionEngine
         $now ??= $this->clock ?? new DateTimeImmutable('now',new DateTimeZone('UTC'));
         $supportResolution=$this->supportResolutionAction($case,$timeline,$now);
         $supportReason=(string)($supportResolution['reason']??'');
+        // An earlier Seller Support failure/escalation must not replace the first
+        // SAFE-T recovery route for an eligible FBA Onsite claim. Safety checks
+        // for financial settlement, physical receipt and claim IDs remain above.
+        if($safeTId==='' && ($case['program']??'')===SvAmazonReturnPrograms::FBA_ONSITE
+            && ($policy['eligible']??false)===true
+            && in_array($supportReason,[
+                'SELLER_SUPPORT_CHAT_READ_BACK_NOT_CONFIRMED',
+                'SELLER_SUPPORT_HUMAN_INTERVENTION_REQUIRED',
+                'SUPPORT_CASE_NOT_REOPENABLE',
+                'SUPPORT_CLAIMED_REIMBURSEMENT_NOT_RECONCILED',
+                'SUPPORT_OUTBOUND_AWAITING_RESPONSE',
+            ],true)
+            && in_array((string)($supportResolution['action']??''),[
+                'BLOCKED_REVIEW','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE','WAIT',
+            ],true)){
+            $supportResolution=null;
+            $supportReason='';
+        }
         if($supportResolution!==null && in_array($supportReason,[
             'SUPPORT_REIMBURSEMENT_PROCESSING','SUPPORT_REIMBURSEMENT_PROMISE_DUE','SUPPORT_REIMBURSEMENT_PROMISE_MISSED',
             'SUPPORT_BUYER_REFUND_REQUIRES_SELLER_CREDIT_CHECK','SUPPORT_BUYER_REFUND_IS_NOT_SELLER_REIMBURSEMENT',
@@ -624,8 +642,11 @@ final class SvAmazonSafeTDecisionEngine
             $payload=is_array($event['payload']??null)?$event['payload']:[];
             $action=strtoupper(trim((string)($payload['action']??'')));
             $status=strtoupper(trim((string)($payload['status']??'')));
+            $reason=strtoupper(trim((string)($payload['reason']??'')));
+            $blocked=$status==='HUMAN_INTERVENTION_REQUIRED'
+                || ($status==='SUPERSEDED' && $reason==='SUPPORT_CASE_NOT_REOPENABLE');
             if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)
-                || $status!=='HUMAN_INTERVENTION_REQUIRED')continue;
+                || !$blocked)continue;
             try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
             $rank=[$at->getTimestamp(),(int)($event['id']??0)];
             if($rank<=$blockerRank)continue;

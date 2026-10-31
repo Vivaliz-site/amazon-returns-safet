@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
+import { safeTExternalWindow } from './safe-t-external-window.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
@@ -650,6 +651,14 @@ async function safeTSubreasonDiagnostics(cdp, value) {
 async function safeTSubmit(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
+  // First fail-closed gate: do not even enter the SAFE-T creation flow early.
+  const openingWindow = safeTExternalWindow(job);
+  if (!openingWindow.allowed) {
+    return bridgeResult('BLOCKED_UNTIL', {
+      reason: openingWindow.reason, block_reason: openingWindow.reason,
+      next_allowed_at: openingWindow.next_allowed_at || null, retry_safe: true,
+    });
+  }
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'INVALID_ORDER_ID' });
   const trackingEvidence = await captureTrackingEvidence(cdp, orderId);
@@ -734,6 +743,15 @@ async function safeTSubmit(cdp, job) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_CONFIRMATION_CHECKBOX_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(500);
+  // Second independent gate immediately before the irreversible submit click.
+  // A stale/previously queued job must never rely on the Seller Central UI alone.
+  const finalWindow = safeTExternalWindow(job);
+  if (!finalWindow.allowed) {
+    return bridgeResult('BLOCKED_UNTIL', {
+      reason: finalWindow.reason, block_reason: finalWindow.reason,
+      next_allowed_at: finalWindow.next_allowed_at || null, retry_safe: true,
+    });
+  }
   const canSubmit = await cdp.evaluate(`!document.querySelector('kat-button.SubmitButton')?.hasAttribute('disabled')`);
   if (!canSubmit) return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_SUBMIT_STILL_DISABLED', evidence: await evidence(cdp, 'safet-v1') });
   if (!(await cdp.clickKat('kat-button.SubmitButton'))) {
@@ -828,7 +846,7 @@ async function safeTAppeal(cdp, job) {
   });
 }
 
-async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeTerminal = false, cutoffEpochSeconds = null, excludeCaseIds = [] } = {}) {
+async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeTerminal = false, cutoffEpochSeconds = null, excludeCaseIds = [], minimumCreationEpochSeconds = null } = {}) {
   const orderId = text(job.case?.order_id);
   const safeTId = text(job.case?.safe_t_id);
   const needles = [orderId, safeTId].filter(Boolean);
@@ -836,12 +854,14 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
   const preferred = /^\d{8,14}$/.test(text(preferredCaseId)) ? text(preferredCaseId) : '';
   const excludedCaseIds = [...new Set((Array.isArray(excludeCaseIds) ? excludeCaseIds : []).map(text).filter(value => /^\d{8,14}$/.test(value)))];
   const cutoff = Number(cutoffEpochSeconds);
+  const minimumCreation = Number(minimumCreationEpochSeconds);
   const raw = await cdp.evaluate(`(async()=>{
     const needles=${JSON.stringify(needles)};
     const preferred=${JSON.stringify(preferred)};
     const excluded=new Set(${JSON.stringify(excludedCaseIds)});
     const includeTerminal=${includeTerminal === true ? 'true' : 'false'};
     const cutoffSeconds=${Number.isFinite(cutoff) && cutoff > 0 ? cutoff : 'null'};
+    const minimumCreationSeconds=${Number.isFinite(minimumCreation) && minimumCreation > 0 ? minimumCreation : 'null'};
     const scanBudgetMs=${SUPPORT_CASE_LOOKUP_SCAN_BUDGET_MS};
     const scanStartedAt=Date.now();
     const budgetExceeded=()=>Date.now()-scanStartedAt>=scanBudgetMs;
@@ -849,6 +869,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
     const terminal=new Set(${JSON.stringify(SUPPORT_CASE_TERMINAL_STATUSES)});
     const activeSupportStatus=value=>{const status=String(value||'').trim().toUpperCase();return status!==''&&!terminal.has(status)};
     const supportStatusAllowed=value=>includeTerminal ? true : activeSupportStatus(value);
+    const creationAllowed=item=>{if(!Number.isFinite(minimumCreationSeconds)||minimumCreationSeconds<=0)return true;const created=Number(item?.creationDate);return Number.isFinite(created)&&created>=minimumCreationSeconds};
     const validCaseId=value=>{const candidate=String(value||'');return candidate.length>=8&&candidate.length<=14&&[...candidate].every(ch=>ch>='0'&&ch<='9')};
     const limit=${SUPPORT_CASE_HISTORY_LIMIT};
     const pageSize=50;
@@ -886,7 +907,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
       if(search.error)return JSON.stringify({status:'UNAVAILABLE',reason:search.error});
       for(const item of search.rows){
         const caseId=String(item.caseId||'');
-        if(!validCaseId(caseId)||excluded.has(caseId)||!supportStatusAllowed(item.status))continue;
+        if(!validCaseId(caseId)||excluded.has(caseId)||!supportStatusAllowed(item.status)||!creationAllowed(item))continue;
         const preferredCandidate=preferred&&caseId===preferred;
         const relevantCandidate=relevant.test(String(item.shortDescription||''));
         if(!preferredCandidate&&!relevantCandidate)continue;
@@ -917,7 +938,7 @@ async function scanSupportCaseHistory(cdp, job, preferredCaseId = '', { includeT
         if(!Number.isFinite(created))return JSON.stringify({status:'UNAVAILABLE',reason:'SEARCH_CREATION_DATE_INVALID'});
         dated.push({item,created});
       }
-      const recent=dated.filter(entry=>entry.created>=cutoffSeconds).map(entry=>entry.item);
+      const recent=dated.filter(entry=>entry.created>=cutoffSeconds&&creationAllowed(entry.item)).map(entry=>entry.item);
       for(const item of recent){
         const caseId=String(item.caseId||'');
         const summary=JSON.stringify(item);
@@ -1416,6 +1437,16 @@ async function contactSupportAndReadBack(cdp, job) {
   if (!/^\d{8,14}$/.test(caseId)) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
   }
+  const narrative = narrativeFor(job, 9000);
+  if (!(await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240)))) {
+    return bridgeResult('UI_DRIFT', {
+      reason: 'SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK',
+      submitted: true,
+      external_id: caseId,
+      retry_safe: true,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
+  }
   return bridgeResult('ACCEPTED', {
     submitted: true,
     external_id: caseId,
@@ -1476,6 +1507,15 @@ async function submitDirectSupportCaseAndReadBack(cdp, job, narrative) {
   }
   if (!/^\d{8,14}$/.test(caseId)) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: true, retry_safe: true, evidence: { ...(await evidence(cdp, 'help-v1')), support_readback: await supportCaseReadbackSnapshot(cdp) } });
+  }
+  if (!(await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240)))) {
+    return bridgeResult('UI_DRIFT', {
+      reason: 'SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK',
+      submitted: true,
+      external_id: caseId,
+      retry_safe: true,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
   }
   return bridgeResult('ACCEPTED', { submitted: true, external_id: caseId, retry_safe: true, reason: 'SUPPORT_CASE_OPENED_DIRECTLY', evidence: await evidence(cdp, 'help-v1') });
 }
@@ -1617,6 +1657,19 @@ async function supportOpen(cdp, job, options = {}) {
   const reconcileKnownCase = options.forceFreshCase !== true;
   if (!reconcileKnownCase && /^\d{8,14}$/.test(priorSupportCaseId)) {
     lookupOptions.excludeCaseIds = [priorSupportCaseId];
+    const createdAt = text(job.created_at);
+    const normalizedCreatedAt = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(createdAt)
+      ? `${createdAt.replace(' ', 'T')}Z`
+      : createdAt;
+    const createdAtMs = Date.parse(normalizedCreatedAt);
+    if (!Number.isFinite(createdAtMs)) {
+      return bridgeResult('UI_DRIFT', {
+        reason: 'SUPPORT_FRESH_CASE_EPISODE_CUTOFF_UNAVAILABLE',
+        retry_safe: true,
+        evidence: await evidence(cdp, 'help-v1'),
+      });
+    }
+    lookupOptions.minimumCreationEpochSeconds = Math.floor(createdAtMs / 1000);
   }
   let existing;
   try {

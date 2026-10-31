@@ -134,4 +134,44 @@ async function withFetch(fakeFetch, fn) {
   assert.equal(viewCalls, 1, 'Preferred support ID must be verified with one paced ViewCase read.');
 }
 
+
+{
+  const orderId = '702-9207715-8524262';
+  const oldSiblingId = '22450149561';
+  const freshSiblingId = '22459999999';
+  const viewed = [];
+  const fakeFetch = async (url, options = {}) => {
+    if (String(url).includes('SearchForCases')) {
+      const body = JSON.parse(options.body || '{}');
+      const term = body.caseFilters?.searchText || '';
+      if (term === orderId) return { ok: true, status: 200, json: async () => ({
+        totalNumberOfResults: 2,
+        caseSearchResultList: [
+          { caseId: oldSiblingId, status: 'Open', creationDate: 1787000000, shortDescription: `Order ${orderId} return review` },
+          { caseId: freshSiblingId, status: 'Open', creationDate: 1789000000, shortDescription: `Order ${orderId} return review` },
+        ],
+      }) };
+      return { ok: true, status: 200, json: async () => ({ totalNumberOfResults: 0, caseSearchResultList: [] }) };
+    }
+    if (String(url).includes('ViewCase')) {
+      const id = new URL(`https://x${url}`).searchParams.get('caseId');
+      viewed.push(id);
+      return { ok: true, status: 200, json: async () => ({
+        viewCaseMetaData: { caseStatus: 'Open' },
+        contacts: [{ body: `Order ${orderId}` }],
+      }) };
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const cdp = { evaluate: async expression => await (0, eval)(expression) };
+  const found = await withFetch(fakeFetch, () => scanSupportCaseHistory(cdp, {
+    case: { order_id: orderId, safe_t_id: null },
+  }, '', {
+    cutoffEpochSeconds: 1786000000,
+    minimumCreationEpochSeconds: 1788500000,
+  }));
+  assert.equal(found, freshSiblingId, 'Fresh-case reconciliation must ignore a matching sibling created before the current outbox episode.');
+  assert.deepEqual(viewed, [freshSiblingId], 'Pre-episode sibling must be rejected before any ViewCase reconciliation.');
+}
+
 console.log('seller-support-deterministic-lookup-test: OK');

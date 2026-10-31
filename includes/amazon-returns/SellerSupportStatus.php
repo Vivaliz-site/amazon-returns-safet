@@ -121,9 +121,13 @@ final class SvAmazonSellerSupportStatus
         if($terminal && str_contains($text,'safe-t-review@amazon.com'))return 'EMAIL_REVIEW';
         $safeT=str_contains($text,'safe-t') || str_contains($text,'safet');
         $appeal=preg_match('/(?:appeal|apela[cç][aã]o|recurso|recorr)/u',$text)===1;
-        if($terminal && $safeT && $appeal)return 'SAFE_T_APPEAL';
+        $submissionDirective=self::directsSafeTSubmission($text);
+        // A future, conditional appeal instruction is not evidence that an
+        // existing SAFE-T claim has been denied or must now be appealed.
+        $explicitAppeal=preg_match('/(?:deve\s+ser\s+recorrid[oa]|(?:apresente|interponha|recorra|deve\s+recorrer|precisa\s+recorrer|submit\s+an?\s+appeal|appeal\s+directly|precisar[aá]\s+enviar\s+uma?\s+apela[cç][aã]o).{0,120}(?:safe-?t|safet))/u',$text)===1;
+        if($terminal && $safeT && $appeal && ($explicitAppeal || !$submissionDirective))return 'SAFE_T_APPEAL';
         if($terminal && self::unrelatedTopic($text))return 'UNRELATED_TOPIC';
-        if(($terminal || $sellerAction) && self::directsSafeTSubmission($text))return 'SAFE_T_SUBMIT';
+        if(($terminal || $sellerAction) && $submissionDirective)return 'SAFE_T_SUBMIT';
         if($terminal && self::closedForMissingSellerResponse($text))return 'SELLER_ACTION_REQUIRED';
         if(!$terminal){
             if($sellerAction && self::returnNotReceivedDispute($text))return 'RETURN_NOT_RECEIVED_DISPUTE';

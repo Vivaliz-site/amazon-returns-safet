@@ -2,6 +2,8 @@
 Description=ShopVivaliz Amazon Returns Olist ERP persistent browser
 After=network-online.target
 Wants=network-online.target
+# Source-side migration fence: no competing workers after Marina assumes ownership.
+ConditionPathExists=!/etc/shopvivaliz/migration/origin-workers-fenced
 
 [Service]
 Type=simple

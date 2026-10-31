@@ -22,4 +22,6 @@ dcAssert(str_contains($body,'currentSupportCaseId(cdp)'),'Direct case creation m
 dcAssert(str_contains($body,'findSupportCase(cdp, job, { includeTerminal: true, excludeCaseIds: [...preWriteCaseIds] })'),'Direct case creation must reconcile Seller Central case history, including instantly resolved cases, without reusing a pre-write case ID.');
 dcAssert(str_contains($body,"bridgeResult('UI_DRIFT', { reason: 'SUPPORT_WRITE_WITHOUT_READBACK_ID', submitted: true, retry_safe: true"),'After Create a case is clicked, missing read-back ID must be classified as submitted-but-unreconciled, never as a definitely unsubmitted failure.');
 dcAssert(str_contains($body,"reason: 'SUPPORT_CASE_OPENED_DIRECTLY'"),'Direct case creation succeeds only with an auditable external case ID.');
+dcAssert(str_contains($body,'waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240))'),'Direct case creation must verify the exact submitted narrative through authoritative ViewCase readback before delivery is accepted.');
+dcAssert(str_contains($body,"SUPPORT_CASE_CREATED_WITHOUT_TEXT_READBACK"),'Direct case creation without narrative readback must remain submitted-but-unconfirmed instead of becoming delivery proof.');
 echo "seller-support-direct-create-case-test: OK\n";

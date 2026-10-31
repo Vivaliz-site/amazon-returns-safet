@@ -23,5 +23,13 @@ ssrfAssert(str_contains($open,'if (!reconcileKnownCase'),'Fresh-case lookup must
 ssrfAssert(str_contains($open,'excludeCaseIds'),'Fresh-case lookup must exclude the stale support case ID while still reconciling any new sibling.');
 ssrfAssert(str_contains($open,'const retryReconciliation = Number(job.attempt_count || 0) > 1;'),'A retry after a potentially submitted fresh-case write must enter reconciliation even when forceFreshCase is true.');
 ssrfAssert(str_contains($open,"retryReconciliation ? { includeTerminal: true } : {}"),'Retry reconciliation must include terminal sibling cases so a quickly closed created case cannot be duplicated.');
+ssrfAssert(str_contains($open,'minimumCreationEpochSeconds'),'Fresh-case reconciliation must ignore sibling cases that predate the current outbox recovery episode.');
+ssrfAssert(str_contains($open,'job.created_at'),'Fresh-case reconciliation must anchor its sibling cutoff to the current outbox creation timestamp.');
+$scanStart=strpos($worker,'async function scanSupportCaseHistory');
+$scanEnd=$scanStart===false?false:strpos($worker,'async function findSupportCase',$scanStart);
+ssrfAssert($scanStart!==false&&$scanEnd!==false,'Support-case history scanner must remain independently auditable.');
+$scan=substr($worker,(int)$scanStart,(int)$scanEnd-(int)$scanStart);
+ssrfAssert(str_contains($scan,'minimumCreationEpochSeconds'),'Support-case scanner must accept an episode creation floor.');
+ssrfAssert(str_contains($scan,'creationAllowed'),'Support-case scanner must apply the episode creation floor to deterministic and paginated matches.');
 
 echo "seller-support-reply-field-fresh-fallback-test: OK\n";
