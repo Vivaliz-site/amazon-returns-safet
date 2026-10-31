@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 import { safeTExternalWindow } from './safe-t-external-window.mjs';
@@ -1692,6 +1692,13 @@ async function supportOpen(cdp, job, options = {}) {
     reason: retryReconciliation ? 'SUPPORT_RETRY_RECONCILED_TERMINAL_CASE' : 'SUPPORT_CASE_ALREADY_EXISTS',
     evidence: await evidence(cdp, 'help-v1')
   });
+  // Previous write may be committed even if Seller Central has not indexed
+  // the case for read-back. Never issue a second write while unresolved.
+  if (retryReconciliation) return bridgeResult('HUMAN_INTERVENTION_REQUIRED', {
+    reason: 'SUPPORT_AMBIGUOUS_PRIOR_SUBMISSION_UNRESOLVED',
+    retry_safe: false,
+    evidence: await evidence(cdp, 'help-v1')
+  });
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'SUPPORT_ORDER_ID_REQUIRED' });
   const resolvedAsin = text(job.case?.asin || await resolveOrderAsin(cdp, orderId));
@@ -2068,6 +2075,9 @@ async function runOnce() {
     log('job_exception', { ...job, status: 'FAILED', reason: `UNHANDLED_${error?.name || 'ERROR'}:${text(error?.message).slice(0, 240)}` });
     result = bridgeResult('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: true });
   }
+  // One outcome identity per action execution. An HTTP re-POST of the same
+  // result must preserve this ID rather than creating a new write episode.
+  result.result_event_id = randomBytes(16).toString('hex');
   await bridge('result', { job_id: job.job_id, idempotency_key: job.idempotency_key, result });
   log('job_result', { ...job, ...result });
   const drainBlocked = ['AUTH_REQUIRED','HUMAN_CHALLENGE'].includes(result.status);

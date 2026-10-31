@@ -412,6 +412,17 @@ final class SvAmazonReturnsBridgeService
             'outcome' => $stableOutcome,
             'evidence_sha256' => $evidenceSha256,
         ];
+        // Do not change hashes of historic no-ID bridge results. The worker
+        // now supplies one immutable ID per executed action to distinguish
+        // two attempts with identical status, evidence and write content.
+        $resultEventId=$outcome['result_event_id']??null;
+        if($resultEventId!==null){
+            if(!is_string($resultEventId)
+                || preg_match('/^[a-f0-9]{32}$/D',$resultEventId)!==1){
+                throw new InvalidArgumentException('Invalid bridge result event identity.');
+            }
+            $identity['result_event_id']=$resultEventId;
+        }
         return hash(
             'sha256',
             'seller-central-result-v2|' . json_encode(
@@ -450,6 +461,7 @@ final class SvAmazonReturnsBridgeService
             'reason'=>$this->safeText($result['reason'] ?? null),
             'outbox_id'=>(int)$row['id'],
             'write_attempt'=>(int)($row['attempt_count'] ?? 0),
+            'result_event_id'=>$result['result_event_id'] ?? null,
             'write_content_sha256'=>$writeContentSha256,
         ];
         $key=self::bridgeResultEventIdempotencyKey(
