@@ -1671,27 +1671,29 @@ async function supportOpen(cdp, job, options = {}) {
     }
     lookupOptions.minimumCreationEpochSeconds = Math.floor(createdAtMs / 1000);
   }
+  const shouldScanExisting = reconcileKnownCase || retryReconciliation;
   let existing;
-  try {
-    existing = await findSupportCase(cdp, job, lookupOptions);
-  } catch (error) {
-    if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
-      return bridgeResult('UI_DRIFT', {
-        reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE',
-        lookup_phase: retryReconciliation ? 'RETRY_RECONCILIATION' : 'PRE_WRITE',
-        lookup_reason: text(error?.lookupReason || 'UNKNOWN'), retry_safe: true, evidence: await evidence(cdp, 'help-v1')
-      });
+  if (shouldScanExisting) {
+    try {
+      existing = await findSupportCase(cdp, job, lookupOptions);
+    } catch (error) {
+      if (text(error?.message) === 'SUPPORT_CASE_LOOKUP_UNAVAILABLE') {
+        return bridgeResult('UI_DRIFT', {
+          reason: 'SUPPORT_CASE_LOOKUP_UNAVAILABLE',
+          lookup_phase: retryReconciliation ? 'RETRY_RECONCILIATION' : 'PRE_WRITE',
+          lookup_reason: text(error?.lookupReason || 'UNKNOWN'), retry_safe: true, evidence: await evidence(cdp, 'help-v1')
+        });
+      }
+      throw error;
     }
-    throw error;
   }
   if (existing) return bridgeResult('ALREADY_EXISTS', {
     external_id: existing, retry_safe: true,
     reason: retryReconciliation ? 'SUPPORT_RETRY_RECONCILED_TERMINAL_CASE' : 'SUPPORT_CASE_ALREADY_EXISTS',
     evidence: await evidence(cdp, 'help-v1')
   });
-  // A prior support write may have succeeded even if Seller Central does not
-  // expose it in read-back. Never create another claim in this indeterminate
-  // episode; require reviewed manual reconciliation instead.
+  // Previous write may be committed even if Seller Central has not indexed
+  // the case for read-back. Never issue a second write while unresolved.
   if (retryReconciliation) return bridgeResult('HUMAN_INTERVENTION_REQUIRED', {
     reason: 'SUPPORT_AMBIGUOUS_PRIOR_SUBMISSION_UNRESOLVED',
     retry_safe: false,
@@ -2044,8 +2046,8 @@ async function runOnce() {
     log('job_exception', { ...job, status: 'FAILED', reason: `UNHANDLED_${error?.name || 'ERROR'}:${text(error?.message).slice(0, 240)}` });
     result = bridgeResult('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: true });
   }
-  // One immutable outcome ID per executed action. A re-POST of the same payload
-  // must reuse this result; new executions must not collapse distinct outcomes.
+  // One outcome identity per action execution. An HTTP re-POST of the same
+  // result must preserve this ID rather than creating a new write episode.
   result.result_event_id = randomBytes(16).toString('hex');
   await bridge('result', { job_id: job.job_id, idempotency_key: job.idempotency_key, result });
   log('job_result', { ...job, ...result });

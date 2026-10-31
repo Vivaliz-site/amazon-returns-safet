@@ -28,6 +28,10 @@ final class SvAmazonReturnsRemoteBridge
         'NOT_FOUND',
         'FAILED',
     ];
+    private const SUPPORT_SUBMITTED_WITHOUT_READBACK_REASONS = [
+        'SUPPORT_WRITE_WITHOUT_READBACK_ID',
+        'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE',
+    ];
 
     /**
      * Resolves the raw Authorization header value across server SAPIs.
@@ -76,12 +80,7 @@ final class SvAmazonReturnsRemoteBridge
         return !hash_equals($scoped, $current);
     }
 
-    /**
-     * Read-back reconciliation requires proof of an ambiguous submitted write
-     * for this exact outbox and content hash, not a counter inherited from a
-     * rearmed Seller Support job. Never authorize retry from a pre-write drift.
-     * @param list<array<string,mixed>> $events
-     */
+    /** @param list<array<string,mixed>> $events */
     public static function supportRetryReconciliationEligible(array $row,array $events): bool
     {
         $kind=strtoupper(trim((string)($row['kind']??'')));
@@ -90,27 +89,25 @@ final class SvAmazonReturnsRemoteBridge
         $snapshot=is_array($payload['write_snapshot']??null)?$payload['write_snapshot']:[];
         $currentHash=strtolower(trim((string)($snapshot['content_sha256']??'')));
         if(preg_match('/^[a-f0-9]{64}$/D',$currentHash)!==1)return false;
-        $sourceEventId=(string)($row['id']??'');
-        if($sourceEventId==='' || !ctype_digit($sourceEventId))return false;
         $ambiguous=false;
         $confirmed=false;
         foreach($events as $event){
-            if((string)($event['source_event_id']??'')!==$sourceEventId)continue;
-            if(strtoupper((string)($event['source']??''))!=='SELLER_CENTRAL')continue;
-            if(strtoupper((string)($event['event_type']??''))!=='SELLER_CENTRAL_ACTION_RESULT')continue;
-            $data=is_array($event['payload']??null)?$event['payload']:[];
-            if(strtoupper(trim((string)($data['action']??'')))!==$kind)continue;
-            $hash=strtolower(trim((string)($data['write_content_sha256']??'')));
-            if(!hash_equals($currentHash,$hash))continue;
-            $status=strtoupper(trim((string)($data['status']??'')));
-            $reason=strtoupper(trim((string)($data['reason']??'')));
-            $submitted=($data['submitted']??false)===true;
-            if(($status==='ACCEPTED' && $submitted)
+            if(strtoupper(trim((string)($event['event_type']??'')))!=='SELLER_CENTRAL_ACTION_RESULT')continue;
+            $eventPayload=is_array($event['payload']??null)?$event['payload']:[];
+            if(strtoupper(trim((string)($eventPayload['action']??'')))!==$kind)continue;
+            $eventHash=strtolower(trim((string)($eventPayload['write_content_sha256']??'')));
+            if(!hash_equals($currentHash,$eventHash))continue;
+            $status=strtoupper(trim((string)($eventPayload['status']??'')));
+            $reason=strtoupper(trim((string)($eventPayload['reason']??'')));
+            $submitted=($eventPayload['submitted']??false)===true;
+            if($status==='ACCEPTED'
                 || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED')){
                 $confirmed=true;
+                continue;
             }
-            if($submitted && $status==='UI_DRIFT'
-                && $reason==='SUPPORT_WRITE_WITHOUT_READBACK_ID'){
+            if($submitted
+                && $status==='UI_DRIFT'
+                && in_array($reason,self::SUPPORT_SUBMITTED_WITHOUT_READBACK_REASONS,true)){
                 $ambiguous=true;
             }
         }
@@ -182,7 +179,7 @@ final class SvAmazonReturnsRemoteBridge
         }
         $submittedWithoutReadback = $status === 'UI_DRIFT'
             && $retrySafe
-            && $reason === 'SUPPORT_WRITE_WITHOUT_READBACK_ID';
+            && in_array($reason, self::SUPPORT_SUBMITTED_WITHOUT_READBACK_REASONS, true);
         if ($submitted && $externalId === null && !$submittedWithoutReadback) {
             throw new RuntimeException('Submitted Seller Central write requires external read-back ID.');
         }

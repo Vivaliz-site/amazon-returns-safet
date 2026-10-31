@@ -12,6 +12,7 @@ $openStart=strpos($worker,'async function supportOpen');
 $openEnd=$openStart===false?false:strpos($worker,'async function supportUpdate',$openStart);
 ssprcAssert($openStart!==false&&$openEnd!==false,'supportOpen must remain auditable.');
 $open=substr($worker,(int)$openStart,(int)$openEnd-(int)$openStart);
-ssprcAssert(str_contains($open,'const retryReconciliation = job.retry_reconciliation === true'),'Only a server-confirmed ambiguous write episode may enter reconciliation mode.');
+ssprcAssert(str_contains($open,'const retryReconciliation = job.retry_reconciliation === true'),'Only a server-authorized retry episode may enter reconciliation mode before any support write.');
+ssprcAssert(!str_contains($open,'job.attempt_count'),'Post-write reconciliation must not infer episode identity from the raw attempt counter.');
 ssprcAssert(strpos($open,'findSupportCase(cdp, job') < strpos($open,'await cdp.navigate(HELP_URL'),'Retry reconciliation must execute before navigating into a fresh support write flow.');
 echo "seller-support-postwrite-reconciliation-test: OK\n";
