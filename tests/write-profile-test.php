@@ -49,6 +49,31 @@ if(is_file($checker)){
  }
  wpSame(false,$checked['flags']['ERP_SALES_RETURN_CREATE']??null,'checker remains fail-closed without the dedicated environment gate');
 }
+if(is_file($checker)){
+ // All fixtures are synthetic. No production environment file is read.
+ $missing=sys_get_temp_dir().'/amazon-returns-absent-'.bin2hex(random_bytes(8));
+ foreach(['--env-file=','--env-file='.sys_get_temp_dir(),'--env-file='.$missing] as $arg){
+  $lines=[];$exit=-1;
+  exec(escapeshellarg(PHP_BINARY).' '.escapeshellarg($checker).' '.escapeshellarg($arg).' 2>&1',$lines,$exit);
+  $output=implode("\n",$lines);
+  wpSame(2,$exit,'explicit invalid env file must fail closed');
+  wpSame(true,str_contains($output,'reason=ENV_FILE_UNREADABLE'),'sanitized missing env reason');
+  wpSame(false,str_contains($output,'"flags"'),'unreadable env must not print write flags');
+  wpSame(false,str_contains($output,$missing),'unreadable env must not leak path');
+ }
+ $env=tempnam(sys_get_temp_dir(),'amazon-wp-');
+ if($env===false){$errors[]='cannot create synthetic checker fixture';}
+ else {
+  try{
+   file_put_contents($env,"AMAZON_RETURNS_ENABLED=1\nAMAZON_RETURNS_MODE=production\nAMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH=1\n");
+   $lines=[];$exit=-1;
+   exec(escapeshellarg(PHP_BINARY).' '.escapeshellarg($checker).' '.escapeshellarg('--env-file='.$env).' 2>&1',$lines,$exit);
+   $json=json_decode(implode("\n",$lines),true);
+   wpSame(0,$exit,'readable synthetic env should work');
+   wpSame(false,$json['flags']['SAFE_T_SUBMIT']??null,'effective kill switch applied from readable env');
+  } finally {unlink($env);}
+ }
+}
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 wpSame(true,str_contains($daemon,'write_profile_revision'),'profile change must force scheduler reevaluation');
 if($errors){fwrite(STDERR,implode("\n",$errors)."\n");exit(1);}echo "write-profile-test: OK\n";
