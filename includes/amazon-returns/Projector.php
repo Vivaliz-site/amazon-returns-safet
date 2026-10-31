@@ -29,6 +29,11 @@ final class SvAmazonReturnProjector
             if(!is_array($event))throw new InvalidArgumentException('Projection event must be an array.');
             self::applyEvent($facts,$event,(int)($case['id'] ?? 0));
         }
+        // Historical events can still say FBA after this account migrated to FBA Onsite.
+        // Apply only the configured account override; never rewrite other sellers by default.
+        if($facts['program']===SvAmazonReturnPrograms::FBA){
+            $facts['program']=SvAmazonReturnPrograms::applyAccountFulfillmentOverride($facts['program']);
+        }
         self::finalize($facts);
         return array_replace($case,$facts);
     }

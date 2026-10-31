@@ -665,7 +665,43 @@ final class SvAmazonTenantReturnsOutbox
                 $ambiguousUnconfirmed=true;
             }
         }
-        return $ambiguousUnconfirmed;
+        return $ambiguousUnconfirmed && !$this->matchingSellerSupportWriteAlreadySubmitted($row);
+    }
+
+    /** @param array<string,mixed> $row */
+    private function matchingSellerSupportWriteAlreadySubmitted(array $row): bool
+    {
+        try{$outboxPayload=self::decodePayloadStatic($row['payload_json']??null);}catch(Throwable){return false;}
+        $targetHash=strtolower(trim((string)($outboxPayload['write_snapshot']['content_sha256']??'')));
+        if(preg_match('/^[a-f0-9]{64}$/D',$targetHash)!==1)return false;
+        $targetSupportCase=trim((string)($outboxPayload['support_case_id']
+            ?? ($outboxPayload['decision']['support_case_id']??'')));
+        $stmt=$this->prepare(
+            "SELECT payload_json FROM amazon_return_events WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id "
+            . "AND event_type='SELLER_CENTRAL_ACTION_RESULT' AND source='SELLER_CENTRAL' "
+            . "AND source_event_id<>:source_event_id ORDER BY id DESC"
+        );
+        $stmt->execute($this->scopeParams([
+            ':case_id'=>(int)$row['case_id'],
+            ':source_event_id'=>(string)$row['id'],
+        ]));
+        foreach(array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array')) as $event){
+            try{$payload=self::decodePayloadStatic($event['payload_json']??null);}catch(Throwable){continue;}
+            if(strtoupper(trim((string)($payload['action']??'')))!=='SELLER_SUPPORT_UPDATE')continue;
+            $candidateHash=strtolower(trim((string)($payload['write_content_sha256']??'')));
+            if(preg_match('/^[a-f0-9]{64}$/D',$candidateHash)!==1 || !hash_equals($targetHash,$candidateHash))continue;
+            $candidateSupportCase=trim((string)($payload['external_id']??''));
+            if($targetSupportCase!=='' && $candidateSupportCase!=='' && !hash_equals($targetSupportCase,$candidateSupportCase))continue;
+            $status=strtoupper(trim((string)($payload['status']??'')));
+            $reason=strtoupper(trim((string)($payload['reason']??'')));
+            if(($payload['submitted']??false)===true
+                || $status==='ACCEPTED'
+                || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED')){
+                return true;
+            }
+        }
+        return false;
     }
 
     private function positiveId(int $value, string $label): int

@@ -1,6 +1,7 @@
 name: Repository Governance Gate
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main, master]
   push:
@@ -22,7 +23,11 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate repository governance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/repository-governance-validate.sh ci
+      - name: Regression contract for agent instructions and manual gate
+        run: python3 -m unittest tests/test_agent_plugin_policy.py tests/test_continuity_signal_workflow.py -v
       - name: Verify audit evidence
         run: |
           test -s artifacts/audit-governance-self-test/report.json

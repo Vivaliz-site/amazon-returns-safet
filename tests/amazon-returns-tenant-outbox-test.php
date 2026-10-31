@@ -48,6 +48,13 @@ final class TenantOutboxMemoryPdo extends PDO
 
     public function prepare(string $query, array $options = []): PDOStatement|false
     {
+        foreach($this->responses as $index=>$response){
+            $needle=$response['sql_contains']??null;
+            if(!is_string($needle) || $needle==='' || !str_contains($query,$needle))continue;
+            array_splice($this->responses,$index,1);
+            unset($response['sql_contains']);
+            return new TenantOutboxMemoryStatement($this,$query,$response);
+        }
         return new TenantOutboxMemoryStatement($this, $query, array_shift($this->responses) ?? []);
     }
 
@@ -322,6 +329,43 @@ $priorSubmittedReactivation = array_values(array_filter(
     static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
 ));
 toSame([],$priorSubmittedReactivation,'Full result history with any submitted write must preserve the terminal outbox state and prevent duplicate delivery.');
+$crossOutboxSubmittedDb = new TenantOutboxMemoryPdo();
+$crossOutboxSubmittedOutbox = new SvAmazonTenantReturnsOutbox($crossOutboxSubmittedDb,$context);
+$crossOutboxSubmittedKey = $crossOutboxSubmittedOutbox->deterministicKey('SELLER_SUPPORT_UPDATE',77,'cross-outbox-submitted-update');
+$crossOutboxSubmittedDb->queue(['fetch'=>['id'=>77]]);
+$crossOutboxSubmittedDb->queue(['throw'=>outboxDuplicate()]);
+$crossOutboxSubmittedDb->queue(['fetch'=>[
+    'id'=>411,'status'=>'SUCCEEDED','attempt_count'=>2,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>null,
+    'payload_json'=>'{"order_id":"702-6823050-9173862","support_case_id":"22426419421","write_snapshot":{"content_sha256":"66e1fb8f89e80cb942671afbeba5ba157ae598af7512b4ba6310ae4314457dad"}}',
+]]);
+$crossOutboxSubmittedDb->queue([
+    'fetch'=>[
+        'payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421","write_content_sha256":"66e1fb8f89e80cb942671afbeba5ba157ae598af7512b4ba6310ae4314457dad"}',
+    ],
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ALREADY_EXISTS","reason":null,"submitted":false,"external_id":"22426419421","write_content_sha256":"66e1fb8f89e80cb942671afbeba5ba157ae598af7512b4ba6310ae4314457dad"}'],
+    ],
+]);
+$crossOutboxSubmittedDb->queue([
+    'sql_contains'=>'source_event_id<>:source_event_id',
+    'rows'=>[
+        ['payload_json'=>'{"action":"SELLER_SUPPORT_UPDATE","status":"ACCEPTED","reason":"SUPPORT_CASE_OPENED_VIA_EMAIL","submitted":true,"external_id":"22426419421","write_content_sha256":"66e1fb8f89e80cb942671afbeba5ba157ae598af7512b4ba6310ae4314457dad"}'],
+    ],
+]);
+$crossOutboxSubmittedDb->queue([
+    'sql_contains'=>"SET status='PENDING'",
+    'row_count'=>1,
+]);
+$crossOutboxSubmitted = $crossOutboxSubmittedOutbox->enqueueResult(
+    'SELLER_SUPPORT_UPDATE',77,$legacyFalseSuccessPayload,$crossOutboxSubmittedKey
+);
+toSame(false,$crossOutboxSubmitted['enqueued']??null,'A submitted Seller Support update in another outbox row with the same content and support scope must prevent legacy false-success rearming.');
+$crossOutboxReactivation = array_values(array_filter(
+    $crossOutboxSubmittedDb->executed,
+    static fn(array $execution): bool => str_contains((string)($execution['sql']??''),"SET status='PENDING'")
+));
+toSame([],$crossOutboxReactivation,'Cross-outbox delivery evidence must block duplicate Seller Support delivery.');
 
 $pendingRow = [
     'id'=>301,'tenant_id'=>1,'amazon_connection_id'=>10,'case_id'=>77,'kind'=>'SAFE_T_SUBMIT',

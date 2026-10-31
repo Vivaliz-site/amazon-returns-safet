@@ -144,6 +144,7 @@ final class SvAmazonReturnsRemoteBridge
                 'asin' => (string)($case['asin'] ?? ''),
                 'sku' => (string)($case['sku'] ?? ''),
                 'program' => (string)($case['program'] ?? ''),
+                'order_at' => self::nullableString($case['order_at'] ?? null),
                 'physical_status' => (string)($case['physical_status'] ?? ''),
                 'refund_at' => self::nullableString($case['refund_at'] ?? null),
                 'safe_t_id' => self::nullableString($case['safe_t_id'] ?? null),

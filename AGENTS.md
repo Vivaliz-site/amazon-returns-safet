@@ -1,3 +1,60 @@
+<!-- GEPETO_EVERY_TASK_V2 -->
+## Gepeto e Superpowers: leitura e evidencia em toda tarefa
+Antes de executar ou retomar qualquer tarefa, consultar a politica [GEPETO-POLICY.md](GEPETO-POLICY.md) e as instrucoes atuais do repositorio. Acionar Gepeto e Superpowers quando disponiveis no runtime; se ausentes, registrar GEPETO_UNAVAILABLE/SUPERPOWERS_UNAVAILABLE e aplicar o metodo equivalente sem simular ferramenta, agente extra, permissao ou revisao independente. Preservar gates de seguranca, identidade, lease/fencing e evidencias de validacao.
+<!-- /GEPETO_EVERY_TASK_V2 -->
+
+<!-- AUDIT_UI_EVIDENCE_INTEGRITY_V2 -->
+## Gate V5: interface real, evidencias validadas e zero abandono
+
+Toda Auditoria Extrema exige execucao pelo proprio agente na UI grafica real, inventario de rotas/controles/casos, evidencias fisicas conferidas pelo certifier, correcao RED/GREEN/regressao e reauditoria E2E por sessao independente apos deploy. Seguir `docs/quality/AUDIT_UI_EVIDENCE_INTEGRITY_V2.md`. API, SQL, CLI, screenshot ou headless-only nao substituem prova UI. Permanecer `RUNNING` com `next_action` duravel ate `AUDIT_VERDICT=APTO` oficial no release real, sem abandonar por PR, erro, timeout ou limite de turno. Respeitar autorizacoes, leases, MFA e protecoes; somente bloqueio externo comprovado permite checkpoint nao concluido.
+<!-- /AUDIT_UI_EVIDENCE_INTEGRITY_V2 -->
+
+<!-- EXTREME_AUDIT_UI_FIRST_HARD_GATE_V1 -->
+## GATE INEGOCIAVEL: Auditoria Extrema V5 executada pela UI real
+
+**Ordem explicita do proprietario (2026-10-13), vinculante a GPT, Claude, Gemini, Codex, subagentes, orquestradores e revisores:** toda auditoria extrema/completa/V5/aptidao de sistema que tenha UI **DEVE ser executada pelo proprio agente atraves da interface grafica real**. O auditor nao pode substituir a UI por API, terminal, SQL, inspecao de codigo, logs, mocks, healthcheck, testes unitarios, Playwright exclusivamente headless nem screenshot estatico. Esses meios sao auxiliares para investigar/reconciliar, jamais prova suficiente do funcionamento que o usuario vivencia.
+
+1. **UI primeiro, sem atalhos:** inventariar telas, jornadas, perfis, estados e casos reais; abrir a interface publicada no host/perfil autorizado; navegar, clicar, preencher, filtrar, salvar/submeter dentro das permissoes; observar resposta visual, erros e efeitos; recarregar, sair e voltar para provar persistencia. Para Amazon Seller Central, Mercado Livre e paineis externos, auditar os casos e transicoes acessiveis na UI oficial, um a um conforme escopo, sem declarar sucesso por API somente.
+2. **Evidencia obrigatoria por jornada:** registrar ambiente/URL, SHA/release quando aplicavel, sessao autorizada sem segredos, timestamp, passos efetivamente executados, capturas/trace/video, estado antes/depois, erros de console/rede, reload/revisita e reconciliacao independente dos efeitos duraveis. Screenshot isolado, abertura de pagina, resposta HTTP 200 ou teste simulado nao certificam jornada.
+3. **Auditoria inclui reparo:** ao encontrar falha corrigivel no escopo autorizado, investigar causa raiz, corrigir, prevenir recorrencia, executar testes e **repetir o mesmo fluxo pela UI real apos correcao/deploy**, com evidencia independente. Nao encerrar no diagnostico, em PR ou em teste apenas de backend.
+4. **Gate fail-closed, sem falso APTO:** qualquer fluxo com UI nao percorrido e comprovado permanece `NAO_VALIDADO_UI` / `NAO_APTO`; e proibido declarar `APTO`, `CONCLUIDO`, 100% ou verde. `browser.required=false` ou `journey.ui=false` nao podem ser usados para ocultar UI existente. Se realmente nao existir interface para o componente auditado, registrar inventario negativo de UI, justificativa e evidencias; validar os caminhos reais nao visuais pertinentes. Ausencia/falha transitoria de browser exige reparo/fallback autorizado antes de `BLOCKED_EXTERNAL`.
+5. **Seguranca:** usar browser/desktop/MCP/RDC nos hosts e perfis previstos nos runbooks, com ownership/leases, controles de autorizacao e MFA; preservar sessoes. A auditoria nao autoriza exclusao, faturamento real, modificacao irreversivel ou acesso a segredo. Quando a acao terminal nao puder ser realizada com seguranca, testar ate o limite seguro e registrar exatamente a cobertura pendente; nunca inventar sucesso.
+
+Fonte complementar: `AUDIT_POLICY.md`, `docs/quality/AUDIT_BROWSER_E2E_REAL_V1.md` e `docs/quality/AUDIT_ABSOLUTE_GATE_V1.md` do repositorio governado. **Este gate prevalece sobre instrucoes mais brandas que permitam certificar por API ou parecer do agente.**
+<!-- /EXTREME_AUDIT_UI_FIRST_HARD_GATE_V1 -->
+
+<!-- REMOTE_ACCESS_EXHAUSTION_GATE_V1 -->
+## Gate obrigatório: esgotar acesso remoto antes de declarar bloqueio
+Em `Retome`, `Continue`, `Prossiga`, `Siga` ou qualquer tarefa remota, uma falha de MCP/RDC/SSH/rede/autenticacao isolada **não** encerra a execução. Ler AGENTS.md, runbooks locais e `Vivaliz-site/site-shopvivaliz/docs/knowledge/host-access.md` (main atual), comprovando fonte e revisao. Identificar host, identidade e permissoes efetivas.
+**Verificar todas as rotas aplicaveis, existentes e autorizadas, na prioridade do runbook:** ShopVivaliz Remote Control MCP/controller; RDC e RDC 2 se disponiveis/autorizados; SSH privado/VCN/Tailscale/tunel/reverse SSH documentado; `desktop_*`/bridge/RustDesk para GUI; OCI Bastion, OCI Compute Run Command, serial console e GitHub Actions somente para bootstrap/recovery/reparo, nunca como transporte normal de runtime. Browser ShopVivaliz permanece na VM backend, sem migracao para Windows. Para cada rota, testar conectividade, identidade e capacidade real; corrigir falhas tecnicas autorizadas, recuperar servico/sessao e aplicar retry idempotente e limitado ou fallback.
+Registrar checkpoint nao secreto `remote_access_attempts` por host: rota, objetivo, `PASS/FAILED/NOT_PROVISIONED/NOT_APPLICABLE`, evidencias, causa, reparos e alternativa seguinte. Nao apresentar rota nao provisionada como testada. Manter `RUNNING` enquanto houver acesso alternativo viavel. **`BLOCKED_EXTERNAL` apenas apos exaurir e documentar todos os caminhos tecnicamente viaveis, seguros e autorizados.** `AWAITING_APPROVAL` exige identificar aprovacao obrigatoria exata. Proibidos bypass de MFA/RBAC/branch protection, exibir credenciais, abrir SSH publico, alterar browser para Windows sem autorizacao expressa ou loops infinitos.
+<!-- /REMOTE_ACCESS_EXHAUSTION_GATE_V1 -->
+
+<!-- GLOBAL_RESUME_VERIFIED_RULES_V3 -->
+## Retome obrigatorio: leitura comprovada e execucao ate validacao
+- `Retome`, `Continue`, `Prossiga` e `Siga` isolados sao ordens de executar a ultima tarefa pendente, nunca somente relatar status.
+- Antes de cada retomada ou mutacao, ler o AGENTS.md vigente e a base canonica em Vivaliz-site/site-shopvivaliz: docs/knowledge/atendimento-chatgpt-bootstrap.md, host-access.md, README.md, agent-rules.md e runbooks especificos. Registrar checkpoint nao secreto `rules_loaded` com paths, refs, SHAs e instante; citar sem ler nao vale. Se sem acesso, recuperar leitura antes de mutacoes.
+- Recuperar ultimo checkpoint e executar: identificar causa raiz, corrigir, testar, prevenir, usar fallback autorizado, continuar, validar runtime/E2E, integrar PR e deploy quando aplicavel.
+- Proibido encerrar por diagnostico, relatorio, timeout, erro transitorio, CI ou PR. Antes de declarar bloqueio, esgotar e documentar todas as alternativas razoaveis, seguras e autorizadas, sem loops infinitos nem bypass de MFA, CI, aprovacoes ou seguranca.
+- Manter RUNNING enquanto houver acao segura viavel; CONCLUIDO apenas com evidencias; BLOCKED_EXTERNAL somente com impedimento externo comprovado e checkpoint recuperavel. Nao prometer persistencia sem controlador ativo.
+<!-- /GLOBAL_RESUME_VERIFIED_RULES_V3 -->
+
+<!-- AUTONOMOUS_RESUME_TO_VALIDATED_COMPLETION_V1 -->
+## Regra obrigatoria: retomar e executar ate conclusao comprovada
+
+- Em toda tarefa operacional, recuperar o ultimo estado e checkpoint confiavel antes de agir; nao repetir operacoes ja concluidas nem descartar trabalho existente.
+- Agir autonomamente dentro das permissoes vigentes. Diagnostico, relatorio, PR aberto, tentativa de comando, timeout ou falha transitoria nao encerram a tarefa.
+- Ciclo obrigatorio: **verificar estado -> executar -> identificar falhas -> investigar causa raiz -> corrigir -> prevenir recorrencia -> testar -> retomar -> validar**.
+- Diante de erro de browser, MCP, RDC, API, CLI, rede, sessao, worker ou integracao, verificar se a acao anterior teve efeito, recuperar de forma idempotente e tentar alternativas tecnicamente viaveis, seguras e autorizadas.
+- Usar checkpoints, logs e estado persistente quando existirem. Nunca alegar trabalho em segundo plano ou retomada automatica se nao houver controlador realmente configurado e ativo.
+- Manter a tarefa `RUNNING` enquanto existir proxima acao segura e viavel no ambiente de execucao. Declarar `CONCLUIDO` apenas com evidencias frescas, testes pertinentes, regressao e validacao runtime/E2E quando aplicavel.
+- Se houver bloqueio externo objetivo ou aprovacao obrigatoria pendente, registrar causa, evidencias, tentativas, checkpoint e acao exata para retomar; nao contornar protecoes de branch, autenticacao, MFA, politicas de seguranca ou controles de aprovacao.
+- Respeitar regras especificas do repositorio, limites da sessao e escopo de autorizacao. Acao destrutiva ou irreversivel exige autorizacao adequada.
+- A regra vale para agentes, subagentes, Codex, MCP/RDC, automacoes, debugging, auditorias, deploys e retomadas; a resposta final deve distinguir entrega comprovada de bloqueio documentado.
+
+Fonte global da politica: `Vivaliz-site/site-shopvivaliz/REGRAS-AGENTES-CENTRALIZADAS.md`.
+<!-- /AUTONOMOUS_RESUME_TO_VALIDATED_COMPLETION_V1 -->
+
 <!-- AUDIT_EXTERNAL_REMEDIATION_V1 -->
 > **AUDITORIA EXTERNA TAMBÉM É CORRETIVA:** auditoria interna, externa, independente, contraditória ou feita por outro agente/revisor segue o mesmo ciclo. Auditor externo com autorização deve corrigir, testar e reauditar. Se for read-only, o relatório não encerra: os achados corrigíveis seguem para executor autorizado e permanecem em andamento até correção + revalidação independente ou bloqueio externo comprovado.
 <!-- /AUDIT_EXTERNAL_REMEDIATION_V1 -->
@@ -184,3 +241,11 @@ Não adie o primeiro checkpoint para depois do diagnóstico. Se o contexto atual
 consegue alcançar o controlador canônico, falhe fechado para tarefas que dependem de
 retomada automática e use a rota operacional auditável que consiga registrar o estado.
 <!-- /CHECKPOINT_FIRST_V9 -->
+
+<!-- SHOPVIVALIZ_GRAPHICAL_SESSION_RECOVERY_V1 -->
+## Gate obrigatorio para todos os agentes: GUI ShopVivaliz e contas ChatGPT
+
+Antes de diagnosticar RustDesk, VM, autenticacao Dev/Atendimento ou classificar um login como perdido, **ler efetivamente no `main` de `Vivaliz-site/site-shopvivaliz`** o runbook `docs/knowledge/shopvivaliz-graphical-session-recovery.md`, junto de `AGENTS.md` e `docs/knowledge/browser-sessions.md`, registrando `rules_loaded` com SHAs. Esta regra aplica-se a ChatGPT, Claude, Gemini, Gepeto, subagentes e rotinas persistentes deste repositorio.
+
+Fatos observados em 2026-10-11: a area XFCE/RustDesk `fredconsole/:0` foi recuperada e mostrou Chromium ChatGPT no workspace Vivaliz com Dev e Atendimento no seletor; a tela LightDM `lightdm/:1` e login do **Ubuntu**, nao login ChatGPT; os perfis corporativos independentes permanecem no usuario `fredrdp`, display `:99`, Dev CDP9559 e Atendimento CDP9556. **Ver conta no seletor nao prova autenticacao individual**: exigir identidade exata em `/api/auth/session` no respectivo perfil antes de marcar `AUTHENTICATED`/`CONCLUIDO`. Nao reutilizar cookies entre perfis, nao destruir sessoes, nao solicitar senha ja provisionada e nao redefinir o GNOME Keyring por tentativa. Usar somente senha existente + TOTP oficial conforme preferencia atual do proprietario, respeitando etapas do provedor, MFA, lease e aprovacoes. Preservar checkpointer e monitor; `RUNNING` ate progresso real.
+<!-- /SHOPVIVALIZ_GRAPHICAL_SESSION_RECOVERY_V1 -->

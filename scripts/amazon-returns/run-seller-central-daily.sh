@@ -173,12 +173,21 @@ bridge_mode="--drain"
 if [[ " ${*:-} " == *" --bridge-once "* ]]; then
   bridge_mode="--once"
 fi
+# An outbound write may fail before the backlog of read-only identity checks.
+# Preserve write-first ordering, but still drain reads and report the write error.
+bridge_drain_failed=0
 if ! "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" "$bridge_mode"; then
-  record_auth_failure "BRIDGE_DRAIN_FAILED"
-  exit 75
+  # Do not poison the authenticated read worker heartbeat before it can
+  # verify pending support/SAFE-T identities.
+  bridge_drain_failed=1
 fi
 if ! "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs" --drain; then
   record_auth_failure "READ_DRAIN_FAILED"
+  exit 75
+fi
+if [[ "$bridge_drain_failed" -ne 0 ]]; then
+  record_auth_failure "BRIDGE_DRAIN_FAILED"
+  echo "BRIDGE_DRAIN_FAILED: read-only backlog attempted; write worker remains failed" >&2
   exit 75
 fi
 if ! "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" --drain; then

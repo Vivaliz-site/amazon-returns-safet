@@ -24,6 +24,7 @@ require_once __DIR__ . '/../../includes/amazon-returns/FinancialRefresh.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialRevalidation.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialCheckEvidence.php';
 require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
+require_once __DIR__ . '/../../includes/amazon-returns/AgeClosure.php';
 require_once __DIR__ . '/../../includes/amazon-returns/LearnedRuleOutcome.php';
 require_once __DIR__ . '/seller-central-worker.php';
 
@@ -98,6 +99,9 @@ class SvAmazonReturnsDaemon
                 $due,$gmailCursorState,$gmailTaskCursor,$now
             );
         }
+        $due=SvAmazonReturnsRuntime::deferFailedGmailReconciliation(
+            $due,$this->persistence->cursors->load('OPERATIONAL_TASK','gmail_refund_reconciliation'),$now
+        );
         $plan=SvAmazonFinancialRefresh::safeSchedule($due,$this->config->enabled(),$this->persistence);
         $due=SvAmazonReturnsRuntime::decisionSafeOrder($plan['due']);
         $results=['bootstrap'=>$bootstrap];
@@ -506,6 +510,7 @@ class SvAmazonReturnsDaemon
     /** @return array<string,mixed> */
     private function runScheduler(DateTimeImmutable $now): array
     {
+        $ageClosure=(new SvAmazonAgeClosure($this->persistence))->run($now);
         $cases=$this->persistence->cases->openCases(500);
         $knownCaseIds=[];
         foreach($cases as $caseRow){
@@ -612,7 +617,7 @@ class SvAmazonReturnsDaemon
             }
         }
         return [
-            'status'=>'OK','cases'=>count($cases),'decisions'=>$decisions,
+            'status'=>'OK','cases'=>count($cases),'age_closure'=>$ageClosure,'decisions'=>$decisions,
             'enqueued'=>$enqueued,'blocked_writes'=>$blockedWrites,'superseded_writes'=>$supersededWrites,
             'financial_checks_requested'=>$financialChecks,
             'decision_audit'=>$decisionAudit,
