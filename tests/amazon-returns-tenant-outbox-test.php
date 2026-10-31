@@ -221,6 +221,8 @@ toAssert(str_contains((string)($scopeReactivation[0]['sql']??''),"last_error='SE
 toAssert(str_contains((string)($scopeReactivation[0]['sql']??''),"JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.support_case_id'))=:previous_support_case_id"),'Scope recovery must compare the extracted support case ID instead of the whole JSON document.');
 toAssert(!str_contains((string)($scopeReactivation[0]['sql']??''),'payload_json=:previous_payload_json'),'Scope recovery must not compare a MySQL JSON document to the fetched serialized JSON string.');
 toSame('22449931941',$scopeReactivation[0]['params'][':previous_support_case_id']??null,'Scope recovery must bind the validated previous Seller Support scope.');
+toAssert(str_contains((string)($scopeReactivation[0]['sql']??''),'payload_json=CAST(:previous_payload_json AS JSON)'),'Scope recovery must compare the complete selected JSON payload as a JSON value for full-row CAS.');
+toSame('{"order_id":"702-9207715-8524262","support_case_id":"22449931941"}',$scopeReactivation[0]['params'][':previous_payload_json']??null,'Scope recovery must bind the exact payload read before the guarded update.');
 
 $scopeMismatchDb = new TenantOutboxMemoryPdo();
 $scopeMismatchOutbox = new SvAmazonTenantReturnsOutbox($scopeMismatchDb,$context);
