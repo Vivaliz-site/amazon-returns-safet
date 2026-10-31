@@ -4,6 +4,13 @@ declare(strict_types=1);
 final class SvAmazonSellerSupportStatus
 {
     private const TERMINAL=['RESOLVED','CLOSED','CANCELLED'];
+    private const CONFIRMED_UPDATE_ACCEPTED_REASONS=[
+        'SUPPORT_CASE_UPDATED_VIA_REPLY_API_AND_READ_BACK',
+        'SUPPORT_REPLY_HTTP_ERROR_BUT_READ_BACK_CONFIRMED',
+        'SUPPORT_CASE_UPDATED_AND_READ_BACK',
+        'SUPPORT_CHAT_ATTENDED_AND_READ_BACK_CONFIRMED',
+        'SUPPORT_UPDATE_FALLBACK_READBACK_CONFIRMED',
+    ];
 
     /** @return array{case_id:string,case_status:string,latest_text:string,content_fingerprint:string} */
     public static function normalize(array $support): array
@@ -24,6 +31,24 @@ final class SvAmazonSellerSupportStatus
     public static function isTerminalStatus(string $status): bool
     {
         return in_array(strtoupper(trim($status)),self::TERMINAL,true);
+    }
+
+    public static function isConfirmedWriteResult(array $payload): bool
+    {
+        $action=strtoupper(trim((string)($payload['action']??'')));
+        $status=strtoupper(trim((string)($payload['status']??'')));
+        $reason=strtoupper(trim((string)($payload['reason']??'')));
+        if($action==='SELLER_SUPPORT_UPDATE'){
+            if($status==='ALREADY_EXISTS')return $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED';
+            return $status==='ACCEPTED'
+                && ($payload['submitted']??false)===true
+                && in_array($reason,self::CONFIRMED_UPDATE_ACCEPTED_REASONS,true);
+        }
+        if($action==='SELLER_SUPPORT_OPEN'){
+            return ($status==='ACCEPTED' && ($payload['submitted']??false)===true)
+                || $status==='ALREADY_EXISTS';
+        }
+        return false;
     }
 
     public static function readKey(int $caseId,string $supportCaseId,DateTimeInterface $now): string
@@ -54,16 +79,7 @@ final class SvAmazonSellerSupportStatus
                 continue;
             }
             if($type!=='SELLER_CENTRAL_ACTION_RESULT' || $source!=='SELLER_CENTRAL')continue;
-            $action=strtoupper(trim((string)($payload['action']??'')));
-            $status=strtoupper(trim((string)($payload['status']??'')));
-            if(!in_array($action,['SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true))continue;
-            $reason=strtoupper(trim((string)($payload['reason']??'')));
-            $confirmedWrite=($status==='ACCEPTED' && ($payload['submitted']??false)===true)
-                || ($status==='ALREADY_EXISTS' && (
-                    $action==='SELLER_SUPPORT_OPEN'
-                    || $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED'
-                ));
-            if(!$confirmedWrite)continue;
+            if(!self::isConfirmedWriteResult($payload))continue;
             $external=trim((string)($payload['external_id']??''));
             if($external!=='' && $external!==$supportCaseId)continue;
             if($rank>$latestWriteRank){$latestWrite=$event;$latestWriteRank=$rank;}

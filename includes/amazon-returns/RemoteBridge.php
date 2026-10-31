@@ -171,6 +171,12 @@ final class SvAmazonReturnsRemoteBridge
         $externalId = self::nullableString($result['external_id'] ?? null);
         $retrySafe = ($result['retry_safe'] ?? false) === true;
         $reason = self::nullableString($result['reason'] ?? null);
+        $resultEventId = $result['result_event_id'] ?? null;
+        if ($resultEventId !== null
+            && (!is_string($resultEventId)
+                || preg_match('/^[a-f0-9]{32}$/D', $resultEventId) !== 1)) {
+            throw new RuntimeException('Invalid Seller Central bridge result event ID.');
+        }
         $submittedWithoutReadback = $status === 'UI_DRIFT'
             && $retrySafe
             && in_array($reason, self::SUPPORT_SUBMITTED_WITHOUT_READBACK_REASONS, true);
@@ -185,6 +191,7 @@ final class SvAmazonReturnsRemoteBridge
             'block_reason' => self::nullableString($result['block_reason'] ?? null),
             'next_allowed_at' => self::nullableString($result['next_allowed_at'] ?? null),
             'reason' => $reason,
+            'result_event_id' => $resultEventId,
             'evidence' => is_array($result['evidence'] ?? null) ? $result['evidence'] : [],
             'support' => is_array($result['support'] ?? null) ? SvAmazonSellerSupportStatus::normalize($result['support']) : null,
             'read' => is_array($result['read'] ?? null) ? SvAmazonSafeTStatus::normalize($result['read']) : null,

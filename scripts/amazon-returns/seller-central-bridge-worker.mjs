@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 import { safeTExternalWindow } from './safe-t-external-window.mjs';
@@ -1692,6 +1692,13 @@ async function supportOpen(cdp, job, options = {}) {
     reason: retryReconciliation ? 'SUPPORT_RETRY_RECONCILED_TERMINAL_CASE' : 'SUPPORT_CASE_ALREADY_EXISTS',
     evidence: await evidence(cdp, 'help-v1')
   });
+  // Previous write may be committed even if Seller Central has not indexed
+  // the case for read-back. Never issue a second write while unresolved.
+  if (retryReconciliation) return bridgeResult('HUMAN_INTERVENTION_REQUIRED', {
+    reason: 'SUPPORT_AMBIGUOUS_PRIOR_SUBMISSION_UNRESOLVED',
+    retry_safe: false,
+    evidence: await evidence(cdp, 'help-v1')
+  });
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'SUPPORT_ORDER_ID_REQUIRED' });
   const resolvedAsin = text(job.case?.asin || await resolveOrderAsin(cdp, orderId));
@@ -1893,6 +1900,35 @@ async function submitSupportEmailReplyApi(cdp, caseId, narrative) {
   return { status: confirmed ? 'ACCEPTED' : 'UNCONFIRMED', channels: channels.channels, http_status: Number(result.http_status || 0), attempted: true };
 }
 
+async function confirmSupportUpdateFallback(cdp, fallback, narrative) {
+  if (!fallback || fallback.status !== 'ACCEPTED') return fallback;
+  const caseId = text(fallback.external_id);
+  if (!/^\d{8,14}$/.test(caseId)) {
+    return bridgeResult('FAILED', {
+      reason: 'SUPPORT_UPDATE_FALLBACK_READBACK_ID_MISSING',
+      retry_safe: true,
+      evidence: await evidence(cdp, 'help-v1'),
+    });
+  }
+  const confirmed = await waitForSupportCaseText(cdp, caseId, text(narrative).slice(0, 240), 30000);
+  if (!confirmed) {
+    return bridgeResult('ALREADY_EXISTS', {
+      submitted: true,
+      external_id: caseId,
+      retry_safe: true,
+      reason: 'SUPPORT_CASE_ALREADY_EXISTS',
+      evidence: await evidence(cdp, 'help-v1'),
+    });
+  }
+  return bridgeResult('ACCEPTED', {
+    submitted: true,
+    external_id: caseId,
+    retry_safe: true,
+    reason: 'SUPPORT_UPDATE_FALLBACK_READBACK_CONFIRMED',
+    evidence: await evidence(cdp, 'help-v1'),
+  });
+}
+
 async function supportUpdate(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
@@ -1959,9 +1995,9 @@ async function supportUpdate(cdp, job) {
         && freshFallback.reason === 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED')
     );
     if (generalFallbackNeedsFba && supportRouteFor(job) === 'FBA_RETURNS_REIMBURSEMENT') {
-      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' });
+      return await confirmSupportUpdateFallback(cdp, await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' }), narrative);
     }
-    return freshFallback;
+    return await confirmSupportUpdateFallback(cdp, freshFallback, narrative);
   }
   const composerReady = await ensureSupportReplyComposer(cdp);
   if (!composerReady) {
@@ -1969,7 +2005,7 @@ async function supportUpdate(cdp, job) {
     if (sellerSupportCaseLogUnavailable(latestSupportPage?.text)) return sellerSupportUnavailableResult();
     const supportRoute = supportRouteFor(job);
     if (supportRoute) {
-      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute });
+      return await confirmSupportUpdateFallback(cdp, await supportOpen(cdp, job, { forceFreshCase: true, supportRoute }), narrative);
     }
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_REPLY_FIELD_MISSING', evidence: await evidence(cdp, 'help-v1') });
   }
@@ -1983,9 +2019,9 @@ async function supportUpdate(cdp, job) {
       || (freshFallback.status === 'UI_DRIFT' && freshFallback.reason === 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED')
     );
     if (generalFallbackNeedsFba && supportRouteFor(job) === 'FBA_RETURNS_REIMBURSEMENT') {
-      return await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' });
+      return await confirmSupportUpdateFallback(cdp, await supportOpen(cdp, job, { forceFreshCase: true, supportRoute: 'FBA_RETURNS_REIMBURSEMENT' }), narrative);
     }
-    return freshFallback;
+    return await confirmSupportUpdateFallback(cdp, freshFallback, narrative);
   }
   const confirmed = await waitForSupportCaseText(cdp, caseId, narrative.slice(0, 240));
   if (!confirmed) return bridgeResult('FAILED', { reason: 'SUPPORT_REPLY_NOT_CONFIRMED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
@@ -2039,6 +2075,9 @@ async function runOnce() {
     log('job_exception', { ...job, status: 'FAILED', reason: `UNHANDLED_${error?.name || 'ERROR'}:${text(error?.message).slice(0, 240)}` });
     result = bridgeResult('FAILED', { reason: `UNHANDLED_${error?.name || 'ERROR'}`, retry_safe: true });
   }
+  // One outcome identity per action execution. An HTTP re-POST of the same
+  // result must preserve this ID rather than creating a new write episode.
+  result.result_event_id = randomBytes(16).toString('hex');
   await bridge('result', { job_id: job.job_id, idempotency_key: job.idempotency_key, result });
   log('job_result', { ...job, ...result });
   const drainBlocked = ['AUTH_REQUIRED','HUMAN_CHALLENGE'].includes(result.status);
