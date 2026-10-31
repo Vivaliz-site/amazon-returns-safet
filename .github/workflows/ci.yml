@@ -101,10 +101,17 @@ jobs:
           bash -n scripts/provision-seller-central-browser-host.sh
           bash -n scripts/provision-amazon-totp-authenticator.sh
       - name: Always enforce secret, SSH and diff hygiene
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -Eeuo pipefail
           if git grep -n -E 'StrictHostKeyChecking=no|BEGIN OPENSSH PRIVATE KEY|otpauth://' -- scripts deploy includes api admin workers; then
             echo 'Prohibited secret/SSH weakening marker found.' >&2
             exit 1
           fi
-          git diff --check HEAD^
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            git diff --check "$BASE_SHA...$HEAD_SHA"
+          else
+            git diff --check HEAD^
+          fi
