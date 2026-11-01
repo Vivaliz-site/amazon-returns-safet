@@ -130,6 +130,8 @@ test("evidence freshness and official policy min budget are enforced", () => {
   denied(row, "AMAZON_BUYABLE_LIVE_REQUIRED");
   const p = coupon(); p.budgetBrl = 5;
   denied(candidate(), "OFFICIAL_BUDGET_DURATION_LIMITS_UNVERIFIED", p);
+  const p2 = coupon(); p2.budgetBrl = 0; p2.platformRules.minBudgetBrl = null;
+  denied(candidate(), "OFFICIAL_BUDGET_DURATION_LIMITS_UNVERIFIED", p2);
 });
 test("excluded materials and entire C08 family are never eligible", () => {
   for (const sku of ["C08BR", "X-C08-06", "Parafuso5x16", "SKU-343577002"]) {
