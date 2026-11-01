@@ -132,9 +132,10 @@ toAssert(method_exists($outbox,'supersedeTerminalReadJobs'),'Outbox must be able
 toSame(3,$outbox->supersedeTerminalReadJobs('TERMINAL_CASE_NO_LONGER_REQUIRES_READ'),'Closed-case read sweep must report the number of superseded jobs.');
 $terminalSweep=$db->executed[array_key_last($db->executed)]['sql']??'';
 toAssert(str_contains($terminalSweep,'closed_at IS NOT NULL'),'Terminal read sweep must only target concluded cases.');
-foreach(['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'] as $readKind){
+foreach(['SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'] as $readKind){
     toAssert(str_contains($terminalSweep,$readKind),'Terminal read sweep must include '.$readKind.'.');
 }
+toAssert(!str_contains($terminalSweep,'SAFE_T_READ'),'A terminal local state must not suppress monitoring of a real SAFE-T claim.');
 toAssert(!str_contains($terminalSweep,'SAFE_T_SUBMIT'),'Terminal read sweep must never touch external write kinds.');
 toAssert(str_contains($terminalSweep, "o.status='PENDING' OR (o.status='PROCESSING' AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND))"), 'Terminal read sweep must keep a live PROCESSING lease and only supersede stale processing reads.');
 $db->queue(['row_count'=>2]);
