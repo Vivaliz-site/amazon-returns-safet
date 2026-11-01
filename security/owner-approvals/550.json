@@ -1,0 +1,13 @@
+{
+  "schema": "SHOPVIVALIZ_OWNER_PR_GRANT_V1",
+  "repository": "Vivaliz-site/amazon-returns-safet",
+  "pr_number": 550,
+  "resource": "seller-central:totp-private-route",
+  "principal": "amazon-returns-seller-central-auth-worker",
+  "target_repository": "Vivaliz-site/amazon-returns-safet",
+  "capabilities": [
+    "totp_ssh_pinned_alias"
+  ],
+  "operation": "set_private_route_with_pinned_key",
+  "expires_at_utc": "2026-11-15T00:00:00Z"
+}

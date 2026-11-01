@@ -323,3 +323,45 @@ test('resolves the Seller Central account switcher before treating the session a
   assert.equal(requestedTotp, false);
   assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'MARKETPLACE_SELECTED' });
 });
+
+
+test('TOTP over a private routed address uses the previously pinned SSH host identity, without weakening verification', async () => {
+  let observed = null;
+  const result = await requestRemoteTotp({
+    host: 'ubuntu@100.66.174.74',
+    hostKeyAlias: '10.0.1.38',
+    keyFile: '/secure/ssh/totp_ed25519',
+    knownHostsFile: '/secure/ssh/known_hosts',
+    runner: async (file, args, options) => {
+      observed = { file, args, options };
+      return { exitCode: 0, stdout: '834201\n', stderr: '' };
+    },
+  });
+  assert.equal(result, '834201');
+  assert.equal(observed.file, '/usr/bin/ssh');
+  assert.ok(observed.args.includes('HostKeyAlias=10.0.1.38'));
+  assert.ok(observed.args.includes('StrictHostKeyChecking=yes'));
+  assert.ok(observed.args.includes('UserKnownHostsFile=/secure/ssh/known_hosts'));
+  assert.ok(observed.args.includes('BatchMode=yes'));
+  assert.ok(observed.args.includes('IdentitiesOnly=yes'));
+  assert.equal(observed.args.at(-1), 'ubuntu@100.66.174.74');
+  assert.equal(observed.options.shell, false);
+  assert.ok(!observed.args.some(arg => /StrictHostKeyChecking=(no|accept-new)|UserKnownHostsFile=\/dev\/null/i.test(arg)));
+});
+
+test('refuses unsafe SSH host aliases before starting a TOTP transport', async () => {
+  for (const alias of ['10.0.1.38 other', '10.0.1.38\n-o', '*', '-oUnsafe', 'foo/bar', '']) {
+    let spawned = false;
+    await assert.rejects(
+      requestRemoteTotp({
+        host: 'ubuntu@100.66.174.74',
+        hostKeyAlias: alias,
+        keyFile: '/secure/ssh/totp_ed25519',
+        knownHostsFile: '/secure/ssh/known_hosts',
+        runner: async () => { spawned = true; return { exitCode: 0, stdout: '123456\n' }; },
+      }),
+      /host alias/i,
+    );
+    assert.equal(spawned, false);
+  }
+});
