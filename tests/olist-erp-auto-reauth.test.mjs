@@ -72,6 +72,59 @@ test('recovers the observed Olist concurrent-session callback without exposing f
   ]);
 });
 
+function makeObservedOlistEntryPage() {
+  const calls = [];
+  const page = {
+    current: 'https://erp.olist.com/',
+    url() { return this.current; },
+    getByRole: (_role, options) => ({
+      first: () => {
+        if (String(options?.name?.source || '').includes('voltar para o login')) {
+          return { isVisible: async () => true, click: async () => {
+            calls.push('back-to-login');
+            page.current = 'https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/auth';
+          }};
+        }
+        return { isVisible: async () => false };
+      },
+    }),
+    locator: selector => ({
+      first: () => {
+        if (selector === 'input[name="username"]') {
+          return { isVisible: async () => true, fill: async () => calls.push('fill-user') };
+        }
+        if (selector === 'input[type="password"]') {
+          return { isVisible: async () => true, fill: async () => calls.push('fill-password') };
+        }
+        if (selector === 'button[type="submit"]') {
+          return { isVisible: async () => true, click: async () => {
+            calls.push('submit-login');
+            page.current = 'https://erp.olist.com/devolucoes_vendas#list';
+          }};
+        }
+        return { isVisible: async () => false };
+      },
+    }),
+    waitForURL: async predicate => assert.equal(predicate(page.current), true),
+    goto: async url => { calls.push('goto-target'); page.current = url; },
+  };
+  return { page, calls };
+}
+
+test('observed ERP login callback offers back-to-login, no credentials: fail closed at Tiny AUTH', async () => {
+  const { page, calls } = makeObservedOlistEntryPage();
+  const result = await ensureOlistAuthenticated(page, { email: '', password: '' });
+  assert.deepEqual(result, { status: 'AUTH_REQUIRED', reason: 'FALLBACK_CREDENTIALS_MISSING' });
+  assert.deepEqual(calls, ['back-to-login']);
+});
+
+test('observed ERP login callback falls through to protected Tiny login and confirms ERP return UI', async () => {
+  const { page, calls } = makeObservedOlistEntryPage();
+  const result = await ensureOlistAuthenticated(page, { email: 'fixture@example.invalid', password: 'fixture-password' });
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'SESSION_REAUTHENTICATED' });
+  assert.deepEqual(calls, ['back-to-login', 'fill-user', 'fill-password', 'submit-login']);
+});
+
 test('fails closed when Tiny login is visible but fallback credentials are unavailable', async () => {
   const page = { url: () => 'https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/auth' };
   const result = await ensureOlistAuthenticated(page, { email: '', password: '' });
