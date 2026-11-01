@@ -76,8 +76,9 @@ final class SvAmazonReturnsBridgeService
                 $this->p->outbox->markSuperseded((int)$row['id'],'SELLER_SUPPORT_SCOPE_SUPERSEDED');
                 continue;
             }
-            // Never dispatch a queued D+45 SAFE-T write before Amazon's external clock.
-            // Derive order_at from the scoped, append-only ORDER_SYNCED timeline.
+            // Enforce the owner's D+45 initial-opening clock. The official Seller Central
+            // eligibility UI and per-channel write gates remain mandatory.
+            // Read order provenance from the scoped ORDER_SYNCED timeline.
             if(strtoupper((string)($row['kind']??''))==='SAFE_T_SUBMIT'){
                 $events=$this->p->events->eventsForCase((int)$row['case_id']);
                 $gate=SvAmazonSafeTExternalWindow::inspect(
