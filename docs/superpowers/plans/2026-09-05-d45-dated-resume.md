@@ -1,9 +1,9 @@
 # D+45 opening and Amazon-requested resumption
 
-**Goal:** Apply the owner's latest explicit instruction: first operational opening at D+45; resume on the date Amazon explicitly requests, never silently replace first opening with D+60 or D+75.
+**Goal:** Apply the owner's latest explicit instruction: first operational opening at D+45; resume on the date Amazon explicitly requests, never silently replace the initial attempt with a longer internal waiting period.
 **Architecture:** Tenant-scoped versioned operational policy; separate published Amazon guidance; evidence-backed date extraction and idempotent lifecycle resumption. Existing read, credit reconciliation, submission preflight and channel write gates remain mandatory.
 **Stack:** PHP, MySQL scoped repositories, Node Windows CDP reader, GitHub CI and existing deployment timer.
-**Spec:** This plan supersedes earlier D+75 and 45/60-first-opening plans for the ShopVivaliz tenant only. Published Amazon 60-day guidance is retained as external evidence, not rewritten as 45 days.
+**Spec:** This plan supersedes earlier delayed-first-opening proposals for the ShopVivaliz tenant only. Published Amazon program-specific eligibility guidance remains external evidence and must be honored by the live Seller Central eligibility check.
 
 ## Global constraints
 - Do not bypass Amazon eligibility, CAPTCHA, MFA, tool authorization or OS permissions.
