@@ -22,5 +22,5 @@ test('browser, grants, D+45 and idempotency remain explicit safety conditions', 
   assert.match(access, /idempotência/i);
   assert.match(access, /kill switch/i);
   assert.match(access, /sete canais externos/i);
-  assert.match(access, /não.*editar.*current\//i);
+  assert.match(access, /Nunca editar `current\//i);
 });
