@@ -68,3 +68,11 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Testes: RED sintetico mostrou resultado indevido; GREEN isolado com PHP lint e fixture de arquivo legivel/ilegivel e kill-switch; `tests/write-profile-test.php` cobre regressao de parametro vazio, arquivo ausente, diretorio e kill-switch. Gates oficiais e deploy ainda exigidos.
 - P0 externo previamente contido na Marina com `AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH=1`, sete write gates false como `www-data`. Patch de diagnostico nao reabilita SAFE-T nem processa outbox, nao fecha elegibilidade/refunds/credito.
 - Estado NAO_APTO ate checks exatos, merge/deploy canonicos e reconciliacao Seller Central/Financeiro.
+
+
+## 2026-11-01 — #532: auto-deploy bloqueado por fixtures PHP executadas como root
+
+- **RED real:** a PR #538 passou CI/governanca e main `5de68c831a3afc2379e82c0e869d149b76cdace9`. Timer oficial da Marina disparou 31/10 23:58:22 UTC e `amazon-returns-deploy.service` terminou com exit=1 antes da troca de `current` (continua na release `c76f9615397db9399c31bd54bd3736a86edbaa88`). O teste isolado `tests/email-executor-gates-test.php` falha como root em 3 cenarios `claimed=[]`; como `ubuntu`, passa. Nenhuma submissao externa nem outbox rearmada.
+- **Causa raiz confirmada:** `provision-production.sh` roda todas fixtures PHP como root; `includes/Database.php` importa `config/bootstrap-env.php`, que como root le `shared/.env` contendo o **kill switch ON intencional** e o aplica corretamente a fixtures de perfil de escrita sintetico, invalidando as expectativas do teste. Nao desligar kill switch para corrigir teste.
+- **GREEN focal do reparo:** `sudo -n runuser -u ubuntu -- env AMAZON_RETURNS_ENV_FILE=/dev/null php tests/email-executor-gates-test.php` no release candidato imutavel retornou `email-executor-gates-test: OK`. O provisionador passara a executar *todas* as fixtures PHP com usuario `ubuntu` e `AMAZON_RETURNS_ENV_FILE=/dev/null`, isolando secrets sem afetar daemon/service ou perfil de escrita. Contrato de regressao estatico em `tests/production-provision-test.php`.
+- Necessarios CI exato, governanca, merge protegido, deploy canonico e validacao independente de checker + kill switch como `www-data`. Nao alterar `shared/.env`, flags, DB do usuario, outbox, credenciais ou qualquer claim. Estado: NAO_APTO.
