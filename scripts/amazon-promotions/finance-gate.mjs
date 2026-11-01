@@ -65,7 +65,7 @@ export function evaluatePromotion(row = {}, proposal = {}, nowValue = Date.now()
     deny("BRAZIL_FBA_ONSITE_CONTRACT_NOT_VERIFIED");
   }
   if (erp.sku !== sku || erp.match !== "EXACT" || erp.situation !== "A") deny("ERP_EXACT_ACTIVE_MATCH_REQUIRED");
-  if (!currentEvidence(erp.verifiedAt, now, TTL_LIVE_MS) || !erp.lastPurchaseAt || !erp.lastPurchaseProof) deny("ERP_LAST_PURCHASE_NOT_VERIFIED");
+  if (!currentEvidence(erp.verifiedAt, now, TTL_LIVE_MS) || !erp.lastPurchaseAt || !erp.lastPurchaseProof || erp.lastPurchaseVerified !== true) deny("ERP_LAST_PURCHASE_NOT_VERIFIED");
   if (amazon.sku !== sku || amazon.asin !== asin || amazon.buyable !== true ||
       !currentEvidence(amazon.verifiedAt, now, TTL_LIVE_MS)) deny("AMAZON_BUYABLE_LIVE_REQUIRED");
   if (!Number.isSafeInteger(amazon.fulfillableUnits) || amazon.fulfillableUnits < qty) deny("AMAZON_FULFILLABLE_STOCK_INSUFFICIENT");
