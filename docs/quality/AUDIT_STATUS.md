@@ -85,3 +85,13 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - **Causa raiz interna**: o commit via Git Data API da PR #540 inadvertidamente redefiniu ambos os modos de arquivos shell de `100755` para `100644`. O wrapper invoca o provisionador diretamente; falta de bit executavel bloqueia execucao antes dos testes. Nao houve mudanca de config/SAFE-T.
 - **Correção**: restaurar modos Git `100755` para ambos os scripts SEM alterar os bytes, com contrato RED/GREEN `is_executable` em `tests/production-provision-test.php`. Validar no CI e em `stat` do SHA publicado antes de declarar deploy. Permanecem 7 gates efetivos OFF sob kill switch; nao desligar containment para obter GREEN.
 - NAO_APTO ate main CI, deploy canônico e readback independente do checker, tenant e filas.
+
+
+## 2026-11-01 — #532: D+45 first SAFE-T opening; no later hardcoded first-attempt gate
+
+- Base SHA: 5bbf846be081f9d867d16b88821ccdfc637043bc.
+- Impacto: Owner's first official Seller Central eligibility/opening attempt is D+45 after confirmed Amazon refund for FBA Onsite and DBA. Both server and Node hardcoded later preflights previously postponed it. Replaced by D+45; live Amazon eligibility, tenant write flags, global kill switch, existing-claim checks, claim reason, readback ID, and idempotency remain mandatory. No production write profile or pending claim changed.
+- Testes: RED previously observable from the original PHP/Node timestamp gates for September refunds and later-opening outbox. D+45 exact-boundary tests added for missing order date, malformed refund, conflicting evidence, unknown program, and UI eligibility-check ordering. New GREEN on PR SHA and affected CI required before merge; proposed test code is not execution evidence.
+- Evidencias: SafeTExternalWindow.php, safe-t-external-window.mjs, BridgeService.php, seller-central-bridge-worker.mjs, backfill.php, regression tests and canonical D+45 runbook/AGENTS/MEMORIA. Production baseline is release 5bbf846b with kill switch ON and seven writes OFF. Cases #8803 and #1263 have PENDING outbox attempts=0 and future available_at from the obsolete guard.
+- Pendencias: owner's draft-PR approval and personal merge as a compliance-related guard change; full CI, migration of old outbox deferrals by authorized tenant-scoped CAS, canonical deploy and UI evidence on published SHA. Never enable writes, bypass Amazon eligibility or resubmit duplicate claims by virtue of D+45 alone.
+- Estado: NAO_APTO / AWAITING_OWNER_PR_APPROVAL; this row is not proof of production deploy, external acceptance, or recovered credit.
