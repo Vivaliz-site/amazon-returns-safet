@@ -62,11 +62,16 @@ function defaultRunner(file, args, options = {}) {
   });
 }
 
-export async function requestRemoteTotp({ host, keyFile, knownHostsFile, sshBinary = '/usr/bin/ssh', runner = defaultRunner } = {}) {
+export async function requestRemoteTotp({ host, keyFile, knownHostsFile, hostKeyAlias, sshBinary = '/usr/bin/ssh', runner = defaultRunner } = {}) {
   for (const [label, value] of Object.entries({ host, keyFile, knownHostsFile })) {
     if (!String(value ?? '').trim()) throw new Error(`Remote TOTP ${label} is required.`);
   }
   if (String(host).trim().startsWith('-')) throw new Error('Remote TOTP host is invalid.');
+  // An explicitly configured alias must still match an existing, verified
+  // known_hosts entry. Never disable host-key checking for a routed TOTP host.
+  if (hostKeyAlias != null && (typeof hostKeyAlias !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(hostKeyAlias))) {
+    throw new Error('Remote TOTP host alias is invalid.');
+  }
   const args = [
     '-T',
     '-o', 'BatchMode=yes',
@@ -74,6 +79,7 @@ export async function requestRemoteTotp({ host, keyFile, knownHostsFile, sshBina
     '-o', 'StrictHostKeyChecking=yes',
     '-o', `UserKnownHostsFile=${knownHostsFile}`,
     '-o', 'ConnectTimeout=10',
+    ...(hostKeyAlias == null ? [] : ['-o', `HostKeyAlias=${hostKeyAlias}`]),
     '-i', keyFile,
     host,
   ];
@@ -158,6 +164,7 @@ export async function ensureSellerCentralAuthenticated(cdp, options = {}) {
   const passwordFile = options.passwordFile ?? process.env.SELLER_CENTRAL_PASSWORD_FILE;
   const totpRequester = options.totpRequester || (() => requestRemoteTotp({
     host: options.totpHost ?? process.env.SELLER_CENTRAL_TOTP_HOST,
+    hostKeyAlias: options.totpHostKeyAlias ?? process.env.SELLER_CENTRAL_TOTP_HOST_KEY_ALIAS,
     keyFile: options.totpKeyFile ?? process.env.SELLER_CENTRAL_TOTP_KEY_FILE,
     knownHostsFile: options.totpKnownHostsFile ?? process.env.SELLER_CENTRAL_TOTP_KNOWN_HOSTS_FILE,
     sshBinary: options.sshBinary ?? process.env.SELLER_CENTRAL_TOTP_SSH_BINARY ?? '/usr/bin/ssh',
