@@ -54,26 +54,49 @@ async function recoverConcurrentSessionEntry(page, timeout) {
 }
 
 export async function ensureOlistAuthenticated(page, credentials = {}, options = {}) {
-  const state = classifyOlistLocation(page.url());
+  let state = classifyOlistLocation(page.url());
   if (state === 'ERP') return { status: 'AUTHENTICATED', reason: 'SESSION_REUSED' };
   if (state === 'ERP_ENTRY') {
     const timeout = Number(options.timeoutMs || 15000);
     try {
-      const login = page.getByRole('button', { name: /^login$/i }).first();
+      let login = page.getByRole('button', { name: /^login$/i }).first();
       if (!await login.isVisible().catch(() => false)) {
-        return { status: 'AUTH_REQUIRED', reason: 'ERP_ENTRY_UNSUPPORTED' };
+        login = null;
+        // Observed ERP da Olist login callback has only "voltar para o login",
+        // not the older "Login" button. It must reach the Tiny AUTH flow.
+        for (const role of ['button', 'link']) {
+          const candidate = page.getByRole(role, { name: /^voltar para o login$/i }).first();
+          if (await candidate.isVisible().catch(() => false)) {
+            login = candidate;
+            break;
+          }
+        }
       }
+      if (!login) return { status: 'AUTH_REQUIRED', reason: 'ERP_ENTRY_UNSUPPORTED' };
       await login.click();
-      await page.waitForURL(url => classifyOlistLocation(String(url)) === 'ERP', { timeout });
-      if (!page.url().startsWith(TARGET_URL)) {
-        await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout });
+      // The callback may restore an existing ERP session OR redirect to
+      // Tiny identity; only treat the former as authenticated.
+      await page.waitForURL(url => ['ERP', 'AUTH'].includes(classifyOlistLocation(String(url))), { timeout });
+      state = classifyOlistLocation(page.url());
+      if (state === 'ERP') {
+        if (!page.url().startsWith(TARGET_URL)) {
+          await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout });
+        }
+        if (classifyOlistLocation(page.url()) !== 'ERP') {
+          return { status: 'AUTH_REQUIRED', reason: 'ERP_ENTRY_FAILED' };
+        }
+        return { status: 'AUTHENTICATED', reason: 'CONCURRENT_SESSION_CONFIRMED' };
       }
-      return { status: 'AUTHENTICATED', reason: 'CONCURRENT_SESSION_CONFIRMED' };
+      // AUTH is not evidence of a logged-in session: continue below,
+      // using only the existing protected credentials if provisioned.
     } catch {
       if (await recoverConcurrentSessionEntry(page, timeout)) {
         return { status: 'AUTHENTICATED', reason: 'CONCURRENT_SESSION_CALLBACK_RECOVERED' };
       }
-      return { status: 'AUTH_REQUIRED', reason: 'ERP_ENTRY_FAILED' };
+      if (classifyOlistLocation(page.url()) !== 'AUTH') {
+        return { status: 'AUTH_REQUIRED', reason: 'ERP_ENTRY_FAILED' };
+      }
+      state = 'AUTH';
     }
   }
   if (state !== 'AUTH') return { status: 'AUTH_REQUIRED', reason: 'UNEXPECTED_LOCATION' };
