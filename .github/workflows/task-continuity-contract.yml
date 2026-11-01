@@ -3,6 +3,8 @@ name: Global Task Continuity Contract
 on:
   pull_request:
     paths:
+      - "tests/test_agent_checklist_contract_v1.py"
+      - ".github/copilot-instructions.md"
       - "scripts/agent_task_state.py"
       - "tests/test_global_task_continuity_adapter.py"
       - "docs/knowledge/task-continuity.md"
@@ -13,6 +15,8 @@ on:
   push:
     branches: [main]
     paths:
+      - "tests/test_agent_checklist_contract_v1.py"
+      - ".github/copilot-instructions.md"
       - "scripts/agent_task_state.py"
       - "tests/test_global_task_continuity_adapter.py"
       - "docs/knowledge/task-continuity.md"
@@ -38,3 +42,6 @@ jobs:
           grep -Fq "GLOBAL_TASK_CONTINUITY_V8" AGENTS.md
       - run: grep -Fq "CHECKPOINT_FIRST_V9" AGENTS.md
           grep -Fq "GLOBAL_TASK_CONTINUITY_V8" docs/knowledge/task-continuity.md
+
+      - name: Validate universal agent checklist and adapter forwarding
+        run: python3 -m unittest tests.test_agent_checklist_contract_v1 -v
