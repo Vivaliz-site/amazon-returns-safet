@@ -12,7 +12,7 @@ foreach(['STANDARD','FBA_ONSITE','DELIVERY_BY_AMAZON'] as $program){
  $row=$case+['program'=>$program];
  $before=SvAmazonReturnPolicyEngine::evaluate($row,new DateTimeImmutable('2026-08-15T11:59:59Z'));
  $due=SvAmazonReturnPolicyEngine::evaluate($row,new DateTimeImmutable('2026-08-15T12:00:00Z'));
- dorSame(false,$before['eligible'],$program.' no early D45');dorSame(true,$due['eligible'],$program.' no silent D60/D75');
+ dorSame(false,$before['eligible'],$program.' no early D45');dorSame(true,$due['eligible'],$program.' first opening stays D45');
  dorSame('SAFE_T_SUBMIT',$engine->nextAction($row,[],$due,new DateTimeImmutable('2026-08-15T12:00:00Z'))['action'],$program.' first opening at D45');
 }
 $claim=$case+['program'=>'STANDARD','safe_t_id'=>'11111-22222-3333333','appeal_deadline_at'=>'2026-09-15 18:00:00'];$claim['state']='SAFE_T_DENIED';
