@@ -11,6 +11,8 @@ $vhostPath=__DIR__.'/../deploy/apache/returns.shopvivaliz.com.br.conf';
 $runbookPath=__DIR__.'/../docs/runbooks/tenant-foundation-migration.md';
 ppAssert(is_file($scriptPath),'Production provision script must exist.');
 ppAssert(is_file($liveVerificationPath),'Live tenant verification script must exist.');
+ppAssert(is_executable($scriptPath),'Production provision script must retain executable bit for canonical direct invocation.');
+ppAssert(is_executable($liveVerificationPath),'Live tenant foundation verifier must retain executable bit for canonical direct invocation.');
 ppAssert(is_file($vhostPath),'Dedicated Apache vhost must exist.');
 ppAssert(is_file($runbookPath),'Tenant migration runbook must exist.');
 
