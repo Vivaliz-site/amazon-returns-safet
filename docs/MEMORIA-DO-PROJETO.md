@@ -13,7 +13,7 @@ Não cobrar novamente uma perda já integralmente resolvida. Recebimento parcial
 
 Confirmar que o reembolso partiu da Amazon. Reembolso iniciado pelo próprio vendedor ou iniciador desconhecido não pode ser automaticamente classificado como reembolso da Amazon. Preservar os dados e encaminhar para o tratamento adequado quando houver dúvida.
 
-A regra operacional não dispensa a validação de elegibilidade efetiva na Amazon nem autoriza usar um canal incompatível com o programa logístico. As regras externas por programa ficam registradas separadamente; não substituem silenciosamente D+45 por D+60 ou D+75 neste tenant.
+A regra operacional não dispensa a validação de elegibilidade efetiva na Amazon nem autoriza usar um canal incompatível com o programa logístico. Regras externas por programa permanecem documentadas separadamente e nunca mudam silenciosamente o agendamento interno da primeira tentativa D+45.
 
 Se a Amazon pedir para aguardar, registrar a resposta original e a data solicitada. Retomar/reabrir no canal adequado nessa data, após nova verificação financeira, sem criar reivindicação, recurso, e-mail ou chamado duplicado. Prazo ambíguo requer esclarecimento/revisão, não uma data inventada.
 
