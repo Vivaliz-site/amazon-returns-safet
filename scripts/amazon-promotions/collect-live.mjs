@@ -1,5 +1,6 @@
 // Read-only, official SP-API + Olist/Tiny v3 evidence collector.
 // Does not scrape Seller Central, create promotions, or treat standard FBA estimates as FBA Onsite fees.
+import { isExcludedProduct } from "./finance-gate.mjs";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -127,6 +128,7 @@ export async function collectLive(skus, now = new Date()) {
   if (!Array.isArray(skus) || skus.length < 1 || skus.length > 10 ||
       new Set(skus).size !== skus.length ||
       skus.some(sku => !/^[A-Za-z0-9_*./-]{1,50}$/.test(sku))) throw new Error("SKU_SCOPE_INVALID");
+  if (skus.some(sku => isExcludedProduct({ sku }))) throw new Error("EXCLUDED_SKU_SCOPE");
   requireSetting(env("AMAZON_SELLER_ID", "AMAZON_MERCHANT_ID", "SP_API_SELLER_ID"), "AMAZON_SELLER_ID");
   if (env("AMAZON_SP_API_ENDPOINT") && env("AMAZON_SP_API_ENDPOINT") !== AMAZON) throw new Error("AMAZON_ENDPOINT_NOT_APPROVED");
   const [at, tt] = await Promise.all([amazonToken(), tinyToken()]);
@@ -171,6 +173,7 @@ export async function collectLive(skus, now = new Date()) {
         sku, match: "EXACT", situation: detail.situacao,
         lastPurchaseCostBrl: cost?.precoCusto ?? null, lastPurchaseAt: cost?.data ?? null,
         lastPurchaseProof: cost ? "TINY_V3_COST_HISTORY:" + product.id + ":" + cost.data : null,
+        lastPurchaseVerified: false, // A Tiny cost history is not independent proof of last supplier purchase.
         verifiedAt: now.toISOString(), dimensionsCm: detail.dimensoes || null,
         stockQuantity: detail.estoque?.quantidade ?? null,
       },
