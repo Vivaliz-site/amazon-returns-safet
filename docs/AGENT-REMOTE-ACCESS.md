@@ -1,38 +1,37 @@
-# Acesso remoto canônico dos agentes
+# Acesso remoto canônico dos agentes — Amazon Returns SAFE-T
 
-Este arquivo é leitura obrigatória antes de qualquer tarefa que envolva VM, runtime, navegador, serviço, deploy, logs ou recuperação operacional.
+**Estado vigente: 2026-11-01.** Leitura obrigatória antes de ações sobre VM, serviço, deploy, banco, UI Seller Central, logs ou recuperação. As normas atuais em `Vivaliz-site/site-shopvivaliz@main` prevalecem sobre qualquer registro histórico deste repositório.
 
-## Hosts canônicos
+## VMs operacionais e identidade
 
-- `shopvivaliz-free-a1` — produção web — VCN `10.0.1.112`.
-- `always-free-arm-1787907847-26` — backend/automação/browser — VCN `10.0.1.38`; Tailscale conhecido `100.66.174.74`.
-- `Fred-Win` e `KOCEPSV` são hosts de apoio. Navegador de tarefas ShopVivaliz não deve rodar neles.
+- `marina-a1-4c24g` (OCI ESPOSA): **produção web, Amazon Returns, deploy, MySQL e workers**. Endereço privado VCN `10.80.1.116`; endereço Tailscale verificado em registros `100.118.170.46`. Confirmar identidade e acesso vivo antes de qualquer uso.
+- `always-free-arm-1787907847-26` (OCI PRINCIPAL): **backend, controlador MCP central, navegador de agentes e relay corporativo**. Privado `10.0.1.38`; endereço Tailscale conhecido `100.66.174.74`.
+- `shopvivaliz-free-a1`: **VM antiga excluída**. **NUNCA** acessar, monitorar, criar sessão, executar SSH, deploy, workflow ou recriar esse host. Endereços e aliases históricos não são destinos substitutos da Marina.
+- `Fred-Win` e `KOCEPSV`: estações de apoio autorizadas somente na função documentada; não substituem o navegador de agentes da backend.
 
-## Ordem de acesso
+## Ordem de acesso e controles
 
-1. **Shell de agentes:** usar SSH privado com o usuário dedicado `shopvivaliz-agent`, somente por VCN/Tailscale. SSH público direto, login root e autenticação por senha continuam proibidos.
-2. **Agente cloud sem rota VCN/Tailscale:** não inventar acesso SSH. Usar o control plane auditável do repositório `Vivaliz-site/site-shopvivaliz` e, quando necessário, OCI Bastion. O bootstrap/recuperação canônico vive nesse repositório.
-3. **GUI/validação visual:** usar RustDesk self-hosted. O servidor ID/relay está na backend; clientes humanos via Tailscale usam `100.66.174.74`. O campo API pode ficar vazio no servidor OSS. Nunca copiar a chave privada do RustDesk.
-4. **Desktop Commander:** contingência apenas. Não é o canal principal e não deve ser usado para tarefas rotineiras.
-5. **GitHub Actions/OCI Bastion:** fallback auditável para bootstrap, recuperação e operações quando o agente não possui rota privada direta.
+1. **MCP ShopVivaliz Remote Control / controlador** para capacidades expressamente provisionadas. O MCP central reconhece a Marina, mas uma listagem não prova `route_enabled=true` nem autoriza escrita. A via independente Marina deve ser validada separadamente; não confundir sua disponibilidade com RDC.
+2. **Remote Desktop Commander 1/2 diretamente na Marina** quando a conta, dispositivo e permissão real forem confirmados pela listagem vigente. A conexão atualmente conhecida atua como `ubuntu`, não como root implícito; qualquer `sudo` precisa de autorização efetiva e controles próprios. Nunca usar conexão para outro dispositivo/conta como fallback para contornar recusa.
+3. **SSH privado / Tailscale por rota previamente autenticada, com chave do host pinada e identidade/lease específicos**. Não presumir que o usuário legado `shopvivaliz-agent`, chave histórica ou IP privado entre tenancies estejam habilitados. Não fazer SSH público, login root ou senhas por tentativa.
+4. **Interface gráfica real** para Seller Central e qualquer auditoria de UI; o navegador corporativo de agentes deve executar **somente na backend** `always-free-arm-1787907847-26`, com sessão/perfil, MFA, lease e controles oficiais. API, SQL e screenshots isolados complementam, mas não substituem o E2E visual.
+5. **GitHub Actions/OCI Bastion e control plane** destinam-se a bootstrap/recuperação oficialmente permitidos, nunca bypass de RBAC, recusa de ferramenta, MFA, SSH ou proteção da branch.
 
-## Navegador
+## Proteções para Amazon Returns SAFE-T
 
-Qualquer navegador, Playwright/Selenium/CDP, MFA, CAPTCHA, consentimento ou validação visual deve usar a VM backend `always-free-arm-1787907847-26`. Não abrir browser em Fred-Win ou KOCEPSV para tarefas ShopVivaliz.
+- Primeira tentativa operacional de elegibilidade/abertura em **D+45 após reembolso ao comprador**, preservando a exigência de elegibilidade **real** na interface Amazon por programa e caso. O calendário interno não modifica as condições do provedor.
+- Antes de qualquer SAFE-T: verificar pedido, devolução/recebimento físico, crédito ao vendedor, elegibilidade, existência de claim, idempotência e readback. **Não** enviar claim duplicada, apoio, recurso ou movimento no ERP sem gates e autorização aplicáveis.
+- Manter kill switch, sete canais externos, outbox, locks e leases sem alteração por simples auditoria. Não usar uma operação de leitura para habilitar escrita.
+- Senha, usuário, TOTP, cookies, chaves e tokens provisionados são **dados protegidos**, não devem ser copiados entre perfis, registrados em logs ou solicitados novamente sem comprovar falha por via autorizada.
+- Produção usa releases imutáveis. Nunca editar `current/` ou release ativa diretamente; seguir PR, checks, merge autorizado, deploy canônico e readback de SHA.
 
-## Segurança e validação
+## Fontes de verdade
 
-- Nunca imprimir, versionar ou pedir ao usuário chave privada, senha, token ou secret.
-- Material de chave do usuário `shopvivaliz-agent` é provisionado pelos fluxos autorizados; não copiar a chave para outro host.
-- Antes de agir, validar `hostname`, `whoami`, diretório do repo e estado Git.
-- Produção é imutável: no site, não editar a release ativa/`current` diretamente.
-- Se o ambiente atual não tiver rota privada, declarar isso e usar o fallback autorizado em vez de concluir que a VM está offline.
-
-## Fonte canônica
-
-A implementação e documentação operacional de referência ficam em:
+- `Vivaliz-site/site-shopvivaliz/docs/knowledge/atendimento-chatgpt-bootstrap.md`
 - `Vivaliz-site/site-shopvivaliz/docs/knowledge/host-access.md`
 - `Vivaliz-site/site-shopvivaliz/docs/knowledge/agent-rules.md`
-- `Vivaliz-site/site-shopvivaliz/docs/REMOTE-ACCESS-GITHUB.md`
+- `Vivaliz-site/site-shopvivaliz/docs/knowledge/current-topology-and-access-2026-10-29.md`
+- `Vivaliz-site/amazon-returns-safet/AGENTS.md`
+- `Vivaliz-site/amazon-returns-safet/docs/runbooks/shopvivaliz-d45-operational-policy.md`
 
-Quando houver divergência, a versão mais recente desses arquivos no `main` de `site-shopvivaliz` prevalece.
+Em divergência, consultar `main` atualizado dos documentos superiores e validar o runtime antes de agir. Não simular grant, sessão, E2E, SHA publicado ou aprovação.
