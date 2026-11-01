@@ -15,7 +15,7 @@ function candidate() {
     erp: {
       sku: "JVCDAC34", match: "EXACT", situation: "A",
       verifiedAt: live, lastPurchaseCostBrl: 161.54,
-      lastPurchaseAt: "2026-10-26", lastPurchaseProof: "TINY_V3_COST_HISTORY:350509721:2026-10-26",
+      lastPurchaseAt: "2026-10-26", lastPurchaseProof: "TINY_V3_COST_HISTORY:350509721:2026-10-26", lastPurchaseVerified: true,
     },
     amazon: {
       sku: "JVCDAC34", asin: "B0DYH5B8Y6", verifiedAt: live,
@@ -99,6 +99,8 @@ test("refuses unverified redemption, installment, commission or stacked discount
   denied(row2, "SKU_COMMISSION_OR_INSTALLMENT_UNVERIFIED");
   const row3 = candidate(); row3.stacking = null;
   denied(row3, "PROMOTION_STACKING_UNVERIFIED");
+  const row4 = candidate(); row4.erp.lastPurchaseVerified = false;
+  denied(row4, "ERP_LAST_PURCHASE_NOT_VERIFIED");
 });
 test("real fee and additional discounts reduce margin below ten percent", () => {
   const row = candidate();
