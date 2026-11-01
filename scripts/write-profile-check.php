@@ -29,4 +29,5 @@ if($envFileSpecified){
 if(!isset($override['AMAZON_RETURNS_ENABLED']))$override['AMAZON_RETURNS_ENABLED']='1';
 if(!isset($override['AMAZON_RETURNS_MODE']))$override['AMAZON_RETURNS_MODE']='production';
 $config=new SvAmazonReturnsConfig($override);
-echo json_encode(['version'=>$config->writeProfileVersion(),'flags'=>$config->writeFlags()],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES).PHP_EOL;
+$killSwitchActive=in_array(strtolower($config->get('AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH','0')),['1','true','yes','on'],true);
+echo json_encode(['version'=>$config->writeProfileVersion(),'kill_switch_active'=>$killSwitchActive,'flags'=>$config->writeFlags()],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES).PHP_EOL;

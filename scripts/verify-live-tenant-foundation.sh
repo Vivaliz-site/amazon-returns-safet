@@ -112,13 +112,29 @@ fi
 write_profile_json="$(php "$(dirname "$0")/write-profile-check.php" "--env-file=$env_file")"
 profile_value() {
     local key="$1"
-    printf '%s' "$write_profile_json" | php -r '$j=json_decode(stream_get_contents(STDIN),true);$k=$argv[1];if($k==="version"){echo $j["version"]??"";exit;}echo !empty($j["flags"][$k])?"1":"0";' "$key"
+    # Missing or malformed observed gates must fail closed, never count as false.
+    printf '%s' "$write_profile_json" | php -r '
+        $j=json_decode(stream_get_contents(STDIN),true);$k=$argv[1];
+        if(!is_array($j))exit(2);
+        if($k==="version"){if(!is_string($j["version"]??null))exit(2);echo $j["version"];exit;}
+        if($k==="kill_switch_active"){if(!is_bool($j["kill_switch_active"]??null))exit(2);echo $j["kill_switch_active"]?"1":"0";exit;}
+        if(!is_array($j["flags"]??null)||!array_key_exists($k,$j["flags"])||!is_bool($j["flags"][$k]))exit(2);
+        echo $j["flags"][$k]?"1":"0";
+    ' "$key"
 }
 write_profile_version="$(profile_value version)"
 [[ "$write_profile_version" == 'safet-full-recovery-v2' ]] || { echo "write_profile_invalid version=$write_profile_version" >&2; exit 1; }
-for spec in SAFE_T_SUBMIT:1 SAFE_T_APPEAL:1 SAFE_T_EMAIL_REVIEW:1 SAFE_T_EMAIL_REPLY:1 SELLER_SUPPORT_OPEN:1 SELLER_SUPPORT_UPDATE:1 ERP_SALES_RETURN_CREATE:1; do
-    action="${spec%%:*}"; expected="${spec##*:}"; actual="$(profile_value "$action")"
-    [[ "$actual" == "$expected" ]] || { echo "write_profile_flag_mismatch action=$action expected=$expected actual=$actual" >&2; exit 1; }
+kill_switch_active="$(profile_value kill_switch_active)"
+# An authorized emergency stop must remain stopped through deployment. If not
+# stopped, preserve the original strict full-recovery write-gate requirement.
+case "$kill_switch_active" in
+    1) expected_write_flag=0 ;;
+    0) expected_write_flag=1 ;;
+    *) echo 'write_kill_switch_state_invalid' >&2; exit 1 ;;
+esac
+for action in SAFE_T_SUBMIT SAFE_T_APPEAL SAFE_T_EMAIL_REVIEW SAFE_T_EMAIL_REPLY SELLER_SUPPORT_OPEN SELLER_SUPPORT_UPDATE ERP_SALES_RETURN_CREATE; do
+    actual="$(profile_value "$action")"
+    [[ "$actual" == "$expected_write_flag" ]] || { echo "write_profile_flag_mismatch action=$action expected=$expected_write_flag actual=$actual" >&2; exit 1; }
 done
 
 emit "tenant_count=$tenant_count"
@@ -136,6 +152,7 @@ emit "dead_letters=$dead_letters"
 emit "learned_rule_execution_enabled=$learned_rule_execution_enabled"
 emit "review_notification_ready=$review_notification_ready"
 emit "write_profile_version=$write_profile_version"
+emit "external_writes_contained=$kill_switch_active"
 emit "safe_t_submit_write_enabled=$(profile_value SAFE_T_SUBMIT)"
 emit "safe_t_appeal_write_enabled=$(profile_value SAFE_T_APPEAL)"
 emit "erp_sales_return_write_enabled=$(profile_value ERP_SALES_RETURN_CREATE)"
