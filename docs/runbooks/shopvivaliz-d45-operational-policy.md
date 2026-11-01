@@ -1,13 +1,13 @@
 # ShopVivaliz: first opening at D+45, resumption on Amazon's requested date
 
 ## Owner-approved operating rule (2026-09-05)
-First operational opening is at D+45, measured from the recorded seller debit with the existing refund-date fallback. Do not silently substitute D+60 or D+75 for this first attempt.
+First operational SAFE-T eligibility/opening attempt is D+45, measured from the confirmed Amazon refund to the buyer. A later seller-debit timestamp does not delay this opening. Do not replace the initial D+45 attempt with another internal waiting period.
 If Amazon requests a wait, store the exact requested date and the response evidence. Resume or reopen in the appropriate existing channel on that date, after refreshing and reconciling the financial evidence. Never create a duplicate claim just to restart a timer.
 A day-only Brazilian date starts at 00:00 America/Sao_Paulo; an explicit instruction to return *after* a date resumes the following day. Relative calendar-day waits use the original response timestamp, not each polling time. Ambiguous dates and unsupported business-day calculations require human review.
 
-## External policy is not rewritten
-Amazon's announcement describes 60 days after customer refund for applicable FBA Onsite/DBA orders from 2026-04-21, and 45 days for older orders. That evidence remains distinct from this owner's D+45 first-attempt instruction.
-The Amazon eligibility check must still run. Record BLOCKED_UNTIL and the date actually returned; never bypass an eligibility block, CAPTCHA or authentication requirement.
+## External eligibility is independently verified
+The first D+45 attempt must open the **official eligibility check in Seller Central**, not assume the claim has been accepted. Amazon may impose a different program-specific submission window. That official rule remains binding and can be consulted using the original references below; the owner's first-attempt schedule does not rewrite Amazon's terms.
+If the official eligibility check refuses submission, record BLOCKED_UNTIL, the original evidence and any date actually supplied by Amazon; wait and resume on that date without creating duplicates. Never bypass an eligibility block, CAPTCHA, authentication, a disabled submit button or the channel write gates. A draft/pending outbox item is not a claim submitted to Amazon.
 
 ## Automatic administrative close at D+90 (owner instruction 2026-10-11)
 

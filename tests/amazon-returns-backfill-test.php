@@ -15,8 +15,8 @@ $thrown=false; try{SvAmazonReturnsBackfill::window(181,$now);}catch(InvalidArgum
 
 $policies=[
  ['id'=>1,'status'=>'ACTIVE','marketplace_id'=>'BR','program'=>'STANDARD','effective_from'=>'2020-01-01','effective_to'=>null,'eligibility_days'=>45,'basis'=>'SELLER_DEBIT_AT'],
- ['id'=>2,'status'=>'ACTIVE','marketplace_id'=>'BR','program'=>'FBA_ONSITE','effective_from'=>'2026-04-21','effective_to'=>null,'eligibility_days'=>60,'basis'=>'SELLER_DEBIT_AT'],
- ['id'=>3,'status'=>'ACTIVE','marketplace_id'=>'BR','program'=>'DELIVERY_BY_AMAZON','effective_from'=>'2026-04-21','effective_to'=>null,'eligibility_days'=>60,'basis'=>'SELLER_DEBIT_AT'],
+ ['id'=>2,'status'=>'ACTIVE','marketplace_id'=>'BR','program'=>'FBA_ONSITE','effective_from'=>'2026-04-21','effective_to'=>null,'eligibility_days'=>45,'basis'=>'SELLER_DEBIT_AT'],
+ ['id'=>3,'status'=>'ACTIVE','marketplace_id'=>'BR','program'=>'DELIVERY_BY_AMAZON','effective_from'=>'2026-04-21','effective_to'=>null,'eligibility_days'=>45,'basis'=>'SELLER_DEBIT_AT'],
 ];
 $base=['marketplace_id'=>'BR','program'=>'STANDARD','order_at'=>'2026-05-01 10:00:00','refund_initiator'=>'AMAZON_AUTOMATIC','refund_at'=>'2026-06-01 10:00:00','seller_debit_at'=>'2026-06-01 10:00:00','quantity_ordered'=>1,'quantity_refunded'=>1,'quantity_received'=>0,'physical_status'=>'NOT_RECEIVED','state'=>'AWAITING_RETURN','expected_reimbursement_amount'=>'100.00','reconciled_credit_amount'=>'0.00','policies'=>$policies];
 $cases=[
@@ -31,7 +31,7 @@ $cases=[
 ];
 $summary=SvAmazonReturnsBackfill::summarize($cases,$now);
 bfSame(7,$summary['ingested'],'Unique cases ingested.'); bfSame(1,$summary['deduped'],'Duplicate case snapshot deduped.');
-bfSame(1,$summary['unclassified'],'Unknown initiator classified for review.'); bfSame(1,$summary['d45_candidates'],'One normal D+45 candidate.'); bfSame(1,$summary['d60_candidates'],'One DBA D+60 candidate.');
+bfSame(1,$summary['unclassified'],'Unknown initiator classified for review.'); bfSame(2,$summary['d45_candidates'],'Standard and DBA both qualify for the D+45 opening.'); bfAssert(!array_key_exists('d60_candidates',$summary),'No separate later-opening candidate category');
 bfSame(1,$summary['already_reimbursed'],'Already credited case.'); bfSame(1,$summary['active_safe_t'],'Active SAFE-T count.'); bfSame(2,$summary['denied'],'Denied SAFE-T count.'); bfSame(1,$summary['support_escalation_candidates'],'Repeated denial candidate for Help.');
 
 $batch=SvAmazonReturnsBackfill::batch(array_values($cases),0,3); bfSame(3,count($batch['records']),'Batch limit honored.'); bfSame(3,$batch['next_cursor'],'Backfill cursor advances.');

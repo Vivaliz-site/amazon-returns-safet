@@ -2,13 +2,14 @@
 declare(strict_types=1);
 
 /**
- * Independent external SAFE-T submission clock, separate from the tenant's
- * D+45 investigation trigger. Never infer order time from refund time.
+ * Owner's D+45 first-opening preflight, measured from the customer refund.
+ *
+ * This gate does NOT certify Amazon's external claim eligibility. The live
+ * Seller Central eligibility check, write flags, readback and idempotency
+ * rules must still pass before a claim can be submitted.
  */
 final class SvAmazonSafeTExternalWindow
 {
-    private const CUTOFF = '2026-04-21';
-
     /**
      * @param array<string,mixed> $case
      * @param list<array<string,mixed>> $events
@@ -23,12 +24,14 @@ final class SvAmazonSafeTExternalWindow
                 'not_before'=>null,'order_at'=>null];
         }
 
+        // Order timestamp is useful for provenance but is NOT an extra delay.
+        // An absent timestamp must not silently postpone an owner-approved D+45
+        // opening; conflicting or malformed timestamps still fail closed.
         $orderDates=[];
         foreach($events as $event){
             if(!is_array($event) || (string)($event['event_type']??'')!=='ORDER_SYNCED')continue;
             $payload=$event['payload']??null;
-            if(!is_array($payload))continue;
-            if(!array_key_exists('order_at',$payload))continue;
+            if(!is_array($payload) || !array_key_exists('order_at',$payload))continue;
             $raw=$payload['order_at'];
             if($raw===null || $raw==='')continue;
             $orderAt=self::utcDate($raw);
@@ -38,24 +41,21 @@ final class SvAmazonSafeTExternalWindow
             }
             $orderDates[$orderAt->format('Y-m-d H:i:s')]=$orderAt;
         }
-        if(count($orderDates)!==1){
-            return ['allowed'=>false,'reason'=>'ORDER_AT_UNVERIFIED_OR_CONFLICTING',
+        if(count($orderDates)>1){
+            return ['allowed'=>false,'reason'=>'ORDER_AT_CONFLICTING',
                 'not_before'=>null,'order_at'=>null];
         }
-        $orderAt=array_values($orderDates)[0];
-        $orderDate=$orderAt->format('Y-m-d H:i:s');
+        $orderDate=$orderDates===[]?null:array_values($orderDates)[0]->format('Y-m-d H:i:s');
         $refundAt=self::utcDate($case['refund_at']??null);
         if($refundAt===null){
             return ['allowed'=>false,'reason'=>'REFUND_AT_UNVERIFIED',
                 'not_before'=>null,'order_at'=>$orderDate];
         }
-        $days=$orderAt->format('Y-m-d')>=self::CUTOFF?60:45;
-        $notBefore=$refundAt->add(new DateInterval('P'.$days.'D'))
-            ->format('Y-m-d H:i:s');
+        $notBefore=$refundAt->add(new DateInterval('P45D'))->format('Y-m-d H:i:s');
         $nowUtc=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
         return [
             'allowed'=>$nowUtc>=$notBefore,
-            'reason'=>$nowUtc>=$notBefore?'EXTERNAL_WINDOW_REACHED':"D{$days}_EXTERNAL_WINDOW_PENDING",
+            'reason'=>$nowUtc>=$notBefore?'D45_OPENING_REACHED':'D45_OPENING_PENDING',
             'not_before'=>$notBefore,
             'order_at'=>$orderDate,
         ];

@@ -651,7 +651,7 @@ async function safeTSubreasonDiagnostics(cdp, value) {
 async function safeTSubmit(cdp, job) {
   const snapshotFailure = writeSnapshotFailure(job);
   if (snapshotFailure) return snapshotFailure;
-  // First fail-closed gate: do not even enter the SAFE-T creation flow early.
+  // Owner D+45 preflight: do not enter the SAFE-T eligibility flow early.
   const openingWindow = safeTExternalWindow(job);
   if (!openingWindow.allowed) {
     return bridgeResult('BLOCKED_UNTIL', {
@@ -743,8 +743,8 @@ async function safeTSubmit(cdp, job) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_CONFIRMATION_CHECKBOX_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
   await sleep(500);
-  // Second independent gate immediately before the irreversible submit click.
-  // A stale/previously queued job must never rely on the Seller Central UI alone.
+  // Recheck D+45 immediately before the irreversible submit click.
+  // Official eligibility and all server-side write controls must also have passed.
   const finalWindow = safeTExternalWindow(job);
   if (!finalWindow.allowed) {
     return bridgeResult('BLOCKED_UNTIL', {

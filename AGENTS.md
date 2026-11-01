@@ -112,9 +112,9 @@ Antes de executar qualquer comando em VM Oracle Cloud, leia e siga obrigatoriame
 - Senhas, hashes, seeds, OTPs, cookies, tokens e chaves jamais devem ser escritos em documentação, logs, commits, PRs ou respostas de chat. Documente apenas a localização/fonte segura e o procedimento de uso.
 
 ## Latest owner decision: 2026-09-05
-First operational opening for ShopVivaliz is D+45. Do not silently replace this with D+60 or D+75.
+First operational SAFE-T eligibility/opening attempt for ShopVivaliz is D+45 after the confirmed customer refund. Never silently defer this first attempt to an alternative internal calendar.
 When Amazon requests a wait, preserve its actual requested date and response evidence; resume/reopen in the correct existing channel on that date, after real financial revalidation.
-This supersedes older D+75 notes and the abandoned45/60 FIRST-opening proposal. Published Amazon program-specific guidance is still external evidence, not rewritten by this operational instruction. Respect the live Amazon eligibility check.
+This supersedes previous longer-delay and mixed-calendar opening proposals. Published Amazon program-specific guidance remains independently authoritative, and the live Seller Central eligibility result must be respected before external submission.
 See `docs/runbooks/shopvivaliz-d45-operational-policy.md` and `docs/superpowers/plans/2026-09-05-d45-dated-resume.md`.
 
 ## Invariants
