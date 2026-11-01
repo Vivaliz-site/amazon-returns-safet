@@ -70,6 +70,7 @@ if(is_file($checker)){
    exec(escapeshellarg(PHP_BINARY).' '.escapeshellarg($checker).' '.escapeshellarg('--env-file='.$env).' 2>&1',$lines,$exit);
    $json=json_decode(implode("\n",$lines),true);
    wpSame(0,$exit,'readable synthetic env should work');
+   wpSame(true,$json['kill_switch_active']??null,'checker exposes only sanitized effective kill switch state');
    wpSame(false,$json['flags']['SAFE_T_SUBMIT']??null,'effective kill switch applied from readable env');
   } finally {unlink($env);}
  }

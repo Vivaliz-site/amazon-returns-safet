@@ -21,6 +21,7 @@ if(!is_string($checker)||$checker==='')throw new RuntimeException('Write profile
 $json=shell_exec('php '.escapeshellarg($checker).' --env-file='.escapeshellarg($env));
 unlink($env);
 $checked=is_string($json)?json_decode($json,true):null;
+liveErpAssert(($checked['kill_switch_active']??null)===false,'Uncontained ERP fixture must expose effective kill switch OFF.');
 liveErpAssert(
     ($checked['flags']['ERP_SALES_RETURN_CREATE']??null)===true,
     'Live write-profile checker must honor the dedicated ERP env gate from --env-file.'
@@ -28,8 +29,12 @@ liveErpAssert(
 
 $verifier=(string)file_get_contents(__DIR__.'/../scripts/verify-live-tenant-foundation.sh');
 liveErpAssert(
-    str_contains($verifier,'ERP_SALES_RETURN_CREATE:1'),
-    'Live tenant verifier must require the ERP sales-return write gate.'
+    str_contains($verifier,'ERP_SALES_RETURN_CREATE; do')
+    && str_contains($verifier,'kill_switch_active="$(profile_value kill_switch_active)"')
+    && str_contains($verifier,'1) expected_write_flag=0')
+    && str_contains($verifier,'0) expected_write_flag=1')
+    && str_contains($verifier,'[[ "$actual" == "$expected_write_flag" ]]'),
+    'Live tenant verifier must demand effective ERP gate OFF under emergency containment and ON otherwise, failing closed.'
 );
 liveErpAssert(
     str_contains($verifier,'erp_sales_return_write_enabled=$(profile_value ERP_SALES_RETURN_CREATE)'),

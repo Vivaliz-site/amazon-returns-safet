@@ -179,7 +179,11 @@ ALTER USER '$target_user'@'localhost' IDENTIFIED BY '$db_pass';
 GRANT ALL PRIVILEGES ON \`$target_db\`.* TO '$target_user'@'localhost';
 FLUSH PRIVILEGES;
 SQL
-for test in "$release"/tests/*.php; do php "$test" >/dev/null; done
+# Never let root provisioning import protected live env into synthetic PHP tests.
+# Test fixtures run with least privilege and explicit empty env provenance.
+for test in "$release"/tests/*.php; do
+    runuser -u ubuntu -- env AMAZON_RETURNS_ENV_FILE=/dev/null php "$test" >/dev/null
+done
 php "$release/scripts/audit-tenant-sql.php" >/dev/null
 find "$release/includes" "$release/api" "$release/admin" "$release/workers" "$release/scripts" \
     -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null

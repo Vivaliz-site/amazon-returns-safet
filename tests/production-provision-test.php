@@ -91,4 +91,11 @@ ppAssert(str_contains($script,"set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTIO
 ppAssert(str_contains($script,"set_env_key 'AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL' 'fredmourao@gmail.com'"),'Production must persist the approved review reminder recipient.');
 ppAssert(!str_contains($script,"ensure_env_key 'OPENAI_API_KEY'"),'Provisioning must not manufacture or overwrite an OpenAI API key.');
 foreach(['pending_outbox','dead_letters','learned_rule_execution_enabled','review_notification_ready'] as $needle)ppAssert(str_contains($liveVerification,$needle),'Live verifier missing rollout gate '.$needle);
+// Fail closed against real provider state leaking into synthetic PHP tests.
+ppAssert(str_contains($script,'runuser -u ubuntu -- env AMAZON_RETURNS_ENV_FILE=/dev/null php "$test" >/dev/null'),'Production synthetic PHP tests must run unprivileged with live env excluded.');
+ppAssert(!str_contains($script,'do php "$test" >/dev/null'),'Provisioning must not run PHP fixtures as root.');
+ppAssert(str_contains($liveVerification,'kill_switch_active="$(profile_value kill_switch_active)"'),'Live foundation must read authoritative effective kill switch.');
+ppAssert(str_contains($liveVerification,'1) expected_write_flag=0'),'Containment branch requires ALL seven effective write gates false.');
+ppAssert(str_contains($liveVerification,'0) expected_write_flag=1'),'Uncontained branch retains ALL seven true requirement.');
+ppAssert(str_contains($liveVerification,'external_writes_contained=$kill_switch_active'),'Live foundation must explicitly emit containment status.');
 echo "production-provision-test: OK\n";
