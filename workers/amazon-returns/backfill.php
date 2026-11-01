@@ -26,7 +26,7 @@ final class SvAmazonReturnsBackfill
         return ['records'=>$slice,'next_cursor'=>$next<count($records)?$next:null];
     }
 
-    /** @return array{ingested:int,deduped:int,unclassified:int,d45_candidates:int,d60_candidates:int,already_reimbursed:int,active_safe_t:int,denied:int,support_escalation_candidates:int} */
+    /** @return array{ingested:int,deduped:int,unclassified:int,d45_candidates:int,already_reimbursed:int,active_safe_t:int,denied:int,support_escalation_candidates:int} */
     public static function summarize(array $snapshots, DateTimeImmutable $now): array
     {
         $unique=[]; $deduped=0;
@@ -36,7 +36,7 @@ final class SvAmazonReturnsBackfill
             if (isset($unique[$key])) { $deduped++; continue; }
             $unique[$key]=$case;
         }
-        $out=['ingested'=>count($unique),'deduped'=>$deduped,'unclassified'=>0,'d45_candidates'=>0,'d60_candidates'=>0,'already_reimbursed'=>0,'active_safe_t'=>0,'denied'=>0,'support_escalation_candidates'=>0];
+        $out=['ingested'=>count($unique),'deduped'=>$deduped,'unclassified'=>0,'d45_candidates'=>0,'already_reimbursed'=>0,'active_safe_t'=>0,'denied'=>0,'support_escalation_candidates'=>0];
         foreach ($unique as $case) {
             $expected=(float)($case['expected_reimbursement_amount'] ?? $case['refund_amount'] ?? 0);
             $credited=(float)($case['reconciled_credit_amount'] ?? 0);
@@ -54,8 +54,7 @@ final class SvAmazonReturnsBackfill
             $policy=SvAmazonReturnPolicyEngine::evaluate($case,$now);
             if (($policy['state'] ?? null)===SvAmazonReturnStates::POLICY_REVIEW_REQUIRED) { $out['unclassified']++; continue; }
             if (($policy['eligible'] ?? false)!==true) continue;
-            if (in_array($program,[SvAmazonReturnPrograms::FBA_ONSITE,SvAmazonReturnPrograms::DELIVERY_BY_AMAZON],true) && self::isPostExceptionEffective($case)) $out['d60_candidates']++;
-            else $out['d45_candidates']++;
+            $out['d45_candidates']++;
         }
         return $out;
     }
@@ -79,9 +78,4 @@ final class SvAmazonReturnsBackfill
         return array_values($cases);
     }
 
-    private static function isPostExceptionEffective(array $case): bool
-    {
-        $raw=(string)($case['order_at'] ?? '');
-        return $raw!=='' && substr($raw,0,10)>='2026-04-21';
-    }
 }
