@@ -539,10 +539,12 @@ final class SvAmazonReturnsRuntime
             $operationalHealth['blockers'][]='OUTBOX_UI_DRIFT_REASON_'.$reasonCode;
         }
         $erpIncomplete=$p->erpSalesReturns->countIncomplete();
+        $erpRefundQuantityUnknown=$p->cases->countRefundQuantityUnconfirmed();
         $erpStaleWaitingInvoices=$p->erpSalesReturns->countStaleWaitingInvoices();
         $erpBreakdown=$p->erpSalesReturns->healthBreakdown();
         $supportIdentityCollisions=$p->cases->countSupportCaseCrossOrderDuplicateGroups();
         $prematureReceivedOkClosures=$p->cases->countPrematureReceivedOkClosures();
+        if($erpRefundQuantityUnknown>0)$operationalHealth['blockers'][]='ERP_REFUND_QUANTITY_UNCONFIRMED';
         if($erpIncomplete>0){
             $operationalHealth['blockers'][]='TASK_ERP_SALES_RETURNS_INCOMPLETE';
         }
@@ -573,6 +575,7 @@ final class SvAmazonReturnsRuntime
             'ui_drift_reason_codes'=>$uiDriftReasonCodes,
             'pending_reviews'=>$p->reviews->countOpen(),
             'erp_sales_return_incomplete'=>$erpIncomplete,
+            'erp_refund_quantity_unconfirmed'=>$erpRefundQuantityUnknown,
             'erp_sales_return_stale_waiting_invoice'=>$erpStaleWaitingInvoices,
             'erp_sales_return_breakdown'=>$erpBreakdown,
             'seller_support_cross_order_duplicate_groups'=>$supportIdentityCollisions,

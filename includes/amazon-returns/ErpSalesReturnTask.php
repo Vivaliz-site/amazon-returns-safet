@@ -131,23 +131,19 @@ final class SvAmazonErpSalesReturnTask
         }while((($page-1)*$perPage)<$total && $page<=1000);
 
         $workflows=[];
-        $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
         foreach($orderCases as $orderId=>$cases){
             $workflow=$p->erpSalesReturns->findByOrder($orderId);
             if(self::erpReturnExplicitlyIgnored($orderId)){
                 if(is_array($workflow))$p->erpSalesReturns->markIgnoredByUser($orderId);
                 continue;
             }
-            if(!self::workflowWithinOperationalScope($workflow,$cases,$now)){
-                if(self::workflowShouldBeIgnoredOutsideOperationalWindow($workflow)){
-                    $p->erpSalesReturns->markIgnoredRefundOutsideOperationalWindow($orderId);
-                }
-                continue;
-            }
+            // Refund age is never a reason to suppress ERP sales-return reconciliation.
+            // Historical age-exempted workflows must rejoin the normal idempotent path.
+            if(!self::hasConfirmedRefundQuantity($cases))continue;
             if(is_array($workflow) && in_array(strtoupper(trim((string)($workflow['status']??''))),['IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW'],true)){
                 $workflow=$p->erpSalesReturns->reactivateIgnoredRefund($orderId);
             }
-            if(!self::workflowProcessable($workflow))continue;
+            if(!self::workflowProcessable($workflow,$cases))continue;
             $workflows[$orderId]=$workflow;
         }
         $ids=array_keys($workflows);
@@ -171,40 +167,11 @@ final class SvAmazonErpSalesReturnTask
         ],true);
     }
 
-    /** @param list<array<string,mixed>> $cases */
-    public static function workflowWithinOperationalScope(?array $workflow,array $cases,?DateTimeImmutable $now=null): bool
+    /** Refund quantity, not refund date, determines whether an ERP return is due. */
+    public static function hasConfirmedRefundQuantity(array $cases): bool
     {
-        return self::refundWithinOperationalWindow($cases,$now);
-    }
-
-    public static function workflowShouldBeIgnoredOutsideOperationalWindow(?array $workflow): bool
-    {
-        if(!is_array($workflow))return false;
-        $status=strtoupper(trim((string)($workflow['status']??'')));
-        return in_array($status,[
-            'PENDING',
-            'READY_TO_CREATE',
-            'BLOCKED',
-            'RETURN_CREATED_WAITING_INVOICE',
-            'IGNORED_REFUND_OLDER_THAN_90D',
-            'IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW',
-        ],true);
-    }
-
-    /** @param list<array<string,mixed>> $cases */
-    public static function refundWithinOperationalWindow(array $cases,?DateTimeImmutable $now=null): bool
-    {
-        $now=($now??new DateTimeImmutable('now',new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));
-        $cutoff=$now->sub(new DateInterval('P30D'));
-        $hasRefundedCase=false;
         foreach($cases as $case){
-            if(!is_array($case) || (int)($case['quantity_refunded']??0)<1)continue;
-            $hasRefundedCase=true;
-            $raw=trim((string)($case['refund_at']??''));
-            if($raw==='')return true;
-            try{$refundAt=(new DateTimeImmutable($raw,new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));}
-            catch(Throwable){return true;}
-            if($refundAt >= $cutoff)return true;
+            if(is_array($case) && (int)($case['quantity_refunded']??0)>0)return true;
         }
         return false;
     }
@@ -305,11 +272,22 @@ final class SvAmazonErpSalesReturnTask
         ];
     }
 
-    /** @param array<string,mixed>|null $workflow */
-    public static function workflowProcessable(?array $workflow): bool
+    /** @param array<string,mixed>|null $workflow @param list<array<string,mixed>> $cases */
+    public static function workflowProcessable(?array $workflow,array $cases=[]): bool
     {
         $status=strtoupper(trim((string)($workflow['status']??'PENDING')));
-        return !in_array($status,['RETURN_INVOICE_EXISTS','IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW','IGNORED_BY_USER'],true);
+        if($status==='IGNORED_BY_USER')return false;
+        if($status!=='RETURN_INVOICE_EXISTS')return true;
+        if($cases===[])return false;
+        // An old linked NF cannot silently cover units refunded after it was issued.
+        // The existing service will block unsafe automatic amendments and request review.
+        $baseline=$workflow['reconciled_quantity_refunded']??null;
+        if($baseline===null)return true;
+        $total=0;
+        foreach($cases as $case){
+            if(is_array($case))$total+=max(0,(int)($case['quantity_refunded']??0));
+        }
+        return $total>(int)$baseline;
     }
 
     /** @param array<string,mixed>|null $cursor @return list<string> */

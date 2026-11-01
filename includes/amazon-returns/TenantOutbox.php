@@ -212,7 +212,7 @@ final class SvAmazonTenantReturnsOutbox
             . "SET o.status='SUPERSEDED',o.locked_at=NULL,o.last_error=:last_error,o.updated_at=UTC_TIMESTAMP() "
             . "WHERE o.tenant_id=:tenant_id AND o.amazon_connection_id=:amazon_connection_id "
             . "AND c.closed_at IS NOT NULL AND (o.status='PENDING' OR (o.status='PROCESSING' AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL " . self::LEASE_SECONDS . " SECOND))) "
-            . "AND o.kind IN ('SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ')"
+            . "AND o.kind IN ('SAFE_T_DISCOVERY','SELLER_SUPPORT_READ')"
         );
         $stmt->execute($this->scopeParams([':last_error'=>$this->errorMessage($reason)]));
         return max(0,$stmt->rowCount());

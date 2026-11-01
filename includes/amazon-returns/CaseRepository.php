@@ -259,6 +259,21 @@ final class SvAmazonReturnCaseRepository
         return max(0,(int)$stmt->fetchColumn());
     }
 
+    /**
+     * Refunded money with no confirmed refunded item quantity cannot create
+     * a safe Olist sales return. Surface it explicitly for Amazon reconciliation.
+     */
+    public function countRefundQuantityUnconfirmed(): int
+    {
+        $stmt=$this->prepare(
+            'SELECT COUNT(*) FROM amazon_return_cases WHERE refund_at IS NOT NULL '
+            . 'AND refund_amount>0 AND quantity_refunded=0 '
+            . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
+        );
+        $stmt->execute($this->scopeParams());
+        return max(0,(int)$stmt->fetchColumn());
+    }
+
     /** @return list<string> */
     public function financialOrderIdsAfter(string $after = '', int $limit = 25): array
     {
@@ -317,7 +332,7 @@ final class SvAmazonReturnCaseRepository
     {
         $limit=max(1,min(1000,$limit));
         $stmt=$this->prepare(
-            "SELECT * FROM amazon_return_cases WHERE closed_at IS NULL AND safe_t_id IS NOT NULL AND safe_t_id<>'' "
+            "SELECT * FROM amazon_return_cases WHERE safe_t_id IS NOT NULL AND safe_t_id<>'' "
             . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
             . 'ORDER BY id LIMIT '.$limit
         );

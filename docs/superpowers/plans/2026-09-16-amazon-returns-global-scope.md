@@ -1,5 +1,7 @@
 # Amazon Returns Global Scope Implementation Plan
 
+> **No date exemption supersession (2026-10-31):** The legacy ERP 30-day refund scope in this historical plan is superseded by the owner decision in `docs/superpowers/specs/2026-10-31-erp-refund-no-date-exemptions-design.md`. All refund-confirmed orders remain eligible for ERP sales-return reconciliation regardless of refund age, subject to identity, duplicate guards and external write gates. SAFE-T deadlines are unaffected.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Integrate, repair, deploy and production-certify the complete Amazon Returns / SAFE-T scope with real end-to-end evidence.

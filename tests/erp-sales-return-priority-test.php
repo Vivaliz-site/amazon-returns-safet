@@ -22,6 +22,16 @@ $events[12]=[['event_type'=>'SALES_INVOICE_LINKED','source'=>'ERP_OLIST_INVOICE'
 erpPrioritySame(null,SvAmazonErpSalesReturnTask::salesInvoiceNumberFromCases($cases,static fn(int $id):array=>$events[$id]??[]),'Conflicting invoice numbers must disable fallback lookup.');
 
 erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'RETURN_INVOICE_EXISTS']),'Linked return invoices are terminal and must not spend ERP quota again.');
+erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'RETURN_INVOICE_EXISTS','reconciled_quantity_refunded'=>2],[
+    ['quantity_refunded'=>1],['quantity_refunded'=>1],
+]),'Already covered refund quantities must not trigger another ERP lookup.');
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'RETURN_INVOICE_EXISTS','reconciled_quantity_refunded'=>1],[
+    ['quantity_refunded'=>1],['quantity_refunded'=>1],
+]),'A later partial refund must reopen ERP reconciliation despite a previously linked NF.');
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'RETURN_INVOICE_EXISTS','reconciled_quantity_refunded'=>null],[
+    ['quantity_refunded'=>1],
+]),'Legacy linked invoices without a quantity baseline must be rechecked once.');
+
 erpPrioritySame(true,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'RETURN_CREATED_WAITING_INVOICE']),'Created returns must remain eligible for return-invoice reconciliation.');
 $resume=['metadata'=>['processed_order_ids'=>['702-1111111-2222222','702-3333333-4444444','invalid','702-1111111-2222222']]];
 erpPrioritySame(['702-1111111-2222222','702-3333333-4444444'],SvAmazonErpSalesReturnTask::quotaResumeProcessed($resume),'Quota resume must restore only valid unique processed order IDs.');
@@ -31,32 +41,22 @@ erpPrioritySame(['702-5555555-6666666'],SvAmazonErpSalesReturnTask::filterQuotaR
 ),'Quota continuation must skip orders already persisted as processed.');
 
 $windowNow=new DateTimeImmutable('2026-09-18 12:00:00',new DateTimeZone('UTC'));
-erpPrioritySame(true,SvAmazonErpSalesReturnTask::refundWithinOperationalWindow([
-    ['quantity_refunded'=>1,'refund_at'=>'2026-08-19 12:00:00'],
-],$windowNow),'Refund exactly 30 days old must remain operational.');
-erpPrioritySame(false,SvAmazonErpSalesReturnTask::refundWithinOperationalWindow([
-    ['quantity_refunded'=>1,'refund_at'=>'2026-08-19 11:59:59'],
-],$windowNow),'Refund older than 30 days must be ignored for new ERP work.');
-$agedCases=[['quantity_refunded'=>1,'refund_at'=>'2026-08-01 12:00:00']];
-erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowWithinOperationalScope(
-    ['status'=>'RETURN_CREATED_WAITING_INVOICE'],$agedCases,$windowNow
-),'A created ERP return must also leave operational scope once its refund is older than 30 days.');
-erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowWithinOperationalScope(
-    ['status'=>'PENDING'],$agedCases,$windowNow
-),'An old refund without a created ERP return must remain outside the creation window.');
-erpPrioritySame(true,SvAmazonErpSalesReturnTask::workflowShouldBeIgnoredOutsideOperationalWindow(
-    ['status'=>'RETURN_CREATED_WAITING_INVOICE']
-),'An old created return must transition to the explicit outside-window ignored status.');
-erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowShouldBeIgnoredOutsideOperationalWindow(
-    ['status'=>'RETURN_INVOICE_EXISTS']
-),'A fully reconciled return invoice must remain terminal, not be rewritten as ignored.');
-erpPrioritySame(true,SvAmazonErpSalesReturnTask::refundWithinOperationalWindow([
-    ['quantity_refunded'=>1,'refund_at'=>''],
-],$windowNow),'Missing refund timestamp must remain operational conservatively.');
-erpPrioritySame(true,SvAmazonErpSalesReturnTask::refundWithinOperationalWindow([
-    ['quantity_refunded'=>1,'refund_at'=>'not-a-date'],
-],$windowNow),'Invalid refund timestamp must remain operational conservatively.');
-erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW']),'Refunds outside the 30-day operational window must not spend ERP quota.');
-erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'IGNORED_REFUND_OLDER_THAN_90D']),'Legacy ignored refunds must remain terminal and must not spend ERP quota.');
-
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::hasConfirmedRefundQuantity([
+    ['quantity_refunded'=>1,'refund_at'=>'2025-08-01 12:00:00'],
+]),'A documented old refund is still actionable for ERP return work.');
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::hasConfirmedRefundQuantity([
+    ['quantity_refunded'=>1,'refund_at'=>'2026-09-18 12:00:00'],
+]),'A current refund is actionable for ERP return work.');
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::hasConfirmedRefundQuantity([
+    ['quantity_refunded'=>1,'refund_at'=>null],
+]),'An otherwise confirmed refund cannot be discarded for a missing refund date.');
+erpPrioritySame(false,SvAmazonErpSalesReturnTask::hasConfirmedRefundQuantity([
+    ['quantity_refunded'=>0,'refund_at'=>'2025-01-01 12:00:00'],
+]),'Unconfirmed quantity remains pending evidence, not a created ERP return.');
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW']),'Formerly age-ignored refunds must be reprocessed without a date exception.');
+erpPrioritySame(true,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'IGNORED_REFUND_OLDER_THAN_90D']),'Historical ninety-day age exemptions must be reprocessed.');
+erpPrioritySame(false,SvAmazonErpSalesReturnTask::workflowProcessable(['status'=>'IGNORED_BY_USER']),'Explicit manual exclusion is not a date filter.');
+$taskSource=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/ErpSalesReturnTask.php');
+erpPrioritySame(false,str_contains($taskSource,"new DateInterval('P30D')"),'Production ERP workflow must not enforce a 30-day date exclusion.');
+erpPrioritySame(true,str_contains($taskSource,"reactivateIgnoredRefund"),'Legacy date-excluded workflows must be reactivated.');
 echo "erp-sales-return-priority-test: OK\n";
