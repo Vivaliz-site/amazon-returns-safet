@@ -259,8 +259,8 @@ cpAssert($immutableRejected,'An existing operational version must reject changed
 
 $oldSixty=array_replace($basePolicy,['program'=>'DELIVERY_BY_AMAZON','effective_from'=>'2026-04-21','eligibility_days'=>60]);
 $policies1->seed([$oldSixty]);SvAmazonReturnPolicySeeder::ensure($policies1);
-$sixtyRows=array_values(array_filter($db->policies,static fn(array $r):bool=>$r['tenant_id']===1 && $r['policy_key']==='RETURN_NOT_RECEIVED' && $r['program']==='DELIVERY_BY_AMAZON'));
-cpSame('SUPERSEDED',$sixtyRows[0]['status'],'An old60-day opening rule must not remain active beside operational45.');
+$legacyRows=array_values(array_filter($db->policies,static fn(array $r):bool=>$r['tenant_id']===1 && $r['policy_key']==='RETURN_NOT_RECEIVED' && $r['program']==='DELIVERY_BY_AMAZON'));
+cpSame('SUPERSEDED',$sixtyRows[0]['status'],'An obsolete opening rule must not remain active beside operational45.');
 cpSame(60,$sixtyRows[0]['eligibility_days'],'Published/legacy60-day value must be retained as history.');
 
 $db->simulateConcurrentInsert=true;$raceRejected=false;
