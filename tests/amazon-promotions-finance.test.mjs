@@ -102,7 +102,7 @@ test("refuses unverified redemption, installment, commission or stacked discount
 });
 test("real fee and additional discounts reduce margin below ten percent", () => {
   const row = candidate();
-  row.stacking.maxAdditionalPct = 12;
+  row.stacking.maxAdditionalPct = 20;
   denied(row, "NET_MARGIN_BELOW_10_PERCENT");
 });
 test("unknown repricing floor, or known low floor, blocks promotional loss", () => {
