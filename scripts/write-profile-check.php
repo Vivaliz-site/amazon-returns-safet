@@ -2,16 +2,20 @@
 declare(strict_types=1);
 if(PHP_SAPI!=='cli'){http_response_code(404);exit;}
 require_once __DIR__.'/../includes/amazon-returns/Config.php';
-$envFile='';
-$envFileSpecified=false;
-foreach($argv??[] as $arg){
- if(str_starts_with((string)$arg,'--env-file=')){
-  $envFileSpecified=true;
-  $envFile=substr((string)$arg,11);
+$envFile=null;
+foreach(array_slice($argv??[],1) as $arg){
+ if(!str_starts_with((string)$arg,'--env-file=') || $envFile!==null){
+  fwrite(STDERR,"WRITE_PROFILE_CHECK=FAIL reason=ARGUMENT_INVALID\n");exit(2);
  }
+ $envFile=substr((string)$arg,11);
+}
+if($envFile===null){
+ // Running without the service's explicit env file used to report unsafe
+ // production defaults instead of the effective daemon write gates.
+ fwrite(STDERR,"WRITE_PROFILE_CHECK=FAIL reason=ENV_FILE_REQUIRED\n");exit(2);
 }
 $override=[];
-if($envFileSpecified){
+{
  // Never silently use production write defaults when an explicit env file is unreadable.
  if($envFile==='' || !is_file($envFile) || !is_readable($envFile)){
   fwrite(STDERR,"WRITE_PROFILE_CHECK=FAIL reason=ENV_FILE_UNREADABLE\n");exit(2);
