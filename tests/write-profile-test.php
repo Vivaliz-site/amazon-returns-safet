@@ -42,7 +42,13 @@ wpSame(false,$dry->externalWriteAllowed('SAFE_T_SUBMIT'),'non-production never w
 $checker=__DIR__.'/../scripts/write-profile-check.php';
 wpSame(true,is_file($checker),'runtime verifier must use a profile checker');
 if(is_file($checker)){
- $json=shell_exec('php '.escapeshellarg($checker));$checked=is_string($json)?json_decode($json,true):null;
+ $fixtureEnv=tempnam(sys_get_temp_dir(),'amazon-wp-fixture-');
+ if($fixtureEnv===false)throw new RuntimeException('Synthetic env fixture unavailable.');
+ try{
+  file_put_contents($fixtureEnv,"AMAZON_RETURNS_ENABLED=1\nAMAZON_RETURNS_MODE=production\nAMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH=0\nAMAZON_RETURNS_WRITE_PROFILE_FILE=".$profile."\nAMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED=0\n");
+  $json=shell_exec(escapeshellarg(PHP_BINARY).' '.escapeshellarg($checker).' '.escapeshellarg('--env-file='.$fixtureEnv));
+ }finally{unlink($fixtureEnv);}
+ $checked=is_string($json)?json_decode($json,true):null;
  wpSame('safet-full-recovery-v2',$checked['version']??null,'checker profile version');
  foreach(['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'] as $action){
   wpSame(true,$checked['flags'][$action]??null,'checker sees '.$action.' enabled');
@@ -50,6 +56,13 @@ if(is_file($checker)){
  wpSame(false,$checked['flags']['ERP_SALES_RETURN_CREATE']??null,'checker remains fail-closed without the dedicated environment gate');
 }
 if(is_file($checker)){
+ // Missing environment identity must never emit permissive production defaults.
+ $lines=[];$exit=-1;
+ exec(escapeshellarg(PHP_BINARY).' '.escapeshellarg($checker).' 2>&1',$lines,$exit);
+ $output=implode("\n",$lines);
+ wpSame(2,$exit,'missing env file must fail closed');
+ wpSame(true,str_contains($output,'reason=ENV_FILE_REQUIRED'),'missing env file reason is sanitized');
+ wpSame(false,str_contains($output,'"flags"'),'missing env file cannot print production write flags');
  // All fixtures are synthetic. No production environment file is read.
  $missing=sys_get_temp_dir().'/amazon-returns-absent-'.bin2hex(random_bytes(8));
  foreach(['--env-file=','--env-file='.sys_get_temp_dir(),'--env-file='.$missing] as $arg){
