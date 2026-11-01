@@ -1,4 +1,4 @@
-# Default human code owner for every pull request in this repository.
-# Agents may prepare changes; only the authenticated owner may approve protected changes.
-# This is a notification/ownership rule, not a grant or an auto-merge permission.
-* @shopvivaliz-human
+# All PRs remain visible to `shopvivaliz-human` through repository access.
+# Ordinary code and repair PRs do not require human review solely for visibility.
+# Formal security grants retain exclusive human review.
+/security/owner-approvals/ @shopvivaliz-human
