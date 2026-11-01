@@ -78,8 +78,10 @@ export function evaluatePromotion(row = {}, proposal = {}, nowValue = Date.now()
     deny("OFFICIAL_PROMOTION_ELIGIBILITY_UNVERIFIED");
   }
   if (!verifiedEvidence(rules, now, TTL_OFFICIAL_MS, "SELLER_CENTRAL_OFFICIAL") ||
-      !Number.isFinite(Number(rules.minBudgetBrl)) || Number(proposal.budgetBrl) < Number(rules.minBudgetBrl) ||
-      !Number.isFinite(Number(rules.minDurationHours))) deny("OFFICIAL_BUDGET_DURATION_LIMITS_UNVERIFIED");
+      !Number.isFinite(Number(rules.minBudgetBrl)) || Number(rules.minBudgetBrl) <= 0 ||
+      proposal.budgetBrl == null || !Number.isFinite(Number(proposal.budgetBrl)) ||
+      Number(proposal.budgetBrl) < Number(rules.minBudgetBrl) ||
+      !Number.isFinite(Number(rules.minDurationHours)) || Number(rules.minDurationHours) <= 0) deny("OFFICIAL_BUDGET_DURATION_LIMITS_UNVERIFIED");
   if (!verifiedEvidence(fees, now, TTL_OFFICIAL_MS, "SELLER_CENTRAL_CONTRACT") ||
       fees.program !== "FBA_ONSITE" || fees.sku !== sku || fees.asin !== asin ||
       fees.marketplaceId !== MARKETPLACE_BR || fees.termsCoverAllPriceBands !== true) {
