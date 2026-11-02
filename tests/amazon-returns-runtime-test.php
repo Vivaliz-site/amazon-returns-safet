@@ -68,4 +68,24 @@ rtSame(false,SvAmazonReturnsRuntime::knownActionDue(['next_known_action_at'=>'20
 rtSame(true,SvAmazonReturnsRuntime::knownActionDue(['next_known_action_at'=>'2026-09-10T11:59:59Z'],$now),'Overdue known action must trigger when not yet evaluated.');
 rtSame(false,SvAmazonReturnsRuntime::knownActionDue(['next_known_action_at'=>'invalid'],$now),'Invalid date must not create a tight loop.');
 
+// Regression for a corrupt, forward-dated persisted runtime marker. None of
+// the normal taskScheduleMarker() writers is allowed to schedule in the future.
+// This must not silently suspend evidence tasks or scheduler forever.
+$futureState=[];
+foreach(SvAmazonReturnsRuntime::cadences() as $task=>$seconds){
+    $futureState[$task]='2099-01-01T00:00:00Z';
+}
+$recovered=SvAmazonReturnsRuntime::dueTasks($futureState,$now);
+foreach(array_keys(SvAmazonReturnsRuntime::cadences()) as $task){
+    rtAssert(in_array($task,$recovered,true),$task.' must recover from a far-future runtime marker.');
+}
+$nearFuture=$now->modify('+300 seconds')->format(DATE_ATOM);
+rtAssert(!in_array('gmail',SvAmazonReturnsRuntime::dueTasks(['gmail'=>$nearFuture],$now),true),
+    'Up to five minutes of forward clock skew must not cause an extra Gmail run.');
+$normalMarker=SvAmazonReturnsRuntime::taskScheduleMarker('gmail',$now);
+rtAssert(!in_array('gmail',SvAmazonReturnsRuntime::dueTasks(['gmail'=>$normalMarker],$now),true),
+    'Normal Gmail completion must still respect the 12-hour cadence.');
+rtAssert(in_array('gmail',SvAmazonReturnsRuntime::dueTasks(['gmail'=>$normalMarker],$now->modify('+43200 seconds')),true),
+    'Normal 12-hour Gmail cadence must still wake exactly on schedule.');
+
 echo "amazon-returns-runtime-test: OK\n";
