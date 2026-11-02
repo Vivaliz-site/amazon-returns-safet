@@ -379,7 +379,12 @@ final class SvAmazonReturnsRuntime
                 $due[]=$task;
                 continue;
             }
-            if($now->getTimestamp()-$when->getTimestamp()>=$seconds)$due[]=$task;
+            // A persisted timestamp far in the future cannot be produced by the
+            // normal task clock/retry marker (which writes now or earlier).
+            // Recover the task rather than silently starving its 12h cadence.
+            // A small skew tolerance avoids rescheduling on harmless NTP drift.
+            $elapsed=$now->getTimestamp()-$when->getTimestamp();
+            if($elapsed < -300 || $elapsed >= $seconds)$due[]=$task;
         }
         $wakeState=$state;
         if(self::$knownActionCases!==[]){
