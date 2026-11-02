@@ -21,8 +21,12 @@ class SafeContinuitySignalTests(unittest.TestCase):
     def test_global_manifest_does_not_reinstate_retired_solange_repo(self):
         manifest = json.loads((ROOT / "docs/quality/GLOBAL_AUDIT_MANIFEST.json").read_text(encoding="utf-8"))
         repositories = manifest.get("required_repositories", [])
+        # Transfers preserve numeric repository identities, not stale owner paths.
         self.assertNotIn("fredmourao-ai/solange-rolla", repositories)
-        self.assertIn("fredmourao-ai/solange-rolla-consultorio", repositories)
+        self.assertNotIn("fredmourao-ai/solange-rolla-consultorio", repositories)
+        self.assertNotIn("fredmourao-ai/mei-mg-email", repositories)
+        self.assertEqual(repositories.count("Vivaliz-site/solange-rolla-consultorio"), 1)
+        self.assertEqual(repositories.count("Vivaliz-site/mei-mg-email"), 1)
 
 
 if __name__ == "__main__":
