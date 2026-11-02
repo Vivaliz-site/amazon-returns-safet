@@ -1010,6 +1010,46 @@ class SvAmazonReturnsDaemon
     }
 }
 
+/**
+ * Bounded and allowlisted cycle evidence emitted before potentially large
+ * decision_audit_chunk and detailed result lines. The full result can exceed
+ * journald's line length and therefore must not be used as the only cadence
+ * evidence. Never copy freeform errors, IDs or case/patient/order content.
+ *
+ * @param array<string,mixed> $result
+ * @return array<string,mixed>
+ */
+function sv_amazon_returns_cycle_summary(array $result): array
+{
+    $allowed=array_fill_keys(array_merge(
+        ['bootstrap','rule_outcomes','outbox_recovery','financial_refresh_gate','gmail_history_probe'],
+        array_keys(SvAmazonReturnsRuntime::cadences())
+    ),true);
+    $due=[];
+    foreach(is_array($result['due'] ?? null) ? $result['due'] : [] as $name){
+        if(is_string($name) && isset($allowed[$name]) && !in_array($name,$due,true)){
+            $due[]=$name;
+        }
+    }
+    $statuses=[];
+    foreach(is_array($result['results'] ?? null) ? $result['results'] : [] as $name=>$data){
+        if(!is_string($name) || !isset($allowed[$name]) || !is_array($data))continue;
+        $raw=$data['status'] ?? null;
+        $statuses[$name]=is_string($raw) && preg_match('/^[A-Z][A-Z0-9_]{0,39}$/D',$raw)===1
+            ? $raw : 'UNKNOWN';
+    }
+    $rawOverall=$result['status'] ?? null;
+    $overall=is_string($rawOverall) && preg_match('/^[A-Z][A-Z0-9_]{0,39}$/D',$rawOverall)===1
+        ? $rawOverall : 'UNKNOWN';
+    return [
+        'event'=>'cycle_summary',
+        'at'=>gmdate(DATE_ATOM),
+        'status'=>$overall,
+        'due'=>$due,
+        'task_statuses'=>$statuses,
+    ];
+}
+
 /** @param array<string,mixed> $result @return list<array<string,mixed>> */
 function sv_amazon_returns_decision_audit_chunks(array $result): array
 {
@@ -1057,6 +1097,10 @@ function sv_amazon_returns_daemon_main(array $argv): int
     }
     do{
         $result=$daemon->runOnce();
+        fwrite(STDOUT,json_encode(
+            sv_amazon_returns_cycle_summary($result),
+            JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES
+        ).PHP_EOL);
         foreach(sv_amazon_returns_decision_audit_chunks($result) as $auditChunk){
             fwrite(STDOUT,json_encode(
                 $auditChunk,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES
