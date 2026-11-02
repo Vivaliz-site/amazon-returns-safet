@@ -24,7 +24,7 @@ EXPECTED_REPOSITORIES = [
     "Vivaliz-site/shopvivaliz-m365",
     "Vivaliz-site/buscador",
     "fredmourao-ai/mei-mg-email",
-    "fredmourao-ai/solange-rolla-consultorio",
+    "Vivaliz-site/solange-rolla-consultorio",
 ]
 
 

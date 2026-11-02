@@ -120,3 +120,12 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - **Correcao de observabilidade:** adicionar uma linha `cycle_summary` independente, ANTES das linhas maiores de `decision_audit_chunk` e de resultado, com somente nomes de tarefas allowlisted, status de formato restrito, `due`, status geral e timestamp novo. Sem copiar erro livre, secrets, CPF, case/order ID, cabecalhos, mensagem ou payload interno; tamanho conservador inferior a 2 KiB mesmo com centenas de decisões. Preserva a linha detalhada atual para compatibilidade e o `cadence_diagnostics` existente sem ampliar acesso.
 - **Prova necessaria:** RED pelo novo teste contra `daemon.php` anterior, GREEN em teste de segredo sintético, rejeição de chaves/status não permitidos, linha <=2 KiB e regressao de testes PHP pertinentes, CI exato, auto-merge protegido, deploy canônico e leitura do evento em produção. Não alterar tarefas, frequências, flags, RBAC, outbox ou credenciais.
 - **Estado**: projeto permanece NAO_APTO; causas materiais atuais são falhas internas da ingestão Gmail/reembolsos e reconciliação ERP/financeiro, além de elegibilidade/credito oficial. Nenhum envio externo.
+
+## 2026-11-02 — replica da identidade V5 Solange transferida
+
+- Base SHA: 870d75deec5a75c7fe80b6dc280f731faa4a57f1
+- Impacto: atualiza somente o nome do mesmo GitHub repository_id 1345489426 no manifesto V5 espelhado e nos dois scripts de validacao; sem alterar outras identidades, autorizacoes, rotinas comerciais, credenciais ou regras.
+- Testes: revisao da lista, hashes reais, compilacao Python, funcao validate-global-audit-policy.check com novo nome aceito e antigo recusado; CI oficial e sincronizacao com politica upstream ainda pendentes.
+- Evidencias: antiga URL redireciona 301 para Vivaliz-site/solange-rolla-consultorio, ID numerico GitHub permanece 1345489426. Nenhuma certificacao clinica/financeira foi alterada.
+- Pendencias: espelho deve ficar identico a fonte global Vivaliz-site/-shopvivaliz-pipeline apos PR #72, checks protegidos e merge/validacao post-merge; NAO_APTO.
+- Estado: NAO_APTO
