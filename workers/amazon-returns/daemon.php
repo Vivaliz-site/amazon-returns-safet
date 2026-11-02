@@ -62,6 +62,7 @@ class SvAmazonReturnsDaemon
         $now ??= new DateTimeImmutable('now',new DateTimeZone('UTC'));
         $bootstrap=SvAmazonReturnsRuntime::bootstrap($this->db,$this->context);
         $state=$this->loadState();
+        $cadenceSnapshot=SvAmazonReturnsRuntime::cadenceDiagnostics($state,$now);
         $decisionStackRevision=SvAmazonReturnsRuntime::decisionStackRevision();
         $decisionStackChanged=($state['decision_stack_revision'] ?? null)!==$decisionStackRevision;
         $gmailEvidenceRevision=SvAmazonReturnsRuntime::gmailEvidenceRevision();
@@ -233,6 +234,7 @@ class SvAmazonReturnsDaemon
             'enabled'=>$this->config->enabled(),
             'mode'=>$this->config->mode(),
             'due'=>$due,
+            'cadence_diagnostics'=>$cadenceSnapshot,
             'results'=>$results,
         ];
     }

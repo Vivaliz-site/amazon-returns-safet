@@ -353,6 +353,31 @@ final class SvAmazonReturnsRuntime
         return hash('sha256',implode('|',$parts));
     }
 
+    /**
+     * Emit only allowlisted cadence categories for operational debugging.
+     * Never export raw runtime state, last-run timestamps, tokens or revisions.
+     * This is observability, not an execution permission or business override.
+     *
+     * @return array<string,string>
+     */
+    public static function cadenceDiagnostics(array $state,DateTimeImmutable $now): array
+    {
+        $now=$now->setTimezone(new DateTimeZone('UTC'));
+        $observed=[];
+        foreach(self::cadences() as $task=>$seconds){
+            $when=self::timestamp($state[$task] ?? null);
+            if($when===null){
+                $observed[$task]='MISSING_OR_INVALID';
+                continue;
+            }
+            $elapsed=$now->getTimestamp()-$when->getTimestamp();
+            $observed[$task]=$elapsed < -300 ? 'FUTURE_INVALID'
+                : ($elapsed < 0 ? 'CLOCK_SKEW'
+                : ($elapsed < $seconds ? 'RECENT' : 'DUE'));
+        }
+        return $observed;
+    }
+
     /** @return list<string> */
     public static function dueTasks(
         array $state,

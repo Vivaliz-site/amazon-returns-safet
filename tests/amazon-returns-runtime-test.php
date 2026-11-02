@@ -88,4 +88,25 @@ rtAssert(!in_array('gmail',SvAmazonReturnsRuntime::dueTasks(['gmail'=>$normalMar
 rtAssert(in_array('gmail',SvAmazonReturnsRuntime::dueTasks(['gmail'=>$normalMarker],$now->modify('+43200 seconds')),true),
     'Normal 12-hour Gmail cadence must still wake exactly on schedule.');
 
+// Coarse, non-secret schedule observability: prove actual reason for a task
+// not being due without exposing the protected timestamp or state contents.
+$diag=SvAmazonReturnsRuntime::cadenceDiagnostics([
+    'gmail'=>'2099-01-01T00:00:00Z',
+    'sp_api'=>$now->format(DATE_ATOM),
+    'scheduler'=>$now->modify('-43200 seconds')->format(DATE_ATOM),
+    'financial'=>$now->modify('+30 seconds')->format(DATE_ATOM),
+],$now);
+rtSame('FUTURE_INVALID',$diag['gmail'],'Future marker must be identified safely.');
+rtSame('RECENT',$diag['sp_api'],'Recent markers must be identified safely.');
+rtSame('DUE',$diag['scheduler'],'Overdue markers must be identified safely.');
+rtSame('CLOCK_SKEW',$diag['financial'],'Short forward clock drift is diagnostic only.');
+rtSame('MISSING_OR_INVALID',$diag['gmail_refund_reconciliation'],'Missing marker has a safe category.');
+rtSame(count(SvAmazonReturnsRuntime::cadences()),count($diag),'Only known cadence tasks can be reported.');
+$encoded=json_encode($diag,JSON_THROW_ON_ERROR);
+rtAssert(!str_contains($encoded,'2099') && !str_contains($encoded,'2026-'),
+    'Diagnostics must not leak persisted timestamps.');
+$daemonSource=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
+rtAssert(str_contains($daemonSource,"'cadence_diagnostics'=>\$cadenceSnapshot"),
+    'Daemon must emit categorized evidence when its cycle completes.');
+
 echo "amazon-returns-runtime-test: OK\n";
