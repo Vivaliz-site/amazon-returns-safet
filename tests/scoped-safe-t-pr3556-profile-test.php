@@ -37,9 +37,15 @@ foreach(array_keys($expected) as $action) {
 }
 $synthetic=new SvAmazonReturnsConfig($flags+['AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0']);
 scopedAssert($synthetic->writeProfileVersion()==='safet-d45-pr3556-scoped-v1','wrong profile loaded');
+// The grant is expired at its exact UTC deadline, regardless of a
+// previously loaded one-action profile or a failed rollback.
+scopedAssert(SvAmazonReturnsConfig::scopedD45GrantActiveAt(new DateTimeImmutable('2026-11-09T23:58:59Z')),'grant rejected before deadline');
+scopedAssert(!SvAmazonReturnsConfig::scopedD45GrantActiveAt(new DateTimeImmutable('2026-11-09T23:59:00Z')),'grant allowed at deadline');
+scopedAssert(!SvAmazonReturnsConfig::scopedD45GrantActiveAt(new DateTimeImmutable('2026-11-10T00:00:00Z')),'grant allowed after deadline');
+$activeNow=SvAmazonReturnsConfig::scopedD45GrantActiveAt(new DateTimeImmutable('now',new DateTimeZone('UTC')));
 foreach($expected as $action=>$enabled) {
     if($action==='version') continue;
-    scopedAssert($synthetic->externalWriteAllowed($action)===$enabled,'synthetic action mismatch '.$action);
+    scopedAssert($synthetic->externalWriteAllowed($action)===($enabled && $activeNow),'synthetic action mismatch '.$action);
 }
 foreach($allowedIds as $caseId) scopedAssert($synthetic->writeCaseAllowed($caseId),'allowlisted ID missing');
 foreach([0,1,1264,8804,999999] as $caseId) scopedAssert(!$synthetic->writeCaseAllowed($caseId),'out-of-scope case accepted');
