@@ -65,10 +65,21 @@ final class SvAmazonReturnsConfig
         $action=strtoupper(trim($action));
         // The one-action owner grant is not effective when its exact canary
         // is absent or malformed, even if a profile file enables SAFE_T_SUBMIT.
-        if ($profile['version']==='safet-d45-pr3556-scoped-v1'
-            && $action==='SAFE_T_SUBMIT'
-            && $this->scopedWriteCaseIds()===[]) return false;
+        if ($profile['version']==='safet-d45-pr3556-scoped-v1') {
+            // The owner grant is one-use and expires on 2026-11-09 23:59 UTC.
+            // The wall-clock expiry remains a separate fail-closed backstop
+            // even if the privileged operator's rollback is interrupted.
+            if (!self::scopedD45GrantActiveAt(new \DateTimeImmutable('now',new \DateTimeZone('UTC')))) return false;
+            if ($action==='SAFE_T_SUBMIT' && $this->scopedWriteCaseIds()===[]) return false;
+        }
         return isset($profile[$action]) && $profile[$action]===true;
+    }
+
+    public static function scopedD45GrantActiveAt(\DateTimeImmutable $instant): bool
+    {
+        // 2026-11-09T23:59Z is the exclusive, owner-approved deadline.
+        // No runtime/env clock override: testing uses this pure function.
+        return $instant->getTimestamp() < (new \DateTimeImmutable('2026-11-09T23:59:00Z'))->getTimestamp();
     }
 
     public function writeProfileVersion(): ?string
