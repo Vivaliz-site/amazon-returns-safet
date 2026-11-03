@@ -82,12 +82,24 @@ final class SvAmazonReturnsConfig
     {
         if ($caseId < 1) return false;
         $raw=$this->get('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS');
-        if ($raw==='') return true;
+        // Grant #3556 is exactly eight cases. Never allow the scoped profile
+        // to widen its canary because of a missing, partial or extra ID.
+        $scoped=$this->writeProfileVersion()==='safet-d45-pr3556-scoped-v1';
+        if ($raw==='') return !$scoped;
         $allowed=[];
         foreach (explode(',',$raw) as $part) {
             $part=trim($part);
             if ($part==='' || preg_match('/^[1-9][0-9]*$/D',$part)!==1) return false;
-            $allowed[(int)$part]=true;
+            $id=(int)$part;
+            if ($scoped && isset($allowed[$id])) return false;
+            $allowed[$id]=true;
+        }
+        if ($scoped) {
+            $required=[1263,1314,8803,13210,51429,101669,101670,101671];
+            if (count($allowed)!==count($required)) return false;
+            foreach ($required as $id) {
+                if (!isset($allowed[$id])) return false;
+            }
         }
         return isset($allowed[$caseId]);
     }
