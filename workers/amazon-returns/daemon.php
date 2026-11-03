@@ -28,6 +28,7 @@ require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
 require_once __DIR__ . '/../../includes/amazon-returns/AgeClosure.php';
 require_once __DIR__ . '/../../includes/amazon-returns/LearnedRuleOutcome.php';
 require_once __DIR__ . '/seller-central-worker.php';
+require_once __DIR__ . '/../../includes/amazon-returns/RemoteBridge.php';
 
 class SvAmazonReturnsDaemon
 {
@@ -935,6 +936,19 @@ class SvAmazonReturnsDaemon
                     }
                 }
                 $actionResult=$worker->execute(['kind'=>$kind,'payload'=>$payload]);
+                $actionStatus=(string)($actionResult['status']??'');
+                // The local adapter may return ACCEPTED for a dry-run with no
+                // Amazon claim. Never acknowledge that as a submitted SAFE-T,
+                // and never retry an ambiguous submission automatically.
+                if($kind==='SAFE_T_SUBMIT'
+                    && in_array($actionStatus,['ACCEPTED','ALREADY_EXISTS'],true)
+                    && !SvAmazonReturnsRemoteBridge::safeTSubmitReadbackVerified($actionResult)){
+                    $this->persistence->outbox->markSuperseded(
+                        (int)$row['id'],'SAFE_T_SUBMIT_READBACK_UNVERIFIED'
+                    );
+                    $failed++;
+                    continue;
+                }
                 if(in_array((string)($actionResult['status'] ?? ''),[
                     'ACCEPTED','ALREADY_EXISTS',
                 ],true)){
