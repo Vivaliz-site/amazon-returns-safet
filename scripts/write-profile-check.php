@@ -27,9 +27,12 @@ $override=[];
  foreach($lines as $line){
   if($line==='' || $line[0]==='#' || !str_contains($line,'='))continue;
   [$key,$value]=explode('=',$line,2);
-  if(in_array($key,['AMAZON_RETURNS_ENABLED','AMAZON_RETURNS_MODE','AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH','AMAZON_RETURNS_WRITE_PROFILE_FILE','AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED'],true))$override[$key]=$value;
+  if(in_array($key,['AMAZON_RETURNS_ENABLED','AMAZON_RETURNS_MODE','AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH','AMAZON_RETURNS_WRITE_PROFILE_FILE','AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED','AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'],true))$override[$key]=$value;
  }
 }
+// An explicit env-file must be the sole source of the scoped case canary.
+// Never borrow a caller process variable when that file omits the grant.
+if(!array_key_exists('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS',$override))$override['AMAZON_RETURNS_WRITE_CANARY_CASE_IDS']='';
 if(!isset($override['AMAZON_RETURNS_ENABLED']))$override['AMAZON_RETURNS_ENABLED']='1';
 if(!isset($override['AMAZON_RETURNS_MODE']))$override['AMAZON_RETURNS_MODE']='production';
 $config=new SvAmazonReturnsConfig($override);
