@@ -88,6 +88,31 @@ if(is_file($checker)){
   } finally {unlink($env);}
  }
 }
+// Regression: the verifier must read the exact scoped canary from the
+// explicit synthetic env-file, never silently ignore it or borrow process env.
+// This is read-only verification and never changes the live kill switch.
+if(is_file($checker)){
+ $scopedProfile=__DIR__.'/../deploy/write-profile-safe-t-pr3556.json';
+ $allowedCanary='1263,1314,8803,13210,51429,101669,101670,101671';
+ foreach(['complete'=>$allowedCanary,'missing'=>null,'expanded'=>$allowedCanary.',999999'] as $scenario=>$canary){
+  $fixture=tempnam(sys_get_temp_dir(),'amazon-scoped-check-');
+  if($fixture===false)throw new RuntimeException('Synthetic verifier fixture unavailable.');
+  try{
+   $envText="AMAZON_RETURNS_ENABLED=1\nAMAZON_RETURNS_MODE=production\nAMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH=0\nAMAZON_RETURNS_WRITE_PROFILE_FILE=".$scopedProfile."\nAMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED=0\n";
+   if($canary!==null)$envText.="AMAZON_RETURNS_WRITE_CANARY_CASE_IDS=".$canary."\n";
+   file_put_contents($fixture,$envText);
+   $lines=[];$exit=-1;
+   exec(escapeshellarg(PHP_BINARY).' '.escapeshellarg($checker).' '.escapeshellarg('--env-file='.$fixture).' 2>&1',$lines,$exit);
+   $checked=json_decode(implode("\n",$lines),true);
+   wpSame(0,$exit,'synthetic scoped verifier must run '.$scenario);
+   wpSame('safet-d45-pr3556-scoped-v1',$checked['version']??null,'scoped version '.$scenario);
+   wpSame($scenario==='complete',$checked['flags']['SAFE_T_SUBMIT']??null,'exact scoped case canary '.$scenario);
+   foreach(['SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE','ERP_SALES_RETURN_CREATE'] as $other){
+    wpSame(false,$checked['flags'][$other]??null,'scoped verifier forbids '.$other.' in '.$scenario);
+   }
+  }finally{unlink($fixture);}
+ }
+}
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 wpSame(true,str_contains($daemon,'write_profile_revision'),'profile change must force scheduler reevaluation');
 if($errors){fwrite(STDERR,implode("\n",$errors)."\n");exit(1);}echo "write-profile-test: OK\n";
