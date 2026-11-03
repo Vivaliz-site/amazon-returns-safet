@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../includes/Database.php';
 require_once __DIR__ . '/../../includes/amazon-returns/Runtime.php';
+require_once __DIR__ . '/../../includes/amazon-returns/SafeTExternalWindow.php';
 require_once __DIR__ . '/../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__ . '/../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__ . '/../../includes/amazon-returns/PolicyEngine.php';
@@ -912,6 +913,27 @@ class SvAmazonReturnsDaemon
             $payload['dry_run']=false;
             $payload['write_flags']=$writeFlags;
             try{
+                // The polling bridge already enforces the owner's D+45..D+89
+                // initial-opening window. The direct daemon must apply the
+                // same server-side check before sending a SAFE-T job to the UI.
+                if ($kind==='SAFE_T_SUBMIT') {
+                    $caseId=(int)($row['case_id']??0);
+                    $case=$this->persistence->cases->find($caseId);
+                    if (!is_array($case)) throw new RuntimeException('SAFE_T_CASE_NOT_FOUND');
+                    $events=$this->persistence->events->eventsForCase($caseId);
+                    $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+                    $gate=SvAmazonSafeTExternalWindow::inspect($case,$events,$now);
+                    if ($gate['allowed']!==true) {
+                        $next=is_string($gate['not_before']??null)
+                            ? new DateTimeImmutable($gate['not_before'],new DateTimeZone('UTC'))
+                            : $now->modify('+24 hours');
+                        if ($next<=$now) $next=$now->modify('+24 hours');
+                        $this->persistence->outbox->defer(
+                            (int)$row['id'],$next,'SAFE_T_EXTERNAL_'.(string)$gate['reason'],true
+                        );
+                        continue;
+                    }
+                }
                 $actionResult=$worker->execute(['kind'=>$kind,'payload'=>$payload]);
                 if(in_array((string)($actionResult['status'] ?? ''),[
                     'ACCEPTED','ALREADY_EXISTS',
