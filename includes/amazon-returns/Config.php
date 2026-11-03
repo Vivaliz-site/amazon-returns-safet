@@ -63,6 +63,11 @@ final class SvAmazonReturnsConfig
         $profile=$this->writeProfile();
         if($profile===null)return false;
         $action=strtoupper(trim($action));
+        // The one-action owner grant is not effective when its exact canary
+        // is absent or malformed, even if a profile file enables SAFE_T_SUBMIT.
+        if ($profile['version']==='safet-d45-pr3556-scoped-v1'
+            && $action==='SAFE_T_SUBMIT'
+            && $this->scopedWriteCaseIds()===[]) return false;
         return isset($profile[$action]) && $profile[$action]===true;
     }
 
@@ -139,6 +144,13 @@ final class SvAmazonReturnsConfig
         foreach($optionalActions as $action){
             if(array_key_exists($action,$profile) && !is_bool($profile[$action]))return null;
             if(!array_key_exists($action,$profile))$profile[$action]=false;
+        }
+        // A file cannot borrow the PR #3556 version while enabling another
+        // externally visible action. Fail closed before any gate is evaluated.
+        if($version==='safet-d45-pr3556-scoped-v1'){
+            foreach(array_merge($requiredActions,$optionalActions) as $action){
+                if($profile[$action]!==($action==='SAFE_T_SUBMIT'))return null;
+            }
         }
         return $profile;
     }
