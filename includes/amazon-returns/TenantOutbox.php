@@ -132,8 +132,20 @@ final class SvAmazonTenantReturnsOutbox
     }
 
     /** @return list<array<string,mixed>> */
-    public function claimBatch(int $limit = 10, array $kinds = []): array
+    public function claimBatch(int $limit = 10, array $kinds = [], ?array $allowedCaseIds=null): array
     {
+        // Filter inside SELECT FOR UPDATE to avoid changing any out-of-grant
+        // outbox status, attempt count or lease before dispatch.
+        if ($allowedCaseIds !== null) {
+            if ($allowedCaseIds === []) return [];
+            $unique=[];
+            foreach ($allowedCaseIds as $id) {
+                if (!is_int($id) || $id<1 || isset($unique[$id])) return [];
+                $unique[$id]=true;
+            }
+            if (count($unique)>50) return [];
+            $allowedCaseIds=array_keys($unique);
+        }
         $limit = max(1, min(50, $limit));
         $normalizedKinds = [];
         foreach ($kinds as $kind) $normalizedKinds[] = $this->kind((string)$kind);
@@ -149,6 +161,16 @@ final class SvAmazonTenantReturnsOutbox
             }
             $kindSql = ' AND kind IN (' . implode(',', $placeholders) . ')';
         }
+        $caseSql='';
+        if ($allowedCaseIds !== null) {
+            $placeholders=[];
+            foreach ($allowedCaseIds as $index=>$caseId) {
+                $name=':allowed_case_'.$index;
+                $placeholders[]=$name;
+                $params[$name]=$caseId;
+            }
+            $caseSql=' AND case_id IN (' . implode(',', $placeholders) . ')';
+        }
 
         $this->db->beginTransaction();
         try {
@@ -156,7 +178,7 @@ final class SvAmazonTenantReturnsOutbox
                 "SELECT * FROM amazon_return_outbox WHERE tenant_id=:tenant_id "
                 . "AND amazon_connection_id=:amazon_connection_id AND ((status='PENDING' AND available_at<=UTC_TIMESTAMP()) "
                 . "OR (status='PROCESSING' AND locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL " . self::LEASE_SECONDS . " SECOND)))"
-                . $kindSql . ' ORDER BY available_at,id LIMIT ' . $limit . ' FOR UPDATE SKIP LOCKED'
+                . $kindSql . $caseSql . ' ORDER BY available_at,id LIMIT ' . $limit . ' FOR UPDATE SKIP LOCKED'
             );
             $select->execute($params);
             $rows = array_values(array_filter($select->fetchAll(PDO::FETCH_ASSOC), 'is_array'));

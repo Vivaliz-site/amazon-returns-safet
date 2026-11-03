@@ -78,6 +78,18 @@ final class SvAmazonReturnsConfig
         return hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES));
     }
 
+    /** @return list<int>|null Null retains the original unscoped profile behavior. */
+    public function scopedWriteCaseIds(): ?array
+    {
+        if ($this->writeProfileVersion() !== 'safet-d45-pr3556-scoped-v1') return null;
+        $ids=[1263,1314,8803,13210,51429,101669,101670,101671];
+        // A partial, missing, duplicate or expanded canary must not lease ANY job.
+        foreach ($ids as $id) {
+            if (!$this->writeCaseAllowed($id)) return [];
+        }
+        return $ids;
+    }
+
     public function writeCaseAllowed(int $caseId): bool
     {
         if ($caseId < 1) return false;

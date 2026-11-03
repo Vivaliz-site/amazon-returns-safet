@@ -56,7 +56,7 @@ final class SvAmazonReturnsBridgeService
             return ['status'=>'NO_JOB','reason'=>'ALL_WRITE_FLAGS_OFF'];
         }
         for($staleSkipped=0;$staleSkipped<25;$staleSkipped++){
-            $rows=$this->p->outbox->claimBatch(1,$enabled);
+            $rows=$this->p->outbox->claimBatch(1,$enabled,$this->config->scopedWriteCaseIds());
             if($rows===[])return ['status'=>'NO_JOB'];
             $row=$rows[0];
             $case=$this->p->cases->find((int)$row['case_id']);
