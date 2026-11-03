@@ -895,7 +895,8 @@ class SvAmazonReturnsDaemon
         }
 
         $rows=$this->persistence->outbox->claimBatch(
-            10,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE']
+            10,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],
+            $this->config->scopedWriteCaseIds()
         );
         $worker=new SvAmazonSellerCentralWorker();
         $processed=0;
