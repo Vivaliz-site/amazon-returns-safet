@@ -53,9 +53,13 @@ final class SvAmazonSafeTExternalWindow
         }
         $notBefore=$refundAt->add(new DateInterval('P45D'))->format('Y-m-d H:i:s');
         $nowUtc=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+        // D+90 is the exclusive end of the owner's D+45..D+89 opening window.
+        // The external provider's narrower deadline can still deny an opening.
+        $expiresAt=$refundAt->add(new DateInterval('P90D'))->format('Y-m-d H:i:s');
+        $withinWindow=$nowUtc>=$notBefore && $nowUtc<$expiresAt;
         return [
-            'allowed'=>$nowUtc>=$notBefore,
-            'reason'=>$nowUtc>=$notBefore?'D45_OPENING_REACHED':'D45_OPENING_PENDING',
+            'allowed'=>$withinWindow,
+            'reason'=>$nowUtc>=$expiresAt?'D90_OPENING_EXPIRED':($withinWindow?'D45_OPENING_REACHED':'D45_OPENING_PENDING'),
             'not_before'=>$notBefore,
             'order_at'=>$orderDate,
         ];
