@@ -48,4 +48,34 @@ $invalid=new SvAmazonReturnsConfig(array_merge($flags,[
     'AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'=>'not-a-case',
 ]));
 scopedAssert(!$invalid->writeCaseAllowed(1263),'invalid canary must fail closed');
+// RED regression: previously a missing canary allowed every case, even with
+// the scoped one-action profile selected in an isolated synthetic config.
+$deniedCanaries=[
+    'empty'=>'',
+    'subset'=>implode(',',array_slice($allowedIds,0,7)),
+    'superset'=>implode(',',array_merge($allowedIds,[999999])),
+    'duplicate'=>implode(',',array_merge($allowedIds,[1263])),
+    'leading_zero'=>'01263,'.implode(',',array_slice($allowedIds,1)),
+];
+foreach ($deniedCanaries as $scenario=>$canary) {
+    $candidate=new SvAmazonReturnsConfig(array_merge($flags,[
+        'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0',
+        'AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'=>$canary,
+    ]));
+    scopedAssert(!$candidate->writeCaseAllowed(1263),'scoped profile must deny '.$scenario);
+}
+$permuted=array_reverse($allowedIds);
+$permutedConfig=new SvAmazonReturnsConfig(array_merge($flags,[
+    'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0',
+    'AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'=>implode(',',$permuted),
+]));
+foreach ($allowedIds as $caseId) {
+    scopedAssert($permutedConfig->writeCaseAllowed($caseId),'valid unordered canary denied');
+}
+$legacyProfile=new SvAmazonReturnsConfig(array_merge($flags,[
+    'AMAZON_RETURNS_WRITE_PROFILE_FILE'=>__DIR__.'/../deploy/write-profile.json',
+    'AMAZON_RETURNS_WRITE_CANARY_CASE_IDS'=>'',
+]));
+scopedAssert($legacyProfile->writeCaseAllowed(1263),'legacy default semantics changed');
+
 echo "scoped-safe-t-pr3556-profile-test: OK (synthetic only; no runtime authorization)\n";
