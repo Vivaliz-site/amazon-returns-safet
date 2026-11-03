@@ -160,6 +160,22 @@ final class SvAmazonReturnsRemoteBridge
         ];
     }
 
+    /**
+     * A SAFE-T opening is complete only with the actual Amazon claim ID.
+     * A dry-run ACCEPTED response or a claim without readback must never
+     * acknowledge a queued write. Existing claims require the same ID proof.
+     * @param array<string,mixed> $result
+     */
+    public static function safeTSubmitReadbackVerified(array $result): bool
+    {
+        $status=strtoupper(trim((string)($result['status']??'')));
+        $id=$result['external_id']??null;
+        if(!is_string($id) || preg_match('/^[0-9]{5}-[0-9]{5}-[0-9]{7}$/D',trim($id))!==1)return false;
+        if($status==='ACCEPTED')return ($result['submitted']??false)===true;
+        if($status==='ALREADY_EXISTS')return ($result['submitted']??false)!==true;
+        return false;
+    }
+
     /** @return array<string,mixed> */
     public static function validateResult(array $result): array
     {

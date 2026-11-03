@@ -181,6 +181,18 @@ final class SvAmazonReturnsBridgeService
         $supportUpdateDeliveryConfirmed=$kind!=='SELLER_SUPPORT_UPDATE'
             || ($status==='ALREADY_EXISTS' && $reason==='SUPPORT_UPDATE_READBACK_CONFIRMED')
             || ($status==='ACCEPTED' && ($result['submitted'] ?? false)===true && in_array($reason,$supportUpdateAcceptedReasons,true));
+        // The provider's generic ACCEPTED status also represents a dry-run.
+        // For SAFE-T, never mark an outbox SUCCEEDED without a unique external
+        // claim ID and matching submission/readback semantics. Quarantine an
+        // ambiguous result for review; automatic retry could duplicate a claim.
+        if($kind==='SAFE_T_SUBMIT'
+            && in_array($status,['ACCEPTED','ALREADY_EXISTS'],true)
+            && !SvAmazonReturnsRemoteBridge::safeTSubmitReadbackVerified($result)){
+            $result['status']='HUMAN_INTERVENTION_REQUIRED';
+            $result['reason']='SAFE_T_SUBMIT_READBACK_UNVERIFIED';
+            $result['retry_safe']=false;
+            return $this->completeHumanIntervention($row,$result);
+        }
         $success=in_array($status,['ACCEPTED','ALREADY_EXISTS'],true)
             && $supportUpdateDeliveryConfirmed;
         if($success){
