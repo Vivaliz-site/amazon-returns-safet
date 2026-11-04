@@ -12,3 +12,14 @@ test('SAFE-T post-submit readback recognizes a real claim ID and rejects malform
   assert.equal(predicate('12345-12345-123456'), false);
   assert.equal(predicate('not-a-claim'), false);
 });
+
+
+test('SAFE-T final submit requires a present and enabled button', () => {
+  const match = source.match(/const canSubmit = await cdp\\.evaluate\\(\`([^\`]+)\`\\);/);
+  assert.ok(match, 'final submit button guard must be present');
+  const submitReady = new Function('document', \`return \${match[1]};\`);
+  const element = (disabled) => ({ hasAttribute: (name) => name === 'disabled' && disabled });
+  assert.equal(submitReady({ querySelector: () => null }), false, 'absent button must fail closed');
+  assert.equal(submitReady({ querySelector: () => element(true) }), false, 'disabled button must fail closed');
+  assert.equal(submitReady({ querySelector: () => element(false) }), true, 'present enabled button may continue');
+});
