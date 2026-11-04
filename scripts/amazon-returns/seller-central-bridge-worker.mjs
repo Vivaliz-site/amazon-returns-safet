@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 import { safeTExternalWindow } from './safe-t-external-window.mjs';
+import { safeTUnreceivedQuantity } from './safe-t-quantity-guard.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
@@ -661,6 +662,8 @@ async function safeTSubmit(cdp, job) {
   }
   const orderId = text(job.case?.order_id);
   if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId)) return bridgeResult('FAILED', { reason: 'INVALID_ORDER_ID' });
+  const quantityGate = safeTUnreceivedQuantity(job.case);
+  if (!quantityGate.allowed) return bridgeResult('FAILED', { reason: quantityGate.reason, retry_safe: false });
   const trackingEvidence = await captureTrackingEvidence(cdp, orderId);
   await cdp.navigate(`${SAFE_T_BASE}/create-v2?ref_=ag_sfdcf_cont_safet`, 5000);
   const auth = await authGate(cdp, 'safet-v1', `${SAFE_T_BASE}/create-v2?ref_=ag_sfdcf_cont_safet`, 5000);
@@ -689,7 +692,7 @@ async function safeTSubmit(cdp, job) {
     return bridgeResult('BLOCKED_UNTIL', { reason: 'SELLER_CENTRAL_NOT_ELIGIBLE', block_reason: text(state.text).slice(0, 800), retry_safe: true, evidence: await evidence(cdp, 'safet-v1') });
   }
 
-  const quantity = Math.max(1, Number(job.case?.quantity_refunded || 1) - Number(job.case?.quantity_received || 0));
+  const quantity = quantityGate.quantity;
   if (!(await setSafeTQuantity(cdp, quantity))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_QUANTITY_INPUT_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
