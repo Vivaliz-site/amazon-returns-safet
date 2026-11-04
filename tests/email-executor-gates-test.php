@@ -28,6 +28,7 @@ foreach([[1,0,['SAFE_T_EMAIL_REVIEW']],[0,1,['SAFE_T_EMAIL_REPLY']],[1,1,['SAFE_
  $db=new EmailGatePdo();$config=new SvAmazonReturnsConfig([
   'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_GMAIL_INGEST'=>'0',
   'AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,
+  'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0',
   'GMAIL_OAUTH_CLIENT_ID'=>'test','GMAIL_OAUTH_CLIENT_SECRET'=>'test','GMAIL_OAUTH_REFRESH_TOKEN'=>'test',
  ]);
  $daemon=new SvAmazonReturnsDaemon($db,new SvAmazonTenantContext(1,1),$config);

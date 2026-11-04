@@ -14,7 +14,7 @@ $r=$a->analyze($base+['body_text'=>'Resolu\u{00e7}\u{00e3}o do caso. Voc\u{00ea}
 epeSame('HUMAN_REVIEW',$r['suggested_action'],'a support survey is not payment evidence');
 $profile=tempnam(sys_get_temp_dir(),'review-profile-');
 file_put_contents($profile,json_encode(['version'=>'review-gate-test-v1','SAFE_T_SUBMIT'=>false,'SAFE_T_APPEAL'=>false,'SAFE_T_EMAIL_REVIEW'=>true,'SAFE_T_EMAIL_REPLY'=>false,'SELLER_SUPPORT_OPEN'=>false,'SELLER_SUPPORT_UPDATE'=>false],JSON_THROW_ON_ERROR));
-$env=['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile];
+$env=['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0'];
 $c=new SvAmazonReturnsConfig($env);epeSame(true,$c->externalWriteAllowed('SAFE_T_EMAIL_REVIEW'),'review channel enabled independently');epeSame(false,$c->externalWriteAllowed('SAFE_T_EMAIL_REPLY'),'enabling review must not enable replies');
 file_put_contents($profile,json_encode(['version'=>'reply-gate-test-v1','SAFE_T_SUBMIT'=>false,'SAFE_T_APPEAL'=>false,'SAFE_T_EMAIL_REVIEW'=>false,'SAFE_T_EMAIL_REPLY'=>true,'SELLER_SUPPORT_OPEN'=>false,'SELLER_SUPPORT_UPDATE'=>false],JSON_THROW_ON_ERROR));
 $c=new SvAmazonReturnsConfig($env);
