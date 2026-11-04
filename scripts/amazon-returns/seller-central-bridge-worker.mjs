@@ -761,7 +761,7 @@ async function safeTSubmit(cdp, job) {
       next_allowed_at: finalWindow.next_allowed_at || null, retry_safe: true,
     });
   }
-  const canSubmit = await cdp.evaluate(`!document.querySelector('kat-button.SubmitButton')?.hasAttribute('disabled')`);
+  const canSubmit = await cdp.evaluate(`(()=>{const submit=document.querySelector('kat-button.SubmitButton');return Boolean(submit&&!submit.hasAttribute('disabled'))})()`);
   if (!canSubmit) return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_SUBMIT_STILL_DISABLED', evidence: await evidence(cdp, 'safet-v1') });
   if (!(await cdp.clickKat('kat-button.SubmitButton'))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_SUBMIT_BUTTON_MISSING', evidence: await evidence(cdp, 'safet-v1') });
