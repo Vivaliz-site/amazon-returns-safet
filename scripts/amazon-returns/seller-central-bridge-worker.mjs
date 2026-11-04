@@ -767,7 +767,7 @@ async function safeTSubmit(cdp, job) {
     const discoveredRaw = await cdp.evaluate(`JSON.stringify([...document.querySelectorAll('div[id^="claim-content-wrapper-"]')].map(e=>{const safe=(e.id.match(/\\d{5}-\\d{5}-\\d{7}/)||[])[0]||'';const href=e.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';const order=(href.match(/\\d{3}-\\d{7}-\\d{7}/)||[])[0]||'';return {safe,order}}).filter(x=>x.order===${JSON.stringify(orderId)}))`);
     let discoveredMatches=[];
     try { discoveredMatches=JSON.parse(text(discoveredRaw)||'[]'); } catch {}
-    const discoveredIds=[...new Set(discoveredMatches.map(row=>text(row?.safe)).filter(value=>/^\\d{5}-\\d{5}-\\d{7}$/.test(value)))];
+    const discoveredIds=[...new Set(discoveredMatches.map(row=>text(row?.safe)).filter(value=>/^[0-9]{5}-[0-9]{5}-[0-9]{7}$/.test(value)))];
     if (discoveredIds.length===1) {
       return bridgeResult('ACCEPTED', {
         submitted: true,
