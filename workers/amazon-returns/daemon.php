@@ -889,15 +889,18 @@ class SvAmazonReturnsDaemon
             return ['status'=>'BLOCKED_CREDENTIALS','missing'=>$bridge['missing'] ?? []];
         }
         $writeFlags=$this->config->writeFlags();
-        if(!in_array(true,$writeFlags,true)){
+        $enabledKinds=SvAmazonReturnsConfig::sellerCentralWriteKinds($writeFlags);
+        if($enabledKinds===[]){
             return [
                 'status'=>'SKIPPED_DISABLED',
                 'reason'=>'ALL_SELLER_CENTRAL_WRITE_FLAGS_OFF',
             ];
         }
 
+        // Do not mutate or lease outbox jobs for disabled action kinds.
+        // A scoped SAFE_T_SUBMIT canary must never touch support/appeal jobs.
         $rows=$this->persistence->outbox->claimBatch(
-            10,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],
+            10,$enabledKinds,
             $this->config->scopedWriteCaseIds()
         );
         $worker=new SvAmazonSellerCentralWorker();
