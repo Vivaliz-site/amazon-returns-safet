@@ -19,8 +19,11 @@ final class SvAmazonSafeTExternalWindow
     {
         $program=strtoupper(trim((string)($case['program']??'')));
         if(!in_array($program,['FBA_ONSITE','DELIVERY_BY_AMAZON'],true)){
-            return ['allowed'=>$program!=='' && $program!=='UNKNOWN',
-                'reason'=>$program==='' || $program==='UNKNOWN'?'PROGRAM_UNVERIFIED':'OTHER_PROGRAM',
+            // Do not bypass the owner D+45..D+89 limit for unrecognized
+            // fulfillment programs. A standard/MFN/FBA-classic claim needs
+            // separate program eligibility review, never automatic opening.
+            return ['allowed'=>false,
+                'reason'=>$program==='' || $program==='UNKNOWN'?'PROGRAM_UNVERIFIED':'PROGRAM_UNSUPPORTED',
                 'not_before'=>null,'order_at'=>null];
         }
 
