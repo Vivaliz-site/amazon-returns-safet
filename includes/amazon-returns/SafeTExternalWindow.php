@@ -68,6 +68,13 @@ final class SvAmazonSafeTExternalWindow
         ];
     }
 
+    /** A D+90+ first-opening job must not be re-queued indefinitely. */
+    public static function openingPermanentlyExpired(array $gate): bool
+    {
+        return ($gate['allowed'] ?? null) === false
+            && ($gate['reason'] ?? null) === 'D90_OPENING_EXPIRED';
+    }
+
     private static function utcDate(mixed $value): ?DateTimeImmutable
     {
         if(!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/D',$value))
