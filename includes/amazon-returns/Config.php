@@ -79,6 +79,23 @@ final class SvAmazonReturnsConfig
         return isset($profile[$action]) && $profile[$action]===true;
     }
 
+    /**
+     * Return only Seller Central kinds with a literal TRUE write flag.
+     * Filter before outbox claimBatch/SELECT FOR UPDATE, not after a lease
+     * has already changed a disabled job's status or attempt count.
+     *
+     * @param array<string,mixed> $flags
+     * @return list<string>
+     */
+    public static function sellerCentralWriteKinds(array $flags): array
+    {
+        $trusted=['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'];
+        return array_values(array_filter(
+            $trusted,
+            static fn(string $kind): bool => ($flags[$kind] ?? false) === true
+        ));
+    }
+
     public static function scopedD45GrantActiveAt(\DateTimeImmutable $instant): bool
     {
         // 2026-11-09T23:59Z is the exclusive, owner-approved deadline.

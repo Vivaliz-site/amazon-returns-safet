@@ -40,7 +40,9 @@ $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php
 rtAssert(str_contains($daemon,'SvAmazonTenantRegistry::resolveCurrent'),'Daemon must resolve a tenant connection.');
 rtAssert(str_contains($daemon,'SvAmazonTenantPersistence'),'Daemon must use scoped persistence.');
 rtAssert(str_contains($daemon,'$this->persistence->outbox->claimBatch'),'Daemon must claim only through the scoped outbox.');
-rtAssert(str_contains($daemon,"['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE']"),'Seller Central worker action allowlist.');
+rtAssert(str_contains($daemon,'SvAmazonReturnsConfig::sellerCentralWriteKinds($writeFlags)')
+    && str_contains($daemon,'10,$enabledKinds,'),
+    'Direct Seller Central worker must claim only enabled action kinds.');
 rtAssert(str_contains($daemon,'amazon_returns_pdo()'),'Daemon must use standalone DB bootstrap.');
 rtAssert(str_contains($daemon,'listSafeTReimbursements'),'Daemon must read documented Finances v0 SAFE-T reimbursements.');
 rtAssert(str_contains($daemon,'persistSafeTReimbursements'),'Daemon must persist SAFE-T reimbursements through tenant-scoped stores.');

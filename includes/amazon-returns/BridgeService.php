@@ -48,10 +48,7 @@ final class SvAmazonReturnsBridgeService
             return ['status'=>'NO_JOB','reason'=>'GMAIL_CATCHUP_INCOMPLETE'];
         }
         $flags=$this->config->writeFlags();
-        $trusted=['SAFE_T_SUBMIT','SAFE_T_APPEAL','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'];
-        $enabled=array_values(array_filter(
-            $trusted,static fn(string $kind):bool=>($flags[$kind] ?? false)===true
-        ));
+        $enabled=SvAmazonReturnsConfig::sellerCentralWriteKinds($flags);
         if($enabled===[]){
             return ['status'=>'NO_JOB','reason'=>'ALL_WRITE_FLAGS_OFF'];
         }
