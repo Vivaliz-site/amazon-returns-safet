@@ -82,6 +82,14 @@ final class SvAmazonReturnsBridgeService
                     $case,$events,new DateTimeImmutable('now',new DateTimeZone('UTC'))
                 );
                 if($gate['allowed']!==true){
+                    // No new claim at D+90+. Terminate the pending opening,
+                    // preserving the case and history, instead of retrying forever.
+                    if(SvAmazonSafeTExternalWindow::openingPermanentlyExpired($gate)){
+                        $this->p->outbox->markSuperseded(
+                            (int)$row['id'],'SAFE_T_EXTERNAL_D90_OPENING_EXPIRED'
+                        );
+                        continue;
+                    }
                     $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
                     $next=isset($gate['not_before']) && is_string($gate['not_before'])
                         ? new DateTimeImmutable($gate['not_before'],new DateTimeZone('UTC'))
