@@ -266,6 +266,7 @@ try {
     file_put_contents($profile, json_encode(['version'=>'task3-test', 'SAFE_T_EMAIL_REVIEW'=>true, 'SAFE_T_EMAIL_REPLY'=>true, 'SAFE_T_SUBMIT'=>false, 'SAFE_T_APPEAL'=>false, 'SELLER_SUPPORT_OPEN'=>false, 'SELLER_SUPPORT_UPDATE'=>false]));
     $config = new SvAmazonReturnsConfig([
         'AMAZON_RETURNS_ENABLED'=>'1', 'AMAZON_RETURNS_MODE'=>'production',
+        'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0',
         'AMAZON_RETURNS_GMAIL_INGEST'=>'1', 'AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,
         'GMAIL_OAUTH_CLIENT_ID'=>'test', 'GMAIL_OAUTH_CLIENT_SECRET'=>'test',
         'GMAIL_OAUTH_REFRESH_TOKEN'=>'test', 'GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token',
@@ -301,6 +302,7 @@ try {
     file_put_contents($profile6, json_encode(['version'=>'task3-persisted-gate','SAFE_T_SUBMIT'=>false,'SAFE_T_APPEAL'=>false,'SAFE_T_EMAIL_REVIEW'=>true,'SAFE_T_EMAIL_REPLY'=>true,'SELLER_SUPPORT_OPEN'=>false,'SELLER_SUPPORT_UPDATE'=>false]));
     $config6 = new SvAmazonReturnsConfig([
         'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production',
+        'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0',
         'AMAZON_RETURNS_GMAIL_INGEST'=>'0','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile6,
         'GMAIL_OAUTH_CLIENT_ID'=>'test','GMAIL_OAUTH_CLIENT_SECRET'=>'test',
         'GMAIL_OAUTH_REFRESH_TOKEN'=>'test','GMAIL_OAUTH_ACCESS_TOKEN'=>'test-token',

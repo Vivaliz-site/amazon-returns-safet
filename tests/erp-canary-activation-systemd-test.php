@@ -11,6 +11,7 @@ $cfg=new SvAmazonReturnsConfig([
     'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production',
     'AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profilePath,
     'AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED'=>'1',
+    'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0',
 ]);
 eaAssert($cfg->erpSalesReturnCreateEnabled()===true,'Dedicated canary config must make the ERP gate effective.');
 $global=json_decode((string)file_get_contents(__DIR__.'/../deploy/write-profile.json'),true);

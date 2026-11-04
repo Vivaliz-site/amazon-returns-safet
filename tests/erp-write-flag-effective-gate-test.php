@@ -13,7 +13,7 @@ $profile=[
  'ERP_SALES_RETURN_CREATE'=>true,
 ];
 file_put_contents($path,json_encode($profile,JSON_THROW_ON_ERROR));
-$base=['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$path];
+$base=['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$path,'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0'];
 $off=new SvAmazonReturnsConfig($base+['AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED'=>'0']);
 ewfSame(false,$off->writeFlags()['ERP_SALES_RETURN_CREATE'],'reported ERP flag must include the dedicated environment gate');
 $on=new SvAmazonReturnsConfig($base+['AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED'=>'1']);

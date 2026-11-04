@@ -11,7 +11,7 @@ $defaults=new SvAmazonReturnsConfig([]);
 rtSame(false,$defaults->enabled(),'Master switch defaults off.');
 rtSame('dry-run',$defaults->mode(),'Mode defaults dry-run.');
 foreach(['gmail_ingest','safe_t_write','appeal_write','email_review_write','email_reply_write','support_write','policy_monitor'] as $flag)rtSame(false,$defaults->flag($flag),$flag.' defaults off.');
-$enabled=new SvAmazonReturnsConfig(['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_SAFE_T_WRITE'=>'1','AMAZON_RETURNS_APPEAL_WRITE'=>'1','AMAZON_RETURNS_EMAIL_REVIEW_WRITE'=>'1','AMAZON_RETURNS_EMAIL_REPLY_WRITE'=>'1','AMAZON_RETURNS_SUPPORT_WRITE'=>'1']);
+$enabled=new SvAmazonReturnsConfig(['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_SAFE_T_WRITE'=>'1','AMAZON_RETURNS_APPEAL_WRITE'=>'1','AMAZON_RETURNS_EMAIL_REVIEW_WRITE'=>'1','AMAZON_RETURNS_EMAIL_REPLY_WRITE'=>'1','AMAZON_RETURNS_SUPPORT_WRITE'=>'1','AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0']);
 foreach([
  'SAFE_T_SUBMIT'=>'SAFE-T submit',
  'SAFE_T_APPEAL'=>'SAFE-T appeal',
