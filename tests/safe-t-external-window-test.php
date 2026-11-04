@@ -64,7 +64,10 @@ $badRefund=SvAmazonSafeTExternalWindow::inspect(
     new DateTimeImmutable('2026-10-30 23:30:00',new DateTimeZone('UTC')));
 externalWindowSame(false,$badRefund['allowed'],'Invalid refund must fail closed');
 $standard=SvAmazonSafeTExternalWindow::inspect(['program'=>'STANDARD'],[],new DateTimeImmutable('now'));
-externalWindowSame(true,$standard['allowed'],'Other programs are not modified');
+externalWindowSame(false,$standard['allowed'],'Unsupported program must never bypass D+45/D+90');
+externalWindowSame('PROGRAM_UNSUPPORTED',$standard['reason'],'Unsupported program must be routed to review');
+$unsupportedExpired=SvAmazonSafeTExternalWindow::inspect(['program'=>'STANDARD','refund_at'=>'2026-01-01 00:00:00'],[],new DateTimeImmutable('2026-11-04 04:45:00',new DateTimeZone('UTC')));
+externalWindowSame(false,$unsupportedExpired['allowed'],'Unsupported program at D+90+ must never submit');
 $unknownProgram=SvAmazonSafeTExternalWindow::inspect(['program'=>'UNKNOWN'],[],new DateTimeImmutable('now'));
 externalWindowSame(false,$unknownProgram['allowed'],'Unknown program must fail closed');
 echo "safe-t-external-window-test: OK\n";
