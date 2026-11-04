@@ -59,7 +59,11 @@ final class SvAmazonReturnsConfig
     public function externalWriteAllowed(string $action): bool
     {
         if (!$this->enabled() || $this->mode() !== 'production') return false;
-        if ($this->bool('AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH', false)) return false;
+        // A missing, blank or malformed kill-switch value must NEVER unlock
+        // financial/provider writes. Only explicit recognized OFF values can
+        // proceed to the narrower per-action profile and case guards.
+        $killSwitch=strtolower($this->get('AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH', '1'));
+        if (!in_array($killSwitch, ['0','false','no','off'], true)) return false;
         $profile=$this->writeProfile();
         if($profile===null)return false;
         $action=strtoupper(trim($action));
