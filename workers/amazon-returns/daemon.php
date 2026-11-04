@@ -928,6 +928,14 @@ class SvAmazonReturnsDaemon
                     $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
                     $gate=SvAmazonSafeTExternalWindow::inspect($case,$events,$now);
                     if ($gate['allowed']!==true) {
+                        // Do not retry a first-opening job after D+90.
+                        // Preserve case history without contacting Amazon.
+                        if(SvAmazonSafeTExternalWindow::openingPermanentlyExpired($gate)){
+                            $this->persistence->outbox->markSuperseded(
+                                (int)$row['id'],'SAFE_T_EXTERNAL_D90_OPENING_EXPIRED'
+                            );
+                            continue;
+                        }
                         $next=is_string($gate['not_before']??null)
                             ? new DateTimeImmutable($gate['not_before'],new DateTimeZone('UTC'))
                             : $now->modify('+24 hours');
