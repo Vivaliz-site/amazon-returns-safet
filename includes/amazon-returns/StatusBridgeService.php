@@ -207,8 +207,17 @@ final class SvAmazonReturnsStatusBridgeService
                 : $this->completeObservation($row,$result);
         }
         if($kind==='SAFE_T_DISCOVERY' && $status==='NOT_FOUND'){
-            $this->p->outbox->markSucceeded((int)$row['id']);
-            return ['status'=>'ACK','job_id'=>(int)$row['id'],'result_status'=>'NOT_FOUND','completed'=>true];
+            // A search of the visible first page is not evidence of complete
+            // Seller Central history. Older workers may still emit NOT_FOUND.
+            $next=(new DateTimeImmutable('now',new DateTimeZone('UTC')))
+                ->modify('+6 hours');
+            $this->p->outbox->defer(
+                $jobId,$next,'SAFE_T_DISCOVERY_NOT_EXHAUSTIVE',true
+            );
+            return [
+                'status'=>'ACK','job_id'=>$jobId,'result_status'=>'NOT_FOUND',
+                'retry_scheduled'=>true,'completed'=>false,
+            ];
         }
         if(in_array($status,['AUTH_REQUIRED','HUMAN_CHALLENGE','UI_DRIFT'],true)){
             $hours=$status==='UI_DRIFT'?6:1;
