@@ -249,7 +249,13 @@ async function safeTDiscovery(job) {
     const raw = await cdp.evaluate(`JSON.stringify([...document.querySelectorAll('div[id^="claim-content-wrapper-"]')].map(e=>{const safe=(e.id.match(/\\d{5}-\\d{5}-\\d{7}/)||[])[0]||'';const href=e.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';const order=(href.match(/\\d{3}-\\d{7}-\\d{7}/)||[])[0]||'';return {safe,order}}).filter(x=>x.order===${expected}))`);
     const matches = JSON.parse(raw || '[]');
     const ids = [...new Set(matches.map(x => clean(x.safe)).filter(x => /^\d{5}-\d{5}-\d{7}$/.test(x)))];
-    if (ids.length === 0) return result('NOT_FOUND', { reason: 'SAFE_T_NOT_FOUND_FOR_ORDER', retry_safe: true, evidence: evidence(state) });
+    // The list shows only one page of up to 100 claims. Without exhaustive
+    // pagination/search proof, absence on this page is not absence on Amazon.
+    if (ids.length === 0) return result('UI_DRIFT', {
+      reason: 'SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED',
+      retry_safe: true,
+      evidence: evidence(state),
+    });
     if (ids.length !== 1) return result('FAILED', { reason: 'MULTIPLE_SAFE_T_CLAIMS_FOR_ORDER', retry_safe: false, evidence: evidence(state) });
     const safeTId = ids[0];
     page = await authenticatedPage(cdp, `${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 4500);
