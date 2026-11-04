@@ -9,6 +9,7 @@ $cfg=new SvAmazonReturnsConfig([
  'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production',
  'AMAZON_RETURNS_SAFE_T_WRITE'=>'0','AMAZON_RETURNS_APPEAL_WRITE'=>'0',
  'AMAZON_RETURNS_EMAIL_REVIEW_WRITE'=>'0','AMAZON_RETURNS_EMAIL_REPLY_WRITE'=>'0',
+ 'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'0',
  'AMAZON_RETURNS_SUPPORT_WRITE'=>'0','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,
  'AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED'=>'1',
 ]);
@@ -31,6 +32,33 @@ $kill=new SvAmazonReturnsConfig([
 ]);
 foreach(['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE','ERP_SALES_RETURN_CREATE'] as $action){
  wpSame(false,$kill->externalWriteAllowed($action),'kill switch disables '.$action);
+}
+// RED/GREEN safety regression: absent/blank/invalid kill-switch variables
+// cannot unlock the seven external actions just because a full profile exists.
+// Fixtures are synthetic; no runtime env file or production DB is accessed.
+foreach ([
+ 'absent'=>[],
+ 'blank'=>['AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>''],
+ 'invalid'=>['AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'misconfigured'],
+ 'enabled'=>['AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'1'],
+ 'enabled_true'=>['AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>'true'],
+] as $scenario=>$switch) {
+ $candidate=new SvAmazonReturnsConfig(array_merge([
+  'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production',
+  'AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,
+  'AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED'=>'1',
+ ],$switch));
+ foreach (['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE','ERP_SALES_RETURN_CREATE'] as $action) {
+  wpSame(false,$candidate->externalWriteAllowed($action),'kill switch must fail closed '.$scenario.' '.$action);
+ }
+}
+foreach (['0','false','no','off'] as $explicitOff) {
+ $candidate=new SvAmazonReturnsConfig([
+  'AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production',
+  'AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$profile,
+  'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH'=>$explicitOff,
+ ]);
+ wpSame(true,$candidate->externalWriteAllowed('SAFE_T_SUBMIT'),'explicit recognized switch off '.$explicitOff);
 }
 $invalid=tempnam(sys_get_temp_dir(),'write-profile-');file_put_contents($invalid,'{"version":"broken","SAFE_T_SUBMIT":true}');
 $bad=new SvAmazonReturnsConfig(['AMAZON_RETURNS_ENABLED'=>'1','AMAZON_RETURNS_MODE'=>'production','AMAZON_RETURNS_WRITE_PROFILE_FILE'=>$invalid]);
