@@ -17,6 +17,22 @@ final class SvAmazonSafeTExternalWindow
      */
     public static function inspect(array $case,array $events,DateTimeImmutable $now): array
     {
+        // D+90 closes every FIRST-OPENING attempt, even when the program or
+        // order timestamp remains unverified. Otherwise those blockers take
+        // precedence over expiry and outbox defer() retries forever.
+        // This is terminal bookkeeping only; it never authorizes a claim.
+        $expiryRefundAt=self::utcDate($case['refund_at']??null);
+        if($expiryRefundAt!==null){
+            $nowUtc=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+            if($nowUtc >= $expiryRefundAt->add(new DateInterval('P90D'))->format('Y-m-d H:i:s')){
+                return [
+                    'allowed'=>false,
+                    'reason'=>'D90_OPENING_EXPIRED',
+                    'not_before'=>$expiryRefundAt->add(new DateInterval('P45D'))->format('Y-m-d H:i:s'),
+                    'order_at'=>null,
+                ];
+            }
+        }
         $program=strtoupper(trim((string)($case['program']??'')));
         if(!in_array($program,['FBA_ONSITE','DELIVERY_BY_AMAZON'],true)){
             // Do not bypass the owner D+45..D+89 limit for unrecognized
