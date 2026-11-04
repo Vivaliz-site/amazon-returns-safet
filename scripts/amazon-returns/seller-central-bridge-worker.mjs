@@ -655,6 +655,9 @@ async function safeTSubmit(cdp, job) {
   // Owner D+45 preflight: do not enter the SAFE-T eligibility flow early.
   const openingWindow = safeTExternalWindow(job);
   if (!openingWindow.allowed) {
+    if (openingWindow.reason === 'D90_OPENING_EXPIRED') {
+      return bridgeResult('SUPERSEDED', { reason: openingWindow.reason, retry_safe: false });
+    }
     return bridgeResult('BLOCKED_UNTIL', {
       reason: openingWindow.reason, block_reason: openingWindow.reason,
       next_allowed_at: openingWindow.next_allowed_at || null, retry_safe: true,
@@ -750,6 +753,9 @@ async function safeTSubmit(cdp, job) {
   // Official eligibility and all server-side write controls must also have passed.
   const finalWindow = safeTExternalWindow(job);
   if (!finalWindow.allowed) {
+    if (finalWindow.reason === 'D90_OPENING_EXPIRED') {
+      return bridgeResult('SUPERSEDED', { reason: finalWindow.reason, retry_safe: false });
+    }
     return bridgeResult('BLOCKED_UNTIL', {
       reason: finalWindow.reason, block_reason: finalWindow.reason,
       next_allowed_at: finalWindow.next_allowed_at || null, retry_safe: true,

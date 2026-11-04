@@ -18,6 +18,11 @@ export function safeTExternalWindow(job, nowMillis = Date.now()) {
   const refundMillis = utcTimestamp(String(job?.case?.refund_at ?? ''));
   if (refundMillis === null) return { allowed: false, reason: 'REFUND_AT_UNVERIFIED' };
   const notBeforeMillis = refundMillis + 45 * 86400000;
+  const notAfterMillis = refundMillis + 90 * 86400000;
+  // A queued opening can become stale: refuse any first attempt at or after D+90.
+  if (nowMillis >= notAfterMillis) {
+    return { allowed: false, reason: 'D90_OPENING_EXPIRED', retry_safe: false };
+  }
   const nextAllowedAt = new Date(notBeforeMillis).toISOString().slice(0, 19).replace('T', ' ');
   return nowMillis >= notBeforeMillis
     ? { allowed: true, reason: 'D45_OPENING_REACHED', next_allowed_at: nextAllowedAt }
