@@ -16,8 +16,28 @@ final class SvAmazonSafeTDecisionEngine
         $this->denialAnalyzer ??= new SvAmazonDenialAnalyzer();
     }
 
-    /** @return array<string,mixed> */
+    /** Guard every decision path, including support-directed and learned routes. */
     public function nextAction(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null): array
+    {
+        $decision=$this->nextActionBeforeIssuerProof($case,$timeline,$policy,$now);
+        if(($decision['action']??null)==='SAFE_T_SUBMIT' && self::openingInitiatorProofMissing($case)){
+            return $this->decision(
+                'BLOCKED_REVIEW','REFUND_INITIATOR_AMAZON_PROOF_REQUIRED',(int)($case['id']??0)
+            );
+        }
+        return $decision;
+    }
+
+    /** Delivery or seller-credit evidence never establishes who initiated the buyer refund. */
+    private static function openingInitiatorProofMissing(array $case): bool
+    {
+        return trim((string)($case['safe_t_id']??''))===''
+            && (string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN)
+                ===SvAmazonRefundInitiators::UNKNOWN;
+    }
+
+    /** @return array<string,mixed> */
+    private function nextActionBeforeIssuerProof(array $case,array $timeline,array $policy,?DateTimeImmutable $now=null): array
     {
         $caseId=(int)($case['id'] ?? 0);
         $orderId=trim((string)($case['amazon_order_id'] ?? ''));
@@ -249,6 +269,9 @@ final class SvAmazonSafeTDecisionEngine
         if(SvAmazonRecoveryWindow::expired($case,$now))return $this->decision('WAIT','RECOVERY_WINDOW_EXPIRED',$caseId);
         if($action==='SAFE_T_SUBMIT'){
             if($safeTId!=='')return $this->decision('WAIT','SAFE_T_ALREADY_EXISTS',$caseId);
+            if(self::openingInitiatorProofMissing($case)){
+                return $this->decision('BLOCKED_REVIEW','REFUND_INITIATOR_AMAZON_PROOF_REQUIRED',$caseId);
+            }
             if($this->sellerAppConfirmedPhysicalReceipt($case,$timeline))return $this->decision('WAIT','SELLER_APP_PHYSICAL_RECEIPT_CONFIRMED',$caseId);
             $initiator=(string)($case['refund_initiator']??SvAmazonRefundInitiators::UNKNOWN);
             $confirmed=trim((string)($case['refund_at']??''))!=='' && in_array($initiator,[SvAmazonRefundInitiators::AMAZON_AUTOMATIC,SvAmazonRefundInitiators::AMAZON_CUSTOMER_SERVICE,SvAmazonRefundInitiators::AMAZON_INITIATED,SvAmazonRefundInitiators::A_TO_Z],true);

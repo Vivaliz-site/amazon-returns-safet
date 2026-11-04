@@ -26,11 +26,12 @@ if(($decision['action']??null)!=='HUMAN_REVIEW' || ($decision['reason']??null)!=
     throw new RuntimeException('Damaged/discrepant return must force manual review, not auto-submit SAFE-T: '.json_encode($decision));
 }
 
-// Sanity: the same case without the physical discrepancy still follows the automated path.
+// Removing a physical discrepancy does not establish who initiated the buyer refund.
 $caseOk=$case; $caseOk['physical_status']='RECEIVED_OK';
 $decisionOk=(new SvAmazonSafeTDecisionEngine())->nextAction($caseOk,$timeline,$policy,$now);
-if(($decisionOk['action']??null)!=='SAFE_T_SUBMIT'){
-    throw new RuntimeException('Non-discrepant partial-reimbursement case must still auto-submit SAFE-T: '.json_encode($decisionOk));
+if(($decisionOk['action']??null)!=='BLOCKED_REVIEW'
+    || ($decisionOk['reason']??null)!=='REFUND_INITIATOR_AMAZON_PROOF_REQUIRED'){
+    throw new RuntimeException('Non-discrepant UNKNOWN initiator still requires Amazon proof: '.json_encode($decisionOk));
 }
 
 echo "amazon-returns-safe-t-damaged-partial-reimbursement-test: OK\n";
