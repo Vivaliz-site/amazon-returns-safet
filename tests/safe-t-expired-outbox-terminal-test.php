@@ -24,6 +24,32 @@ foreach(['D89'=>$within,'D1'=>$early,'unsupported'=>$unsupported] as $label=>$ga
     expiredAssert(!SvAmazonSafeTExternalWindow::openingPermanentlyExpired($gate),
         'must not terminally close '.$label);
 }
+// Expired jobs must terminate even if their program or order provenance
+// remains unverified; otherwise they retry forever as PROGRAM_UNSUPPORTED.
+foreach (['STANDARD', 'UNKNOWN', 'FBA_ONSITE'] as $program) {
+    $events = $program === 'FBA_ONSITE'
+        ? [['event_type'=>'ORDER_SYNCED','payload'=>['order_at'=>'invalid']]]
+        : [];
+    $stale = SvAmazonSafeTExternalWindow::inspect(
+        ['program'=>$program,'refund_at'=>'2026-07-01 12:00:00'],
+        $events,
+        new DateTimeImmutable('2026-11-04 06:00:00', new DateTimeZone('UTC')));
+    expiredAssert($stale['reason'] === 'D90_OPENING_EXPIRED',
+        $program.' expired first opening must not defer indefinitely');
+    expiredAssert(SvAmazonSafeTExternalWindow::openingPermanentlyExpired($stale),
+        $program.' stale job must become terminal without Amazon writes');
+}
+$unsupportedDay89 = SvAmazonSafeTExternalWindow::inspect(
+    ['program'=>'STANDARD','refund_at'=>'2026-08-07 12:00:00'],[],
+    new DateTimeImmutable('2026-11-04 11:59:59', new DateTimeZone('UTC')));
+expiredAssert($unsupportedDay89['reason'] === 'PROGRAM_UNSUPPORTED',
+    'D+89 unsupported program must remain externally unverified');
+expiredAssert(!SvAmazonSafeTExternalWindow::openingPermanentlyExpired($unsupportedDay89),
+    'D+89 unsupported program must not be terminally expired');
+$unknownWithoutRefund = SvAmazonSafeTExternalWindow::inspect(
+    ['program'=>'UNKNOWN'],[],new DateTimeImmutable('2026-11-04 06:00:00',new DateTimeZone('UTC')));
+expiredAssert(!SvAmazonSafeTExternalWindow::openingPermanentlyExpired($unknownWithoutRefund),
+    'missing refund timestamp cannot assert expiration');
 foreach([
     '../includes/amazon-returns/BridgeService.php'=>'polling',
     '../workers/amazon-returns/daemon.php'=>'direct',
