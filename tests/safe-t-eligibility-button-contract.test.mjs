@@ -7,9 +7,19 @@ const worker = fs.readFileSync(
   'utf8',
 );
 
+const eligibilityMatch = worker.match(/const eligibilityLabels=(\[[^;]*\]);/);
+assert.ok(eligibilityMatch, 'SAFE-T must explicitly enumerate approved eligibility button labels');
+const eligibilityLabels = [...eligibilityMatch[1].matchAll(/'([^']+)'/g)].map(match => match[1]);
+const normalizeLabel = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+for (const variant of ['Verificar Elegibilidade', 'Check Eligibility', 'Check Eligiblity']) {
+  assert.ok(
+    eligibilityLabels.map(normalizeLabel).includes(normalizeLabel(variant)),
+    'SAFE-T eligibility must accept exact official button variant ' + variant,
+  );
+}
 assert.ok(
-  worker.includes("const eligibilityLabels=['Verificar Elegibilidade','Verificar elegibilidade','Check Eligibility','Check eligibility'];"),
-  'SAFE-T eligibility discovery must tolerate the observed Portuguese/English label variants.',
+  eligibilityLabels.every(label => !/submit|next|enviar|proximo|finalizar/i.test(label)),
+  'SAFE-T eligibility must never match a submit or next button',
 );
 assert.ok(
   worker.includes("host.getAttribute('label')||host.getAttribute('aria-label')||host.innerText"),
