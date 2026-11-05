@@ -90,6 +90,13 @@ final class SvAmazonRefundDiscovery
         return ['orders' => $ids, 'windows' => $windows, 'pages' => $pages, 'refunded_rows' => $refundRows];
     }
 
+    /** Respect the established Amazon SP-API per-order pacing in batch repair. */
+    public static function delayForOrderMicros(int $index): int
+    {
+        if ($index < 0) throw new InvalidArgumentException('Order index must be nonnegative.');
+        return $index === 0 ? 0 : 2200000;
+    }
+
     /** @param list<string> $ids @return array<string,int> */
     public static function ingest(
         SvAmazonTenantPersistence $p,
@@ -115,7 +122,9 @@ final class SvAmazonRefundDiscovery
         $lock->execute([$mutex]);
         if ((int)$lock->fetchColumn() !== 1) throw new RuntimeException('Refund recovery is already running.');
         try {
-            foreach ($ids as $id) {
+            foreach ($ids as $index => $id) {
+                $delay = self::delayForOrderMicros($index);
+                if ($delay > 0) usleep($delay);
                 try {
                     if ($p->cases->forOrder($id) !== []) { $result['skipped_existing']++; continue; }
                     $order = $api->syncOrder($id);
