@@ -5,6 +5,7 @@ import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
 import { parseSafeTStatus } from './safe-t-status-parser.mjs';
 import { scanSafeTClaimPages } from './safe-t-discovery-pages.mjs';
+import { scanSafeTExactOrder } from './safe-t-discovery-exact-search.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_STATUS_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php';
@@ -263,7 +264,53 @@ async function safeTDiscovery(job) {
       }
       return false;
     };
-    const discovery = await scanSafeTClaimPages({ readPage, advancePage, maxPages: 25 });
+    // Official Seller Central order search (read-only) precedes the older
+    // claims-list pagination. Only a positive, detail-verified ID is trusted;
+    // an empty result NEVER proves that no external claim exists.
+    const exactSearch = await scanSafeTExactOrder({
+      orderId,
+      triggerSearch: async wanted => {
+        const serializedWanted = JSON.stringify(wanted);
+        return (await cdp.evaluate(`(()=>{
+          const wanted=${serializedWanted};
+          const inputs=document.querySelectorAll('#list-claims-search-panel-input');
+          const containers=document.querySelectorAll('#list-claims-search-panel-submit');
+          if(location.hostname!=='sellercentral.amazon.com.br'||inputs.length!==1||containers.length!==1)return false;
+          const input=inputs[0],container=containers[0];
+          const button=container.querySelector('input[type="submit"],button')||container;
+          if(input.disabled||input.readOnly||button.disabled||container.classList.contains('a-button-disabled'))return false;
+          if(input.getBoundingClientRect().width<=0||container.getBoundingClientRect().width<=0)return false;
+          const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
+          if(typeof setter!=='function')return false;
+          setter.call(input,wanted);
+          input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:null}));
+          input.dispatchEvent(new Event('change',{bubbles:true}));
+          if(input.value!==wanted)return false;
+          button.click();return true;
+        })()`))===true;
+      },
+      readMatches: async wanted => {
+        const serializedWanted = JSON.stringify(wanted);
+        const raw = await cdp.evaluate(`JSON.stringify((()=>{
+          const wanted=${serializedWanted};
+          const input=document.querySelector('#list-claims-search-panel-input');
+          const matches=[...document.querySelectorAll('div[id^="claim-content-wrapper-"]')]
+            .map(card=>{
+              const id=(card.id.match(/\\d{5}-\\d{5}-\\d{7}/)||[])[0]||'';
+              const href=card.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';
+              const order=(href.match(/\\d{3}-\\d{7}-\\d{7}/)||[])[0]||'';
+              return {id,order};
+            }).filter(row=>row.order===wanted).map(row=>row.id);
+          return {query_confirmed:input?.value===wanted,matches};
+        })())`);
+        return JSON.parse(raw||'{}');
+      },
+      pause: sleep,
+      maxChecks: 8,
+    });
+    const discovery = exactSearch.reason==='SAFE_T_EXACT_SEARCH_CONTROL_UNAVAILABLE'
+      ? await scanSafeTClaimPages({ readPage, advancePage, maxPages: 25 })
+      : exactSearch;
     if (discovery.status !== 'FOUND') return result(discovery.status, {
       reason: discovery.reason,
       retry_safe: discovery.status === 'UI_DRIFT',
