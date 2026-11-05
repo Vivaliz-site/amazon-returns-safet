@@ -93,4 +93,15 @@ foreach ([0, 91] as $days) {
         // Expected.
     }
 }
+refundDiscoveryAssert(SvAmazonRefundDiscovery::delayForOrderMicros(0) === 0,
+    'First refund read must not incur unnecessary pacing.');
+refundDiscoveryAssert(SvAmazonRefundDiscovery::delayForOrderMicros(1) === 2200000
+    && SvAmazonRefundDiscovery::delayForOrderMicros(20) === 2200000,
+    'Subsequent order reads must respect the 2.2-second throttle.');
+try {
+    SvAmazonRefundDiscovery::delayForOrderMicros(-1);
+    throw new RuntimeException('Negative order index must fail.');
+} catch (InvalidArgumentException $expected) {
+    // Expected.
+}
 echo "refund-discovery-daily-test: OK\n";
