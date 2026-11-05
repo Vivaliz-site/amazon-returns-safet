@@ -118,4 +118,5 @@ $legacyProfile=new SvAmazonReturnsConfig(array_merge($flags,[
 scopedAssert($legacyProfile->writeCaseAllowed(1263),'legacy default semantics changed');
 
 require __DIR__."/scoped-safe-t-dispatch-canary-contract-test.php";
+require __DIR__."/scoped-safe-t-pr3673-profile-test.php";
 echo "scoped-safe-t-pr3556-profile-test: OK (synthetic only; no runtime authorization)\n";
