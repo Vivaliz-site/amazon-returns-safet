@@ -454,6 +454,11 @@ async function supportRead(job) {
   }
 }
 
+// Log only stable diagnostic codes; never include order details or browser evidence.
+function safeReadLogReason(value) {
+  return typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,95}$/.test(value) ? value : null;
+}
+
 function log(event, data = {}) {
   process.stdout.write(`${JSON.stringify({
     at: new Date().toISOString(), event,
@@ -462,6 +467,9 @@ function log(event, data = {}) {
     status: data.status ?? null,
     external_id: data.external_id ?? null,
     claim_status: data.read?.claim_status ?? null,
+    reason: event === 'job_result' ? safeReadLogReason(data.reason) : null,
+    pages_scanned: event === 'job_result' && Number.isSafeInteger(data.pages_scanned)
+      && data.pages_scanned >= 1 && data.pages_scanned <= 25 ? data.pages_scanned : null,
   })}\n`);
 }
 
