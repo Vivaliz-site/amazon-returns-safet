@@ -4,6 +4,19 @@ declare(strict_types=1);
 
 final class SvAmazonReturnsConfig
 {
+    // Explicit owner-approved, mutually exclusive one-action canaries.
+    // These are configuration guards only: an external certified operator
+    // must still enforce owner PR, one-use, tenant, lease and Amazon readback.
+    private const SCOPED_SAFE_T_GRANTS = [
+        'safet-d45-pr3556-scoped-v1' => [
+            'expires_at' => '2026-11-09T23:59:00Z',
+            'case_ids' => [1263,1314,8803,13210,51429,101669,101670,101671],
+        ],
+        'safet-d45-pr3673-scoped-v1' => [
+            'expires_at' => '2026-11-30T23:59:00Z',
+            'case_ids' => [42471,51429,101669,101670,101671],
+        ],
+    ];
     /** @var array<string,string>|null */
     private ?array $runtimeEnv = null;
 
@@ -67,13 +80,10 @@ final class SvAmazonReturnsConfig
         $profile=$this->writeProfile();
         if($profile===null)return false;
         $action=strtoupper(trim($action));
-        // The one-action owner grant is not effective when its exact canary
-        // is absent or malformed, even if a profile file enables SAFE_T_SUBMIT.
-        if ($profile['version']==='safet-d45-pr3556-scoped-v1') {
-            // The owner grant is one-use and expires on 2026-11-09 23:59 UTC.
-            // The wall-clock expiry remains a separate fail-closed backstop
-            // even if the privileged operator's rollback is interrupted.
-            if (!self::scopedD45GrantActiveAt(new \DateTimeImmutable('now',new \DateTimeZone('UTC')))) return false;
+        // Profile alone is not an owner grant or operational permission.
+        // Its immutable deadline and EXACT case set are additional backstops.
+        if (isset(self::SCOPED_SAFE_T_GRANTS[$profile['version']])) {
+            if (!self::scopedSafeTGrantActiveAt($profile['version'], new \DateTimeImmutable('now',new \DateTimeZone('UTC')))) return false;
             if ($action==='SAFE_T_SUBMIT' && $this->scopedWriteCaseIds()===[]) return false;
         }
         return isset($profile[$action]) && $profile[$action]===true;
@@ -98,9 +108,15 @@ final class SvAmazonReturnsConfig
 
     public static function scopedD45GrantActiveAt(\DateTimeImmutable $instant): bool
     {
-        // 2026-11-09T23:59Z is the exclusive, owner-approved deadline.
-        // No runtime/env clock override: testing uses this pure function.
-        return $instant->getTimestamp() < (new \DateTimeImmutable('2026-11-09T23:59:00Z'))->getTimestamp();
+        return self::scopedSafeTGrantActiveAt('safet-d45-pr3556-scoped-v1', $instant);
+    }
+
+    public static function scopedSafeTGrantActiveAt(string $version, \DateTimeImmutable $instant): bool
+    {
+        $expires=self::SCOPED_SAFE_T_GRANTS[$version]['expires_at']??null;
+        if (!is_string($expires)) return false;
+        // Exclusive deadline: runtime cannot set or extend an expiry.
+        return $instant->getTimestamp() < (new \DateTimeImmutable($expires))->getTimestamp();
     }
 
     public function writeProfileVersion(): ?string
@@ -118,9 +134,11 @@ final class SvAmazonReturnsConfig
     /** @return list<int>|null Null retains the original unscoped profile behavior. */
     public function scopedWriteCaseIds(): ?array
     {
-        if ($this->writeProfileVersion() !== 'safet-d45-pr3556-scoped-v1') return null;
-        $ids=[1263,1314,8803,13210,51429,101669,101670,101671];
-        // A partial, missing, duplicate or expanded canary must not lease ANY job.
+        $version=$this->writeProfileVersion();
+        $ids=self::SCOPED_SAFE_T_GRANTS[$version]['case_ids']??null;
+        if (!is_array($ids)) return null;
+        // Any partial, missing, duplicate, cross-grant or expanded canary
+        // must fail before the outbox acquires a lease or alters a job.
         foreach ($ids as $id) {
             if (!$this->writeCaseAllowed($id)) return [];
         }
@@ -131,9 +149,9 @@ final class SvAmazonReturnsConfig
     {
         if ($caseId < 1) return false;
         $raw=$this->get('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS');
-        // Grant #3556 is exactly eight cases. Never allow the scoped profile
-        // to widen its canary because of a missing, partial or extra ID.
-        $scoped=$this->writeProfileVersion()==='safet-d45-pr3556-scoped-v1';
+        // Each approved profile has its own exact, non-interchangeable set.
+        $required=self::SCOPED_SAFE_T_GRANTS[$this->writeProfileVersion()]['case_ids']??null;
+        $scoped=is_array($required);
         if ($raw==='') return !$scoped;
         $allowed=[];
         foreach (explode(',',$raw) as $part) {
@@ -144,7 +162,6 @@ final class SvAmazonReturnsConfig
             $allowed[$id]=true;
         }
         if ($scoped) {
-            $required=[1263,1314,8803,13210,51429,101669,101670,101671];
             if (count($allowed)!==count($required)) return false;
             foreach ($required as $id) {
                 if (!isset($allowed[$id])) return false;
@@ -177,9 +194,11 @@ final class SvAmazonReturnsConfig
             if(array_key_exists($action,$profile) && !is_bool($profile[$action]))return null;
             if(!array_key_exists($action,$profile))$profile[$action]=false;
         }
-        // A file cannot borrow the PR #3556 version while enabling another
-        // externally visible action. Fail closed before any gate is evaluated.
-        if($version==='safet-d45-pr3556-scoped-v1'){
+        // Do not allow unknown forged versions that look like a scoped grant:
+        // they would otherwise inherit the unscoped legacy case behavior.
+        if(str_starts_with($version,'safet-d45-pr') && !isset(self::SCOPED_SAFE_T_GRANTS[$version]))return null;
+        // Neither owner-granted version can borrow any other write action.
+        if(isset(self::SCOPED_SAFE_T_GRANTS[$version])){
             foreach(array_merge($requiredActions,$optionalActions) as $action){
                 if($profile[$action]!==($action==='SAFE_T_SUBMIT'))return null;
             }
