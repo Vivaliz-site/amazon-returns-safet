@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
 import { parseSafeTStatus } from './safe-t-status-parser.mjs';
+import { scanSafeTClaimPages } from './safe-t-discovery-pages.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_STATUS_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php';
@@ -246,18 +247,30 @@ async function safeTDiscovery(job) {
     if (auth === 'AUTH_REQUIRED') return result('AUTH_REQUIRED', { reason: page.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
     if (auth === 'HUMAN_CHALLENGE') return result('HUMAN_CHALLENGE', { reason: page.reason || 'CAPTCHA_PRESENT', evidence: evidence(state) });
     const expected = JSON.stringify(orderId);
-    const raw = await cdp.evaluate(`JSON.stringify([...document.querySelectorAll('div[id^="claim-content-wrapper-"]')].map(e=>{const safe=(e.id.match(/\\d{5}-\\d{5}-\\d{7}/)||[])[0]||'';const href=e.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';const order=(href.match(/\\d{3}-\\d{7}-\\d{7}/)||[])[0]||'';return {safe,order}}).filter(x=>x.order===${expected}))`);
-    const matches = JSON.parse(raw || '[]');
-    const ids = [...new Set(matches.map(x => clean(x.safe)).filter(x => /^\d{5}-\d{5}-\d{7}$/.test(x)))];
-    // The list shows only one page of up to 100 claims. Without exhaustive
-    // pagination/search proof, absence on this page is not absence on Amazon.
-    if (ids.length === 0) return result('UI_DRIFT', {
-      reason: 'SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED',
-      retry_safe: true,
+    // Search additional pages only through the list pagination control.
+    // Never interpret a missing match as proof that no external claim exists.
+    const readPage = async () => {
+      const raw = await cdp.evaluate(`JSON.stringify((()=>{const wanted=${expected};const cards=[...document.querySelectorAll('div[id^="claim-content-wrapper-"]')];const rows=cards.map(e=>{const safe=(e.id.match(/\\d{5}-\\d{5}-\\d{7}/)||[])[0]||'';const href=e.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';const order=(href.match(/\\d{3}-\\d{7}-\\d{7}/)||[])[0]||'';return {safe,order}});return {signature:rows.length?rows.map(x=>x.safe+'|'+x.order).join(';'):'',matches:rows.filter(x=>x.order===wanted).map(x=>x.safe)}})())`);
+      return JSON.parse(raw || '{}');
+    };
+    const advancePage = async previousSignature => {
+      const clicked = await cdp.evaluate(`(()=>{const normalized=s=>String(s||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const containers=[...document.querySelectorAll('kat-pagination,[role="navigation"],[class*="pagination"],[class*="Pagination"]')];const candidates=[];const seen=new Set();for(const container of containers){const roots=[container];for(let i=0;i<roots.length;i++){const root=roots[i];for(const el of root.querySelectorAll?.('*')||[]){if(el.shadowRoot)roots.push(el.shadowRoot)}for(const host of root.querySelectorAll?.('kat-button,button,a,[role="button"]')||[]){const button=host.tagName==='KAT-BUTTON'?(host.shadowRoot?.querySelector('button')||host):host;if(seen.has(button))continue;seen.add(button);if(host.hasAttribute?.('disabled')||button.hasAttribute?.('disabled')||button.disabled)continue;const label=normalized(host.getAttribute?.('aria-label')||host.getAttribute?.('label')||host.getAttribute?.('title')||button.getAttribute?.('aria-label')||button.innerText||'');if(/^(next( page)?|proxima( pagina)?|pagina seguinte|>)$/.test(label))candidates.push(button)}}}if(candidates.length!==1)return false;candidates[0].click();return true})()`);
+      if (clicked !== true) return false;
+      for (let attempt = 0; attempt < 16; attempt++) {
+        await sleep(500);
+        const next = await readPage();
+        if (next.signature && next.signature !== previousSignature) return true;
+      }
+      return false;
+    };
+    const discovery = await scanSafeTClaimPages({ readPage, advancePage, maxPages: 25 });
+    if (discovery.status !== 'FOUND') return result(discovery.status, {
+      reason: discovery.reason,
+      retry_safe: discovery.status === 'UI_DRIFT',
+      pages_scanned: discovery.pages_scanned,
       evidence: evidence(state),
     });
-    if (ids.length !== 1) return result('FAILED', { reason: 'MULTIPLE_SAFE_T_CLAIMS_FOR_ORDER', retry_safe: false, evidence: evidence(state) });
-    const safeTId = ids[0];
+    const safeTId = discovery.external_id;
     page = await authenticatedPage(cdp, `${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 4500);
     state = page.state;
     auth = page.auth;
