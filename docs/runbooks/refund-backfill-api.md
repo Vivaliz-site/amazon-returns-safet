@@ -17,6 +17,17 @@ This command reconciles *customer* refunds already visible in Amazon SP-API Fina
 
 A production dry-run for tenant 1/connection 1 returned six windows, six pages, 84 released refund rows, 59 distinct refunded orders, 14 orders absent from the case table. The hash-pinned apply inserted 13 single-item order cases, skipped one multi-item order without guessing its item, and reported zero failures. An independent MySQL query confirmed 368 cases in total and 13 newly created records. Their policies require review pending refund initiator/eligibility verification. No external SAFE-T/support writes were attempted.
 
+
+## Recurring single-writer discovery (after PR deployment)
+
+The existing `amazon-returns-safet.service` runs `SvAmazonRefundDiscovery::runDue` from its `sp_api` rotation. There is **no new timer, daemon, cron, login, or external-write channel**. The per-tenant/connection cursor `SP_API/buyer_refunds_daily` records one completed scan per UTC day, with a 30-minute retry backoff on partial or failed batches.
+
+The scan uses the same Finances 2024 API, the last 90 days in at most 15-day windows, a three-minute Amazon safety margin, pagination/cursor guards, and released-only refund classification. It compares every discovered order to current tenant/connection cases and uses the same MySQL mutex as the emergency CLI. Each daily application is capped at **25 single-item orders**; any excess is processed on subsequent regular `sp_api` cycles, without a competing worker. A multi-item or unconfirmed refund cannot be assigned a case by guesswork.
+
+Observability: the `sp_api` task result contains `refund_discovery.status`, `refund_orders`, `missing_orders`, `inserted_cases`, `skipped_ambiguous` and `failed`. Read the scoped cursor metadata and reconcile the case/event projection. A successful ingestion is **not** proof of SAFE-T eligibility, a submitted external claim, seller credit, or health of the Gmail connector.
+
+Regression: `php tests/refund-discovery-daily-test.php` checks pagination, time margin, released-only filtering and cursor fail-closed handling. Production readiness additionally requires a published release SHA and readback of the daemon's real `sp_api` task plus the case counts.
+
 ## Regression
 
 Run `bash tests/refund-backfill-api-guard-test.sh`. This is a local guard test, **not** live-SP-API or Seller Central certification. The documented production dry-run, apply and DB readback are operational evidence for the one-time backfill, not permanent scheduler coverage.

@@ -22,6 +22,7 @@ require_once __DIR__ . '/gmail-ingest.php';
 require_once __DIR__ . '/scheduler.php';
 require_once __DIR__ . '/reconcile.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialRefresh.php';
+require_once __DIR__ . '/../../includes/amazon-returns/RefundDiscovery.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialRevalidation.php';
 require_once __DIR__ . '/../../includes/amazon-returns/FinancialCheckEvidence.php';
 require_once __DIR__ . '/../../includes/amazon-returns/RuntimeAudit.php';
@@ -699,6 +700,13 @@ class SvAmazonReturnsDaemon
         $scan=SvAmazonFinancialRefresh::recordAttempted(
             $this->persistence,$batch,$failures+$safeTFailures,array_keys($failedOrderIds)
         );
+        // The same canonical worker discovers buyer refunds missing from the
+        // case table once per UTC day; no second scheduler or write channel.
+        try{
+            $refundDiscovery=SvAmazonRefundDiscovery::runDue($this->persistence,$this->config);
+        }catch(Throwable $e){
+            $refundDiscovery=['status'=>'FAILED','error_class'=>$e::class];
+        }
         return [
             'status'=>($failures>0||$safeTFailures>0)?'PARTIAL':'OK','orders'=>count($orders),
             'initial_scan_complete'=>$scan['initial_scan_complete'],
@@ -710,6 +718,7 @@ class SvAmazonReturnsDaemon
             'safe_t_empty'=>$safeTEmpty,'safe_t_failures'=>$safeTFailures,
             'retry_orders'=>count($scan['retry_order_ids']??[]),
             'failure_classes'=>$failureClasses,
+            'refund_discovery'=>$refundDiscovery,
         ];
     }
 
