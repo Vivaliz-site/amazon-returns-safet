@@ -84,21 +84,33 @@ final class SvAmazonReturnsStatusBridgeService
             $ensured++;
         }
         $scope='seller-central-order-discovery-v1|'.$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');
-        foreach($this->p->cases->casesWithoutSafeTId(250) as $case){
-            $caseId=(int)($case['id'] ?? 0);
-            $orderId=trim((string)($case['amazon_order_id'] ?? ''));
-            if($caseId<1 || $orderId==='')continue;
-            if($this->p->outbox->hasActive($caseId,'SAFE_T_DISCOVERY'))continue;
-            $key=$this->p->outbox->deterministicKey('SAFE_T_DISCOVERY',$caseId,$scope);
-            $this->p->outbox->enqueue('SAFE_T_DISCOVERY',$caseId,[
-                'case_id'=>$caseId,
-                'order_id'=>$orderId,
-                'order_item_id'=>(string)($case['amazon_order_item_id'] ?? ''),
-                'read_only'=>true,
-                'lookback_days'=>90,
-            ],$key);
-            $ensured++;
-        }
+        // A single LIMIT 250 would permanently omit new high-ID cases once
+        // the active unmatched population exceeds one page. Keyset paging
+        // covers every candidate without creating a second reader/worker.
+        $cursor=0;
+        do{
+            $page=$this->p->cases->casesWithoutSafeTId(250,$cursor);
+            foreach($page as $case){
+                $caseId=(int)($case['id'] ?? 0);
+                $orderId=trim((string)($case['amazon_order_id'] ?? ''));
+                if($caseId<1 || $orderId==='')continue;
+                if($this->p->outbox->hasActive($caseId,'SAFE_T_DISCOVERY'))continue;
+                $key=$this->p->outbox->deterministicKey('SAFE_T_DISCOVERY',$caseId,$scope);
+                $this->p->outbox->enqueue('SAFE_T_DISCOVERY',$caseId,[
+                    'case_id'=>$caseId,
+                    'order_id'=>$orderId,
+                    'order_item_id'=>(string)($case['amazon_order_item_id'] ?? ''),
+                    'read_only'=>true,
+                    'lookback_days'=>90,
+                ],$key);
+                $ensured++;
+            }
+            if($page===[])break;
+            $last=$page[count($page)-1];
+            $nextCursor=(int)($last['id']??0);
+            if($nextCursor<=$cursor)throw new RuntimeException('SAFE_T_DISCOVERY_CURSOR_NOT_ADVANCING');
+            $cursor=$nextCursor;
+        }while(count($page)===250);
         return $ensured;
     }
 
