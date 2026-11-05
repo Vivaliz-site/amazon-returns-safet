@@ -90,6 +90,45 @@ final class SvAmazonRefundDiscovery
         return ['orders' => $ids, 'windows' => $windows, 'pages' => $pages, 'refunded_rows' => $refundRows];
     }
 
+    /**
+     * A completed daily scan is not necessarily complete refund case coverage.
+     * Multi-item or unconfirmed refunds still need manual item-level review,
+     * while their daily cursor must advance to avoid a retry storm.
+     *
+     * @param array<string,int> $result
+     * @return array{status:string,completed:bool,review_required:int}
+     */
+    public static function assessDailyCompletion(int $missing, array $result): array
+    {
+        if ($missing < 0) throw new InvalidArgumentException('Missing refund count must be nonnegative.');
+        $failures = max(0, (int)($result['failed'] ?? 0));
+        $reviewRequired = max(0, (int)($result['skipped_ambiguous'] ?? 0))
+            + max(0, (int)($result['skipped_not_released'] ?? 0));
+        $completed = $missing <= self::LIMIT && $failures === 0;
+        return [
+            'status' => !$completed ? 'PARTIAL' : ($reviewRequired > 0 ? 'REVIEW_REQUIRED' : 'OK'),
+            'completed' => $completed,
+            'review_required' => $reviewRequired,
+        ];
+    }
+
+    /**
+     * Surface pending item-level review even for a legacy daily cursor written
+     * as OK before the review-required status existed; do not re-run the API.
+     *
+     * @param array<string,mixed> $metadata
+     * @return array{last_scan_status:string,review_required:int}
+     */
+    public static function cachedDailySummary(array $metadata): array
+    {
+        $legacyCount = max(0, (int)($metadata['skipped_ambiguous'] ?? 0))
+            + max(0, (int)($metadata['skipped_not_released'] ?? 0));
+        $reviewRequired = max($legacyCount, max(0, (int)($metadata['review_required'] ?? 0)));
+        $status = strtoupper(trim((string)($metadata['status'] ?? 'UNKNOWN')));
+        if ($status === 'OK' && $reviewRequired > 0) $status = 'REVIEW_REQUIRED';
+        return ['last_scan_status' => $status, 'review_required' => $reviewRequired];
+    }
+
     /** Respect the established Amazon SP-API per-order pacing in batch repair. */
     public static function delayForOrderMicros(int $index): int
     {
@@ -171,7 +210,10 @@ final class SvAmazonRefundDiscovery
             ->setTimezone(new DateTimeZone('UTC'));
         $today = $now->format('Y-m-d');
         $state = $p->cursors->load(self::SOURCE, self::CURSOR);
-        if (($state['value'] ?? null) === $today) return ['status' => 'SKIPPED_TODAY'];
+        if (($state['value'] ?? null) === $today) {
+            $meta = is_array($state['metadata'] ?? null) ? $state['metadata'] : [];
+            return ['status' => 'SKIPPED_TODAY'] + self::cachedDailySummary($meta);
+        }
         $last = $state['metadata']['last_attempt_at'] ?? null;
         if (is_string($last) && $last !== '') {
             try {
@@ -195,13 +237,16 @@ final class SvAmazonRefundDiscovery
             if (count($missing) > 75) throw new RuntimeException('Too many missing refunded orders for scoped discovery.');
             $batch = array_slice($missing, 0, self::LIMIT);
             $result = self::ingest($p, new SvAmazonReturnsSpApi($transport), $batch);
-            $finished = count($missing) <= self::LIMIT && $result['failed'] === 0;
+            $assessment = self::assessDailyCompletion(count($missing), $result);
+            $finished = $assessment['completed'];
             $metadata += [
-                'status' => $finished ? 'OK' : 'PARTIAL',
+                'status' => $assessment['status'],
+                'review_required' => $assessment['review_required'],
                 'found_orders' => count($scan['orders']),
                 'missing_orders' => count($missing),
                 'inserted_cases' => $result['inserted_cases'],
                 'skipped_ambiguous' => $result['skipped_ambiguous'],
+                'skipped_not_released' => $result['skipped_not_released'],
                 'failed' => $result['failed'],
             ];
             $p->cursors->save(self::SOURCE, self::CURSOR, $finished ? $today : $source, $metadata);
@@ -210,6 +255,7 @@ final class SvAmazonRefundDiscovery
                 'windows' => $scan['windows'], 'pages' => $scan['pages'],
                 'refund_orders' => count($scan['orders']),
                 'missing_orders' => count($missing),
+                'review_required' => $assessment['review_required'],
             ] + $result;
         } catch (Throwable $e) {
             $p->cursors->save(self::SOURCE, self::CURSOR, $source,
