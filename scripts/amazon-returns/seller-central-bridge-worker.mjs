@@ -6,6 +6,7 @@ import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './Tr
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 import { safeTExternalWindow } from './safe-t-external-window.mjs';
 import { safeTUnreceivedQuantity } from './safe-t-quantity-guard.mjs';
+import { selectSafeTItemWithReadback } from './safe-t-item-selection.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
@@ -699,10 +700,14 @@ async function safeTSubmit(cdp, job) {
   if (!(await setSafeTQuantity(cdp, quantity))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_QUANTITY_INPUT_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
-  if (!(await cdp.clickKat('kat-checkbox.QuantityCheckbox'))) {
+  const itemSelection = await selectSafeTItemWithReadback(cdp);
+  if (itemSelection === 'MISSING') {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ITEM_CHECKBOX_MISSING', evidence: await evidence(cdp, 'safet-v1') });
   }
-  await sleep(700);
+  if (itemSelection !== 'SELECTED') {
+    return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ITEM_SELECTION_NOT_ACCEPTED', evidence: await evidence(cdp, 'safet-v1') });
+  }
+  await sleep(250);
   if (!(await clickSafeTNextButton(cdp))) {
     return bridgeResult('UI_DRIFT', { reason: 'SAFE_T_ITEM_SELECTION_NOT_ACCEPTED', evidence: await evidence(cdp, 'safet-v1') });
   }
