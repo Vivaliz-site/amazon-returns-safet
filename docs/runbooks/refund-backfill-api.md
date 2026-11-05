@@ -1,0 +1,24 @@
+# API-first buyer refund discovery (P0)
+
+This command reconciles *customer* refunds already visible in Amazon SP-API Finances but absent from the local Amazon Returns case table. It does not file a SAFE-T claim, open seller support, relax a write gate, or prove that the seller is entitled to reimbursement.
+
+## Execution contract
+
+- Read `AGENTS.md` and the canonical ShopVivaliz rules before executing.
+- Use the current immutable Amazon Returns release as `AMAZON_RETURNS_RELEASE_ROOT`, with the configured private `AMAZON_RETURNS_ENV_FILE`. Never edit a `current` release in place.
+- Run `php scripts/amazon-returns/refund-backfill-api.php --days=90` first. Its default mode is read-only; it scans the most recent 90 days in at most 15-day windows using **GET Finances listTransactions**, validates pagination, requires `RELEASED`/`DEFERRED_RELEASED` refund transactions and compares order identities within the current tenant/connection.
+- The newest `postedBefore` is **UTC now minus three minutes**, to avoid Amazon InvalidInput for too-recent boundaries. The next authorized run will observe the last three minutes.
+- Read the counts and preflight candidate hash. To ingest only the identical, scoped set, run `php scripts/amazon-returns/refund-backfill-api.php --days=90 --apply --expected-hash=<sha256 from dry-run>`. Any candidate drift fails closed; redo preflight, do not bypass.
+- Apply is capped at 75 missing orders, serialized by a named MySQL lock. Each candidate is re-checked for absence, read through **SP-API Orders + Finances**, required to have exactly one order item and a confirmed financial refund, and persisted in a DB transaction via the established `SvAmazonSpApiEventSink`. Per-order failures roll back. Multi-item orders remain for exact item-level review; do not guess attribution.
+- This is a recovery CLI, not an automatically scheduled service. Scheduling must be integrated and tested separately using the canonical single-writer runtime; do not create a second competing worker or unmanaged cron.
+- After applying, verify counts, case/event linkage, policy projection, financial evidence, the original missing-order gap, and actual Seller Central eligibility for each case. A local refund event is not an external SAFE-T claim, nor seller reimbursement.
+
+## Emergency evidence — 5 November 2026
+
+A production dry-run for tenant 1/connection 1 returned six windows, six pages, 84 released refund rows, 59 distinct refunded orders, 14 orders absent from the case table. The hash-pinned apply inserted 13 single-item order cases, skipped one multi-item order without guessing its item, and reported zero failures. An independent MySQL query confirmed 368 cases in total and 13 newly created records. Their policies require review pending refund initiator/eligibility verification. No external SAFE-T/support writes were attempted.
+
+## Regression
+
+Run `bash tests/refund-backfill-api-guard-test.sh`. This is a local guard test, **not** live-SP-API or Seller Central certification. The documented production dry-run, apply and DB readback are operational evidence for the one-time backfill, not permanent scheduler coverage.
+
+Related incident: https://github.com/Vivaliz-site/amazon-returns-safet/issues/532
