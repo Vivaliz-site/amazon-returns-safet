@@ -12,7 +12,7 @@ const begin = fragment.indexOf('cdp.evaluate(' + tick);
 assert.ok(begin >= 0, 'read-only pagination expression must be present');
 const scriptStart = begin + ('cdp.evaluate(' + tick).length;
 const scriptEnd = fragment.indexOf(tick, scriptStart);
-const expression = fragment.slice(scriptStart, scriptEnd);
+const expression = new Function('return ' + tick + fragment.slice(scriptStart, scriptEnd) + tick)();
 
 function control(label, disabled = false) {
   let clicks = 0;
