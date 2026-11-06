@@ -44,6 +44,25 @@ $transport = new class($a, $b) {
                  'relatedIdentifiers' => [[
                      'relatedIdentifierName' => 'SHIPMENT_ID', 'relatedIdentifierValue' => 'SHIP_TEST',
                  ]]],
+                // One Finances row identifying two *different* orders is ambiguous.
+                // Neither order may be treated as an item-level refund match.
+                ['transactionType' => 'Refund', 'transactionStatus' => 'RELEASED',
+                 'relatedIdentifiers' => [
+                    ['relatedIdentifierName' => 'ORDER_ID', 'relatedIdentifierValue' => '789-1234567-1234567'],
+                    ['relatedIdentifierName' => 'ORDER_ID', 'relatedIdentifierValue' => '987-1234567-1234567'],
+                 ]],
+                // A malformed ORDER_ID alongside a valid one must also fail closed.
+                ['transactionType' => 'Refund', 'transactionStatus' => 'RELEASED',
+                 'relatedIdentifiers' => [
+                    ['relatedIdentifierName' => 'ORDER_ID', 'relatedIdentifierValue' => '555-1234567-1234567'],
+                    ['relatedIdentifierName' => 'ORDER_ID', 'relatedIdentifierValue' => 'INVALID'],
+                 ]],
+                // Repeating the *same* valid order ID is not ambiguous.
+                ['transactionType' => 'Refund', 'transactionStatus' => 'RELEASED',
+                 'relatedIdentifiers' => [
+                    ['relatedIdentifierName' => 'ORDER_ID', 'relatedIdentifierValue' => $this->a],
+                    ['relatedIdentifierName' => 'ORDER_ID', 'relatedIdentifierValue' => $this->a],
+                 ]],
                 ['transactionType' => 'Refund', 'transactionStatus' => 'PENDING',
                  'relatedIdentifiers' => $order('789-1234567-1234567')],
                 ['transactionType' => 'Charge', 'transactionStatus' => 'RELEASED',
@@ -58,9 +77,9 @@ $result = SvAmazonRefundDiscovery::scan($transport, 1, $now, static fn(): null =
 refundDiscoveryAssert($result['orders'] === [$a, $b], 'Released refund orders must be unique and sorted.');
 refundDiscoveryAssert($result['pages'] === 2 && $result['windows'] === 1,
     'Refund discovery must follow Finances pagination.');
-refundDiscoveryAssert($result['refunded_rows'] === 4, 'Pending/non-refund transactions must be excluded.');
-refundDiscoveryAssert($result['unlinked_refund_rows'] === 1,
-    'Released refunds without ORDER_ID must require manual reconciliation, not an OK verdict.');
+refundDiscoveryAssert($result['refunded_rows'] === 7, 'Pending/non-refund transactions must be excluded.');
+refundDiscoveryAssert($result['unlinked_refund_rows'] === 3,
+    'Missing, multiple distinct or malformed ORDER_ID identifiers require review rather than false order-level matches.');
 refundDiscoveryAssert($transport->calls[0]['postedBefore'] === '2026-11-05T17:57:00Z',
     'Finances must have a three-minute UTC margin.');
 refundDiscoveryAssert($transport->calls[1]['nextToken'] === 'PAGE2',
