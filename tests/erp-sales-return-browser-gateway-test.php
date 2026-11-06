@@ -48,6 +48,17 @@ $blocked=$authGateway->create(['amazon_order_id'=>'702-1234567-1234567','refund_
 bgSame(false,$blocked['ok']??null,'Authentication failure must not be treated as success.');
 bgSame('ERP_SALES_RETURN_AUTH_REQUIRED',$blocked['error_code']??null,'Authentication failure must expose a safe gateway code.');
 
+$authProbeRejected=false;
+try{$authGateway->probeExisting('202','303');}catch(SvAmazonErpBrowserAuthRequired $e){$authProbeRejected=true;}
+bgSame(true,$authProbeRejected,'AUTH_REQUIRED must be typed, not a generic canary exception.');
+$authPreflightRejected=false;
+try{$authGateway->preflightCreate(['amazon_order_id'=>'702-1234567-1234567','refund_at'=>'2026-09-12 10:00:00','original_sale'=>['invoice_id'=>'202'],'items'=>[['sku'=>'SKU-1','quantity_refunded'=>1]]]);}catch(SvAmazonErpBrowserAuthRequired $e){$authPreflightRejected=true;}
+bgSame(true,$authPreflightRejected,'Create preflight must classify expired ERP session.');
+$authReadTyped=false;
+try{$authGateway->readBack('991','702-1234567-1234567');}catch(SvAmazonErpBrowserAuthRequired $e){$authReadTyped=true;}
+bgSame(true,$authReadTyped,'ERP readback must classify login failure without false NOT_FOUND.');
+
+
 $itemGateway=new SvAmazonOlistBrowserErpSalesReturnGateway(static fn(array $p): array=>['status'=>'ITEM_MAPPING_FAILED','submitted'=>false,'external_id'=>null,'retry_safe'=>true]);
 $itemBlocked=$itemGateway->create(['amazon_order_id'=>'702-1234567-1234567','refund_at'=>'2026-09-12 10:00:00','original_sale'=>['invoice_id'=>'202'],'items'=>[['sku'=>'SKU-X','quantity_refunded'=>1]]]);
 bgSame('ERP_SALES_RETURN_ITEM_MAPPING_FAILED',$itemBlocked['error_code']??null,'Ambiguous item mapping must persist as a non-generic blocker.');
