@@ -101,6 +101,10 @@ final class SvAmazonSafeTStatusService
             elseif($isNew && $next!==$current && in_array($next,['SAFE_T_DENIED','APPEAL_DENIED_FINAL'],true))$patch['next_action_at']=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
         }elseif($status==='INFO_REQUESTED' && $isNew && $next!==$current){
             $patch['next_action_at']=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+        }elseif($status==='WITHDRAWN' && $isNew && !in_array($current,['RECOVERED','CLOSED_LOSS'],true)){
+            // A withdrawn claim needs prompt evidence/appeal review, never an automatic appeal.
+            // Preserve the existing business state; a withdrawal is neither an approval nor denial.
+            $patch['next_action_at']=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
         }
         return $patch;
     }

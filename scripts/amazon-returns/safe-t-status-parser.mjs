@@ -31,6 +31,7 @@ function statusFrom(body) {
   const normalized = body.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const statusSection = normalized.match(/status da reivindicacao\s*\n?\s*([^\n]{1,80})/i)?.[1] ?? '';
   if (statusSection) {
+    if (/\b(?:retirad[oa]|withdrawn)\b/.test(statusSection)) return 'WITHDRAWN';
     if (/\bnegad[oa]\b|\bnegamos\b/.test(statusSection)) return 'DENIED';
     if (/\b(?:aprovad[oa]|concedid[oa])\b/.test(statusSection)) return 'APPROVED';
     if (/\binformac(?:ao|oes) solicitad[ao]s?\b|\bmais informac(?:ao|oes) necessarias?\b/.test(statusSection)) return 'INFO_REQUESTED';
@@ -64,9 +65,15 @@ function statusFrom(body) {
     lastIndex(normalized, /\bunder review\b/i),
     lastIndex(normalized, /\bin progress\b/i),
   );
-  const latestDecision = Math.max(denied, approved, info);
+  const withdrawn = Math.max(
+    lastIndex(normalized, /\bretirad[oa]\b/i),
+    lastIndex(normalized, /\bretiramos sua reivindicacao\b/i),
+    lastIndex(normalized, /\bwithdrawn\b/i),
+  );
+  const latestDecision = Math.max(denied, approved, info, withdrawn);
   if (appeal > latestDecision) return 'PENDING';
-  const latest = Math.max(denied, approved, info, pending);
+  const latest = Math.max(denied, approved, info, pending, withdrawn);
+  if (latest === withdrawn && withdrawn >= 0) return 'WITHDRAWN';
   if (latest === denied && denied >= 0) return 'DENIED';
   if (latest === approved && approved >= 0) return 'APPROVED';
   if (latest === info && info >= 0) return 'INFO_REQUESTED';
@@ -83,7 +90,7 @@ function extractLabeledDate(body, label) {
 }
 
 function decisionText(body, status) {
-  const strong = /(?:Analisamos (?:seu|o) recurso[^\n]*|Negamos sua reivindica[cç][aã]o SAFE-T[^\n]*|Nenhuma a[cç][aã]o [ée] necess[aá]ria da nossa parte neste momento[^\n]*|Sua reivindica[cç][aã]o n[aã]o foi registrada dentro do prazo do recurso[^\n]*)/gi;
+  const strong = /(?:Retiramos sua reivindica[cç][aã]o SAFE-T[^\n]*|Analisamos (?:seu|o) recurso[^\n]*|Negamos sua reivindica[cç][aã]o SAFE-T[^\n]*|Nenhuma a[cç][aã]o [ée] necess[aá]ria da nossa parte neste momento[^\n]*|Sua reivindica[cç][aã]o n[aã]o foi registrada dentro do prazo do recurso[^\n]*)/gi;
   const matches = [...body.matchAll(strong)];
   if (matches.length) {
     const start = matches[matches.length - 1].index ?? 0;
