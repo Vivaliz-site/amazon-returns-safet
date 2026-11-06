@@ -38,6 +38,12 @@ $transport = new class($a, $b) {
             'transactions' => [
                 ['transactionType' => 'Refund', 'transactionStatus' => 'RELEASED',
                  'relatedIdentifiers' => $order($this->a)],
+                // Finances v2024-06-19 allows a released refund without an ORDER_ID.
+                // Do not silently certify such a row as covered or attach it to a guessed item.
+                ['transactionType' => 'Refund', 'transactionStatus' => 'RELEASED',
+                 'relatedIdentifiers' => [[
+                     'relatedIdentifierName' => 'SHIPMENT_ID', 'relatedIdentifierValue' => 'SHIP_TEST',
+                 ]]],
                 ['transactionType' => 'Refund', 'transactionStatus' => 'PENDING',
                  'relatedIdentifiers' => $order('789-1234567-1234567')],
                 ['transactionType' => 'Charge', 'transactionStatus' => 'RELEASED',
@@ -52,7 +58,9 @@ $result = SvAmazonRefundDiscovery::scan($transport, 1, $now, static fn(): null =
 refundDiscoveryAssert($result['orders'] === [$a, $b], 'Released refund orders must be unique and sorted.');
 refundDiscoveryAssert($result['pages'] === 2 && $result['windows'] === 1,
     'Refund discovery must follow Finances pagination.');
-refundDiscoveryAssert($result['refunded_rows'] === 3, 'Pending/non-refund transactions must be excluded.');
+refundDiscoveryAssert($result['refunded_rows'] === 4, 'Pending/non-refund transactions must be excluded.');
+refundDiscoveryAssert($result['unlinked_refund_rows'] === 1,
+    'Released refunds without ORDER_ID must require manual reconciliation, not an OK verdict.');
 refundDiscoveryAssert($transport->calls[0]['postedBefore'] === '2026-11-05T17:57:00Z',
     'Finances must have a three-minute UTC margin.');
 refundDiscoveryAssert($transport->calls[1]['nextToken'] === 'PAGE2',
