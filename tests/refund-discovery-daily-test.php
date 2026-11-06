@@ -66,6 +66,38 @@ refundDiscoveryAssert($transport->calls[0]['postedBefore'] === '2026-11-05T17:57
 refundDiscoveryAssert($transport->calls[1]['nextToken'] === 'PAGE2',
     'Cursor must be passed exactly to subsequent calls.');
 
+// A RELEASED refund with conflicting or malformed ORDER_ID identifiers is not
+// attributable to an order. Never expand one refund to multiple candidate cases.
+$ambiguous = new class($a, $b) {
+    public function __construct(private string $a, private string $b) {}
+    public function marketplaceId(): string { return 'TEST_BR'; }
+    public function request(string $method, string $path, array $query): array
+    {
+        $id = static fn(string $value): array => [
+            'relatedIdentifierName' => 'ORDER_ID', 'relatedIdentifierValue' => $value,
+        ];
+        return ['status' => 200, 'data' => ['transactions' => [
+            ['transactionType' => 'Refund', 'transactionStatus' => 'RELEASED',
+             'relatedIdentifiers' => [$id($this->a), $id($this->b)]],
+            ['transactionType' => 'Refund', 'transactionStatus' => 'RELEASED',
+             'relatedIdentifiers' => [$id($this->a), $id('MALFORMED_ORDER')]],
+            ['transactionType' => 'Refund', 'transactionStatus' => 'RELEASED',
+             'relatedIdentifiers' => [$id($this->a), $id($this->a)]],
+        ]]];
+    }
+};
+$ambiguousResult = SvAmazonRefundDiscovery::scan($ambiguous, 1, $now, static fn(): null => null);
+refundDiscoveryAssert($ambiguousResult['orders'] === [$a],
+    'Conflicting or malformed ORDER_ID must not create candidate orders; identical duplicates are safe.');
+refundDiscoveryAssert($ambiguousResult['refunded_rows'] === 3
+    && $ambiguousResult['unlinked_refund_rows'] === 2,
+    'Conflicting and malformed refunds must require manual review and block false OK.');
+refundDiscoveryAssert(
+    SvAmazonRefundDiscovery::assessDailyCompletion(0,
+        ['unlinked_refund_rows' => $ambiguousResult['unlinked_refund_rows']])['status']
+    === 'REVIEW_REQUIRED',
+    'Ambiguous financially released refunds must not certify a completed daily scan.');
+
 $repeat = new class {
     public function marketplaceId(): string { return 'TEST_BR'; }
     public function request(string $method, string $path, array $query): array

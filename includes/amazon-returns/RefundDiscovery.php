@@ -73,18 +73,28 @@ final class SvAmazonRefundDiscovery
                     // A released refund without an unambiguous ORDER_ID still exists
                     // financially. Keep it visible for manual reconciliation rather
                     // than silently reporting complete order-level coverage.
-                    $hasOrderId = false;
+                    $candidateOrders = [];
+                    $malformedOrderId = false;
                     $identifiers = is_array($row['relatedIdentifiers'] ?? null)
                         ? $row['relatedIdentifiers'] : [];
                     foreach ($identifiers as $id) {
                         if (!is_array($id)) continue;
                         if (strtoupper(trim((string)($id['relatedIdentifierName'] ?? ''))) !== 'ORDER_ID') continue;
-                        $order = trim((string)($id['relatedIdentifierValue'] ?? ''));
-                        if (preg_match('/^\d{3}-\d{7}-\d{7}$/D', $order) !== 1) continue;
-                        $orders[$order] = true;
-                        $hasOrderId = true;
+                        $value = $id['relatedIdentifierValue'] ?? null;
+                        $order = is_string($value) ? trim($value) : '';
+                        if (preg_match('/^\d{3}-\d{7}-\d{7}$/D', $order) !== 1) {
+                            $malformedOrderId = true;
+                            continue;
+                        }
+                        $candidateOrders[$order] = true;
                     }
-                    if (!$hasOrderId) $unlinkedRefundRows++;
+                    // One financial refund must not map to conflicting order IDs.
+                    // An invalid identifier alongside a valid ID is also unsafe.
+                    if ($malformedOrderId || count($candidateOrders) !== 1) {
+                        $unlinkedRefundRows++;
+                    } else {
+                        $orders[array_key_first($candidateOrders)] = true;
+                    }
                 }
                 $token = $payload['nextToken'] ?? $data['nextToken'] ?? null;
                 if ($token !== null && (!is_string($token) || strlen($token) > 2048 || isset($seen[$token]))) {
