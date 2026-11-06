@@ -56,6 +56,26 @@ async function recoverConcurrentSessionEntry(page, timeout) {
 export async function ensureOlistAuthenticated(page, credentials = {}, options = {}) {
   let state = classifyOlistLocation(page.url());
   if (state === 'ERP') return { status: 'AUTHENTICATED', reason: 'SESSION_REUSED' };
+  // An authenticated Olist session may land on ERP Home (/) instead of the
+  // sales-return route. Confirm the real return UI before treating it as auth;
+  // otherwise continue through the existing protected Tiny login flow.
+  if (state === 'ERP_ENTRY' && typeof page.evaluate === 'function') {
+    const timeout = Number(options.timeoutMs || 15000);
+    try {
+      await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout });
+      const ready = await page.evaluate(() => Boolean(
+        window.xajax?.venda?.devolucaoVenda
+        || window.xajax_venda_devolucaoVenda_salvar
+        || window.xajax?.call
+      ));
+      state = classifyOlistLocation(page.url());
+      if (state === 'ERP' && ready === true) {
+        return { status: 'AUTHENTICATED', reason: 'ERP_HOME_SESSION_RECOVERED' };
+      }
+    } catch {
+      state = classifyOlistLocation(page.url());
+    }
+  }
   if (state === 'ERP_ENTRY') {
     const timeout = Number(options.timeoutMs || 15000);
     try {
