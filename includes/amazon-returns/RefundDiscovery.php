@@ -16,7 +16,7 @@ final class SvAmazonRefundDiscovery
     private const CURSOR = 'buyer_refunds_daily';
     private const LIMIT = 25;
 
-    /** @return array{orders:list<string>,windows:int,pages:int,refunded_rows:int} */
+    /** @return array{orders:list<string>,windows:int,pages:int,refunded_rows:int,unlinked_refund_rows:int} */
     public static function scan(
         object $transport,
         int $days = 90,
@@ -36,6 +36,7 @@ final class SvAmazonRefundDiscovery
         $windows = 0;
         $pages = 0;
         $refundRows = 0;
+        $unlinkedRefundRows = 0;
         $marketplace = (string)$transport->marketplaceId();
 
         while ($next < $end) {
@@ -69,12 +70,21 @@ final class SvAmazonRefundDiscovery
                     if (!in_array(strtoupper(trim((string)($row['transactionStatus'] ?? ''))),
                         ['RELEASED', 'DEFERRED_RELEASED'], true)) continue;
                     $refundRows++;
-                    foreach (($row['relatedIdentifiers'] ?? []) as $id) {
+                    // A released refund without an unambiguous ORDER_ID still exists
+                    // financially. Keep it visible for manual reconciliation rather
+                    // than silently reporting complete order-level coverage.
+                    $hasOrderId = false;
+                    $identifiers = is_array($row['relatedIdentifiers'] ?? null)
+                        ? $row['relatedIdentifiers'] : [];
+                    foreach ($identifiers as $id) {
                         if (!is_array($id)) continue;
                         if (strtoupper(trim((string)($id['relatedIdentifierName'] ?? ''))) !== 'ORDER_ID') continue;
                         $order = trim((string)($id['relatedIdentifierValue'] ?? ''));
-                        if (preg_match('/^\d{3}-\d{7}-\d{7}$/D', $order) === 1) $orders[$order] = true;
+                        if (preg_match('/^\d{3}-\d{7}-\d{7}$/D', $order) !== 1) continue;
+                        $orders[$order] = true;
+                        $hasOrderId = true;
                     }
+                    if (!$hasOrderId) $unlinkedRefundRows++;
                 }
                 $token = $payload['nextToken'] ?? $data['nextToken'] ?? null;
                 if ($token !== null && (!is_string($token) || strlen($token) > 2048 || isset($seen[$token]))) {
@@ -87,7 +97,8 @@ final class SvAmazonRefundDiscovery
 
         $ids = array_keys($orders);
         sort($ids, SORT_STRING);
-        return ['orders' => $ids, 'windows' => $windows, 'pages' => $pages, 'refunded_rows' => $refundRows];
+        return ['orders' => $ids, 'windows' => $windows, 'pages' => $pages, 'refunded_rows' => $refundRows,
+            'unlinked_refund_rows' => $unlinkedRefundRows];
     }
 
     /**
@@ -103,7 +114,8 @@ final class SvAmazonRefundDiscovery
         if ($missing < 0) throw new InvalidArgumentException('Missing refund count must be nonnegative.');
         $failures = max(0, (int)($result['failed'] ?? 0));
         $reviewRequired = max(0, (int)($result['skipped_ambiguous'] ?? 0))
-            + max(0, (int)($result['skipped_not_released'] ?? 0));
+            + max(0, (int)($result['skipped_not_released'] ?? 0))
+            + max(0, (int)($result['unlinked_refund_rows'] ?? 0));
         $completed = $missing <= self::LIMIT && $failures === 0;
         return [
             'status' => !$completed ? 'PARTIAL' : ($reviewRequired > 0 ? 'REVIEW_REQUIRED' : 'OK'),
@@ -122,7 +134,8 @@ final class SvAmazonRefundDiscovery
     public static function cachedDailySummary(array $metadata): array
     {
         $legacyCount = max(0, (int)($metadata['skipped_ambiguous'] ?? 0))
-            + max(0, (int)($metadata['skipped_not_released'] ?? 0));
+            + max(0, (int)($metadata['skipped_not_released'] ?? 0))
+            + max(0, (int)($metadata['unlinked_refund_rows'] ?? 0));
         $reviewRequired = max($legacyCount, max(0, (int)($metadata['review_required'] ?? 0)));
         $status = strtoupper(trim((string)($metadata['status'] ?? 'UNKNOWN')));
         if ($status === 'OK' && $reviewRequired > 0) $status = 'REVIEW_REQUIRED';
@@ -237,6 +250,7 @@ final class SvAmazonRefundDiscovery
             if (count($missing) > 75) throw new RuntimeException('Too many missing refunded orders for scoped discovery.');
             $batch = array_slice($missing, 0, self::LIMIT);
             $result = self::ingest($p, new SvAmazonReturnsSpApi($transport), $batch);
+            $result['unlinked_refund_rows'] = (int)$scan['unlinked_refund_rows'];
             $assessment = self::assessDailyCompletion(count($missing), $result);
             $finished = $assessment['completed'];
             $metadata += [
@@ -247,6 +261,7 @@ final class SvAmazonRefundDiscovery
                 'inserted_cases' => $result['inserted_cases'],
                 'skipped_ambiguous' => $result['skipped_ambiguous'],
                 'skipped_not_released' => $result['skipped_not_released'],
+                'unlinked_refund_rows' => $result['unlinked_refund_rows'],
                 'failed' => $result['failed'],
             ];
             $p->cursors->save(self::SOURCE, self::CURSOR, $finished ? $today : $source, $metadata);

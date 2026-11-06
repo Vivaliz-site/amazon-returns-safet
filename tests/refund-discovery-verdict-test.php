@@ -15,6 +15,10 @@ $cases = [
         'status' => 'REVIEW_REQUIRED', 'completed' => true, 'review_required' => 1],
     ['missing' => 1, 'result' => ['failed' => 0, 'skipped_ambiguous' => 0, 'skipped_not_released' => 1],
         'status' => 'REVIEW_REQUIRED', 'completed' => true, 'review_required' => 1],
+    ['missing' => 0, 'result' => ['failed' => 0, 'unlinked_refund_rows' => 1],
+        'status' => 'REVIEW_REQUIRED', 'completed' => true, 'review_required' => 1],
+    ['missing' => 25, 'result' => ['failed' => 0, 'unlinked_refund_rows' => 3, 'skipped_ambiguous' => 2],
+        'status' => 'REVIEW_REQUIRED', 'completed' => true, 'review_required' => 5],
     ['missing' => 25, 'result' => ['failed' => 0, 'skipped_ambiguous' => 2, 'skipped_not_released' => 1],
         'status' => 'REVIEW_REQUIRED', 'completed' => true, 'review_required' => 3],
     ['missing' => 1, 'result' => ['failed' => 1, 'skipped_ambiguous' => 0, 'skipped_not_released' => 0],
@@ -49,6 +53,11 @@ $partial = SvAmazonRefundDiscovery::cachedDailySummary([
 ]);
 discoveryVerdictAssert($partial === ['last_scan_status' => 'PARTIAL', 'review_required' => 2],
     'Incomplete scan must stay partial and retain the greater review count.');
+$unlinked = SvAmazonRefundDiscovery::cachedDailySummary([
+    'status' => 'OK', 'unlinked_refund_rows' => 2, 'missing_orders' => 0,
+]);
+discoveryVerdictAssert($unlinked === ['last_scan_status' => 'REVIEW_REQUIRED', 'review_required' => 2],
+    'Previously cached OK must not hide released refunds lacking a valid order ID.');
 $clean = SvAmazonRefundDiscovery::cachedDailySummary(['status' => 'OK', 'skipped_ambiguous' => 0]);
 discoveryVerdictAssert($clean === ['last_scan_status' => 'OK', 'review_required' => 0],
     'Clean daily scan must not invent outstanding reviews.');
