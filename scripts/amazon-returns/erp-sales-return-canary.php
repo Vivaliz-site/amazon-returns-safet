@@ -190,5 +190,8 @@ try{
     if(strtoupper(trim((string)($second['status']??'')))!=='RETURN_CREATED_WAITING_INVOICE'||$secondId!==$externalId)erp_canary_reply(['status'=>'FAILED','reason'=>'IDEMPOTENCY_RECHECK_FAILED','case_id'=>$caseId,'order_id'=>$orderId,'erp_sales_return_id'=>$externalId],7);
     erp_canary_reply(['status'=>'PROVEN','mode'=>'execute','case_id'=>$caseId,'order_id'=>$orderId,'erp_sales_return_id'=>$externalId,'external_readback'=>'MATCHED','idempotency_recheck'=>'MATCHED','items'=>$candidate['items'],'refund_at'=>$candidate['refund_at']]);
 }catch(Throwable $e){
+    if($e instanceof SvAmazonErpBrowserAuthRequired){
+        erp_canary_reply(['status'=>'BLOCKED','reason'=>'ERP_BROWSER_AUTH_REQUIRED','error_class'=>$e::class],4);
+    }
     erp_canary_reply(['status'=>'ERROR','reason'=>'CANARY_RUNTIME_ERROR','error_class'=>$e::class],10);
 }
