@@ -219,6 +219,23 @@ final class SvAmazonReturnsStatusBridgeService
             && (string)($result['reason'] ?? '')==='SELLER_SUPPORT_CASE_IDENTITY_MISMATCH'){
             return $this->completeSupportIdentityMismatch($row,$result);
         }
+        // A successful browser request is not a verified decision. An unreadable
+        // claim status may hide an appeal/reply deadline; retry the same scoped
+        // read without posting a false-green observation or external write.
+        if($kind==='SAFE_T_READ' && $status==='ACCEPTED'
+            && is_array($result['read'] ?? null)
+            && strtoupper(trim((string)($result['read']['claim_status'] ?? 'UNKNOWN')))==='UNKNOWN'){
+            $next=(new DateTimeImmutable('now',new DateTimeZone('UTC')))
+                ->modify('+1 hour');
+            $this->p->outbox->defer(
+                $jobId,$next,'UI_DRIFT: SAFE_T_STATUS_UNRECOGNIZED',true
+            );
+            return [
+                'status'=>'ACK','job_id'=>$jobId,'result_status'=>'UI_DRIFT',
+                'reason'=>'SAFE_T_STATUS_UNRECOGNIZED',
+                'retry_scheduled'=>true,'completed'=>false,
+            ];
+        }
         if($status==='ACCEPTED' && is_array($result['read'] ?? null)){
             return $kind==='SAFE_T_DISCOVERY'
                 ? $this->completeDiscovery($row,$result)
