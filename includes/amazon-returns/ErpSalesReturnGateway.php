@@ -12,6 +12,8 @@ interface SvAmazonErpSalesReturnGateway
     public function probeExisting(string $originalInvoiceId,string $originalInvoiceNumber=''): ?string;
 }
 
+final class SvAmazonErpBrowserAuthRequired extends RuntimeException {}
+
 final class SvAmazonUnverifiedErpSalesReturnGateway implements SvAmazonErpSalesReturnGateway
 {
     public function create(array $command): array
@@ -99,6 +101,7 @@ final class SvAmazonOlistBrowserErpSalesReturnGateway implements SvAmazonErpSale
         $status=strtoupper(trim((string)($result['status']??'')));
         if($status==='READY')return true;
         if(in_array($status,['NOT_READY','ALREADY_EXISTS'],true))return false;
+        if($status==='AUTH_REQUIRED')throw new SvAmazonErpBrowserAuthRequired('ERP browser authentication required.');
         throw new RuntimeException('ERP sales return create preflight was not confirmed: '.($status!==''?$status:'UNKNOWN').'.');
     }
 
@@ -114,6 +117,7 @@ final class SvAmazonOlistBrowserErpSalesReturnGateway implements SvAmazonErpSale
         if($status==='NOT_FOUND')return null;
         $externalId=trim((string)($result['external_id']??''));
         if($status==='FOUND' && preg_match('/^[0-9]+$/D',$externalId)===1)return $externalId;
+        if($status==='AUTH_REQUIRED')throw new SvAmazonErpBrowserAuthRequired('ERP browser authentication required.');
         throw new RuntimeException('ERP sales return preflight was not confirmed.');
     }
 
@@ -127,6 +131,7 @@ final class SvAmazonOlistBrowserErpSalesReturnGateway implements SvAmazonErpSale
         $status=strtoupper(trim((string)($result['status']??'')));
         if($status==='NOT_FOUND')return null;
         if($status==='FOUND' && is_array($result['record']??null))return $result['record'];
+        if($status==='AUTH_REQUIRED')throw new SvAmazonErpBrowserAuthRequired('ERP browser authentication required.');
         throw new RuntimeException(
             'ERP sales return read-back was not confirmed: '.($status!==''?$status:'UNKNOWN').'.'
         );
