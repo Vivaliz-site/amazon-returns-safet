@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 final class SvAmazonSafeTStatus
 {
-    private const CLAIM_STATUSES = ['DENIED','APPROVED','INFO_REQUESTED','PENDING','UNKNOWN'];
+    private const CLAIM_STATUSES = ['DENIED','APPROVED','INFO_REQUESTED','PENDING','WITHDRAWN','UNKNOWN'];
 
     /** @return array{claim_status:string,safe_t_id:?string,order_id:?string,denied_at:?string,appeal_deadline_at:?string,decision_text:?string,decision_fingerprint:?string,appeal_submitted:bool,appeal_denied:bool} */
     public static function normalize(array $read): array
