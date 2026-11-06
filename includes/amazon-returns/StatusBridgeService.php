@@ -161,7 +161,13 @@ final class SvAmazonReturnsStatusBridgeService
     public function pull(DateTimeImmutable $now): array
     {
         $ensured=$this->ensureJobs($now);
-        $rows=$this->p->outbox->claimBatch(1,['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ']);
+        // Read existing SAFE-T claims and support cases first: a decision or
+        // appeal/reply deadline must not wait behind hundreds of unverified
+        // order-discovery searches. The fallback still drains every discovery.
+        $rows=$this->p->outbox->claimBatch(1,['SAFE_T_READ','SELLER_SUPPORT_READ']);
+        if($rows===[]){
+            $rows=$this->p->outbox->claimBatch(1,['SAFE_T_DISCOVERY']);
+        }
         if($rows===[])return ['status'=>'NO_JOB','ensured'=>$ensured];
         $row=$rows[0];
         $case=$this->p->cases->find((int)$row['case_id']);
