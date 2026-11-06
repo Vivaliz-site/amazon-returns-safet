@@ -33,4 +33,6 @@ foreach(['--mode=discover','--mode=execute','--handoff','erpSalesReturnCreateEna
 ecSame(false,str_contains($runner,'--auto'),'canary runner must not independently auto-select a write candidate after discovery.');
 ecSame(true,str_contains($runner,'last_error_code'),'failed canary output must expose persisted ERP error code.');
 ecSame(true,str_contains($runner,'last_error_message'),'failed canary output must expose persisted ERP error message.');
+ecSame(true,str_contains($runner,'SvAmazonErpBrowserAuthRequired'),'Canary must recognize typed ERP browser authentication failures.');
+ecSame(true,str_contains($runner,'ERP_BROWSER_AUTH_REQUIRED'),'Canary must expose a fixed sanitized login-required reason.');
 echo "erp-sales-return-canary-test: OK\n";
