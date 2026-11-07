@@ -128,11 +128,16 @@ test('restores global kill switch and releases lease after failure in provider',
   await assert.rejects(()=>run(b.adapter),/provider unavailable/);
   assert.equal(b.state.restored,1);assert.equal(b.state.released,1);
 });
-test('restart rollback readback is mandatory even if run otherwise succeeded',async()=>{
+test('unverified kill-switch restore quarantines ownership instead of releasing lease',async()=>{
   const b=build();
   b.adapter.verifyGlobalWritesDisabled=async()=>b.state.restored===0;
   await denies(()=>run(b.adapter),'KILL_SWITCH_RESTORE_UNVERIFIED');
-  assert.equal(b.state.restored,1);assert.equal(b.state.released,1);
+  assert.equal(b.state.restored,1);assert.equal(b.state.released,0);
+});
+test('throw from restore path also keeps the exclusive lease quarantined',async()=>{
+  const b=build({restoreGlobalKillSwitch:async()=>{throw new Error('restore failed')}});
+  await denies(()=>run(b.adapter),'KILL_SWITCH_RESTORE_UNVERIFIED');
+  assert.equal(b.state.released,0);
 });
 test('preflight blocks stale dates, credits, received goods, wrong programs and support',async()=>{
   const invalid = [
