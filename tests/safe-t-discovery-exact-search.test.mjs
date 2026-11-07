@@ -11,7 +11,7 @@ test('native UI exact-search is wired into the read-only worker', () => {
   assert.match(source,/scanSafeTExactOrder\(/);
   assert.match(source,/#list-claims-search-panel-input/);
   assert.match(source,/#list-claims-search-panel-submit/);
-  assert.match(source,/SAFE_T_EXACT_SEARCH_CONTROL_UNAVAILABLE/);
+  assert.match(source,/resolveReadOnlySafeTDiscovery\(/);
 });
 
 test('existing claim is detected without SAFE-T submission', async () => {

@@ -43,3 +43,31 @@ export async function scanSafeTExactOrder({
   }
   return { status: 'UI_DRIFT', reason: 'SAFE_T_EXACT_SEARCH_ABSENCE_UNVERIFIED', pages_scanned: 1 };
 }
+
+
+/**
+ * A native exact-search miss is NOT evidence that a claim is absent. Re-open
+ * the unfiltered official list before a bounded, read-only pagination check.
+ * Only a positively located claim ID can proceed to detail verification.
+ */
+export async function resolveReadOnlySafeTDiscovery({
+  exactSearch, resetToUnfilteredList, scanList,
+}) {
+  if (!exactSearch || typeof exactSearch.status !== "string") {
+    throw new TypeError("exactSearch result required");
+  }
+  const ambiguousMiss = exactSearch.status === "UI_DRIFT" &&
+    ["SAFE_T_EXACT_SEARCH_ABSENCE_UNVERIFIED", "SAFE_T_EXACT_SEARCH_CONTROL_UNAVAILABLE"].includes(exactSearch.reason);
+  if (!ambiguousMiss) return exactSearch;
+  if (typeof resetToUnfilteredList !== "function" || typeof scanList !== "function") {
+    throw new TypeError("unfiltered read-only list callbacks required");
+  }
+  if (await resetToUnfilteredList() !== true) {
+    return {status:"UI_DRIFT", reason:"SAFE_T_DISCOVERY_LIST_RESET_UNVERIFIED", pages_scanned:exactSearch.pages_scanned};
+  }
+  const scanned = await scanList();
+  if (scanned?.status === "FOUND" && CLAIM_ID.test(scanned.external_id ?? "")) return scanned;
+  if (scanned?.status === "FAILED" || scanned?.status === "UI_DRIFT") return scanned;
+  return {status:"UI_DRIFT", reason:"SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED",
+    pages_scanned:Number.isSafeInteger(scanned?.pages_scanned) ? scanned.pages_scanned : exactSearch.pages_scanned};
+}
