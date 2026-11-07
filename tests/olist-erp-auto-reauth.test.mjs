@@ -145,3 +145,28 @@ test('persistent browser host wires reauth from protected environment without pr
   assert.match(host, /candidate\.close/);
   assert.doesNotMatch(host, /console\.(log|error).*OLIST_ERP_LOGIN_(EMAIL|PASSWORD)/);
 });
+
+test('authenticated ERP home navigates directly to returns without using credentials', async () => {
+  const calls = [];
+  const page = {
+    current: 'https://erp.olist.com/',
+    url() { return this.current; },
+    evaluate: async () => true,
+    goto: async url => { calls.push('goto-target'); page.current = url; },
+  };
+  const result = await ensureOlistAuthenticated(page, { email: '', password: '' });
+  assert.deepEqual(result, { status: 'AUTHENTICATED', reason: 'ERP_HOME_SESSION_RECOVERED' });
+  assert.deepEqual(calls, ['goto-target']);
+});
+
+test('ERP home cannot claim authentication if returns UI is not ready', async () => {
+  const page = {
+    current: 'https://erp.olist.com/',
+    url() { return this.current; },
+    evaluate: async () => false,
+    goto: async url => { page.current = url; },
+    getByRole: () => ({ first: () => ({ isVisible: async () => false }) }),
+  };
+  const result = await ensureOlistAuthenticated(page, { email: '', password: '' });
+  assert.equal(result.status, 'AUTH_REQUIRED');
+});
