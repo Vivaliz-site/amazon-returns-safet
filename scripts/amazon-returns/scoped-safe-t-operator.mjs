@@ -80,7 +80,7 @@ function assessLocalCase(item, nowMs) {
   return null;
 }
 function requireAdapter(adapter) {
-  for (const method of ['verifyCanonicalOwnerGrant', 'verifyServicePrincipal', 'acquireSingleWriterLease',
+  for (const method of ['verifyCanonicalOwnerGrant', 'verifyServicePrincipal', 'verifyCrashRollbackProvisioned', 'verifyScopedWorkerIsolation', 'acquireSingleWriterLease',
     'readCaseSnapshot', 'verifyWarehouseNonreceipt', 'verifyFinancesDebit',
     'verifyAmazonInitiated', 'verifyOfficialEligibility', 'verifyNoExternalClaimOrSupport',
     'consumeOneUseGrant', 'executeViaExistingScopedWorker', 'verifyAcceptedClaim',
@@ -106,6 +106,8 @@ export async function activateScopedSafeTOpening({ grantNumber, adapter, now = (
   requireGate(await adapter.verifyServicePrincipal({ host: 'marina-a1-4c24g', principal: 'amazon-returns-safet-service' }) === true,
     'SERVICE_PRINCIPAL_UNVERIFIED');
   requireGate(await adapter.verifyGlobalWritesDisabled() === true, 'GLOBAL_WRITES_NOT_DISABLED');
+  requireGate(await adapter.verifyCrashRollbackProvisioned({ grantNumber, profile: scope.version }) === true, 'CRASH_ROLLBACK_NOT_PROVISIONED');
+  requireGate(await adapter.verifyScopedWorkerIsolation({ grantNumber, allowedActions: EXPECTED_ACTIONS }) === true, 'SINGLE_WORKER_ISOLATION_UNVERIFIED');
   const lock = await adapter.acquireSingleWriterLease({ grantNumber, scope: scope.version });
   requireGate(lock && Number.isSafeInteger(lock.fencing) && lock.fencing > 0 && typeof lock.id === 'string' && lock.id.length > 0,
     'EXCLUSIVE_LEASE_REQUIRED');
@@ -136,6 +138,16 @@ export async function activateScopedSafeTOpening({ grantNumber, adapter, now = (
       requireGate(now() < Date.parse(scope.expiresAt), 'OWNER_GRANT_EXPIRED');
       const input = { grantNumber, profile: scope.version, caseId: row.caseId,
         caseIds: [...scope.caseIds], action: 'SAFE_T_SUBMIT', fencing: lock.fencing };
+      // Re-read and revalidate just before the irreversible provider click.
+      const fresh = await adapter.readCaseSnapshot({ tenantId: 1, connectionId: 1, caseIds: [row.caseId], fencing: lock.fencing });
+      requireGate(Array.isArray(fresh) && fresh.length === 1 && fresh[0]?.id === row.caseId &&
+        assessLocalCase(fresh[0], now()) === null, 'CASE_CHANGED_BEFORE_SUBMIT');
+      for (const method of ['verifyWarehouseNonreceipt', 'verifyFinancesDebit', 'verifyAmazonInitiated',
+        'verifyOfficialEligibility', 'verifyNoExternalClaimOrSupport']) {
+        requireGate(await adapter[method]({ caseId: row.caseId, tenantId: 1, connectionId: 1, fencing: lock.fencing }) === true,
+          'OFFICIAL_PROOF_STALE');
+      }
+      requireGate(await adapter.verifyGlobalWritesDisabled() === true, 'UNSCOPED_WRITES_DETECTED');
       const attempt = await adapter.executeViaExistingScopedWorker(input);
       requireGate(attempt?.status === 'ACCEPTED' && CLAIM_ID.test(attempt?.externalId ?? ''), 'SUBMIT_READBACK_UNVERIFIED');
       requireGate(await adapter.verifyAcceptedClaim({ ...input, externalId: attempt.externalId }) === true,
