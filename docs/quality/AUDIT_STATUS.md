@@ -166,3 +166,11 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - RED found during defensive review of the new inactive executor core: a `finally` block released the single-writer lease before checking whether the kill switch had actually returned to ON. A failure in rollback could admit another writer during unsafe state.
 - Fix: if restore throws or the OFF-to-ON readback cannot be proven, the operator throws `KILL_SWITCH_RESTORE_UNVERIFIED` **without releasing its fenced lease**; only a verified-off global writes state permits `releaseSingleWriterLease`. This keeps an independent crash recovery/lease reconciliation mandatory.
 - Prevention: negative regression for both failed readback and restore exception. No runtime activation, external claims, credentials, worker changes or flags. Operational certification remains **NOT APTO** without production adapter and live UI/Finances/warehouse proof.
+
+
+## 2026-11-07 — #532 / atomico one-use ledger (INERTE)
+
+- **Causa:** grants humanos #3556/#3673 tinham core/verificador GitHub, mas nenhum registro transacional reutilizavel para impedimento permanente de segunda execucao e controle de fencing. Reprocessamento apos crash ou resultado Amazon ambiguo permaneceria risco P0.
+- **Correcao tecnica proposta:** `includes/amazon-returns/ScopedSafeTGrantConsumption.php` com reserva INSERT protegida por UNIQUE por tenant/conexao/grant, token auto-increment monotono, consumo once-only CAS e quarentena terminal. Nenhum mecanismo de reset ou reaproveitamento; grants restritos a #3556/#3673 e tenant/conexao 1/1. DDL InnoDB `deploy/sql/20261107-scoped-safe-t-grant-consumption.sql` fica **staged, nao aplicada automaticamente**.
+- **Prevencao:** teste de SQLite descartavel `tests/scoped-safe-t-grant-consumption-test.php` verifica dupla reserva, dupla consumacao, fencing velho, grant e tenant alheios, reinicio e quarentena. Aguardam checks oficiais no HEAD final; nao declarar verde sem provas.
+- **Escopo limitado:** a tabela one-use nao e lease global e nao faz a integracao de principal/rollback/Seller Central/Finances. Nenhum claim/support/pagamento, schema de producao, flag ou kill switch alterado por este codigo. APTO externo continua **NAO**.
