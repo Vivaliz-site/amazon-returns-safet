@@ -75,3 +75,8 @@ the production adapter has independently implemented all checks above.
 
 **Current verdict: NOT CERTIFIED FOR EXTERNAL SAFE-T WRITES.**
 Record all later evidence in existing issue #532 without secrets or PII.
+
+**Lease quarantine invariant:** if restoring or verifying the global kill
+switch fails, the executor MUST NOT release the exclusive lease; it throws
+`KILL_SWITCH_RESTORE_UNVERIFIED`. Independent crash recovery must then repair
+the switch and reconcile the claim before a lease can be safely released.
