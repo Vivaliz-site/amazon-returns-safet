@@ -29,6 +29,20 @@ function lastIndex(text, pattern) {
 
 function statusFrom(body) {
   const normalized = body.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  // The Seller Central claim detail header shows the current status directly
+  // under the order link, without a "Status da reivindicacao" label. Prefer
+  // that visible status to historic messages lower on the page. Restrict the
+  // match to the exact claim-header block; never infer from a quoted appeal.
+  const header = normalized.match(
+    /detalhes da reivindicacao:\s*\d{5}-\d{5}-\d{7}[\s\S]{0,450}?\b\d{3}-\d{7}-\d{7}\s*\n\s*(negad[oa]|aprovad[oa]|retirad[oa]|em analise|pendente)\s*(?:\n|$)/i
+  );
+  if (header) {
+    const label = header[1];
+    if (/^negad[oa]$/.test(label)) return 'DENIED';
+    if (/^aprovad[oa]$/.test(label)) return 'APPROVED';
+    if (/^retirad[oa]$/.test(label)) return 'WITHDRAWN';
+    return 'PENDING';
+  }
   const statusSection = normalized.match(/status da reivindicacao\s*\n?\s*([^\n]{1,80})/i)?.[1] ?? '';
   if (statusSection) {
     if (/\b(?:retirad[oa]|withdrawn)\b/.test(statusSection)) return 'WITHDRAWN';
