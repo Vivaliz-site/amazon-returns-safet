@@ -43,7 +43,7 @@ function make(n,change=()=>{}){
   return {data,calls,fetchImpl};
 }
 const run=(n,b,nowMs=NOW)=>verifyApprovedOwnerGrant(n,{fetchImpl:b.fetchImpl,token:TOKEN,nowMs});
-const fails=(fn,code)=>assert.rejects(fn,error=>error instanceof OwnerGrantVerificationError&&error.code===code);
+const fails=(fn,code)=>assert.rejects(fn,error=>error instanceof OwnerGrantVerificationError && (typeof code==='function' ? code(error) : error.code===code));
 
 for(const n of [3556,3673]){
   test('authenticated exact head approval, merged and pinned grant for #'+n,async()=>{
