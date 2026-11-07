@@ -111,7 +111,6 @@ export async function activateScopedSafeTOpening({ grantNumber, adapter, now = (
   const lock = await adapter.acquireSingleWriterLease({ grantNumber, scope: scope.version });
   requireGate(lock && Number.isSafeInteger(lock.fencing) && lock.fencing > 0 && typeof lock.id === 'string' && lock.id.length > 0,
     'EXCLUSIVE_LEASE_REQUIRED');
-  let primaryError = null;
   try {
     const latest = await adapter.verifyCanonicalOwnerGrant(grantNumber);
     validateGrant(latest, scope, grantNumber, now());
@@ -155,20 +154,19 @@ export async function activateScopedSafeTOpening({ grantNumber, adapter, now = (
       results.push({ caseId: row.caseId, externalId: attempt.externalId });
     }
     return { status: 'ACCEPTED_WITH_READBACK', results, verdicts };
-  } catch (error) {
-    primaryError = error;
-    throw error;
   } finally {
-    // The production adapter also needs independent crash/reboot rollback;
-    // finally alone cannot cover SIGKILL, host power loss or other workers.
+    // If global writes cannot be proven disabled, DO NOT release ownership:
+    // releasing the lease could admit a second writer while writes remain ON.
+    // An independent crash/reboot watchdog must quarantine/recover this state.
     let restored = false;
     try {
       await adapter.restoreGlobalKillSwitch({ grantNumber, fencing: lock.fencing });
       restored = (await adapter.verifyGlobalWritesDisabled()) === true;
-    } finally {
-      await adapter.releaseSingleWriterLease({ id: lock.id, fencing: lock.fencing });
+    } catch {
+      restored = false;
     }
-    if (!restored && !primaryError) throw new ScopedSafeTError('KILL_SWITCH_RESTORE_UNVERIFIED');
+    if (!restored) throw new ScopedSafeTError('KILL_SWITCH_RESTORE_UNVERIFIED');
+    await adapter.releaseSingleWriterLease({ id: lock.id, fencing: lock.fencing });
   }
 }
 export { SCOPES, EXPECTED_ACTIONS, assessLocalCase };
