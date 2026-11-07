@@ -20,7 +20,7 @@ const grant=n=>({schema:'SHOPVIVALIZ_OWNER_PR_GRANT_V1',repository:'Vivaliz-site
   tenant_id:1,amazon_connection_id:1,allowed_case_ids:[...scopes[n].ids],
   allowed_write_actions:['SAFE_T_SUBMIT'],one_use:true,
   expires_at_utc:scopes[n].expiry,mandatory_guards:[...guards]});
-const pr=n=>({number:n,base:{repo:{full_name:'Vivaliz-site/site-shopvivaliz'}},
+const pr=n=>({number:n,base:{ref:'main',repo:{full_name:'Vivaliz-site/site-shopvivaliz'}},
   head:{repo:{full_name:'Vivaliz-site/site-shopvivaliz'},sha:SHA},
   state:'closed',merged:true,merge_commit_sha:MERGE,user:{login:'fredmourao-ai'},
   merged_at:'2026-11-05T14:00:00Z'});
@@ -71,12 +71,16 @@ test('GitHub errors and network timeouts fail closed',async()=>{
 test('PR must have current merged owner head and known author',async()=>{
   for(const change of [
     x=>x.pr.merged=false,x=>x.pr.state='open',x=>x.pr.user.login='other',
-    x=>x.pr.base.repo.full_name='other/repo',x=>x.pr.head.repo.full_name='other/repo',
+    x=>x.pr.base.repo.full_name='other/repo',x=>x.pr.base.ref='staging',x=>x.pr.head.repo.full_name='other/repo',
     x=>x.pr.head.sha='short',x=>x.pr.merge_commit_sha='short',x=>x.pr.merged_at=null
   ]){
     const b=make(3556,x=>change(x));
     await fails(()=>run(3556,b),'OWNER_PR_NOT_MERGED');
   }
+});
+test('owner grant merged into noncanonical base must not authorize SAFE-T',async()=>{
+  const b=make(3556,x=>x.pr.base.ref='staging');
+  await fails(()=>run(3556,b),'OWNER_PR_NOT_MERGED');
 });
 test('review must be latest explicit approval on exact head before merge',async()=>{
   for(const change of [

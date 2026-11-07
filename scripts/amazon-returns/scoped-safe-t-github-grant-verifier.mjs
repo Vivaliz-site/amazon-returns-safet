@@ -59,7 +59,7 @@ export async function verifyApprovedOwnerGrant(grantNumber,{
   expect(typeof fetchImpl==='function','GITHUB_CLIENT_REQUIRED');
   expect(Number.isFinite(nowMs)&&nowMs<Date.parse(expected.expiry),'GRANT_EXPIRED');
   const p=await githubJson('/pulls/'+grantNumber,{fetchImpl,token});
-  expect(p?.number===grantNumber&&p?.base?.repo?.full_name==='Vivaliz-site/site-shopvivaliz'&&
+  expect(p?.number===grantNumber&&p?.base?.repo?.full_name==='Vivaliz-site/site-shopvivaliz'&&p?.base?.ref==='main'&&
     p?.head?.repo?.full_name==='Vivaliz-site/site-shopvivaliz'&&
     p?.state==='closed'&&p?.merged===true&&validCommit(p.head.sha)&&
     validCommit(p.merge_commit_sha)&&
