@@ -20,6 +20,8 @@ function build(overrides = {}) {
   const adapter = {
     async verifyCanonicalOwnerGrant(n) { calls.push('grant'); return grant(n); },
     async verifyServicePrincipal() { calls.push('principal'); return true; },
+    async verifyCrashRollbackProvisioned() { calls.push('crash-rollback'); return true; },
+    async verifyScopedWorkerIsolation() { calls.push('worker-isolation'); return true; },
     async acquireSingleWriterLease() { calls.push('lease'); return {id:'owned',fencing:9}; },
     async readCaseSnapshot({caseIds}) { calls.push('cases'); return caseIds.map(row); },
     async verifyWarehouseNonreceipt() { calls.push('warehouse'); return true; },
@@ -146,4 +148,33 @@ test('preflight blocks stale dates, credits, received goods, wrong programs and 
     assert.equal(b.state.attempted,0,key);
     assert.equal(b.state.consumed,0,key);
   }
+});
+
+test('crash rollback and existing-worker isolation are mandatory before lease',async()=>{
+  for(const [method,code] of [['verifyCrashRollbackProvisioned','CRASH_ROLLBACK_NOT_PROVISIONED'],
+    ['verifyScopedWorkerIsolation','SINGLE_WORKER_ISOLATION_UNVERIFIED']]){
+    const b=build({[method]:async()=>false});
+    await denies(()=>run(b.adapter),code);
+    assert.equal(b.state.attempted,0);
+  }
+});
+test('fresh local snapshot and official proof rechecked before each irreversible submit',async()=>{
+  let reads=0;
+  const b=build({readCaseSnapshot:async ({caseIds})=>{
+    reads++;
+    return caseIds.map(id=>reads===2?{...row(id),safe_t_id:'64204-51742-6364222'}:row(id));
+  }});
+  await denies(()=>run(b.adapter),'CASE_CHANGED_BEFORE_SUBMIT');
+  assert.equal(b.state.attempted,0);
+  assert.equal(b.state.restored,1);
+});
+test('official proof withdrawal between preflight and submission blocks click',async()=>{
+  let calls=0;
+  const b=build({verifyNoExternalClaimOrSupport:async()=>{
+    calls++;
+    return calls<=SCOPES[3556].caseIds.length;
+  }});
+  await denies(()=>run(b.adapter),'OFFICIAL_PROOF_STALE');
+  assert.equal(b.state.attempted,0);
+  assert.equal(b.state.restored,1);
 });
