@@ -13,7 +13,7 @@ function utcTimestamp(value) {
 export function safeTExternalWindow(job, nowMillis = Date.now()) {
   const program = String(job?.case?.program ?? '').trim().toUpperCase();
   if (program !== 'FBA_ONSITE' && program !== 'DELIVERY_BY_AMAZON') {
-    return { allowed: program !== '' && program !== 'UNKNOWN', reason: 'PROGRAM_UNVERIFIED' };
+    return { allowed: false, reason: program === '' || program === 'UNKNOWN' ? 'PROGRAM_UNVERIFIED' : 'PROGRAM_UNSUPPORTED' };
   }
   const refundMillis = utcTimestamp(String(job?.case?.refund_at ?? ''));
   if (refundMillis === null) return { allowed: false, reason: 'REFUND_AT_UNVERIFIED' };

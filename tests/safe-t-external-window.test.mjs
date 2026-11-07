@@ -28,7 +28,26 @@ const now = Date.parse('2026-10-30T23:30:00Z');
 assert.equal(safeTExternalWindow({ case: { program: 'FBA_ONSITE', refund_at: '2026-09-07 23:33:01' } }, now).allowed, true);
 assert.equal(safeTExternalWindow({ case: { program: 'FBA_ONSITE', refund_at: '2026-09-99 23:33:01' } }, now).allowed, false);
 assert.equal(safeTExternalWindow({ case: { program: 'UNKNOWN' } }, now).allowed, false);
-assert.equal(safeTExternalWindow({ case: { program: 'STANDARD' } }, now).allowed, true);
+// Unsupported and unverified programs must NEVER be eligible for submission,
+// regardless of D+0, D+45, D+89 or a stale D+90+ outbox entry.
+const refundAnchor = Date.parse('2026-09-01T00:00:00Z');
+for (const [program, reason] of [
+  ['STANDARD', 'PROGRAM_UNSUPPORTED'],
+  ['FBM', 'PROGRAM_UNSUPPORTED'],
+  ['UNKNOWN', 'PROGRAM_UNVERIFIED'],
+  ['', 'PROGRAM_UNVERIFIED'],
+]) {
+  for (const days of [0, 44, 45, 89, 90, 128]) {
+    const decision = safeTExternalWindow(
+      { case: { program, refund_at: '2026-09-01 00:00:00' } },
+      refundAnchor + days * 86400000,
+    );
+    assert.deepEqual(decision, { allowed: false, reason },
+      `${program || 'EMPTY'} D+${days} must fail closed before Seller Central`);
+  }
+}
+assert.deepEqual(safeTExternalWindow({}, now),
+  { allowed: false, reason: 'PROGRAM_UNVERIFIED' });
 
 const worker = fs.readFileSync(new URL('../scripts/amazon-returns/seller-central-bridge-worker.mjs', import.meta.url), 'utf8');
 const firstGate = worker.indexOf('const openingWindow = safeTExternalWindow(job)');
