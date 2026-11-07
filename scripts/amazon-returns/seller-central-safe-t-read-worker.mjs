@@ -5,7 +5,7 @@ import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
 import { parseSafeTStatus } from './safe-t-status-parser.mjs';
 import { scanSafeTClaimPages } from './safe-t-discovery-pages.mjs';
-import { scanSafeTExactOrder } from './safe-t-discovery-exact-search.mjs';
+import { scanSafeTExactOrder, resolveReadOnlySafeTDiscovery } from './safe-t-discovery-exact-search.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_STATUS_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php';
@@ -308,9 +308,18 @@ async function safeTDiscovery(job) {
       pause: sleep,
       maxChecks: 8,
     });
-    const discovery = exactSearch.reason==='SAFE_T_EXACT_SEARCH_CONTROL_UNAVAILABLE'
-      ? await scanSafeTClaimPages({ readPage, advancePage, maxPages: 25 })
-      : exactSearch;
+    const discovery = await resolveReadOnlySafeTDiscovery({
+      exactSearch,
+      resetToUnfilteredList: async () => {
+        const unfiltered = await authenticatedPage(cdp, `${SAFE_T_BASE}?pageSize=100&dateFilterValue=${days}`, 4500);
+        if (unfiltered.auth !== 'OK') return false;
+        const visible = await readPage();
+        return typeof visible.signature === 'string' && visible.signature.length > 0;
+      },
+      // The claim list cannot establish absence. Bound the additional
+      // read-only fallback to three pages per job to protect the existing worker.
+      scanList: () => scanSafeTClaimPages({ readPage, advancePage, maxPages: 3 }),
+    });
     if (discovery.status !== 'FOUND') return result(discovery.status, {
       reason: discovery.reason,
       retry_safe: discovery.status === 'UI_DRIFT',
