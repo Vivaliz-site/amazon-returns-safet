@@ -129,8 +129,8 @@ test('restores global kill switch and releases lease after failure in provider',
   assert.equal(b.state.restored,1);assert.equal(b.state.released,1);
 });
 test('restart rollback readback is mandatory even if run otherwise succeeded',async()=>{
-  const b=build();let readCount=0;
-  b.adapter.verifyGlobalWritesDisabled=async()=>++readCount===1;
+  const b=build();
+  b.adapter.verifyGlobalWritesDisabled=async()=>b.state.restored===0;
   await denies(()=>run(b.adapter),'KILL_SWITCH_RESTORE_UNVERIFIED');
   assert.equal(b.state.restored,1);assert.equal(b.state.released,1);
 });
