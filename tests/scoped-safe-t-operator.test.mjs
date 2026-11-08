@@ -193,7 +193,7 @@ test('carrier-only transit states at D+45 reach independent warehouse and Amazon
     });
     const denied = await run(unresolved.adapter);
     assert.equal(denied.status, 'NO_AUTHORIZED_SUBMISSIONS', physical_status);
-    assert(unresolved.calls.includes('warehouse'), 'independent WAREHOUSE check must run');
+    assert(denied.verdicts.every(v => v.reason === 'OFFICIAL_PROOF_UNVERIFIED'), 'the independent WAREHOUSE proof, not carrier status, must deny');
     assert.equal(unresolved.state.consumed, 0, 'carrier scan alone cannot consume grant');
     assert.equal(unresolved.state.attempted, 0, 'carrier scan alone cannot submit');
     const confirmed = build({readCaseSnapshot: async args => snapshot(args)});
