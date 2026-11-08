@@ -22,4 +22,12 @@ assert_rejected "window beyond max" --days=91
 assert_rejected "apply without a signed preflight set" --apply
 assert_rejected "apply with malformed hash" --apply --expected-hash=not-a-hash
 
+# Prevent the one-off repair from accepting conflicting ORDER_IDs in one refund.
+# The daemon's shared scanner rejects malformed/conflicting identifiers.
+if ! grep -Fq 'SvAmazonRefundDiscovery::scan($transport, $days, $now)' "$script"; then
+  printf 'FAIL: refund backfill does not use canonical ambiguity-safe scanner\n' >&2
+  exit 1
+fi
+php "$root/tests/refund-discovery-daily-test.php" >/dev/null
+
 echo 'refund-backfill-api-guard-test: OK'
