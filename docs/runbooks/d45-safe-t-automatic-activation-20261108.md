@@ -1,10 +1,18 @@
 # SAFE-T automatic D+45 activation — P2 #3830
 
-**State: P2 HUMAN REVIEW PENDING / NO PRODUCTION ADAPTER / EXTERNAL WRITES OFF.**
+**State: P2 #3830 APPROVED + MERGED / CORE DEPLOYED / PRODUCTION ADAPTER NOT INSTALLED / EXTERNAL WRITES OFF.**
 
 ## Two separate authorizations and code review
 
 The owner-grant PR is https://github.com/Vivaliz-site/site-shopvivaliz/pull/3830 .
+Its exact GitHub-approved HEAD is 2deb06ee6093d76f90da5a287c7bc75108565255,
+merged by shopvivaliz-human at 2026-11-08 12:45:53 UTC in
+28dfcf64b7d3fc2018707274b00f6e4cbcd1ee2b.
+The import-only technical core was published by the canonical Marina deploy
+at SHA 075b7fe2ccd7952fecc171ad431302319197dfba; 17/17 directed
+regression tests passed on the ACTIVE release. P2 approval alone is not a
+certified production adapter or an Amazon submission.
+
 Its grant file is security/owner-approvals/3830.json. A legitimate
 shopvivaliz-human APPROVED event on the exact final HEAD, followed by an
 authorized protected merge, is necessary for the P2 operation
@@ -51,6 +59,17 @@ claim is manual-only.
   goods, fully reimbursed balances and wrong programs must not be submitted.
 - Owner grants #3556/#3673 retain separate one-use fixed canaries and TTLs;
   do not mingle or consume them.
+
+## GitHub owner-grant verifier (preparation, not activation)
+
+The standalone authenticated verifier now also supports P2 #3830 using the
+immutably pinned SHA 08dc564e79a42e537efc21bd014e26d97ba0a901. It checks
+latest human APPROVED on exact PR HEAD, merge by shopvivaliz-human, the blob
+at the merge commit, current main blob for revocation, exact operation, limits
+and mandatory guards. Existing #3556/#3673 grants remain unaffected. The
+verifier requires a real service-owned **read-only** GitHub token and has no
+side effects. Passing synthetic tests does not prove the production principal
+has that token. No token is checked into source or logged.
 
 ## Production adapter — remaining non-negotiable installation
 
