@@ -204,7 +204,9 @@ export async function activateD45AutomaticSafeT({adapter, now = () => Date.now()
     });
     must(isActivation(activation), 'DURABLE_ACTIVATION_LEDGER_UNVERIFIED');
     const submitted = [];
-    for (const c of eligible.slice(0,D45_AUTO_SCOPE.maxPerUtcDay)) {
+    for (const c of eligible) {
+      // Already-attempted cases must not starve later D+45 candidates.
+      if (submitted.length >= D45_AUTO_SCOPE.maxPerUtcDay) break;
       verifyD45AutoGrant(await adapter.verifyCanonicalOwnerGrant(3830),now());
       const fresh = await adapter.readCase({caseId:c.caseId,tenantId:1,connectionId:1,fencing:lease.fencing});
       must(assessD45Candidate(fresh,now()) === null &&
