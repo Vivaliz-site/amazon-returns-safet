@@ -176,3 +176,17 @@ test('invalid candidate batch duplicate IDs must be rejected without reservation
   await assert.rejects(()=>run(b.adapter),denied('CANDIDATE_BATCH_UNVERIFIED'));
   assert.equal(b.state.reserved,0);assert.equal(b.state.restored,1);
 });
+test('five previously attempted cases cannot starve the next eligible case',async()=>{
+  const b=rig({
+    listCandidateCases:async()=>Array.from({length:6},(_,i)=>row(1263+i)),
+    readCase:async({caseId})=>row(caseId),
+    reserveDurableSubmissionAttempt:async({caseId})=>caseId===1268?
+      {status:'RESERVED',id:'last-eligible'}:{status:'ALREADY_ATTEMPTED'},
+  });
+  const result=await run(b.adapter);
+  assert.equal(result.status,'ACCEPTED_WITH_READBACK');
+  assert.deepEqual(result.submitted.map(x=>x.caseId),[1268]);
+  assert.equal(b.state.submitted,1);
+  assert.equal(b.state.restored,1);
+  assert.equal(b.state.released,1);
+});
