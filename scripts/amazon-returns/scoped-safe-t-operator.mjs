@@ -73,7 +73,10 @@ function assessLocalCase(item, nowMs) {
   const age = (nowMs - refundMs) / DAY_MS;
   if (age < 45) return 'BEFORE_D45';
   if (age >= 90) return 'AFTER_D90';
-  if (item.physical_status !== 'NOT_RECEIVED' || item.quantity_received !== 0) return 'WAREHOUSE_RECEIPT_NOT_CLEARED';
+  // A carrier scan is not proof that the seller received the item.
+  // Keep the independent warehouse nonreceipt check mandatory before any write.
+  if (item.quantity_received !== 0 || !['NOT_RECEIVED', 'IN_TRANSIT', 'CARRIER_DELIVERED_PENDING_PHYSICAL'].includes(item.physical_status))
+    return 'WAREHOUSE_RECEIPT_NOT_CLEARED';
   if (!Number.isFinite(Number(item.refund_amount)) || !Number.isFinite(Number(item.reconciled_credit_amount)) ||
     Number(item.refund_amount) <= 0 || Number(item.refund_amount) <= Number(item.reconciled_credit_amount))
     return 'OUTSTANDING_DEBIT_UNVERIFIED';
