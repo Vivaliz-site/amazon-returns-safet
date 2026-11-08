@@ -26,4 +26,8 @@ test('eligibility probe must never invoke write job or submit/next controls', ()
   assert.ok(worker.includes("process.argv.indexOf('--eligibility-check-only')"),'read-only mode must be explicit');
   assert.ok(worker.includes("process.env.SELLER_CENTRAL_ELIGIBILITY_MANAGED!=='1'"),'unmanaged invocation cannot touch canonical browser');
   assert.match(wrapper,/SELLER_CENTRAL_ELIGIBILITY_MANAGED=1/);
+  assert.ok(worker.includes('managedCycleLockHeld()'),'the actual inherited FLOCK must be verified');
+  assert.ok(worker.includes('Cdp.connect({managedExistingOnly:true})'),'read-only canary must never spawn another browser');
+  assert.ok(worker.includes('safeTEligibilitySnapshot(cdp,orderId)'),'nested-frame result must be parsed');
+  assert.match(wrapper,/export SELLER_CENTRAL_CYCLE_DEADLINE_MS=/,'preserve main cycle-budget guard for ordinary drains');
 });

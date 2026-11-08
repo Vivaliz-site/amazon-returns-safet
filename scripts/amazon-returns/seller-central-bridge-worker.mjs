@@ -9,6 +9,8 @@ import { resolveCycleDeadline, withinCycleBudget } from './seller-central-cycle-
 import { safeTUnreceivedQuantity } from './safe-t-quantity-guard.mjs';
 import { selectSafeTItemWithReadback } from './safe-t-item-selection.mjs';
 import { classifySafeTEligibility } from './safe-t-eligibility-classifier.mjs';
+import { managedCycleLockHeld } from './seller-central-managed-lock.mjs';
+import { safeTEligibilitySnapshot } from './safe-t-eligibility-snapshot.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
@@ -127,8 +129,15 @@ class Cdp {
     });
   }
 
-  static async connect() {
-    await ensureBrowser();
+  static async connect({ managedExistingOnly = false } = {}) {
+    if (managedExistingOnly) {
+      // Never spawn a second browser from an eligibility-only direct call.
+      if (!managedCycleLockHeld() || !(await cdpReady())) {
+        throw new Error('MANAGED_CDP_WITH_LOCK_REQUIRED');
+      }
+    } else {
+      await ensureBrowser();
+    }
     const response = await fetch(`${CDP_BASE}/json/new?${encodeURIComponent('about:blank')}`, { method: 'PUT' });
     if (!response.ok) throw new Error(`could not create isolated CDP target (${response.status})`);
     const page = await response.json();
@@ -658,7 +667,7 @@ async function safeTSubreasonDiagnostics(cdp, value) {
  * The managed runner holds the canonical browser cycle lock.
  */
 async function safeTEligibilityProbe(orderId) {
-  const cdp=await Cdp.connect();
+  const cdp=await Cdp.connect({managedExistingOnly:true});
   try {
     const url=SAFE_T_BASE+'/create-v2?ref_=ag_sfdcf_cont_safet';
     await cdp.navigate(url,5000);
@@ -671,30 +680,17 @@ async function safeTEligibilityProbe(orderId) {
       return {status:'UI_DRIFT',reason:'SAFE_T_ELIGIBILITY_BUTTON_MISSING'};
     }
     await sleep(6000);
-    const observed=await cdp.evaluate('JSON.stringify((()=>{'
-      +'const items=[...document.querySelectorAll("kat-checkbox.QuantityCheckbox")];'
-      +'const selectable=items.filter(h=>{const r=h.getBoundingClientRect();'
-      +'const inner=h.shadowRoot?.querySelector("input[type=checkbox],[role=checkbox]");'
-      +'return r.width>0&&r.height>0&&h.getClientRects().length>0'
-      +'&&!h.disabled&&!h.hasAttribute("disabled")&&h.getAttribute("aria-disabled")!=="true"'
-      +'&&inner&&!inner.disabled&&!inner.hasAttribute("disabled");});'
-      +'return {itemCount:items.length,selectableCount:selectable.length};})())');
-    let parsed;
-    try{parsed=JSON.parse(observed||'{}');}catch{parsed={};}
-    const existing=await cdp.evaluate("document.querySelector('kat-link.ClaimAlreadyExists')?.getAttribute('label')||''");
-    const orderConfirmed=await cdp.evaluate('(()=>{const id='+JSON.stringify(orderId)+';'
-      +'if((document.body?.innerText||"").includes(id))return true;'
-      +'for(const h of document.querySelectorAll("kat-input")){'
-      +'const input=h.shadowRoot?.querySelector("input");'
-      +'if(input?.value===id)return true;}return false})()');
-    const page=await cdp.pageState(12000);
+    const snapshot=await safeTEligibilitySnapshot(cdp,orderId);
+    if(snapshot.ambiguous===true) {
+      return {status:'UI_DRIFT',reason:'SAFE_T_ELIGIBILITY_RESULT_AMBIGUOUS'};
+    }
     return classifySafeTEligibility({
       orderId,
-      exactOrderChecked:orderConfirmed===true,
-      existingClaim:existing,
-      itemCount:parsed.itemCount,
-      selectableCount:parsed.selectableCount,
-      pageText:page.text,
+      exactOrderChecked:snapshot.orderMatched===true,
+      existingClaim:snapshot.existingClaim,
+      itemCount:snapshot.itemCount,
+      selectableCount:snapshot.selectableCount,
+      pageText:snapshot.pageText,
     });
   } finally {
     await cdp.close();
@@ -2152,7 +2148,7 @@ async function runOnce() {
 async function main() {
   const eligibilityIndex=process.argv.indexOf('--eligibility-check-only');
   if(eligibilityIndex>=0) {
-    if(process.env.SELLER_CENTRAL_ELIGIBILITY_MANAGED!=='1' || quiesceRequested()) {
+    if(process.env.SELLER_CENTRAL_ELIGIBILITY_MANAGED!=='1' || !managedCycleLockHeld() || quiesceRequested()) {
       throw new Error('UNMANAGED_ELIGIBILITY_CHECK_DENIED');
     }
     const orderId=text(process.argv[eligibilityIndex+1]);

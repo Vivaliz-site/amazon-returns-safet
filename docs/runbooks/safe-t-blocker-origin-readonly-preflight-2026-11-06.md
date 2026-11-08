@@ -24,3 +24,12 @@ Possible statuses: ELIGIBLE (one visible item), ALREADY_EXISTS (exact claim ID),
 ## Remaining operational scope
 
 A certified scoped write operator still has to check the owner-approved principal, grant, exact case set, one-use ledger, tenant, concurrency lease, seller debit, warehouse intake, refund initiator, official live eligibility, external claim deduplication and post-submission claim ID. The global write switch remains ON until a fully authorized, fenced activation can restore it in all outcomes. Protect the existing #8803 claim, avoid duplicate #13210 support, and honor provider eligibility rejection. The independent V5 UI and financial certifier decides APTO; this patch alone does not.
+## 2026-11-08 code-review corrective follow-up (PR #611)
+
+The required conversation-resolution gate flagged two implementation defects and correctly blocked integration; no branch protection was bypassed.
+
+- P1: a caller-provided environment variable was not proof of the managed browser cycle. The read-only entrypoint now verifies the actual inherited Linux FD 9 FLOCK (/proc/self/fdinfo/9), its device/inode against the canonical profile lease file and refuses arbitrary lock-file overrides. Cdp.connect with managedExistingOnly=true cannot launch a second browser. A direct invocation with only a forged environment variable fails closed.
+- P2: the eligibility snapshot now traverses same-origin nested iframes recursively, accepting only a single document containing the exact order/result candidate. Cross-origin/inaccessible or multiple candidates remain inconclusive. Input echo, claim ID, selectable quantity controls and refusal text are read from the same document.
+- Regression from main #610: preserve the existing shared write/read/write 20-minute deadline for ordinary drains. Read-only eligibility exits earlier, before write calls.
+
+FLOCK inherited-FD and nested iframe tests cover both findings. Review conversations must be resolved only after the official CI verifies this pushed HEAD. Global write flags and owner grant scopes remain unchanged.
