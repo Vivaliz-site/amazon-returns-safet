@@ -179,6 +179,10 @@ fi
 if [[ " ${*:-} " == *" --auth-check-only "* ]]; then
   exit 0
 fi
+# Constrain the combined write/read/write drains below the systemd 30-minute
+# one-shot timeout. The Node workers finish each acquired job before returning;
+# the canonical next cycle resumes pending work under its existing lease.
+export SELLER_CENTRAL_CYCLE_DEADLINE_MS="$(( $(date +%s) * 1000 + 1200000 ))"
 bridge_mode="--drain"
 if [[ " ${*:-} " == *" --bridge-once "* ]]; then
   bridge_mode="--once"

@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { captureTrackingEvidence, attachFiles, withTrackingEvidence } from './TrackingEvidence.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 import { safeTExternalWindow } from './safe-t-external-window.mjs';
+import { resolveCycleDeadline, withinCycleBudget } from './seller-central-cycle-budget.mjs';
 import { safeTUnreceivedQuantity } from './safe-t-quantity-guard.mjs';
 import { selectSafeTItemWithReadback } from './safe-t-item-selection.mjs';
 import { classifySafeTEligibility } from './safe-t-eligibility-classifier.mjs';
@@ -2184,9 +2185,13 @@ async function main() {
     return;
   }
   if (process.argv.includes('--drain')) {
-    while (!quiesceRequested()) {
+    const cycleDeadline = resolveCycleDeadline(process.env.SELLER_CENTRAL_CYCLE_DEADLINE_MS);
+    while (!quiesceRequested() && withinCycleBudget(cycleDeadline)) {
       const outcome = await runOnce();
       if (!outcome.processed || outcome.drainBlocked) break;
+    }
+    if (!quiesceRequested() && !withinCycleBudget(cycleDeadline)) {
+      log('drain_budget_exhausted', { status: 'DEFERRED_FOR_NEXT_CANONICAL_CYCLE' });
     }
     return;
   }
