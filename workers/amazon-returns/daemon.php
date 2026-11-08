@@ -933,6 +933,14 @@ class SvAmazonReturnsDaemon
                     $caseId=(int)($row['case_id']??0);
                     $case=$this->persistence->cases->find($caseId);
                     if (!is_array($case)) throw new RuntimeException('SAFE_T_CASE_NOT_FOUND');
+                    // Do not execute an obsolete opening after an external
+                    // claim was linked by an independent readback.
+                    if (SvAmazonSafeTExternalWindow::openingAlreadyClaimed($case)) {
+                        $this->persistence->outbox->markSuperseded(
+                            (int)$row['id'],'SAFE_T_LOCAL_CLAIM_ALREADY_LINKED'
+                        );
+                        continue;
+                    }
                     $events=$this->persistence->events->eventsForCase($caseId);
                     $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
                     $gate=SvAmazonSafeTExternalWindow::inspect($case,$events,$now);

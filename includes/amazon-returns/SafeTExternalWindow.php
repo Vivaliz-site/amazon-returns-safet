@@ -10,6 +10,12 @@ declare(strict_types=1);
  */
 final class SvAmazonSafeTExternalWindow
 {
+    /** A linked external claim means this is no longer a FIRST opening. */
+    public static function openingAlreadyClaimed(array $case): bool
+    {
+        return trim((string)($case['safe_t_id'] ?? '')) !== '';
+    }
+
     /**
      * @param array<string,mixed> $case
      * @param list<array<string,mixed>> $events
