@@ -90,3 +90,30 @@ test('a search field echo with no displayed order remains unverified',async()=>{
   const result=await safeTEligibilitySnapshot(browser([empty]),orderId);
   assert.equal(result.orderMatched,false);
 });
+
+
+test('cross-origin frame cannot be silently ignored alongside apparently eligible order',async()=>{
+  const eligible=candidateDocument({orderText:'Pedido '+orderId,items:[checkbox()]});
+  const root={
+    body:{innerText:'Seller Central'},
+    querySelectorAll(selector){return selector==='iframe'?
+      [{contentDocument:eligible},{get contentDocument(){throw new Error('cross-origin');}}]:[];},
+    querySelector(){return null;},
+  };
+  const result=await safeTEligibilitySnapshot(
+    {evaluate:async expr=>vm.runInNewContext(expr,{document:root,JSON})},orderId);
+  assert.deepEqual(result,{ambiguous:true});
+});
+
+test('iframe with null contentDocument blocks apparent eligibility',async()=>{
+  const eligible=candidateDocument({orderText:'Pedido '+orderId,items:[checkbox()]});
+  const root={
+    body:{innerText:'Seller Central'},
+    querySelectorAll(selector){return selector==='iframe'?
+      [{contentDocument:eligible},{contentDocument:null}]:[];},
+    querySelector(){return null;},
+  };
+  const result=await safeTEligibilitySnapshot(
+    {evaluate:async expr=>vm.runInNewContext(expr,{document:root,JSON})},orderId);
+  assert.deepEqual(result,{ambiguous:true});
+});
