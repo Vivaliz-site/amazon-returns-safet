@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activateScopedSafeTOpening, ScopedSafeTError, SCOPES, EXPECTED_ACTIONS } from '../scripts/amazon-returns/scoped-safe-t-operator.mjs';
+import { activateScopedSafeTOpening, ScopedSafeTError, SCOPES, EXPECTED_ACTIONS, assessLocalCase } from '../scripts/amazon-returns/scoped-safe-t-operator.mjs';
 
 const NOW = Date.parse('2026-11-07T12:00:00Z');
 const CLAIM = '12345-12345-1234567';
