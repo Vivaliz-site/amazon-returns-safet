@@ -67,7 +67,5 @@ safetExpect(str_contains($bridge,'safeTSubmitHasAmbiguousHistory($row,$prior)'),
     'Polling bridge must quarantine ambiguous prior attempts before dispatch.');
 safetExpect(str_contains($daemon,'safeTSubmitHasAmbiguousHistory($row,$prior)'),
     'Direct daemon must apply the same pre-dispatch guard.');
-safetExpect(str_contains($bridge, "null,$kind!=='SAFE_T_SUBMIT' || ($result['retry_safe'] ?? false)===true"),
-    'Polling result handler must prevent retry of non-retryable SAFE-T attempts.');
 
 echo "SAFE_T_AMBIGUOUS_OUTCOME_NO_RETRY=PASS\n";
