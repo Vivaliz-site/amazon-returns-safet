@@ -4,6 +4,7 @@
  */
 const BASE='https://api.github.com/repos/Vivaliz-site/site-shopvivaliz';
 const GRANTS=Object.freeze({
+  3830: Object.freeze({blob:'08dc564e79a42e537efc21bd014e26d97ba0a901',expiry:'2026-11-30T23:59:00Z',dynamic:true}),
   3556: Object.freeze({blob:'f340e8ce4be185bc1b8dd21b4e61269bc11afbd3',ids:[1263,1314,8803,13210,51429,101669,101670,101671],expiry:'2026-11-09T23:59:00Z'}),
   3673: Object.freeze({blob:'dfaee8e4a6dcb98a41e9087025835de36a07d5e1',ids:[42471,51429,101669,101670,101671],expiry:'2026-11-30T23:59:00Z'}),
 });
@@ -24,7 +25,47 @@ async function githubJson(path,{fetchImpl,token}){
   expect(response?.status===200,'GITHUB_RESPONSE_NOT_AUTHENTICATED_OR_COMPLETE');
   try {return await response.json();}catch{throw new OwnerGrantVerificationError('GITHUB_INVALID_RESPONSE');}
 }
+
+const AUTO3830_GUARDS=Object.freeze([
+  'owner_approved_head_and_merged_pr','exact_host_tenant_connection_and_service_principal',
+  'fba_onsite_or_delivery_by_amazon_program_only','first_official_eligibility_check_at_d45',
+  'amazon_provider_specific_wait_and_eligibility_honored','no_new_opening_on_or_after_d90',
+  'warehouse_physical_receipt_absent','refunded_by_amazon_confirmed',
+  'seller_financial_credit_unrecovered','official_seller_central_eligibility_confirmed',
+  'no_existing_safe_t_or_duplicate_support','external_claim_readback_and_idempotency',
+  'per_case_durable_fencing_and_lease_single_writer','one_use_activation_and_max_claim_counts_durable',
+  'kill_switch_on_by_default_and_restored_even_on_crash',
+  'certified_immutable_deploy_and_real_ui_e2e',
+]);
+function normalizeD45AutoGrant(data,n,expected){
+  expect(data&&typeof data==='object'&&!Array.isArray(data),'GRANT_MISSING');
+  expect(data.schema==='SHOPVIVALIZ_OWNER_PR_GRANT_V1'&&
+    data.repository==='Vivaliz-site/site-shopvivaliz'&&
+    data.pr_number===n&&data.resource==='amazon-returns:safet:marina'&&
+    data.principal==='amazon-returns-safet-service'&&
+    data.host==='marina-a1-4c24g'&&
+    data.target_repository==='Vivaliz-site/amazon-returns-safet'&&
+    data.operation==='activate_d45_safe_t_automation'&&
+    data.tenant_id===1&&data.amazon_connection_id===1&&
+    data.one_use===true&&data.automatic_future_cases===true&&
+    data.expires_at_utc===expected.expiry&&
+    data.min_days_since_refund===45&&data.max_days_since_refund_exclusive===90&&
+    data.max_new_claims_total===20&&data.max_new_claims_per_utc_day===5&&
+    data.activation_requires_certified_production_adapter===true&&
+    exactArray(data.capabilities,['safe_t_submit'])&&
+    exactArray(data.allowed_write_actions,['SAFE_T_SUBMIT'])&&
+    exactArray(data.other_write_actions_denied,[
+      'SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY',
+      'SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE','ERP_SALES_RETURN_CREATE'])&&
+    exactArray(data.excluded_case_ids,[8803])&&
+    exactArray(data.existing_grants_unmodified,[3556,3673]),
+    'GRANT_SCOPE_INVALID');
+  expect(exactArray(data.mandatory_guards,AUTO3830_GUARDS),'GRANT_GUARDS_ALTERED');
+  return data;
+}
+
 function normalizeGrant(data,n,expected){
+  if(expected.dynamic)return normalizeD45AutoGrant(data,n,expected);
   expect(data&&typeof data==='object'&&!Array.isArray(data),'GRANT_MISSING');
   expect(data.schema==='SHOPVIVALIZ_OWNER_PR_GRANT_V1'&&data.repository==='Vivaliz-site/site-shopvivaliz'&&
     data.pr_number===n&&data.resource==='amazon-returns:safet:marina'&&
@@ -65,6 +106,8 @@ export async function verifyApprovedOwnerGrant(grantNumber,{
     validCommit(p.merge_commit_sha)&&
     p?.user?.login==='fredmourao-ai'&&typeof p?.merged_at==='string'&&
     Number.isFinite(Date.parse(p.merged_at)),'OWNER_PR_NOT_MERGED');
+  // New dynamic activation privileges require an actual human merger, not an agent's direct merge.
+  if(expected.dynamic)expect(p?.merged_by?.login==='shopvivaliz-human','OWNER_P2_MERGE_PROVENANCE_INVALID');
   let approved=null,previous=null,fullPages=0;
   for(let page=1;page<=10;page++){
     const list=await githubJson('/pulls/'+grantNumber+'/reviews?per_page=100&page='+page,{fetchImpl,token});
