@@ -212,3 +212,15 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Evidencias: `scripts/amazon-returns/scoped-safe-t-operator.mjs`, `tests/scoped-safe-t-operator.test.mjs`, native MCP task/audit above, issue #532. No secrets, order IDs, real customer data, DB mutations, external calls, workers or timers introduced.
 - Pendencias: official CI, protected merge, deploy immutable SHA, runtime test/readback; separately certified production adapter, principal, lease/fencing, one-use ledger, official Seller Central/Finances/WAREHOUSE proofs, Amazon claim readback. Kill switch ON, seven writes OFF, case 8803 existing claim never duplicated; #42471 not silently added to grant #3556.
 - Estado: NAO_APTO
+
+
+## 2026-11-08 — #532: sibling D+45 automatic P2 core requires explicit decimal Finances fields
+
+- Base SHA: `00e6d3f5fb51d9e968b20d7518892f14f41bc7b1` (PR #617 merge/main, after scoped legacy credit guard fix).
+- Impacto e RED no main real: `assessD45Candidate` in `d45-safe-t-auto-activation.mjs` rejected null credits but accepted empty string, whitespace and hex string `0x0` via implicit `Number()` coercion as verified zero. Synthetic read-only RED on the backend exact checkout/main with case fixture 1263, task `043e4ca4-4976-40dd-9ea7-0e6306816bad` exit0, no live case or Amazon provider called.
+- Causa raiz: the second, separately granted D+45 core repeated the numeric-coercion ambiguity fixed by #617 in the one-use core. The audit of sister paths is required to prevent recurrence after activation.
+- Correcao: require explicit finite decimal monetary evidence for refund and reconciled credits; deny blank, whitespace, hexadecimal, falses and nonsensical values, keep true numeric and decimal `0.00` behavior. Add negative/positive regression and full mocked activation proof: rejected candidate never reserves/submits, does not call Amazon official eligibility, and still restores kill switch/releases fenced lease. No adapter/daemon/flag/worker/claim activated.
+- Testes: prior main synthetic RED; new focused Node suite, syntax, GitHub official CI, protected merge and immutable Marina release parity required before deployment certification. No live eligibility asserted by mock tests.
+- Evidencias: `scripts/amazon-returns/d45-safe-t-auto-activation.mjs`; `tests/d45-safe-t-auto-activation.test.mjs`; GitHub PR and MCP task above, issue #532. Only code/test/ledger append.
+- Pendencias: official checks, merge and runtime release GREEN, certified production adapter with principal/lease/watchdog, official Seller Central + Warehouse + Finances readback and safe provider claim ID. D+45 first check, D+90 terminal, #8803 excluded, seven writes OFF.
+- Estado: NAO_APTO

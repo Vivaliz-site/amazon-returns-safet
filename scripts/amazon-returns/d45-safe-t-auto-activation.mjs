@@ -120,8 +120,13 @@ export function assessD45Candidate(c, nowMs) {
     return 'WAREHOUSE_RECEIPT_UNVERIFIED';
   const original = Number(c.refund_amount);
   const credited = Number(c.reconciled_credit_amount);
-  if (c.refund_amount == null || c.reconciled_credit_amount == null ||
-      !Number.isFinite(original) || !Number.isFinite(credited) ||
+  // Empty/whitespace and hex values coerce to a legitimate numeric zero in JS,
+  // but are NOT financial evidence. Insist on an explicit decimal amount.
+  const isMoney = value =>
+    (typeof value === 'number' && Number.isFinite(value)) ||
+    (typeof value === 'string' && value.trim() !== '' &&
+      /^-?\d+(?:\.\d+)?$/.test(value.trim()) && Number.isFinite(Number(value)));
+  if (!isMoney(c.refund_amount) || !isMoney(c.reconciled_credit_amount) ||
       original <= 0 || credited < 0 || credited >= original)
     return 'UNRECOVERED_DEBIT_UNVERIFIED';
   return null;
