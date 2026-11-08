@@ -52,6 +52,20 @@ test('recognizes an existing claim within that same frame',async()=>{
   assert.equal(result.existingClaim,'64204-51742-6364222');
 });
 
+test('a second visible Amazon order in the same result invalidates identity',async()=>{
+  const other='702-1234567-1234567';
+  const doc=candidateDocument({orderText:'Consulta '+orderId+'; resultado '+other,items:[checkbox()]});
+  const result=await safeTEligibilitySnapshot(browser([doc]),orderId);
+  assert.equal(result.orderMatched,false);
+  assert.equal(result.selectableCount,1);
+});
+
+test('repeating only the same exact order ID preserves read-only detection',async()=>{
+  const doc=candidateDocument({orderText:'Pedido '+orderId+'; detalhes '+orderId,items:[checkbox()]});
+  const result=await safeTEligibilitySnapshot(browser([doc]),orderId);
+  assert.equal(result.orderMatched,true);
+});
+
 test('two candidate result frames must be rejected rather than conflated',async()=>{
   const doc1=candidateDocument({orderText:'Pedido '+orderId,items:[checkbox()]});
   const doc2=candidateDocument({orderText:'Pedido '+orderId,items:[checkbox()]});
