@@ -247,3 +247,12 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Evidencias: `scripts/amazon-returns/safe-t-eligibility-snapshot.mjs`, `tests/safe-t-eligibility-snapshot.test.mjs`; issue #532, PR tecnica correspondente. Nenhuma SAFE-T externa foi aberta por esses testes.
 - Pendencias: checks da PR, merge, release exata, CI/Node na release, identidade oficial por pedido e adaptador P2 certificado. D+45 primeira checagem; D+90 somente corte interno; #8803 possui claim externa; kill switch ON e sete write gates OFF.
 - Estado: NAO_APTO
+
+## 2026-11-08 — #532: inaccessible iframe must block SAFE-T identity certification
+
+- Base SHA: `6ee859287f9df8aed1ba1dac7cc08fc76eb66829`.
+- Impacto: a coleta read-only do Seller Central ignorava silenciosamente um iframe cross-origin inacessivel quando outro iframe legivel mostrava um pedido e um checkbox. A elegibilidade podia parecer certificada sem visibilidade de eventual claim ou contradicao existente na regiao inacessivel. Nenhuma abertura externa ocorreu na reproducao.
+- Testes: RED sintetico na release Marina 6ee85928, task MCP audit `ea1b62db-8516-43b4-bbca-c4919efa381d`: `orderMatched=true, selectableCount=1, ambiguous=false` com iframe cross-origin adicional. GREEN em worktree descartavel da branch HEAD `671ed6786a34208883f8fb1eadb60a41d7c63f22`: `node --check` e 8/8 testes Node, incluidos cross-origin throw e contentDocument null, task `1f5cc84a-d471-4bb7-875d-a36c78eb17f8` exit0, audit `8047a2f0-6607-406e-b37a-df87263430f3`.
+- Evidencias: `scripts/amazon-returns/safe-t-eligibility-snapshot.mjs`, `tests/safe-t-eligibility-snapshot.test.mjs`, issue #532; nao se tocou caso real, Seller Central autenticado, Financeiro, flags, kill switch, worker, DB ou cliente.
+- Pendencias: checks oficiais, merge protegido, readback da release Marina e regressao posdeploy; compatibilidade de UI com frames cross-origin nao observados exige nova leitura grafica e caso a caso. Operador P2, lease, warehouse, Finances, iniciador Amazon, elegibilidade oficial e claim-readback externo ainda necessarios. D+45 primeiro checkpoint interno; case #8803 com claim existente; #42471 fora do grant #3556.
+- Estado: NAO_APTO
