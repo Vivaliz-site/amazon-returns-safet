@@ -5,6 +5,7 @@ import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
 import { parseSafeTStatus } from './safe-t-status-parser.mjs';
 import { scanSafeTClaimPages } from './safe-t-discovery-pages.mjs';
+import { resolveCycleDeadline, withinCycleBudget } from './seller-central-cycle-budget.mjs';
 import { scanSafeTExactOrder, resolveReadOnlySafeTDiscovery } from './safe-t-discovery-exact-search.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
 
@@ -617,11 +618,15 @@ async function main() {
   }
   try {
     if (process.argv.includes('--drain')) {
-      if (BROWSER && PROFILE) {
+      const cycleDeadline = resolveCycleDeadline(process.env.SELLER_CENTRAL_CYCLE_DEADLINE_MS);
+      if (BROWSER && PROFILE && withinCycleBudget(cycleDeadline)) {
         const discovery = await discoverActionableSupportCases();
         log('support_action_discovery', { status: discovery.status || 'OK' });
       }
-      while (!quiesceRequested() && await runOnce()) {}
+      while (!quiesceRequested() && withinCycleBudget(cycleDeadline) && await runOnce()) {}
+      if (!quiesceRequested() && !withinCycleBudget(cycleDeadline)) {
+        log('drain_budget_exhausted', { status: 'DEFERRED_FOR_NEXT_CANONICAL_CYCLE' });
+      }
       return;
     }
     if (process.argv.includes('--once')) {
