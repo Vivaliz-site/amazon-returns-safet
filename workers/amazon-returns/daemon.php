@@ -933,6 +933,15 @@ class SvAmazonReturnsDaemon
                     $caseId=(int)($row['case_id']??0);
                     $case=$this->persistence->cases->find($caseId);
                     if (!is_array($case)) throw new RuntimeException('SAFE_T_CASE_NOT_FOUND');
+                    $prior=$this->persistence->events->eventsForSourceEventId(
+                        $caseId,(string)$row['id'],'SELLER_CENTRAL_ACTION_RESULT'
+                    );
+                    if (SvAmazonReturnsRemoteBridge::safeTSubmitHasAmbiguousHistory($row,$prior)) {
+                        $this->persistence->outbox->markSuperseded(
+                            (int)$row['id'],'SAFE_T_POST_CLICK_READBACK_REQUIRED'
+                        );
+                        continue;
+                    }
                     // Do not execute an obsolete opening after an external
                     // claim was linked by an independent readback.
                     if (SvAmazonSafeTExternalWindow::openingAlreadyClaimed($case)) {
