@@ -183,3 +183,38 @@ test('official proof withdrawal between preflight and submission blocks click',a
   assert.equal(b.state.attempted,0);
   assert.equal(b.state.restored,1);
 });
+
+test('carrier-only transit states at D+45 reach independent warehouse and Amazon gates', async () => {
+  for (const physical_status of ['IN_TRANSIT', 'CARRIER_DELIVERED_PENDING_PHYSICAL']) {
+    const snapshot = ({caseIds}) => caseIds.map(id => ({...row(id), physical_status}));
+    const unresolved = build({
+      readCaseSnapshot: async args => snapshot(args),
+      verifyWarehouseNonreceipt: async () => false,
+    });
+    const denied = await run(unresolved.adapter);
+    assert.equal(denied.status, 'NO_AUTHORIZED_SUBMISSIONS', physical_status);
+    assert(denied.verdicts.every(v => v.reason === 'OFFICIAL_PROOF_UNVERIFIED'), 'the independent WAREHOUSE proof, not carrier status, must deny');
+    assert.equal(unresolved.state.consumed, 0, 'carrier scan alone cannot consume grant');
+    assert.equal(unresolved.state.attempted, 0, 'carrier scan alone cannot submit');
+    const confirmed = build({readCaseSnapshot: async args => snapshot(args)});
+    const result = await run(confirmed.adapter);
+    assert.equal(result.status, 'ACCEPTED_WITH_READBACK', physical_status);
+    assert.equal(result.results.length, SCOPES[3556].caseIds.length);
+    assert(confirmed.calls.includes('warehouse'));
+    assert(confirmed.calls.includes('amazon-eligibility'));
+  }
+});
+
+test('unknown intake status and any positive received quantity remain fail-closed', async () => {
+  for (const [physical_status, quantity_received] of [
+    ['UNKNOWN', 0], ['PHYSICAL_RECEIVED', 0], ['RECEIVED_OK', 0],
+    ['RECEIVED_DISCREPANT', 0], ['IN_TRANSIT', 1],
+  ]) {
+    const b = build({readCaseSnapshot: async ({caseIds}) =>
+      caseIds.map(id => ({...row(id), physical_status, quantity_received}))});
+    const result = await run(b.adapter);
+    assert.equal(result.status, 'NO_AUTHORIZED_SUBMISSIONS', physical_status);
+    assert.equal(b.state.attempted, 0);
+    assert.equal(b.state.consumed, 0);
+  }
+});
