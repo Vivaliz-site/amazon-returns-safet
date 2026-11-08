@@ -6,9 +6,9 @@
 export async function safeTEligibilitySnapshot(cdp, orderId) {
   const query = 'JSON.stringify((()=>{'
     + 'const id=' + JSON.stringify(orderId) + ';'
-    + 'const docs=[];'
+    + 'const docs=[];let inaccessibleFrame=false;'
     + 'const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);'
-    + 'for(const f of d.querySelectorAll("iframe")){try{visit(f.contentDocument)}catch{}}};'
+    + 'for(const f of d.querySelectorAll("iframe")){try{const child=f.contentDocument;if(!child){inaccessibleFrame=true;continue;}visit(child)}catch{inaccessibleFrame=true}}};'
     + 'visit(document);'
     + 'const matches=docs.map(d=>{'
     + 'const body=d.body?.innerText||"";'
@@ -27,7 +27,7 @@ export async function safeTEligibilitySnapshot(cdp, orderId) {
     + 'pageText:body.slice(0,12000)};'
     + '});'
     + 'const relevant=matches.filter(m=>m.orderMatched||m.existingClaim||m.itemCount>0);'
-    + 'return relevant.length===1?relevant[0]:{ambiguous:true};'
+    + 'return !inaccessibleFrame&&relevant.length===1?relevant[0]:{ambiguous:true};'
     + '})())';
   try {
     const raw = await cdp.evaluate(query);
