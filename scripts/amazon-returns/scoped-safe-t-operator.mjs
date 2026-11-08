@@ -77,8 +77,15 @@ function assessLocalCase(item, nowMs) {
   // Keep the independent warehouse nonreceipt check mandatory before any write.
   if (item.quantity_received !== 0 || !['NOT_RECEIVED', 'IN_TRANSIT', 'CARRIER_DELIVERED_PENDING_PHYSICAL'].includes(item.physical_status))
     return 'WAREHOUSE_RECEIPT_NOT_CLEARED';
-  if (!Number.isFinite(Number(item.refund_amount)) || !Number.isFinite(Number(item.reconciled_credit_amount)) ||
-    Number(item.refund_amount) <= 0 || Number(item.refund_amount) <= Number(item.reconciled_credit_amount))
+  // Number(null), Number('') and Number('   ') all equal zero: these are
+  // missing financial evidence, NOT a verified zero credit from Finances.
+  const isMoney = value =>
+    (typeof value === 'number' && Number.isFinite(value)) ||
+    (typeof value === 'string' && value.trim() !== '' &&
+      /^-?\d+(?:\.\d+)?$/.test(value.trim()) && Number.isFinite(Number(value)));
+  if (!isMoney(item.refund_amount) || !isMoney(item.reconciled_credit_amount) ||
+      Number(item.refund_amount) <= 0 || Number(item.reconciled_credit_amount) < 0 ||
+      Number(item.reconciled_credit_amount) >= Number(item.refund_amount))
     return 'OUTSTANDING_DEBIT_UNVERIFIED';
   return null;
 }
