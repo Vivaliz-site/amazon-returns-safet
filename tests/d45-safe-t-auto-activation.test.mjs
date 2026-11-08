@@ -190,3 +190,17 @@ test('five previously attempted cases cannot starve the next eligible case',asyn
   assert.equal(b.state.restored,1);
   assert.equal(b.state.released,1);
 });
+
+test('carrier transit and pending-delivery states do not delay D+45 official check',async()=>{
+  for(const status of ['IN_TRANSIT','CARRIER_DELIVERED_PENDING_PHYSICAL','RETURNING_TO_SELLER','UNKNOWN']){
+    assert.equal(assessD45Candidate(row(1263,{physical_status:status}),NOW),null,status);
+    const b=rig({
+      listCandidateCases:async()=>[row(1263,{physical_status:status})],
+      readCase:async()=>row(1263,{physical_status:status}),
+      verifyWarehouseNonreceipt:async()=>false,
+    });
+    const result=await run(b.adapter);
+    assert.equal(result.status,'NO_CERTIFIED_PROVIDER_ELIGIBILITY');
+    assert.equal(b.state.submitted,0);
+  }
+});
