@@ -188,7 +188,7 @@ test('carrier-only transit states at D+45 reach independent warehouse and Amazon
   for (const physical_status of ['IN_TRANSIT', 'CARRIER_DELIVERED_PENDING_PHYSICAL']) {
     const snapshot = ({caseIds}) => caseIds.map(id => ({...row(id), physical_status}));
     const unresolved = build({
-      readCaseSnapshot: async snapshot,
+      readCaseSnapshot: async args => snapshot(args),
       verifyWarehouseNonreceipt: async () => false,
     });
     const denied = await run(unresolved.adapter);
