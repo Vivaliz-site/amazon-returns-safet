@@ -340,6 +340,45 @@ final class SvAmazonReturnCaseRepository
         return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
     }
 
+    /**
+     * Latest externally confirmed SAFE-T identity in this tenant/connection.
+     * This is the time the claim was observed, not an invented Amazon opening
+     * timestamp. Do not treat a case update or a Submit click as confirmation.
+     *
+     * @return array{case_id:int,safe_t_id:string,confirmed_at:string}|null
+     */
+    public function latestConfirmedSafeTObservation(): ?array
+    {
+        $stmt=$this->prepare(
+            'SELECT e.case_id,c.safe_t_id,e.occurred_at AS confirmed_at '
+            . 'FROM amazon_return_events e JOIN amazon_return_cases c '
+            . 'ON c.id=e.case_id AND c.tenant_id=e.tenant_id '
+            . 'AND c.amazon_connection_id=e.amazon_connection_id '
+            . 'WHERE e.tenant_id=:tenant_id AND e.amazon_connection_id=:amazon_connection_id '
+            . "AND c.safe_t_id REGEXP '^[0-9]{5}-[0-9]{5}-[0-9]{7}$' "
+            . "AND ((e.event_type='SAFE_T_ID_DISCOVERED' AND e.source='SELLER_CENTRAL' "
+            . 'AND e.source_event_id=c.safe_t_id) '
+            . "OR (e.event_type='SELLER_CENTRAL_ACTION_RESULT' AND e.source='SELLER_CENTRAL' "
+            . "AND JSON_UNQUOTE(JSON_EXTRACT(e.payload_json,'$.action'))='SAFE_T_SUBMIT' "
+            . "AND JSON_UNQUOTE(JSON_EXTRACT(e.payload_json,'$.external_id'))=c.safe_t_id "
+            . "AND ((JSON_UNQUOTE(JSON_EXTRACT(e.payload_json,'$.status'))='ACCEPTED' "
+            . "AND JSON_UNQUOTE(JSON_EXTRACT(e.payload_json,'$.submitted'))='true') "
+            . "OR (JSON_UNQUOTE(JSON_EXTRACT(e.payload_json,'$.status'))='ALREADY_EXISTS' "
+            . "AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(e.payload_json,'$.submitted')),'false')<>'true')))) "
+            . 'ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1'
+        );
+        $stmt->execute($this->scopeParams());
+        $row=$stmt->fetch(PDO::FETCH_ASSOC);
+        if(!is_array($row))return null;
+        $claim=trim((string)($row['safe_t_id']??''));
+        $confirmedAt=trim((string)($row['confirmed_at']??''));
+        if((int)($row['case_id']??0)<1 || preg_match('/^[0-9]{5}-[0-9]{5}-[0-9]{7}$/D',$claim)!==1
+            || preg_match('/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/D',$confirmedAt)!==1){
+            throw new UnexpectedValueException('Verified SAFE-T observation has invalid identity or timestamp.');
+        }
+        return ['case_id'=>(int)$row['case_id'],'safe_t_id'=>$claim,'confirmed_at'=>$confirmedAt];
+    }
+
     /** @return list<array<string,mixed>> */
     public function casesWithSupportCaseId(int $limit=250): array
     {

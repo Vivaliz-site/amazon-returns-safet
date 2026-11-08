@@ -33,3 +33,47 @@ Regression: `php tests/refund-discovery-daily-test.php` checks pagination, time 
 Run `bash tests/refund-backfill-api-guard-test.sh`. This is a local guard test, **not** live-SP-API or Seller Central certification. The documented production dry-run, apply and DB readback are operational evidence for the one-time backfill, not permanent scheduler coverage.
 
 Related incident: https://github.com/Vivaliz-site/amazon-returns-safet/issues/532
+
+
+## Continuous SAFE-T / refund reconciliation (owner rule, 2026-11-08)
+
+The already-running Amazon Returns daemon performs Finances refund discovery and
+schedules **read-only Seller Central claim lookups** using the EXISTING
+SAFE_T_DISCOVERY outbox and browser read worker. It never creates a claim
+as part of scanning.
+
+1. Read the most recent tenant-and-connection scoped **Seller Central-confirmed**
+   SAFE-T ID in the database. Only matching external claim IDs in
+   SAFE_T_ID_DISCOVERED or confirmed SELLER_CENTRAL_ACTION_RESULT events
+   qualify; a Submit click, queued job or a mere case update does not qualify.
+   confirmed_at is the **time the claim was observed in the system**, not an
+   independently attested Amazon creation timestamp.
+2. Retrieve released/deferred-released customer refunds from SP-API Finances,
+   with existing 90-day rolling coverage, pagination and a three-minute UTC
+   boundary margin. Prioritize refunds with postedDate **later** than the
+   verified observation, plus refunds whose date cannot be verified. If no
+   confirmed claim exists, treat all retrieved refunds as reconciliation
+   candidates.
+3. Retain the **full lookback**, including older unlinked refunds, as a
+   completeness sweep. A newer claim never proves older cases are resolved.
+   Reconciliation for older already-imported cases continues through the
+   existing StatusBridgeService::ensureJobs() keyset scan.
+4. For each single-item order, check whether the claim is already stored;
+   otherwise schedule an idempotent read-only SAFE_T_DISCOVERY using the same
+   daily key and tenant/connection lease as the established reader. Multiple
+   item identities, absent local order, and unverified refund dates require
+   further reconciliation; never guess an item or copy a claim across items.
+5. The Seller Central worker matches by order and verifies the claim detail.
+   A verified positive readback links the external claim ID transactionally;
+   an empty search, UI_DRIFT, auth problem, or ambiguous submission remains
+   **unverified**, never permission to open another SAFE-T. Financial credit
+   must be reconciled separately with SP-API Finances before closing a case.
+6. Daily refund_discovery.status=OK is **only** a Finances discovery/ingest
+   result; it is **not** proof all SAFE-T claims were checked or credited.
+   Monitor seller_central_claim_verification_status and actual external
+   ID/status readbacks, not OK alone.
+
+No SAFE-T write flag, global kill switch, whitelist, grant, automation, worker
+or runner is changed by this reconciliation. D+45 is the internal first
+eligibility check. Case-by-case external eligibility and the D+90 internal
+cutoff remain enforced by the separate authorized opening path.

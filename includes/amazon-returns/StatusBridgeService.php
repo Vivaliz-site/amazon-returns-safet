@@ -115,6 +115,58 @@ final class SvAmazonReturnsStatusBridgeService
     }
 
     /**
+     * Finances-confirmed refunds since the last verified claim are checked
+     * against Seller Central via the EXISTING read worker, never by opening a
+     * new SAFE-T. Reuse the same daily idempotency key as ensureJobs().
+     * Ambiguous multi-item orders must not inherit a claim by order alone.
+     *
+     * @param list<string> $orderIds
+     * @return array{enqueued:int,already_active:int,locally_linked:int,unmapped:int,ambiguous:int,closed:int}
+     */
+    public function ensureRefundClaimChecks(array $orderIds,DateTimeImmutable $now): array
+    {
+        $stats=['enqueued'=>0,'already_active'=>0,'locally_linked'=>0,
+            'unmapped'=>0,'ambiguous'=>0,'closed'=>0];
+        $seen=[];
+        $scope='seller-central-order-discovery-v1|'
+            .$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');
+        foreach($orderIds as $orderId){
+            if(!is_string($orderId)
+                || preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$orderId)!==1){
+                throw new InvalidArgumentException('Refund reconciliation requires a valid order ID.');
+            }
+            if(isset($seen[$orderId]))continue;
+            $seen[$orderId]=true;
+            $cases=$this->p->cases->forOrder($orderId);
+            if($cases===[]){$stats['unmapped']++;continue;}
+            if(count($cases)!==1){$stats['ambiguous']++;continue;}
+            $case=$cases[0];
+            $caseId=(int)($case['id']??0);
+            if($caseId<1)throw new UnexpectedValueException('Refund case has invalid identity.');
+            if(trim((string)($case['safe_t_id']??''))!==''){
+                // The standard SAFE_T_READ path independently refreshes its status.
+                $stats['locally_linked']++;
+                continue;
+            }
+            if(($case['closed_at']??null)!==null){$stats['closed']++;continue;}
+            if($this->p->outbox->hasActive($caseId,'SAFE_T_DISCOVERY')){
+                $stats['already_active']++;
+                continue;
+            }
+            $key=$this->p->outbox->deterministicKey('SAFE_T_DISCOVERY',$caseId,$scope);
+            $added=$this->p->outbox->enqueueResult('SAFE_T_DISCOVERY',$caseId,[
+                'case_id'=>$caseId,
+                'order_id'=>$orderId,
+                'order_item_id'=>(string)($case['amazon_order_item_id']??''),
+                'read_only'=>true,
+                'lookback_days'=>90,
+            ],$key);
+            if($added['enqueued']===true)$stats['enqueued']++;
+        }
+        return $stats;
+    }
+
+    /**
      * @param list<array<string,mixed>> $items
      * @return array<string,mixed>
      */
