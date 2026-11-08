@@ -77,6 +77,14 @@ final class SvAmazonReturnsBridgeService
             // eligibility UI and per-channel write gates remain mandatory.
             // Read order provenance from the scoped ORDER_SYNCED timeline.
             if(strtoupper((string)($row['kind']??''))==='SAFE_T_SUBMIT'){
+                // A stale PENDING opening must not be dispatched once a claim
+                // has been linked. Keep the audit trail; do not send to Amazon.
+                if(SvAmazonSafeTExternalWindow::openingAlreadyClaimed($case)){
+                    $this->p->outbox->markSuperseded(
+                        (int)$row['id'],'SAFE_T_LOCAL_CLAIM_ALREADY_LINKED'
+                    );
+                    continue;
+                }
                 $events=$this->p->events->eventsForCase((int)$row['case_id']);
                 $gate=SvAmazonSafeTExternalWindow::inspect(
                     $case,$events,new DateTimeImmutable('now',new DateTimeZone('UTC'))
