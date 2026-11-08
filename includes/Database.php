@@ -16,7 +16,14 @@ function amazon_returns_pdo(): ?PDO
     $user = trim((string)(getenv('AMAZON_RETURNS_DB_USER') ?: ''));
     $pass = (string)(getenv('AMAZON_RETURNS_DB_PASS') ?: '');
     $charset = trim((string)(getenv('AMAZON_RETURNS_DB_CHARSET') ?: 'utf8mb4'));
-    if ($user === '' || $name === '') { $failed = true; return null; }
+    if ($user === '' || $name === '') {
+        // A CLI without the protected service environment has NOT attempted
+        // MySQL. Keep the public exception generic; only the private PHP log
+        // differentiates this from an actual failed database connection.
+        $failed = true;
+        error_log('[amazon-returns-db] DB_RUNTIME_CONTEXT_MISSING (connection not attempted)');
+        return null;
+    }
 
     $dsn = $host === 'localhost' || $host === '127.0.0.1'
         ? sprintf('mysql:unix_socket=/var/run/mysqld/mysqld.sock;dbname=%s;charset=%s', $name, $charset)
