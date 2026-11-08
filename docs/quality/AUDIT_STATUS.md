@@ -236,3 +236,14 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Evidencias: codigo `scripts/amazon-returns/d45-safe-t-auto-activation.mjs`, regressao `tests/d45-safe-t-auto-activation.test.mjs`, task RED e task GREEN acima, issue #532. Sem criacao de adaptador, runner, workflow, timer, flag de escrita, claim, suporte, reembolso ou alteracao de dados de clientes. `#8803` ja tem SAFE-T externa; `#42471` nao entra no grant #3556.
 - Pendencias: CI GitHub no HEAD final, merge protegido, readback do SHA implantado e teste de regressao na release; adaptador produtivo certificado ausente, SP-API/WAREHOUSE/Finances/Seller Central e readback Amazon reais ainda nao comprovados por caso. Kill switch permanece ON; sete write gates OFF; `#532 NAO_APTO` para submissao.
 - Estado: NAO_APTO
+
+## 2026-11-08 — #532: search input cannot prove SAFE-T result identity
+
+- Base SHA: `67f177e5b19d604f93f0130777ba961714ce32b0`.
+- Impacto: a leitura read-only de elegibilidade usava o valor digitado no campo de busca como prova de que o checkbox de resultado pertencia ao pedido; uma pagina com resultado de pedido diferente e input refletindo o ID consultado podia gerar `orderMatched=true` e classificacao `ELIGIBLE`. Risco de falsa elegibilidade e submissao no pedido errado, mesmo antes de readback externo.
+- Causa raiz: identidade derivada de `inputs.some(i=>i.value===id)` em vez de evidência visível do resultado no mesmo documento. O texto do corpo permanece necessario e a ausência da identidade continua `UI_DRIFT`.
+- Correcao: remover unicamente a inferencia por echo de input da captura de elegibilidade, sem criar selecao automatica, submissao, alteracao de flag, worker, tenant, grant ou credencial. A elegibilidade oficial e deduplicacao independentes seguem obrigatorias.
+- Testes: RED local sintetico pré-fix 1/2 (a reproduzir no checkout original) e GREEN focal 2/2 apos o fix; regression integrada em `tests/safe-t-eligibility-snapshot.test.mjs`. Checks oficiais, merge protegido e release imutavel devem ser comprovados antes de concluir deployment.
+- Evidencias: `scripts/amazon-returns/safe-t-eligibility-snapshot.mjs`, `tests/safe-t-eligibility-snapshot.test.mjs`; issue #532, PR tecnica correspondente. Nenhuma SAFE-T externa foi aberta por esses testes.
+- Pendencias: checks da PR, merge, release exata, CI/Node na release, identidade oficial por pedido e adaptador P2 certificado. D+45 primeira checagem; D+90 somente corte interno; #8803 possui claim externa; kill switch ON e sete write gates OFF.
+- Estado: NAO_APTO
