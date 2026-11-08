@@ -25,7 +25,7 @@ test('drain scans Seller Support case lobby for actionable sibling cases before 
   assert.match(source, /SearchForCases/);
   const drain = source.indexOf("if (process.argv.includes('--drain'))");
   const discovery = source.indexOf('await discoverActionableSupportCases()', drain);
-  const pullLoop = source.indexOf('while (!quiesceRequested() && await runOnce())', drain);
+  const pullLoop = source.indexOf('while (!quiesceRequested() && withinCycleBudget(cycleDeadline) && await runOnce())', drain);
   assert.ok(drain >= 0 && discovery > drain && pullLoop > discovery,
     'actionable Seller Support discovery must run before the normal read-job drain');
 });
