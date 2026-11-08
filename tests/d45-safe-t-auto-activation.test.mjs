@@ -204,3 +204,28 @@ test('carrier transit and pending-delivery states do not delay D+45 official che
     assert.equal(b.state.submitted,0);
   }
 });
+
+
+test('blank/whitespace/nondecimal Finances fields never certify D+45 auto submissions (#532)', async () => {
+  for(const credit of ['', '   ', '0x0', false, 'Infinity', undefined, null]){
+    assert.equal(assessD45Candidate(row(1263,{reconciled_credit_amount:credit}),NOW),
+      'UNRECOVERED_DEBIT_UNVERIFIED', String(credit));
+    const b=rig({listCandidateCases:async()=>[row(1263,{reconciled_credit_amount:credit})]});
+    const outcome=await run(b.adapter);
+    assert.equal(outcome.status,'NO_CERTIFIED_PROVIDER_ELIGIBILITY',String(credit));
+    assert.equal(b.state.reserved,0);
+    assert.equal(b.state.submitted,0);
+    assert.equal(b.state.activation,0);
+    assert(!b.calls.includes('official'), 'no Amazon action after untrusted credit');
+    assert.equal(b.state.restored,1);
+    assert.equal(b.state.released,1);
+  }
+  for(const refund of ['', '   ', '0x20', false]){
+    assert.equal(assessD45Candidate(row(1263,{refund_amount:refund}),NOW),
+      'UNRECOVERED_DEBIT_UNVERIFIED',String(refund));
+  }
+  for(const credit of ['0.00',0,'1.50']){
+    assert.equal(assessD45Candidate(row(1263,{reconciled_credit_amount:credit}),NOW),
+      null,String(credit));
+  }
+});
