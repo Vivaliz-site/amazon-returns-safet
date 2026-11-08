@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activateScopedSafeTOpening, ScopedSafeTError, SCOPES, EXPECTED_ACTIONS } from '../scripts/amazon-returns/scoped-safe-t-operator.mjs';
+import { activateScopedSafeTOpening, ScopedSafeTError, SCOPES, EXPECTED_ACTIONS, assessLocalCase } from '../scripts/amazon-returns/scoped-safe-t-operator.mjs';
 
 const NOW = Date.parse('2026-11-07T12:00:00Z');
 const CLAIM = '12345-12345-1234567';
@@ -217,4 +217,32 @@ test('unknown intake status and any positive received quantity remain fail-close
     assert.equal(b.state.attempted, 0);
     assert.equal(b.state.consumed, 0);
   }
+});
+
+
+test('financial proof is fail-closed when refunded or credited amount is absent, empty, non-decimal, or negative (#532)', async () => {
+  const invalidCredits = [null, undefined, '', '   ', '-1.00', false, '0x0', 'Infinity'];
+  for (const credit of invalidCredits) {
+    const c = {...row(1263), reconciled_credit_amount: credit};
+    assert.equal(assessLocalCase(c, NOW), 'OUTSTANDING_DEBIT_UNVERIFIED', String(credit));
+  }
+  for (const refund of [null, undefined, '', '   ', -1, '0x20', false]) {
+    assert.equal(assessLocalCase({...row(1263), refund_amount: refund}, NOW),
+      'OUTSTANDING_DEBIT_UNVERIFIED', String(refund));
+  }
+  for (const credit of ['0.00', 0, '1.50']) {
+    assert.equal(assessLocalCase({...row(1263), reconciled_credit_amount: credit}, NOW), null, String(credit));
+  }
+  // A missing credit must stop the FULL preflight before consuming the grant,
+  // querying provider eligibility, or issuing an external claim.
+  const b = build({readCaseSnapshot: async ({caseIds}) =>
+    caseIds.map(id => ({...row(id), reconciled_credit_amount: null}))});
+  const result = await run(b.adapter);
+  assert.equal(result.status, 'NO_AUTHORIZED_SUBMISSIONS');
+  assert(result.verdicts.every(v => v.reason === 'OUTSTANDING_DEBIT_UNVERIFIED'));
+  assert.equal(b.state.consumed, 0);
+  assert.equal(b.state.attempted, 0);
+  assert(!b.calls.includes('amazon-eligibility'));
+  assert.equal(b.state.restored, 1);
+  assert.equal(b.state.released, 1);
 });
