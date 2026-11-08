@@ -196,7 +196,7 @@ test('carrier-only transit states at D+45 reach independent warehouse and Amazon
     assert(unresolved.calls.includes('warehouse'), 'independent WAREHOUSE check must run');
     assert.equal(unresolved.state.consumed, 0, 'carrier scan alone cannot consume grant');
     assert.equal(unresolved.state.attempted, 0, 'carrier scan alone cannot submit');
-    const confirmed = build({readCaseSnapshot: async snapshot});
+    const confirmed = build({readCaseSnapshot: async args => snapshot(args)});
     const result = await run(confirmed.adapter);
     assert.equal(result.status, 'ACCEPTED_WITH_READBACK', physical_status);
     assert.equal(result.results.length, SCOPES[3556].caseIds.length);
