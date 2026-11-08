@@ -165,6 +165,16 @@ if ! "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-safe-t-read-worker
   record_auth_failure "AUTH_CHECK_FAILED"
   exit 75
 fi
+# Read-only official eligibility check runs in the existing browser/lease.
+# It returns before any bridge write drain, even if writes are enabled.
+if [[ "$#" -ge 1 && "$1" == "--eligibility-check-only" ]]; then
+  if [[ "$#" -ne 2 || ! "$2" =~ ^[0-9]{3}-[0-9]{7}-[0-9]{7}$ ]]; then
+    echo "Eligibility check requires exactly one valid order ID" >&2
+    exit 64
+  fi
+  SELLER_CENTRAL_ELIGIBILITY_MANAGED=1 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-bridge-worker.mjs" --eligibility-check-only "$2"
+  exit $?
+fi
 "$NODE_BIN" "$ROOT/scripts/amazon-returns/seller-central-support-lookup-probe.mjs" || true
 if [[ " ${*:-} " == *" --auth-check-only "* ]]; then
   exit 0

@@ -17,6 +17,11 @@ foreach ($workers as $name => $path) {
     tcAssert(str_contains($helper, '/json/close/'), "$name cleanup must close the CDP target.");
     tcAssert(str_contains($helper, 'AbortSignal.timeout(2500)'), "$name cleanup must have a 2.5s timeout.");
     $connectStart = strpos($source, '  static async connect() {');
+    if($connectStart===false && $name==='bridge'){
+        // Read-only eligibility requires a managed-existing-only option.
+        // Preserve the close-on-connect-error invariant for both signatures.
+        $connectStart = strpos($source, '  static async connect({ managedExistingOnly = false } = {}) {');
+    }
     $connectEnd = $connectStart === false ? false : strpos($source, "\n  send(", $connectStart);
     tcAssert($connectStart !== false && $connectEnd !== false, "$name connect block must remain auditable.");
     $connect = substr($source, (int)$connectStart, (int)$connectEnd - (int)$connectStart);

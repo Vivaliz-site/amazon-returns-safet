@@ -8,6 +8,9 @@ import { safeTExternalWindow } from './safe-t-external-window.mjs';
 import { resolveCycleDeadline, withinCycleBudget } from './seller-central-cycle-budget.mjs';
 import { safeTUnreceivedQuantity } from './safe-t-quantity-guard.mjs';
 import { selectSafeTItemWithReadback } from './safe-t-item-selection.mjs';
+import { classifySafeTEligibility } from './safe-t-eligibility-classifier.mjs';
+import { managedCycleLockHeld } from './seller-central-managed-lock.mjs';
+import { safeTEligibilitySnapshot } from './safe-t-eligibility-snapshot.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
@@ -126,8 +129,15 @@ class Cdp {
     });
   }
 
-  static async connect() {
-    await ensureBrowser();
+  static async connect({ managedExistingOnly = false } = {}) {
+    if (managedExistingOnly) {
+      // Never spawn a second browser from an eligibility-only direct call.
+      if (!managedCycleLockHeld() || !(await cdpReady())) {
+        throw new Error('MANAGED_CDP_WITH_LOCK_REQUIRED');
+      }
+    } else {
+      await ensureBrowser();
+    }
     const response = await fetch(`${CDP_BASE}/json/new?${encodeURIComponent('about:blank')}`, { method: 'PUT' });
     if (!response.ok) throw new Error(`could not create isolated CDP target (${response.status})`);
     const page = await response.json();
@@ -648,6 +658,42 @@ async function safeTSubreasonDiagnostics(cdp, value) {
     return String(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const expected=${JSON.stringify(expected)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const isInteractive=element=>{try{if(!element||element.hidden||element.getAttribute('aria-hidden')==='true'||element.hasAttribute('disabled'))return false;const style=getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity||1)<=0)return false;const rect=element.getBoundingClientRect();return rect.width>0&&rect.height>0&&element.getClientRects().length>0}catch{return false}};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const dropdowns=roots.flatMap(root=>[...(root.querySelectorAll?.('kat-dropdown')||[])]);const semantic=dropdowns.filter(host=>{const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));return hints.some(h=>meta.includes(h))});const interactiveSemantic=semantic.filter(isInteractive);const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const valueOf=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>valueOf(option)===expected);const visibleExact=exact.filter(isInteractive).length;return ['d='+dropdowns.length,'s='+semantic.length,'i='+interactiveSemantic.length,'r='+roots.length,'o='+options.length,'e='+exact.length,'ve='+visibleExact].join(';')})()`)).slice(0,220);
   } catch {
     return 'SUBREASON_DIAG_UNAVAILABLE';
+  }
+}
+
+/**
+ * Owner-requested D+45 check. This path reads eligibility and an existing
+ * claim marker; it NEVER navigates Next/Submit or acknowledges a write job.
+ * The managed runner holds the canonical browser cycle lock.
+ */
+async function safeTEligibilityProbe(orderId) {
+  const cdp=await Cdp.connect({managedExistingOnly:true});
+  try {
+    const url=SAFE_T_BASE+'/create-v2?ref_=ag_sfdcf_cont_safet';
+    await cdp.navigate(url,5000);
+    const auth=await authGate(cdp,'safet-v1',url,5000);
+    if(auth)return {status:auth.status,reason:auth.reason||'SELLER_CENTRAL_AUTH_REQUIRED'};
+    if(!(await setSafeTOrderInput(cdp,orderId))) {
+      return {status:'UI_DRIFT',reason:'SAFE_T_ORDER_INPUT_MISSING'};
+    }
+    if(!(await clickSafeTEligibilityButton(cdp))) {
+      return {status:'UI_DRIFT',reason:'SAFE_T_ELIGIBILITY_BUTTON_MISSING'};
+    }
+    await sleep(6000);
+    const snapshot=await safeTEligibilitySnapshot(cdp,orderId);
+    if(snapshot.ambiguous===true) {
+      return {status:'UI_DRIFT',reason:'SAFE_T_ELIGIBILITY_RESULT_AMBIGUOUS'};
+    }
+    return classifySafeTEligibility({
+      orderId,
+      exactOrderChecked:snapshot.orderMatched===true,
+      existingClaim:snapshot.existingClaim,
+      itemCount:snapshot.itemCount,
+      selectableCount:snapshot.selectableCount,
+      pageText:snapshot.pageText,
+    });
+  } finally {
+    await cdp.close();
   }
 }
 
@@ -2100,6 +2146,26 @@ async function runOnce() {
 }
 
 async function main() {
+  const eligibilityIndex=process.argv.indexOf('--eligibility-check-only');
+  if(eligibilityIndex>=0) {
+    if(process.env.SELLER_CENTRAL_ELIGIBILITY_MANAGED!=='1' || !managedCycleLockHeld() || quiesceRequested()) {
+      throw new Error('UNMANAGED_ELIGIBILITY_CHECK_DENIED');
+    }
+    const orderId=text(process.argv[eligibilityIndex+1]);
+    if(eligibilityIndex!==2 || process.argv.length!==4 || !/^\d{3}-\d{7}-\d{7}$/.test(orderId)) {
+      throw new Error('Eligibility check requires exactly one valid order ID');
+    }
+    const observed=await safeTEligibilityProbe(orderId);
+    process.stdout.write(JSON.stringify({
+      status:observed.status,
+      reason:observed.reason??null,
+      external_id:observed.external_id??null,
+    })+'\n');
+    if(!['ELIGIBLE','ALREADY_EXISTS','NOT_ELIGIBLE','REVIEW_REQUIRED'].includes(observed.status)) {
+      process.exitCode=2;
+    }
+    return;
+  }
   const jobFileIndex = process.argv.indexOf('--job-file');
   if (jobFileIndex >= 0) {
     const path = process.argv[jobFileIndex + 1];
