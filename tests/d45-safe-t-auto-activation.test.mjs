@@ -70,6 +70,22 @@ test('D+45 exact first attempt, no internal D+60 substitution, D+90 terminal',()
   assert.equal(assessD45Candidate(row(1263,{refund_at:new Date(NOW-89*86400000).toISOString().slice(0,19).replace('T',' ')}),NOW),null);
   assert.equal(assessD45Candidate(row(1263,{refund_at:new Date(NOW-90*86400000).toISOString().slice(0,19).replace('T',' ')}),NOW),'ON_OR_AFTER_D90');
 });
+test('D+45 carrier statuses do not defer official check, but UNKNOWN physical intake fails closed', async()=>{
+  for(const physical_status of ['NOT_RECEIVED','IN_TRANSIT','CARRIER_DELIVERED_PENDING_PHYSICAL'])
+    assert.equal(assessD45Candidate(row(1263,{physical_status}),NOW),null,physical_status);
+  for(const physical_status of [null,undefined,'','UNKNOWN','SUSPECTED_RECEIVED','CARRIER_DELIVERED','RECEIVED_PENDING']){
+    assert.equal(assessD45Candidate(row(1263,{physical_status}),NOW),
+      'WAREHOUSE_RECEIPT_UNVERIFIED',String(physical_status));
+    const b=rig({listCandidateCases:async()=>[row(1263,{physical_status})]});
+    const out=await run(b.adapter);
+    assert.equal(out.status,'NO_CERTIFIED_PROVIDER_ELIGIBILITY',String(physical_status));
+    assert.equal(b.state.activation,0,String(physical_status));
+    assert.equal(b.state.reserved,0,String(physical_status));
+    assert.equal(b.state.submitted,0,String(physical_status));
+    assert(!b.calls.includes('official'),String(physical_status));
+  }
+});
+
 test('only SAFE_T_SUBMIT can be enabled, #8803 permanently excluded',()=>{
   assert.deepEqual(Object.entries(SAFE_T_ONLY).filter(([,v])=>v).map(([k])=>k),['SAFE_T_SUBMIT']);
   assert.equal(assessD45Candidate(row(8803),NOW),'EXCLUDED_EXISTING_CLAIM');
