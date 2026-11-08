@@ -5,7 +5,7 @@ const worker = fs.readFileSync(new URL('../scripts/amazon-returns/seller-central
 
 assert.match(worker, /const SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS\s*=/, 'Seller Support history lookup needs a dedicated bounded CDP command timeout.');
 assert.match(worker, /const SUPPORT_CASE_LOOKUP_SCAN_BUDGET_MS\s*=/, 'Seller Support history lookup needs an internal scan budget below the CDP timeout.');
-assert.match(worker, /static async connect\(\) {/, 'Cdp.connect must preserve the existing audited default entrypoint.');
+assert.match(worker, /static async connect\(\{ managedExistingOnly = false \} = \{\}\) \{/, 'Cdp.connect must preserve default use while allowing a managed read-only browser.');
 assert.match(worker, /const lookup = await Cdp\.connect\(\);\s*lookup\.commandTimeoutMs = SUPPORT_CASE_LOOKUP_COMMAND_TIMEOUT_MS;/, 'Only the isolated Seller Support lookup target should receive the longer timeout.');
 assert.match(worker, /LOOKUP_SCAN_BUDGET_EXHAUSTED/, 'The browser-side history scan must fail closed before the CDP command timeout.');
 
