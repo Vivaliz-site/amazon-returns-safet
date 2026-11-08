@@ -113,7 +113,10 @@ export function assessD45Candidate(c, nowMs) {
   const age = (nowMs - refundedAt) / MS_DAY;
   if (age < 45) return 'BEFORE_D45';
   if (age >= 90) return 'ON_OR_AFTER_D90';
-  if (c.physical_status !== 'NOT_RECEIVED' || c.quantity_received !== 0)
+  // Carrier/in-transit states are not authoritative seller intake proof.
+  // The independent warehouse callback is still mandatory before any write.
+  if (c.quantity_received !== 0 ||
+      ['PHYSICAL_RECEIVED', 'RECEIVED_OK'].includes(c.physical_status))
     return 'WAREHOUSE_RECEIPT_UNVERIFIED';
   const original = Number(c.refund_amount);
   const credited = Number(c.reconciled_credit_amount);
