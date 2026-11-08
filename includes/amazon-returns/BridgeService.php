@@ -77,6 +77,17 @@ final class SvAmazonReturnsBridgeService
             // eligibility UI and per-channel write gates remain mandatory.
             // Read order provenance from the scoped ORDER_SYNCED timeline.
             if(strtoupper((string)($row['kind']??''))==='SAFE_T_SUBMIT'){
+                // A previous Submit click with no verified claim ID is an unknown
+                // external outcome, never permission to click Submit again.
+                $prior=$this->p->events->eventsForSourceEventId(
+                    (int)$row['case_id'],(string)$row['id'],'SELLER_CENTRAL_ACTION_RESULT'
+                );
+                if(SvAmazonReturnsRemoteBridge::safeTSubmitHasAmbiguousHistory($row,$prior)){
+                    $this->p->outbox->markSuperseded(
+                        (int)$row['id'],'SAFE_T_POST_CLICK_READBACK_REQUIRED'
+                    );
+                    continue;
+                }
                 // A stale PENDING opening must not be dispatched once a claim
                 // has been linked. Keep the audit trail; do not send to Amazon.
                 if(SvAmazonSafeTExternalWindow::openingAlreadyClaimed($case)){
@@ -223,6 +234,12 @@ final class SvAmazonReturnsBridgeService
         if($status==='HUMAN_INTERVENTION_REQUIRED'){
             return $this->completeHumanIntervention($row,$result);
         }
+        // A generic worker exception may have occurred AFTER clicking Submit.
+        // Never treat an absent readback as a retryable failed submission.
+        if($kind==='SAFE_T_SUBMIT'
+            && SvAmazonReturnsRemoteBridge::safeTSubmitResultRequiresReadback($result)){
+            $result['retry_safe']=false;
+        }
         $this->appendResultEvent($row,$result);
         if($status==='BLOCKED_UNTIL'){
             $next=$this->futureDate($result['next_allowed_at'] ?? null,'+6 hours');
@@ -250,7 +267,8 @@ final class SvAmazonReturnsBridgeService
             $failedRow['attempt_count']=SvAmazonTenantReturnsOutbox::MAX_ATTEMPTS;
         }
         $this->p->outbox->markFailed(
-            $failedRow,$status.': '.(string)($result['reason'] ?? 'REMOTE_BRIDGE_FAILED')
+            $failedRow,$status.': '.(string)($result['reason'] ?? 'REMOTE_BRIDGE_FAILED'),
+            null,$kind!=='SAFE_T_SUBMIT' || ($result['retry_safe'] ?? false)===true
         );
         return [
             'status'=>'ACK','job_id'=>$jobId,'result_status'=>$status,'completed'=>false,
