@@ -138,6 +138,12 @@ export async function verifyApprovedOwnerGrant(grantNumber,{
   try{raw=JSON.parse(Buffer.from(obj.content.replace(/\s+/g,''),'base64').toString('utf8'));}
   catch{throw new OwnerGrantVerificationError('GRANT_JSON_INVALID');}
   const grant=normalizeGrant(raw,grantNumber,expected);
+  if(expected.dynamic){
+    // A subsequently changed/deleted main grant revokes activation immediately.
+    const current=await githubJson('/contents/security/owner-approvals/'+grantNumber+'.json?ref=main',{fetchImpl,token});
+    expect(current?.type==='file'&&current?.sha===expected.blob,
+      'OWNER_GRANT_REVOKED_OR_CHANGED');
+  }
   return {verifiedBy:'canonical-github-owner-approval-verifier',owner:'shopvivaliz-human',
     approvedOnHead:true,merged:true,grantNumber,grant};
 }
