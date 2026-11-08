@@ -992,13 +992,18 @@ class SvAmazonReturnsDaemon
                     $this->persistence->outbox->markSucceeded((int)$row['id']);
                     $processed++;
                 }else{
+                    // Missing claim readback is not proof that Amazon rejected Submit.
+                    $retryAllowed=$kind!=='SAFE_T_SUBMIT'
+                        || (($actionResult['retry_safe']??false)===true
+                            && !SvAmazonReturnsRemoteBridge::safeTSubmitResultRequiresReadback($actionResult));
                     $this->persistence->outbox->markFailed(
-                        $row,(string)($actionResult['status'] ?? 'FAILED')
+                        $row,(string)($actionResult['status'] ?? 'FAILED'),null,$retryAllowed
                     );
                     $failed++;
                 }
             }catch(Throwable $e){
-                $this->persistence->outbox->markFailed($row,$e);
+                // An exception cannot prove whether a remote Submit click occurred.
+                $this->persistence->outbox->markFailed($row,$e,null,$kind!=='SAFE_T_SUBMIT');
                 $failed++;
             }
         }
