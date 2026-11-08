@@ -256,3 +256,13 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Evidencias: `scripts/amazon-returns/safe-t-eligibility-snapshot.mjs`, `tests/safe-t-eligibility-snapshot.test.mjs`, issue #532; nao se tocou caso real, Seller Central autenticado, Financeiro, flags, kill switch, worker, DB ou cliente.
 - Pendencias: checks oficiais, merge protegido, readback da release Marina e regressao posdeploy; compatibilidade de UI com frames cross-origin nao observados exige nova leitura grafica e caso a caso. Operador P2, lease, warehouse, Finances, iniciador Amazon, elegibilidade oficial e claim-readback externo ainda necessarios. D+45 primeiro checkpoint interno; case #8803 com claim existente; #42471 fora do grant #3556.
 - Estado: NAO_APTO
+
+## 2026-11-08 — #532: mixed visible order IDs must not certify a SAFE-T item
+
+- Base SHA: `c85794f2c840af076d67d2938a9e8df14229a487` (official main and immutable Marina release before change).
+- RED: read-only synthetic UI snapshot contained both requested Amazon order ID and a different result order ID plus selectable checkbox. Old parser `body.includes(id)` returned `orderMatched=true` despite contradictory visible identity. Native MCP audit `51a82ef4-77a2-4627-899a-d47ca6fe18a3`; integrated negative regression in isolated backend clone produced 9 PASS/1 FAIL before repair (task `4e529880-f77e-4ae2-a984-64fff7944b11`).
+- Root cause: substring presence in an entire frame was treated as binding between the requested order and a selectable result; a search echo or mixed-order page can provide misleading matching text.
+- Minimal fix: extract whole formatted Amazon order identifiers from the observed document text and allow local order match only if at least one ID exists AND every observed ID equals the requested order. Distinct IDs force `orderMatched=false`, preserving external evidence and fail-closed `SAFE_T_ELIGIBILITY_ORDER_UNVERIFIED`; duplicates of the same ID remain readable.
+- Prevention: two regression fixtures for mixed orders and repeated exact order, plus existing iframe, input-echo and claim-read tests. No Seller Central submit, no flags, claim, worker, grants, secrets or production data changed by this code patch.
+- Pending: official CI, protected merge, canonical deploy SHA and postdeploy tests; real provider UI validation per case, SP-API/warehouse/Finances, one-use P2 certified adapter/lease/watchdog, real claim readback. `8803` has an external claim and must never be duplicated; `42471` is outside #3556.
+- Estado: NAO_APTO
