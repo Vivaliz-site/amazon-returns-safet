@@ -11,7 +11,7 @@ authorized protected merge, is necessary for the P2 operation
 activate_d45_safe_t_automation. The user approving in chat alone is not the
 GitHub grant event. This does not modify approved #3556 or #3673.
 
-The Amazon Returns PR adds only an **import-only activation core, 15 tests and
+The Amazon Returns PR adds only an **import-only activation core, 16 tests and
 this runbook**. It does not install a runtime adapter, grant, browser, worker,
 cron, unit, ledger migration, secret, endpoint or production write profile.
 The separate code PR also requests shopvivaliz-human review for the
