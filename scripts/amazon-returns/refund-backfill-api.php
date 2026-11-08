@@ -4,7 +4,7 @@ declare(strict_types=1);
  * API-first buyer refund gap recovery. A single scoped operational command.
  * Default: DRY RUN. --apply requires exact hash from preflight.
  * Does NOT submit claims, open support tickets, or change external-write gates.
- * The canonical scheduled worker must separately adopt this discovery path.
+ * Uses the same ambiguity-safe Finances scanner as the existing daily daemon.
  */
 $root = getenv('AMAZON_RETURNS_RELEASE_ROOT') ?: '/home/ubuntu/amazon-returns-deploy/current';
 require_once $root . '/includes/Database.php';
@@ -13,6 +13,7 @@ require_once $root . '/includes/amazon-returns/TenantPersistence.php';
 require_once $root . '/includes/amazon-returns/AmazonSpApiClient.php';
 require_once $root . '/includes/amazon-returns/SpApi.php';
 require_once $root . '/includes/amazon-returns/SpApiEventSink.php';
+require_once $root . '/includes/amazon-returns/RefundDiscovery.php';
 
 $apply = in_array('--apply', $argv, true);
 $days = 90;
@@ -31,55 +32,20 @@ $context = SvAmazonTenantRegistry::resolveCurrent($pdo, $config);
 $p = SvAmazonTenantPersistence::create($pdo, $context);
 $transport = new SvAmazonSpApiClient($config);
 $api = new SvAmazonReturnsSpApi($transport);
-// Finances rejects postedBefore newer than two minutes ago (InvalidInput).
-// Leave a three-minute safety margin; the next scan will catch that gap.
-$now = (new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify('-3 minutes');
-$start = $now->modify('-' . $days . ' days');
-$next = $start;
-$stats = ['windows'=>0,'pages'=>0,'refunded_rows'=>0,'refund_orders'=>0,'missing_orders'=>0];
-$refunded = [];
-while ($next < $now) {
-    $from = $next;
-    $next = $from->modify('+15 days');
-    if ($next > $now) $next = $now;
-    $stats['windows']++;
-    $token = null;
-    $seen = [];
-    do {
-        $query = [
-            'postedAfter'=>$from->format('Y-m-d\TH:i:s\Z'),
-            'postedBefore'=>$next->format('Y-m-d\TH:i:s\Z'),
-            'marketplaceId'=>$transport->marketplaceId(),
-        ];
-        if (is_string($token) && $token !== '') $query['nextToken'] = $token;
-        $res = $transport->request('GET', '/finances/2024-06-19/transactions', $query);
-        if ($res['status'] !== 200) { $errorCodes = []; foreach (($res['data']['errors'] ?? []) as $error) { if (is_array($error)) $errorCodes[] = substr((string)($error['code'] ?? 'UNSPECIFIED'), 0, 45); } throw new RuntimeException('Finances HTTP ' . $res['status'] . ' window=' . $stats['windows'] . ' page=' . ($stats['pages'] + 1) . ' errors=' . implode(',', $errorCodes)); }
-        $payload = $res['data']['payload'] ?? $res['data'];
-        $rows = $payload['transactions'] ?? null;
-        if (!is_array($rows)) throw new UnexpectedValueException('Missing Finances transactions');
-        $stats['pages']++;
-        foreach ($rows as $row) {
-            if (!is_array($row)) continue;
-            if (strtoupper(trim((string)($row['transactionType'] ?? ''))) !== 'REFUND') continue;
-            if (!in_array(strtoupper(trim((string)($row['transactionStatus'] ?? ''))), ['RELEASED','DEFERRED_RELEASED'], true)) continue;
-            $stats['refunded_rows']++;
-            foreach (($row['relatedIdentifiers'] ?? []) as $identifier) {
-                if (!is_array($identifier)) continue;
-                if (strtoupper(trim((string)($identifier['relatedIdentifierName'] ?? ''))) !== 'ORDER_ID') continue;
-                $orderId = trim((string)($identifier['relatedIdentifierValue'] ?? ''));
-                if (preg_match('/^\d{3}-\d{7}-\d{7}$/D', $orderId) === 1) $refunded[$orderId] = true;
-            }
-        }
-        $token = $payload['nextToken'] ?? $res['data']['nextToken'] ?? null;
-        if ($token !== null && (!is_string($token) || strlen($token) > 2048 || isset($seen[$token]))) {
-            throw new UnexpectedValueException('Repeated or malformed Finances cursor');
-        }
-        if ($token !== null && $token !== '') $seen[$token] = true;
-        if ($stats['pages'] > 100) throw new RuntimeException('Page cap exceeded');
-        usleep(2100000);
-    } while (is_string($token) && $token !== '');
-}
-$stats['refund_orders'] = count($refunded);
+// Reuse the same pagination and ambiguous ORDER_ID guard as the daily daemon.
+// In particular, a single refunded row with conflicting/malformed order IDs
+// must never become multiple candidate cases in an operator's preflight.
+$now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+$scan = SvAmazonRefundDiscovery::scan($transport, $days, $now);
+$stats = [
+    'windows' => (int)$scan['windows'],
+    'pages' => (int)$scan['pages'],
+    'refunded_rows' => (int)$scan['refunded_rows'],
+    'unlinked_refund_rows' => (int)$scan['unlinked_refund_rows'],
+    'refund_orders' => count($scan['orders']),
+    'missing_orders' => 0,
+];
+$refunded = array_fill_keys($scan['orders'], true);
 $missing = [];
 foreach (array_keys($refunded) as $id) {
     if ($p->cases->forOrder($id) === []) $missing[] = $id;
