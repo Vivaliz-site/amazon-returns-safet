@@ -11,7 +11,7 @@ authorized protected merge, is necessary for the P2 operation
 activate_d45_safe_t_automation. The user approving in chat alone is not the
 GitHub grant event. This does not modify approved #3556 or #3673.
 
-The Amazon Returns PR adds only an **import-only activation core, 16 tests and
+The Amazon Returns PR adds only an **import-only activation core, 17 tests and
 this runbook**. It does not install a runtime adapter, grant, browser, worker,
 cron, unit, ledger migration, secret, endpoint or production write profile.
 The separate code PR also requests shopvivaliz-human review for the
@@ -20,7 +20,8 @@ activation feature.
 ## D+45 remains the first INTERNAL eligibility attempt
 
 Count 45 full days from the confirmed customer refund timestamp refund_at,
-never convert the first internal eligibility check into D+60. The canonical
+never convert the first internal eligibility check into D+60.
+Carrier statuses such as IN_TRANSIT or CARRIER_DELIVERED_PENDING_PHYSICAL must not postpone the D+45 official check; only confirmed seller-app WAREHOUSE physical intake can suppress a new claim, and the independent warehouse provider check remains mandatory. The canonical
 read/scheduler must initiate the official Seller Central eligibility check
 at D+45 and record the result.
 
