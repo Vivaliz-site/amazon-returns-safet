@@ -7,6 +7,7 @@ import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './sel
 import { safeTExternalWindow } from './safe-t-external-window.mjs';
 import { safeTUnreceivedQuantity } from './safe-t-quantity-guard.mjs';
 import { selectSafeTItemWithReadback } from './safe-t-item-selection.mjs';
+import { classifySafeTEligibility } from './safe-t-eligibility-classifier.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
@@ -647,6 +648,55 @@ async function safeTSubreasonDiagnostics(cdp, value) {
     return String(await cdp.evaluate(`(()=>{const hints=${JSON.stringify(hints)};const expected=${JSON.stringify(expected)};const normalize=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();const isInteractive=element=>{try{if(!element||element.hidden||element.getAttribute('aria-hidden')==='true'||element.hasAttribute('disabled'))return false;const style=getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity||1)<=0)return false;const rect=element.getBoundingClientRect();return rect.width>0&&rect.height>0&&element.getClientRects().length>0}catch{return false}};const docs=[];const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);for(const frame of d.querySelectorAll('iframe')){try{visit(frame.contentDocument)}catch{}}};visit(document);const roots=[];const addRoot=r=>{if(!r||roots.includes(r))return;roots.push(r);for(const el of r.querySelectorAll?.('*')||[]){if(el.shadowRoot)addRoot(el.shadowRoot)}};for(const d of docs)addRoot(d);const dropdowns=roots.flatMap(root=>[...(root.querySelectorAll?.('kat-dropdown')||[])]);const semantic=dropdowns.filter(host=>{const meta=normalize([host.getAttribute('placeholder'),host.getAttribute('label'),host.getAttribute('aria-label'),host.getAttribute('name'),host.id,host.className].filter(Boolean).join(' '));return hints.some(h=>meta.includes(h))});const interactiveSemantic=semantic.filter(isInteractive);const options=[];const seen=new Set();for(const root of roots){for(const option of root.querySelectorAll?.('kat-option,option,[role="option"]')||[]){if(seen.has(option))continue;seen.add(option);options.push(option)}}const valueOf=option=>String(option.getAttribute?.('value')??option.value??option.dataset?.value??'').trim();const exact=options.filter(option=>valueOf(option)===expected);const visibleExact=exact.filter(isInteractive).length;return ['d='+dropdowns.length,'s='+semantic.length,'i='+interactiveSemantic.length,'r='+roots.length,'o='+options.length,'e='+exact.length,'ve='+visibleExact].join(';')})()`)).slice(0,220);
   } catch {
     return 'SUBREASON_DIAG_UNAVAILABLE';
+  }
+}
+
+/**
+ * Owner-requested D+45 check. This path reads eligibility and an existing
+ * claim marker; it NEVER navigates Next/Submit or acknowledges a write job.
+ * The managed runner holds the canonical browser cycle lock.
+ */
+async function safeTEligibilityProbe(orderId) {
+  const cdp=await Cdp.connect();
+  try {
+    const url=SAFE_T_BASE+'/create-v2?ref_=ag_sfdcf_cont_safet';
+    await cdp.navigate(url,5000);
+    const auth=await authGate(cdp,'safet-v1',url,5000);
+    if(auth)return {status:auth.status,reason:auth.reason||'SELLER_CENTRAL_AUTH_REQUIRED'};
+    if(!(await setSafeTOrderInput(cdp,orderId))) {
+      return {status:'UI_DRIFT',reason:'SAFE_T_ORDER_INPUT_MISSING'};
+    }
+    if(!(await clickSafeTEligibilityButton(cdp))) {
+      return {status:'UI_DRIFT',reason:'SAFE_T_ELIGIBILITY_BUTTON_MISSING'};
+    }
+    await sleep(6000);
+    const observed=await cdp.evaluate('JSON.stringify((()=>{'
+      +'const items=[...document.querySelectorAll("kat-checkbox.QuantityCheckbox")];'
+      +'const selectable=items.filter(h=>{const r=h.getBoundingClientRect();'
+      +'const inner=h.shadowRoot?.querySelector("input[type=checkbox],[role=checkbox]");'
+      +'return r.width>0&&r.height>0&&h.getClientRects().length>0'
+      +'&&!h.disabled&&!h.hasAttribute("disabled")&&h.getAttribute("aria-disabled")!=="true"'
+      +'&&inner&&!inner.disabled&&!inner.hasAttribute("disabled");});'
+      +'return {itemCount:items.length,selectableCount:selectable.length};})())');
+    let parsed;
+    try{parsed=JSON.parse(observed||'{}');}catch{parsed={};}
+    const existing=await cdp.evaluate("document.querySelector('kat-link.ClaimAlreadyExists')?.getAttribute('label')||''");
+    const orderConfirmed=await cdp.evaluate('(()=>{const id='+JSON.stringify(orderId)+';'
+      +'if((document.body?.innerText||"").includes(id))return true;'
+      +'for(const h of document.querySelectorAll("kat-input")){'
+      +'const input=h.shadowRoot?.querySelector("input");'
+      +'if(input?.value===id)return true;}return false})()');
+    const page=await cdp.pageState(12000);
+    return classifySafeTEligibility({
+      orderId,
+      exactOrderChecked:orderConfirmed===true,
+      existingClaim:existing,
+      itemCount:parsed.itemCount,
+      selectableCount:parsed.selectableCount,
+      pageText:page.text,
+    });
+  } finally {
+    await cdp.close();
   }
 }
 
@@ -2099,6 +2149,26 @@ async function runOnce() {
 }
 
 async function main() {
+  const eligibilityIndex=process.argv.indexOf('--eligibility-check-only');
+  if(eligibilityIndex>=0) {
+    if(process.env.SELLER_CENTRAL_ELIGIBILITY_MANAGED!=='1' || quiesceRequested()) {
+      throw new Error('UNMANAGED_ELIGIBILITY_CHECK_DENIED');
+    }
+    const orderId=text(process.argv[eligibilityIndex+1]);
+    if(eligibilityIndex!==2 || process.argv.length!==4 || !/^\d{3}-\d{7}-\d{7}$/.test(orderId)) {
+      throw new Error('Eligibility check requires exactly one valid order ID');
+    }
+    const observed=await safeTEligibilityProbe(orderId);
+    process.stdout.write(JSON.stringify({
+      status:observed.status,
+      reason:observed.reason??null,
+      external_id:observed.external_id??null,
+    })+'\n');
+    if(!['ELIGIBLE','ALREADY_EXISTS','NOT_ELIGIBLE','REVIEW_REQUIRED'].includes(observed.status)) {
+      process.exitCode=2;
+    }
+    return;
+  }
   const jobFileIndex = process.argv.indexOf('--job-file');
   if (jobFileIndex >= 0) {
     const path = process.argv[jobFileIndex + 1];
