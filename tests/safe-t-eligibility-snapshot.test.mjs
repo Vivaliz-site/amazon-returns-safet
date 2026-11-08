@@ -70,3 +70,23 @@ test('inaccessible frame is never interpreted as no existing claim',async()=>{
   const result=await safeTEligibilitySnapshot({evaluate:async expr=>vm.runInNewContext(expr,{document:root,JSON})},orderId);
   assert.deepEqual(result,{ambiguous:true});
 });
+
+test('input echo never proves a selected SAFE-T item belongs to requested order',async()=>{
+  const stale=candidateDocument({orderText:'Pedido 702-1234567-1234567',items:[checkbox()]});
+  const original=stale.querySelectorAll.bind(stale);
+  stale.querySelectorAll=selector=>selector==='kat-input,input'
+    ? [{tagName:'INPUT',value:orderId}] : original(selector);
+  const result=await safeTEligibilitySnapshot(browser([stale]),orderId);
+  assert.equal(result.orderMatched,false);
+  assert.equal(result.itemCount,1);
+  assert.equal(result.selectableCount,1);
+});
+
+test('a search field echo with no displayed order remains unverified',async()=>{
+  const empty=candidateDocument({orderText:'Solicitacao SAFE-T',items:[checkbox()]});
+  const original=empty.querySelectorAll.bind(empty);
+  empty.querySelectorAll=selector=>selector==='kat-input,input'
+    ? [{tagName:'INPUT',value:orderId}] : original(selector);
+  const result=await safeTEligibilitySnapshot(browser([empty]),orderId);
+  assert.equal(result.orderMatched,false);
+});
