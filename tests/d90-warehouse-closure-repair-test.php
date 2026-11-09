@@ -73,8 +73,10 @@ $now=new DateTimeImmutable('2026-11-09 04:50:00',new DateTimeZone('UTC'));
 d90wrSame('CORRECTED',$repair->repairOne(101,$now)['status'],'Confirmed warehouse case must be corrected.');
 $row=$db->query('SELECT * FROM amazon_return_cases WHERE id=101')->fetch(PDO::FETCH_ASSOC);
 d90wrSame('RECEIVED_OK',$row['state'],'Canonical state after correction.');
-d90wrSame(null,$row['terminal_reason'],'Do not retain false terminal classification.');
-d90wrSame(null,$row['closed_at'],'Wrong financial closure must be cleared.');
+d90wrSame('WAREHOUSE_RECEIVED_ADMIN_FINAL_D90',$row['terminal_reason'],
+    'Financial loss must become physically received, administratively closed.');
+d90wrSame('2026-11-08 10:00:00',$row['closed_at'],
+    'D+90 closed case must remain closed; never reopen historical recovery.');
 d90wrSame(null,$row['next_action_at'],'D+90 must not schedule a new SAFE-T attempt.');
 d90wrSame('15.38',$row['reconciled_credit_amount'],'Financial credit remains untouched.');
 d90wrSame('35.00',$row['expected_reimbursement_amount'],'Expected amount remains untouched.');
