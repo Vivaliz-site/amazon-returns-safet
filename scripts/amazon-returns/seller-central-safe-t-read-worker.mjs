@@ -305,7 +305,13 @@ async function orderDeliveryRead(job) {
       tracking_button_count:control.button_count || 0,
     });
     const latest = await cdp.pageState(30000);
-    const browserEvidence = evidence(latest);
+    const browserEvidence = {
+      ...evidence(latest),
+      tracking_button_count: Number(control.button_count || 0),
+      tracking_dialog_detected: Boolean(modal.tracking_dialog_text),
+      tracking_code_count: Array.isArray(observation.shipment?.customer_tracking_ids)
+        ? observation.shipment.customer_tracking_ids.length : 0,
+    };
     if(observation.status!=='ACCEPTED'){
       return result('UI_DRIFT', {
         reason:observation.reason || 'SHIPMENT_ORDER_IDENTITY_NOT_VERIFIED',
