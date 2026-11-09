@@ -5,7 +5,7 @@
  */
 const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
 const fold = value => clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-const TRACK_PATTERN = /(?:c[oó]digo|n[uú]mero|id)\s+(?:de\s+)?rastrea?mento\s*[:#-]?\s*([A-Z0-9][A-Z0-9._-]{7,39})|tracking\s+(?:number|id)\s*[:#-]?\s*([A-Z0-9][A-Z0-9._-]{7,39})/gi;
+const TRACK_PATTERN = /(?:c[oó]digo|n[uú]mero|id)\s+(?:de\s+)?(?:rastreio|rastreamento)\s*[:#-]?\s*([A-Z0-9][A-Z0-9._-]{7,39})|tracking\s+(?:number|id)\s*[:#-]?\s*([A-Z0-9][A-Z0-9._-]{7,39})/gi;
 
 export function parseSellerCentralShipmentObservation(input) {
   const orderId = clean(input?.order_id);
