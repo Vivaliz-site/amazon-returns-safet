@@ -391,6 +391,28 @@ final class SvAmazonReturnsStatusBridgeService
         $db=$this->p->db();$db->beginTransaction();
         try{
             $this->p->cases->assertOwned($caseId);
+            if(!$record && $snapshot!==null){
+                // A completed visit with no reliable tracking is auditable,
+                // but deliberately cannot change customer-delivery facts.
+                $this->p->events->append([
+                    'case_id'=>$caseId,
+                    'event_type'=>'CUSTOMER_SHIPMENT_LOOKUP_ATTEMPTED',
+                    'source'=>'SELLER_CENTRAL',
+                    'source_event_id'=>'shipment-attempt:'.(string)$row['id'],
+                    'idempotency_key'=>SvAmazonTenantReturnEventStore::deterministicKey(
+                        'seller-central-shipment-attempt',(string)$caseId,gmdate('Y-m-d')
+                    ),
+                    'occurred_at'=>gmdate('Y-m-d H:i:s'),
+                    'payload'=>[
+                        'order_id'=>$expectedOrder,
+                        'order_item_id'=>$expectedItem,
+                        'outcome'=>'NO_TRACKING_PROOF',
+                        'tracking_button_count'=>min(100,max(0,(int)($result['evidence']['tracking_button_count']??0))),
+                        'tracking_dialog_detected'=>($result['evidence']['tracking_dialog_detected']??false)===true,
+                    ],
+                    'evidence_sha256'=>$snapshot,
+                ]);
+            }
             if($record){
                 $canonical=json_encode([
                     'status'=>$shipment['customer_delivery_status'],
