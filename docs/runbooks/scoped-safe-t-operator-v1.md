@@ -80,3 +80,19 @@ Record all later evidence in existing issue #532 without secrets or PII.
 switch fails, the executor MUST NOT release the exclusive lease; it throws
 `KILL_SWITCH_RESTORE_UNVERIFIED`. Independent crash recovery must then repair
 the switch and reconcile the claim before a lease can be safely released.
+
+## 2026-11-09 — renovacao #3846 e perfil PHP (apenas preparacao)
+
+O grant #3846 foi aprovado e mesclado separadamente e renova somente a
+canary de #3556. O nucleo Node o reconhecia, mas a configuracao PHP
+rejeitava a versao ainda nao cadastrada. O perfil versionado
+`safet-d45-pr3846-renewal-of-3556-v1` preserva oito IDs exatos, somente
+`SAFE_T_SUBMIT` e nenhum novo canal. O vencimento de #3556 permanece
+inalterado. O arquivo e a configuracao PHP nao selecionam perfil de
+producao nem concedem permissao para desligar o kill switch.
+
+Validacao: `php tests/scoped-safe-t-pr3846-profile-test.php` com cenarios
+sinteticos de bloqueio, allowlist exata e acoes falsas. Sem adaptador
+certificado, comprovacao independente de Amazon/warehouse/Finances,
+lease/fencing, consumo duravel one-use e restore crash-safe do kill switch,
+**nenhuma submissao e autorizada**. O status permanece NAO_APTO.

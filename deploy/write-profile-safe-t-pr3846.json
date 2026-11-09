@@ -1,0 +1,10 @@
+{
+  "version": "safet-d45-pr3846-renewal-of-3556-v1",
+  "SAFE_T_SUBMIT": true,
+  "SAFE_T_APPEAL": false,
+  "SAFE_T_EMAIL_REVIEW": false,
+  "SAFE_T_EMAIL_REPLY": false,
+  "SELLER_SUPPORT_OPEN": false,
+  "SELLER_SUPPORT_UPDATE": false,
+  "ERP_SALES_RETURN_CREATE": false
+}

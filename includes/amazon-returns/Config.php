@@ -16,6 +16,14 @@ final class SvAmazonReturnsConfig
             'expires_at' => '2026-11-30T23:59:00Z',
             'case_ids' => [42471,51429,101669,101670,101671],
         ],
+        // Owner-approved #3846 renews #3556 without extending the original
+        // grant's expiry or changing its exact canary. The production adapter
+        // must still verify the owner review/merge, one-use and provider evidence.
+        'safet-d45-pr3846-renewal-of-3556-v1' => [
+            'expires_at' => null,
+            'renews_grant' => 3556,
+            'case_ids' => [1263,1314,8803,13210,51429,101669,101670,101671],
+        ],
     ];
     /** @var array<string,string>|null */
     private ?array $runtimeEnv = null;
@@ -113,7 +121,14 @@ final class SvAmazonReturnsConfig
 
     public static function scopedSafeTGrantActiveAt(string $version, \DateTimeImmutable $instant): bool
     {
-        $expires=self::SCOPED_SAFE_T_GRANTS[$version]['expires_at']??null;
+        $grant=self::SCOPED_SAFE_T_GRANTS[$version]??null;
+        if (!is_array($grant)) return false;
+        $expires=$grant['expires_at']??null;
+        // Renewal #3846 has its own, separately owner-approved one-use grant,
+        // with no expiry. It must not make #3556 valid after its deadline.
+        if ($version==='safet-d45-pr3846-renewal-of-3556-v1') {
+            return $expires===null && ($grant['renews_grant']??null)===3556;
+        }
         if (!is_string($expires)) return false;
         // Exclusive deadline: runtime cannot set or extend an expiry.
         return $instant->getTimestamp() < (new \DateTimeImmutable($expires))->getTimestamp();
