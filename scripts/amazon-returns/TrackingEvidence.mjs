@@ -2,8 +2,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
-const EVIDENCE_DIR = process.env.SELLER_CENTRAL_EVIDENCE_DIR
-  || 'C:\\ShopVivaliz\\amazon-returns-bridge\\evidence';
+function defaultEvidenceDir() {
+  if (process.env.SELLER_CENTRAL_PROFILE) {
+    return path.join(path.dirname(process.env.SELLER_CENTRAL_PROFILE), 'evidence');
+  }
+  return path.join(process.cwd(), 'evidence');
+}
+
+export function resolveEvidenceDir() {
+  return process.env.SELLER_CENTRAL_EVIDENCE_DIR || defaultEvidenceDir();
+}
+
+const EVIDENCE_DIR = resolveEvidenceDir();
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const text = value => String(value ?? '').replace(/\s+/g, ' ').trim();
 const sha256 = value => createHash('sha256').update(value).digest('hex');
