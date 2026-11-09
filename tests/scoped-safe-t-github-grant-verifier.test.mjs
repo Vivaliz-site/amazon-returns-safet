@@ -6,6 +6,7 @@ const NOW=Date.parse('2026-11-07T12:00:00Z');
 const TOKEN='synthetic-readonly-token';
 const SHA='c'.repeat(40),MERGE='e'.repeat(40);
 const scopes={
+  3846:{blob:'cb5a40fcca09143f4b34b1503f32c0c57291afbc',ids:[1263,1314,8803,13210,51429,101669,101670,101671],expiry:null,renews:3556},
   3556:{blob:'f340e8ce4be185bc1b8dd21b4e61269bc11afbd3',ids:[1263,1314,8803,13210,51429,101669,101670,101671],expiry:'2026-11-09T23:59:00Z'},
   3673:{blob:'dfaee8e4a6dcb98a41e9087025835de36a07d5e1',ids:[42471,51429,101669,101670,101671],expiry:'2026-11-30T23:59:00Z'},
 };
@@ -13,13 +14,18 @@ const guards=['owner_approved_head_and_merged_pr','exact_host_tenant_connection_
   'warehouse_physical_receipt_absent','refunded_by_amazon_confirmed','seller_financial_credit_unrecovered',
   'official_seller_central_eligibility_confirmed','no_existing_safe_t_or_duplicate_support',
   'external_claim_readback_and_idempotency','lease_fencing_and_rollback'];
-const grant=n=>({schema:'SHOPVIVALIZ_OWNER_PR_GRANT_V1',repository:'Vivaliz-site/site-shopvivaliz',
-  pr_number:n,resource:'amazon-returns:safet:marina',principal:'amazon-returns-safet-service',
-  host:'marina-a1-4c24g',target_repository:'Vivaliz-site/amazon-returns-safet',
-  capabilities:['safe_t_submit'],operation:'activate_scoped_safe_t_opening',
-  tenant_id:1,amazon_connection_id:1,allowed_case_ids:[...scopes[n].ids],
-  allowed_write_actions:['SAFE_T_SUBMIT'],one_use:true,
-  expires_at_utc:scopes[n].expiry,mandatory_guards:[...guards]});
+const grant=n=>{
+  const g={schema:'SHOPVIVALIZ_OWNER_PR_GRANT_V1',repository:'Vivaliz-site/site-shopvivaliz',
+    pr_number:n,resource:'amazon-returns:safet:marina',principal:'amazon-returns-safet-service',
+    host:'marina-a1-4c24g',target_repository:'Vivaliz-site/amazon-returns-safet',
+    capabilities:['safe_t_submit'],operation:'activate_scoped_safe_t_opening',
+    tenant_id:1,amazon_connection_id:1,allowed_case_ids:[...scopes[n].ids],
+    allowed_write_actions:['SAFE_T_SUBMIT'],one_use:true,
+    mandatory_guards:[...guards]};
+  if(scopes[n].expiry) g.expires_at_utc=scopes[n].expiry;
+  if(scopes[n].renews) g.renews_grant=scopes[n].renews;
+  return g;
+};
 const pr=n=>({number:n,base:{ref:'main',repo:{full_name:'Vivaliz-site/site-shopvivaliz'}},
   head:{repo:{full_name:'Vivaliz-site/site-shopvivaliz'},sha:SHA},
   state:'closed',merged:true,merge_commit_sha:MERGE,user:{login:'fredmourao-ai'},
@@ -45,7 +51,7 @@ function make(n,change=()=>{}){
 const run=(n,b,nowMs=NOW)=>verifyApprovedOwnerGrant(n,{fetchImpl:b.fetchImpl,token:TOKEN,nowMs});
 const fails=(fn,code)=>assert.rejects(fn,error=>error instanceof OwnerGrantVerificationError && (typeof code==='function' ? code(error) : error.code===code));
 
-for(const n of [3556,3673]){
+for(const n of [3846,3556,3673]){
   test('authenticated exact head approval, merged and pinned grant for #'+n,async()=>{
     const b=make(n);const actual=await run(n,b);
     assert.equal(actual.verifiedBy,'canonical-github-owner-approval-verifier');
@@ -126,4 +132,13 @@ test('no grant with changed scope or write actions or expiration',async()=>{
 test('expired owner PR with stale head approval cannot be accepted by later credentials',async()=>{
   const b=make(3556,x=>x.reviews.push({...review(),id:20,state:'DISMISSED',submitted_at:'2026-11-05T13:59:00Z'}));
   await fails(()=>run(3556,b),'OWNER_HEAD_NOT_APPROVED');
+});
+
+test('grant #3846 is non-expiring and valid beyond 2027 without expiry field',async()=>{
+  const b=make(3846);
+  const future=Date.parse('2028-01-01T00:00:00Z');
+  const actual=await run(3846,b,future);
+  assert.equal(actual.grantNumber,3846);
+  assert.equal('expires_at_utc' in actual.grant,false);
+  assert.equal(actual.grant.renews_grant,3556);
 });
