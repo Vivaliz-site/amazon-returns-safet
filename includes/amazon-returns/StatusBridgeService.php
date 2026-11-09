@@ -53,12 +53,13 @@ final class SvAmazonReturnsStatusBridgeService
     {
         $this->p->outbox->supersedeTerminalReadJobs('TERMINAL_CASE_NO_LONGER_REQUIRES_READ');
         $this->p->outbox->supersedeExpiredDiscoveryJobs('REFUND_D90_DISCOVERY_EXPIRED',$now);
+        $this->p->outbox->supersedeExpiredSafeTReadJobs('REFUND_D90_STATUS_READ_EXPIRED',$now);
         $this->p->outbox->supersedeDiscoveryJobsForKnownSafeT('SAFE_T_ID_ALREADY_KNOWN');
         $ensured=0;
         foreach($this->p->cases->casesWithSafeTId(250) as $case){
             $caseId=(int)($case['id'] ?? 0);
             $safeTId=trim((string)($case['safe_t_id'] ?? ''));
-            if($caseId<1 || $safeTId==='')continue;
+            if($caseId<1 || $safeTId==='' || SvAmazonSafeTExternalWindow::discoveryVerificationExpired($case,$now))continue;
             if($this->p->outbox->hasActive($caseId,'SAFE_T_READ'))continue;
             $key=SvAmazonSafeTStatusService::readKey($caseId,$safeTId,$now);
             $this->p->outbox->enqueue('SAFE_T_READ',$caseId,[
