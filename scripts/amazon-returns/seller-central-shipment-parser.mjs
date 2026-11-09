@@ -27,14 +27,14 @@ export function parseSellerCentralShipmentObservation(input) {
     const source = sources[sourceIndex];
     for (const match of source.matchAll(TRACK_PATTERN)) {
       const id = clean(match[1] || match[2]).toUpperCase();
-      if (id && id !== orderId && /\\d/.test(id) && /^[A-Z0-9._-]{8,40}$/.test(id)) {
+      if (id && id !== orderId && /\d/.test(id) && /^[A-Z0-9._-]{8,40}$/.test(id)) {
         ids.add(id);
         if (sourceIndex < 2) scopedIds.add(id);
       }
       if (ids.size >= 12) break;
     }
   }
-  if (/^[A-Z0-9._-]{8,40}$/.test(trackingButtonText) && /\\d/.test(trackingButtonText) && trackingButtonText !== orderId) {
+  if (/^[A-Z0-9._-]{8,40}$/.test(trackingButtonText) && /\d/.test(trackingButtonText) && trackingButtonText !== orderId) {
     ids.add(trackingButtonText.toUpperCase());
     scopedIds.add(trackingButtonText.toUpperCase());
   }
