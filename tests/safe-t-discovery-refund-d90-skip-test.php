@@ -31,8 +31,8 @@ foreach([[],['refund_at'=>null],['refund_at'=>'invalid'],['refund_at'=>'2026-02-
     d90DiscoveryAssert(!SvAmazonSafeTExternalWindow::discoveryVerificationExpired($case,$now),
         'unknown/invalid refund cannot be assumed older than 90 days');
 }
-// A linked SAFE-T can still be monitored after 90 days; discovery skips do
-// not cancel active appeals, existing claims or financial reconciliation.
+// A linked SAFE-T is not cancelled after 90 days: only new status reads are
+// skipped; existing appeals, support claims and financial reconciliation remain.
 $service=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/StatusBridgeService.php');
 $repo=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/TenantOutbox.php');
 d90DiscoveryAssert(
@@ -40,13 +40,17 @@ d90DiscoveryAssert(
     'old queued discovery must be retired in ensureJobs'
 );
 d90DiscoveryAssert(
-    substr_count($service,'SvAmazonSafeTExternalWindow::discoveryVerificationExpired($case,$now)')===2,
-    'both daily discovery and refund-reconciliation enqueue must enforce D+90'
+    substr_count($service,'SvAmazonSafeTExternalWindow::discoveryVerificationExpired($case,$now)')===3,
+    'both discovery paths and linked SAFE-T status enqueue must enforce D+90'
 );
 d90DiscoveryAssert(str_contains($service, "'expired_over90'=>0"),
     'refund-reconciliation skip must be visible in result stats');
 d90DiscoveryAssert(str_contains($repo, "AND o.kind='SAFE_T_DISCOVERY' AND c.refund_at IS NOT NULL"),
     'bulk supersede must target discovery only, with confirmed refund');
+d90DiscoveryAssert(str_contains($service, "supersedeExpiredSafeTReadJobs('REFUND_D90_STATUS_READ_EXPIRED',\$now)"),
+    'expired known-claim status reads must be retired without canceling external claims');
+d90DiscoveryAssert(str_contains($repo,"AND o.kind='SAFE_T_READ' AND c.refund_at IS NOT NULL"),
+    'expiry cleanup must target SAFE_T_READ only with confirmed refund');
 d90DiscoveryAssert(str_contains($repo,'AND c.refund_at<=:refund_cutoff'),
     'terminal query must use confirmed UTC D+90');
 d90DiscoveryAssert(str_contains($repo,'o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL '),
