@@ -18,6 +18,9 @@ final class SvAmazonReviewContext
             'program'=>self::program($case['program']??null),
             'lifecycle'=>self::lifecycle($case),
             'physical'=>self::physical($case['physical_status']??null),
+            'customer_delivery_status'=>self::buyerDeliveryStatus($case),
+            'outbound_tracking'=>self::trackingIds($case['customer_tracking_ids']??null)!==[]?'PRESENT':'NOT_OBSERVED',
+            'return_tracking'=>self::trackingIds($case['return_tracking_ids']??null)!==[]?'PRESENT':'NOT_OBSERVED',
             'refund_initiator'=>self::refundInitiator($case['refund_initiator']??null),
             'financial'=>$financial,
             'evidence_pattern'=>self::evidencePattern($timeline,$baseDecision),
@@ -36,6 +39,13 @@ final class SvAmazonReviewContext
             'marketplace_id'=>self::nullableScalar($case['marketplace_id']??null),
             'program'=>self::nullableScalar($case['program']??null),
             'physical_status'=>self::nullableScalar($case['physical_status']??null),
+            'customer_delivery_confirmed'=>($case['customer_delivery_confirmed']??false)===true,
+            'customer_delivery_status'=>self::buyerDeliveryStatus($case),
+            'customer_tracking_ids'=>self::trackingIds($case['customer_tracking_ids']??null),
+            'customer_delivery_carriers'=>self::trackingIds($case['customer_delivery_carriers']??null),
+            'return_tracking_ids'=>self::trackingIds($case['return_tracking_ids']??null),
+            'quantity_refunded'=>max(0,(int)($case['quantity_refunded']??0)),
+            'quantity_received_by_seller'=>max(0,(int)($case['quantity_received']??0)),
             'refund_initiator'=>self::nullableScalar($case['refund_initiator']??null),
             'refund_at'=>self::dateValue($case['refund_at']??null),
             'eligibility_at'=>self::dateValue($case['eligibility_at']??($policy['eligibility_at']??null)),
@@ -63,6 +73,31 @@ final class SvAmazonReviewContext
             'evidence_refs'=>self::evidenceRefs($timeline),
             'review_reason'=>$signature['review_reason'],
         ];
+    }
+
+    /** Only source-backed, bounded tracking identifiers may enter an AI context. */
+    private static function trackingIds(mixed $values): array
+    {
+        if(!is_array($values))return [];
+        $ids=[];
+        foreach($values as $value){
+            if(!is_scalar($value))continue;
+            $id=trim((string)$value);
+            if($id===''||strlen($id)>96||preg_match('/^[A-Za-z0-9._-]+$/D',$id)!==1)continue;
+            $ids[$id]=$id;
+            if(count($ids)>=12)break;
+        }
+        return array_values($ids);
+    }
+
+    private static function buyerDeliveryStatus(array $case): string
+    {
+        if(($case['customer_delivery_confirmed']??false)===true)return 'DELIVERED';
+        $status=strtoupper(trim((string)($case['customer_delivery_status']??'UNKNOWN')));
+        return in_array($status,[
+            'IN_TRANSIT','OUT_FOR_DELIVERY','DELIVERY_ATTEMPTED','UNDELIVERABLE',
+            'RETURNED_TO_SENDER','SHIPPED','PENDING','OTHER','UNKNOWN',
+        ],true)?$status:'UNKNOWN';
     }
 
     private static function lifecycle(array $case): string
@@ -262,7 +297,13 @@ final class SvAmazonReviewContext
     {
         $refs=[];
         foreach($timeline as $event){
-            if(!is_array($event) || self::classifyEvent($event)===null)continue;
+            if(!is_array($event))continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            $outboundObservation=strtoupper((string)($event['event_type']??''))==='ORDER_SYNCED'
+                && strtoupper((string)($event['source']??''))==='SP_API_ORDERS'
+                && (($payload['customer_delivery_confirmed']??false)===true
+                    || self::trackingIds($payload['customer_tracking_ids']??null)!==[]);
+            if(!$outboundObservation && self::classifyEvent($event)===null)continue;
             $id=(int)($event['id']??0);
             if($id<1)continue;
             $ref=['event_id'=>$id,'event_type'=>(string)($event['event_type']??'')];
