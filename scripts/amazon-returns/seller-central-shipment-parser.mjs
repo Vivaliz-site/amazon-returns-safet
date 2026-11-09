@@ -22,15 +22,21 @@ export function parseSellerCentralShipmentObservation(input) {
   const hasDialog = dialogText.length > 0 && /rastre|tracking|entrega|delivery/i.test(fold(dialogText));
   const sources = [dialogText, trackingButtonText, pageText.slice(0, 30000)];
   const ids = new Set();
-  for (const source of sources) {
+  const scopedIds = new Set();
+  for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
+    const source = sources[sourceIndex];
     for (const match of source.matchAll(TRACK_PATTERN)) {
       const id = clean(match[1] || match[2]).toUpperCase();
-      if (id && id !== orderId && /^[A-Z0-9._-]{8,40}$/.test(id)) ids.add(id);
+      if (id && id !== orderId && /\\d/.test(id) && /^[A-Z0-9._-]{8,40}$/.test(id)) {
+        ids.add(id);
+        if (sourceIndex < 2) scopedIds.add(id);
+      }
       if (ids.size >= 12) break;
     }
   }
-  if (/^[A-Z0-9._-]{8,40}$/.test(trackingButtonText) && trackingButtonText !== orderId) {
+  if (/^[A-Z0-9._-]{8,40}$/.test(trackingButtonText) && /\\d/.test(trackingButtonText) && trackingButtonText !== orderId) {
     ids.add(trackingButtonText.toUpperCase());
+    scopedIds.add(trackingButtonText.toUpperCase());
   }
   const carrierMatch = dialogText.match(/(?:transportadora|carrier|courier)\s*[:#-]\s*([^\n\r]{2,60})/i);
   const carriers = carrierMatch
@@ -53,8 +59,10 @@ export function parseSellerCentralShipmentObservation(input) {
   const uniqueControl = Number.isInteger(trackingButtonCount) && trackingButtonCount === 1;
   const itemLinked = itemId !== '' && dialogText.includes(itemId);
   const statusEvidence = Boolean(statusMatch) &&
-    (itemLinked || uniqueControl) && [...ids].length > 0;
-  if (status === 'DELIVERED' && !statusEvidence) status = 'UNKNOWN';
+    (itemLinked || uniqueControl) && scopedIds.size > 0;
+  // General order-page tracking labels may refer to a different item; only
+  // tracking from the scoped drawer/button may prove its shipment status.
+  if (!statusEvidence) status = 'UNKNOWN';
   return {
     status: 'ACCEPTED',
     reason: 'ORDER_SHIPMENT_READ_ONLY',
