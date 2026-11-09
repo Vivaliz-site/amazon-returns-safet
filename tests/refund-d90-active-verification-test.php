@@ -60,7 +60,7 @@ $scope=new SvAmazonTenantContext(1,1);
 $cases=new SvAmazonReturnCaseRepository($db,$scope);
 $cases->casesWithSafeTId(10);
 $knownClaimSql=(string)end($db->queries);
-d90Assert(str_contains($knownClaimSql,'refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY)'),
+d90Assert(str_contains($knownClaimSql,'refund_at>=:refund_cutoff'),
     'Existing SAFE-T claims older than 90 days must not be rescheduled.');
 d90Assert(str_contains($knownClaimSql,'refund_at IS NULL'),
     'Claims with unknown refund date must not be excluded.');
@@ -69,7 +69,7 @@ d90Assert(!str_contains($knownClaimSql,'closed_at IS NULL'),
 
 $cases->casesWithoutSafeTId(10);
 $discoverySql=(string)end($db->queries);
-d90Assert(str_contains($discoverySql,'refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY)'),
+d90Assert(str_contains($discoverySql,'refund_at>=:refund_cutoff'),
     'Discovery must not re-enqueue D+90 expired refund cases.');
 d90Assert(str_contains($discoverySql,'refund_at IS NULL'),
     'Unknown refund date must remain investigable.');
@@ -78,7 +78,7 @@ d90Assert(str_contains($discoverySql,'closed_at IS NULL'),
 
 $cases->countRefundQuantityUnconfirmed();
 $unknownQuantitySql=(string)end($db->queries);
-d90Assert(str_contains($unknownQuantitySql,'refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY)'),
+d90Assert(str_contains($unknownQuantitySql,'refund_at>=:refund_cutoff'),
     'Historical refunds must not be an active quantity blocker.');
 
 $erp=new SvAmazonErpSalesReturnRepository($db,$scope);
@@ -86,7 +86,7 @@ $erp->countIncomplete();$incompleteSql=(string)end($db->queries);
 $erp->incompleteAuditRows();$detailsSql=(string)end($db->queries);
 $erp->countStaleWaitingInvoices();$staleSql=(string)end($db->queries);
 foreach([$incompleteSql,$detailsSql,$staleSql] as $sql){
-    d90Assert(str_contains($sql,'c.refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY)'),
+    d90Assert(str_contains($sql,'c.refund_at>=:refund_cutoff'),
         'ERP health queries must apply the 90-day verification window.');
     d90Assert(str_contains($sql,'c.refund_at IS NULL'),
         'ERP health must not assume an unknown refund is old.');
