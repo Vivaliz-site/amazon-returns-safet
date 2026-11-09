@@ -1,0 +1,20 @@
+<?php
+declare(strict_types=1);
+$path=__DIR__.'/../scripts/amazon-returns/seller-central-safe-t-read-worker.mjs';
+$source=(string)file_get_contents($path);
+$start=strpos($source,'async function orderDeliveryRead(job)');
+$end=$start===false?false:strpos($source,'async function safeTDiscovery(job)',$start);
+if($start===false || $end===false || $end<=$start)throw new RuntimeException('ORDER_DELIVERY_READ worker not found');
+$fn=substr($source,$start,$end-$start);
+$auth=strpos($fn,"if (page.auth === 'HUMAN_CHALLENGE')");
+$wait=strpos($fn,'waitForSafeTClaimOrderIdentity(cdp, orderId, 10000)');
+$failure=strpos($fn,"reason:'SHIPMENT_ORDER_DETAILS_NOT_RENDERED'");
+$click=strpos($fn,"buttons[0].click()");
+$parse=strpos($fn,'parseSellerCentralShipmentObservation(');
+if($auth===false || $wait===false || $failure===false || $click===false || $parse===false)throw new RuntimeException('Readiness, auth, fail-closed, click, or parser contract missing');
+if(!($auth<$wait && $wait<$failure && $failure<$click && $click<$parse))throw new RuntimeException('Authenticated exact-order identity must precede any tracking click and interpretation');
+if(!str_contains($fn,"state = await waitForSafeTClaimOrderIdentity(cdp, orderId, 10000);"))throw new RuntimeException('Readiness observation must replace the initial shell state');
+if(!str_contains($fn,"if (!String(state.text || '').includes(orderId))"))throw new RuntimeException('Mismatched/unrendered order must fail closed');
+if(!str_contains($fn,"return result('UI_DRIFT', {"))throw new RuntimeException('UI drift must not accept unknown order identity');
+if(str_contains($fn,'SAFE_T_SUBMIT') || str_contains($fn,'clickSubmit'))throw new RuntimeException('Shipment read must never submit a SAFE-T');
+echo "seller-order-readiness-contract-test: OK\n";
