@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/TenantContext.php';
+require_once __DIR__.'/CaseRepository.php';
 
 interface SvAmazonErpSalesReturnStore
 {
@@ -79,18 +80,12 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
     }
 
     /**
-     * Refunds older than D+90 are historical, not active recovery tasks.
-     * A missing refund date or an orphaned ERP row is never treated as
-     * proof of expiry. Historical accounting rows remain untouched.
+     * Reuse the canonical, tenant-isolated case SQL to classify ERP refunds.
+     * Financial history is never deleted by active verification filtering.
      */
     private static function activeRefundVerificationSql(): string
     {
-        $scope='c.tenant_id='.self::TABLE.'.tenant_id '
-            .'AND c.amazon_connection_id='.self::TABLE.'.amazon_connection_id '
-            .'AND c.amazon_order_id='.self::TABLE.'.amazon_order_id';
-        return ' AND (NOT EXISTS (SELECT 1 FROM amazon_return_cases c WHERE '.$scope.')'
-            .' OR EXISTS (SELECT 1 FROM amazon_return_cases c WHERE '.$scope
-            .' AND (c.refund_at IS NULL OR c.refund_at>=:refund_cutoff)))';
+        return SvAmazonReturnCaseRepository::activeErpRefundVerificationSql();
     }
 
     private static function refundCutoffUtc(): string
