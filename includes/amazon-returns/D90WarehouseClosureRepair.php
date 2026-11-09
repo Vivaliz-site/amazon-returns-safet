@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/TenantPersistence.php';
+require_once __DIR__ . '/RecoveryWindow.php';
 
 /**
  * Reparacao EXPLICITA, unitária e transacional de encerramento administrativo
@@ -51,6 +52,7 @@ final class SvAmazonD90WarehouseClosureRepair
             if ($case['state'] !== 'CLOSED_LOSS'
                 || $case['terminal_reason'] !== self::ORIGINAL_REASON
                 || $case['physical_status'] !== 'RECEIVED_OK'
+                || !SvAmazonRecoveryWindow::expired($case, $now)
                 || !is_string($case['closed_at'])
                 || $case['closed_at'] === ''
             ) {
@@ -67,7 +69,8 @@ final class SvAmazonD90WarehouseClosureRepair
                 . "AND source='WAREHOUSE' LIMIT 1"
             );
             $receipt->execute($params);
-            if ($receipt->fetchColumn() === false) {
+            $receiptEventId = $receipt->fetchColumn();
+            if ($receiptEventId === false) {
                 $db->commit();
                 return ['status'=>'SKIPPED', 'case_id'=>$caseId, 'reason'=>'warehouse_proof_absent'];
             }
@@ -128,6 +131,7 @@ final class SvAmazonD90WarehouseClosureRepair
                     'previous_closed_at'=>(string)$case['closed_at'],
                     'new_state'=>'RECEIVED_OK',
                     'warehouse_physical_receipt_confirmed'=>true,
+                    'warehouse_receipt_event_id'=>(int)$receiptEventId,
                     'financial_amounts_unchanged'=>true,
                     'external_claims_unchanged'=>true,
                     'no_new_recovery_attempt'=>true,
