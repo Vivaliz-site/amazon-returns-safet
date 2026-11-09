@@ -1156,7 +1156,7 @@ function sv_amazon_returns_daemon_main(array $argv): int
     // Read-only discovery must never bootstrap an untracked second daemon.
     // Historically `php daemon.php --help` silently entered the infinite loop.
     if(in_array('--help',$argv,true) || in_array('-h',$argv,true)){
-        fwrite(STDOUT,"Amazon Returns SAFE-T daemon\nUsage: php workers/amazon-returns/daemon.php [--once] [--sleep=SECONDS] [--help]\n--once runs exactly one normal cycle; --help prints this text without starting a worker.\n");
+        echo "Amazon Returns SAFE-T daemon\nUsage: php workers/amazon-returns/daemon.php [--once] [--sleep=SECONDS] [--help]\n--once runs exactly one normal cycle; --help prints this text without starting a worker.\n";
         return 0;
     }
     $once=in_array('--once',$argv,true);
