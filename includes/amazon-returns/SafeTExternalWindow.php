@@ -90,6 +90,20 @@ final class SvAmazonSafeTExternalWindow
         ];
     }
 
+    /**
+     * Do not start a new claim-discovery verification after D+90 from the
+     * confirmed customer refund. An unknown/invalid refund date is NOT proof
+     * that this window has expired. Existing linked SAFE-T status monitoring
+     * is independent of this first-claim discovery filter.
+     */
+    public static function discoveryVerificationExpired(array $case,DateTimeImmutable $now): bool
+    {
+        $refundAt=self::utcDate($case['refund_at']??null);
+        if($refundAt===null)return false;
+        return $now->setTimezone(new DateTimeZone('UTC'))->getTimestamp()
+            >=$refundAt->add(new DateInterval('P90D'))->getTimestamp();
+    }
+
     /** A D+90+ first-opening job must not be re-queued indefinitely. */
     public static function openingPermanentlyExpired(array $gate): bool
     {
