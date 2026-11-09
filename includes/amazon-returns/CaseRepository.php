@@ -645,7 +645,8 @@ final class SvAmazonReturnCaseRepository
         $caseId = $this->positiveId($caseId, 'Case ID');
         $stmt = $this->prepare(
             "UPDATE amazon_return_cases SET state='RECEIVED_OK',"
-            . "terminal_reason=NULL,closed_at=NULL,next_action_at=NULL,updated_at=:updated_at "
+            . "terminal_reason='WAREHOUSE_RECEIVED_ADMIN_FINAL_D90',"
+            . "next_action_at=NULL,updated_at=:updated_at "
             . "WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
             . "AND state='CLOSED_LOSS' AND terminal_reason='RECOVERY_WINDOW_EXPIRED_D90' "
             . "AND physical_status='RECEIVED_OK' AND closed_at=:prior_closed_at "
