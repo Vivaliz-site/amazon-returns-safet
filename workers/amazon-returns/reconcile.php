@@ -47,6 +47,15 @@ final class SvAmazonReturnsReconcileWorker
         $existingClosedAt = self::nonEmptyText($case['closed_at'] ?? null);
         $existingReason = self::nonEmptyText($case['terminal_reason'] ?? null);
 
+        // A reparacao administrativa D+90 nao deve ser revertida por um
+        // reconciliador tardio. Valores financeiros novos seguem atualizaveis.
+        if (($case['state'] ?? null) === SvAmazonReturnStates::RECEIVED_OK
+            && $existingClosedAt !== null
+            && $existingReason === 'WAREHOUSE_RECEIVED_ADMIN_FINAL_D90'
+        ) {
+            return ['reconciled_credit_amount'=>$credit];
+        }
+
         if ($state === SvAmazonReturnStates::RECOVERED) {
             return [
                 'reconciled_credit_amount'=>$credit,

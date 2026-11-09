@@ -531,7 +531,7 @@ final class SvAmazonReturnCaseRepository
         $stmt=$this->prepare(
             "SELECT COUNT(*) FROM amazon_return_cases WHERE tenant_id=:tenant_id "
             . "AND amazon_connection_id=:amazon_connection_id AND state='RECEIVED_OK' "
-            . "AND closed_at IS NOT NULL AND $outstanding>0.005"
+            . "AND closed_at IS NOT NULL AND (terminal_reason IS NULL OR terminal_reason<>'WAREHOUSE_RECEIVED_ADMIN_FINAL_D90') AND $outstanding>0.005"
         );
         $stmt->execute($this->scopeParams());
         return max(0,(int)$stmt->fetchColumn());
@@ -543,7 +543,7 @@ final class SvAmazonReturnCaseRepository
         $stmt=$this->prepare(
             "SELECT id,next_action_at FROM amazon_return_cases WHERE tenant_id=:tenant_id "
             . "AND amazon_connection_id=:amazon_connection_id AND state='RECEIVED_OK' "
-            . "AND closed_at IS NOT NULL AND $outstanding>0.005 ORDER BY id"
+            . "AND closed_at IS NOT NULL AND (terminal_reason IS NULL OR terminal_reason<>'WAREHOUSE_RECEIVED_ADMIN_FINAL_D90') AND $outstanding>0.005 ORDER BY id"
         );
         $stmt->execute($this->scopeParams());
         $reopened=0;
@@ -593,6 +593,75 @@ final class SvAmazonReturnCaseRepository
         $id = (int)($saved['id'] ?? 0);
         if ($id < 1) throw new RuntimeException('Scoped case upsert could not be resolved.');
         return $id;
+    }
+
+    /** @return array<string,mixed>|null */
+    public function lockD90WarehouseLossCandidate(int $caseId): ?array
+    {
+        $caseId = $this->positiveId($caseId, 'Case ID');
+        $driver = (string)$this->db->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $stmt = $this->prepare(
+            'SELECT c.* FROM amazon_return_cases c WHERE '
+            . 'c.id=:id AND c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id '
+            . 'LIMIT 1' . ($driver === 'mysql' ? ' FOR UPDATE' : '')
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId]));
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    }
+
+    public function warehousePhysicalReceiptEventId(int $caseId): ?int
+    {
+        $caseId = $this->positiveId($caseId, 'Case ID');
+        $stmt = $this->prepare(
+            "SELECT id FROM amazon_return_events "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND case_id=:id AND event_type='PHYSICAL_RECEIVED' "
+            . "AND source='WAREHOUSE' ORDER BY id LIMIT 1"
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId]));
+        $id = $stmt->fetchColumn();
+        return $id === false ? null : (int)$id;
+    }
+
+    public function hasAdministrativeD90ClosureEvent(int $caseId): bool
+    {
+        $caseId = $this->positiveId($caseId, 'Case ID');
+        $stmt = $this->prepare(
+            "SELECT id FROM amazon_return_events "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND case_id=:id AND event_type='CASE_CLOSED_ADMIN_90D' LIMIT 1"
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId]));
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * CAS unitario para reparo MANUAL, nunca chamado por scheduler.
+     * O prazo D+90 e a autorizacao de operador sao validados pelo chamador.
+     */
+    public function compensateD90WarehouseClosure(int $caseId, array $snapshot, string $updatedAt): bool
+    {
+        $caseId = $this->positiveId($caseId, 'Case ID');
+        $stmt = $this->prepare(
+            "UPDATE amazon_return_cases SET state='RECEIVED_OK',"
+            . "terminal_reason='WAREHOUSE_RECEIVED_ADMIN_FINAL_D90',"
+            . "next_action_at=NULL,updated_at=:updated_at "
+            . "WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND state='CLOSED_LOSS' AND terminal_reason='RECOVERY_WINDOW_EXPIRED_D90' "
+            . "AND physical_status='RECEIVED_OK' AND closed_at=:prior_closed_at "
+            . "AND EXISTS (SELECT 1 FROM amazon_return_events e "
+            . "WHERE e.tenant_id=amazon_return_cases.tenant_id "
+            . "AND e.amazon_connection_id=amazon_return_cases.amazon_connection_id "
+            . "AND e.case_id=amazon_return_cases.id "
+            . "AND e.event_type='PHYSICAL_RECEIVED' AND e.source='WAREHOUSE')"
+        );
+        $stmt->execute($this->scopeParams([
+            ':id'=>$caseId,
+            ':updated_at'=>$updatedAt,
+            ':prior_closed_at'=>(string)($snapshot['closed_at'] ?? ''),
+        ]));
+        return $stmt->rowCount() === 1;
     }
 
     /**
@@ -696,11 +765,14 @@ final class SvAmazonReturnCaseRepository
         // audited CLOSED_LOSS row. Non-terminal financial fields remain patchable.
         $terminalPatch = array_key_exists('state',$patch)
             || array_key_exists('closed_at',$patch)
-            || array_key_exists('terminal_reason',$patch);
+            || array_key_exists('terminal_reason',$patch)
+            || array_key_exists('next_action_at',$patch);
         $stmt = $this->prepare(
             'UPDATE amazon_return_cases SET ' . implode(',', $sets) . ',updated_at=UTC_TIMESTAMP() '
             . 'WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
-            . ($terminalPatch ? " AND NOT (state='CLOSED_LOSS' AND closed_at IS NOT NULL)" : '')
+            . ($terminalPatch ? " AND NOT ((state='CLOSED_LOSS' OR "
+                . "(state='RECEIVED_OK' AND terminal_reason='WAREHOUSE_RECEIVED_ADMIN_FINAL_D90')) "
+                . "AND closed_at IS NOT NULL)" : '')
         );
         $stmt->execute($params);
         if ($stmt->rowCount() === 0 && $this->find($caseId) === null) {
