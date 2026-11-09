@@ -42,7 +42,7 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
     public function countIncomplete(): int
     {
         $stmt=$this->sql(
-            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER')"
+            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER')" . self::activeRefundVerificationSql()
         );
         return max(0,(int)$stmt->fetchColumn());
     }
@@ -50,7 +50,7 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
     public function countStaleWaitingInvoices(): int
     {
         $stmt=$this->sql(
-            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status='RETURN_CREATED_WAITING_INVOICE' AND (last_checked_at IS NULL OR last_checked_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR))"
+            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status='RETURN_CREATED_WAITING_INVOICE' AND (last_checked_at IS NULL OR last_checked_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR))" . self::activeRefundVerificationSql()
         );
         return max(0,(int)$stmt->fetchColumn());
     }
@@ -59,7 +59,7 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
     public function incompleteAuditRows(): array
     {
         $stmt=$this->sql(
-            "SELECT amazon_order_id,status,last_error_code FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER') ORDER BY amazon_order_id"
+            "SELECT amazon_order_id,status,last_error_code FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER')" . self::activeRefundVerificationSql() . ' ORDER BY amazon_order_id'
         );
         $rows=[];
         while($row=$stmt->fetch(PDO::FETCH_ASSOC)){
@@ -73,6 +73,21 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
             ];
         }
         return $rows;
+    }
+
+    /**
+     * Refunds older than D+90 are historical, not active recovery tasks.
+     * A missing refund date or an orphaned ERP row is never treated as
+     * proof of expiry. Historical accounting rows remain untouched.
+     */
+    private static function activeRefundVerificationSql(): string
+    {
+        $scope='c.tenant_id='.self::TABLE.'.tenant_id '
+            .'AND c.amazon_connection_id='.self::TABLE.'.amazon_connection_id '
+            .'AND c.amazon_order_id='.self::TABLE.'.amazon_order_id';
+        return ' AND (NOT EXISTS (SELECT 1 FROM amazon_return_cases c WHERE '.$scope.')'
+            .' OR EXISTS (SELECT 1 FROM amazon_return_cases c WHERE '.$scope
+            .' AND (c.refund_at IS NULL OR c.refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY))))';
     }
 
     /** @return array{statuses:array<string,int>,errors:array<string,int>,duplicate_groups:array<string,int>} */
