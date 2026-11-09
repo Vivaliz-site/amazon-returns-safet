@@ -46,6 +46,8 @@ final class UiDriftReasonStatement extends PDOStatement
             'UI_DRIFT: SAFE_T_EXACT_SEARCH_ID_UNREADABLE',
             'UI_DRIFT: SAFE_T_EXACT_SEARCH_ABSENCE_UNVERIFIED',
             'UI_DRIFT: SAFE_T_EXACT_SEARCH_ABSENCE_UNVERIFIED',
+            'UI_DRIFT: SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED',
+            'UI_DRIFT: SAFE_T_DISCOVERY_PAGE_LIMIT_REACHED',
             'UI_DRIFT: UNEXPECTED_FUTURE_REASON',
         ];
     }
@@ -57,6 +59,8 @@ $expected = [
     'SAFE_T_EXACT_SEARCH_CONTROL_UNAVAILABLE',
     'SAFE_T_EXACT_SEARCH_ID_UNREADABLE',
     'SAFE_T_EXACT_SEARCH_ABSENCE_UNVERIFIED',
+    'SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED',
+    'SAFE_T_DISCOVERY_PAGE_LIMIT_REACHED',
     'OTHER',
 ];
 $actual = $outbox->pendingUiDriftReasonCodes();
@@ -68,5 +72,10 @@ $discovery = (string) file_get_contents(__DIR__.'/../scripts/amazon-returns/safe
 foreach (array_slice($expected, 1, 3) as $code) {
     assertDriftReasons(str_contains($discovery, "reason: '".$code."'"), 'Missing discovery reason contract: '.$code);
 }
+
+$discoveryPages = (string)file_get_contents(__DIR__.'/../scripts/amazon-returns/safe-t-discovery-pages.mjs');
+assertDriftReasons(str_contains($discoveryPages,'SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED'), 'Missing coverage diagnostic in official SAFE-T scanner.');
+assertDriftReasons(str_contains($discoveryPages,'SAFE_T_DISCOVERY_PAGE_LIMIT_REACHED'), 'Missing page-limit diagnostic in official SAFE-T scanner.');
+assertDriftReasons(str_contains($actual[0] ?? '','SAFE_T_'), 'Unrecognized errors must remain a distinct OTHER fallback.');
 
 echo "safe-t-ui-drift-reason-codes-test: OK\n";
