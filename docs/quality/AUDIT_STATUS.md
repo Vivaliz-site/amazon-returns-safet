@@ -294,3 +294,13 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Evidencias: `includes/amazon-returns/Config.php`, `deploy/write-profile-safe-t-pr3846.json`, `tests/scoped-safe-t-pr3846-profile-test.php` e issue #532.
 - Pendencias: CI GitHub oficial, merge protegido, deploy canonico e readback da release; falta adaptador produtivo com principal/lease/fencing/watchdog, prova oficial Amazon e comprovacao financeira. Nenhum SAFE-T ou suporte deve ser enviado apenas por esta correcao.
 - Estado: NAO_APTO.
+
+
+## 2026-11-09 — #532 P0: ledger do grant SAFE-T renovado #3846 (preparacao, nao ativacao)
+
+- Base SHA: `1460f902c675b0448109e4c90f255d5b0a4e24d4` no main e release de producao Marina no inicio da correcao.
+- RED: o grant oficial #3846 estava reconhecido pelo verificador Node e pelo Config.php (PRs #633 e #635), mas a classe persistente `SvAmazonScopedSafeTGrantConsumption` e o CHECK MySQL permitiam apenas #3556/#3673. Teste sintetico SQLite expandido para #3846 falhou inicialmente em `wrong grants in DDL` (MCP task df521a09-16b6-4db3-a578-ba0d049a5e36).
+- Correcao: permitir explicitamente o grant renovado #3846 no allowlist PHP, DDL staged de novas instalacoes e migracao SQL staged da constraint para tabelas ja existentes; nenhuma reserva, consumo, exclusao ou mutacao de banco de producao. #3556 e #3673 permanecem identicos, #3846 tem consumo one-use proprio e nao reaproveita o registro original.
+- GREEN: teste SQLite one-use/fencing/CAS e regressao do perfil PHP #3846 PASS; php -l e git diff --check PASS em branch isolada (MCP task 48929e0e-40ca-4250-89c3-f245e09b8fcb). Migracao DDL exige backup, restore isolado, exclusive lease e aprovacao P2 antes de execucao. CI oficial e gate aguardam PR.
+- Escopo: apenas preparacao de compatibilidade para operador; nenhum adaptador de producao instalado, nenhuma verificacao Seller Central completa, nenhuma SAFE-T submetida, nenhum credito financeiro recebido, kill switch ON.
+- Estado: NAO_APTO #532, ate operador efetivo certificado e provas independentes por caso (D+45..89, Amazon-initiated, WAREHOUSE, Finances, duplicidade, readback).
