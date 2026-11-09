@@ -53,6 +53,24 @@ reconciliação financeira e conferência fiscal no ERP continuam independentes,
 inclusive quando ultrapassarem D+90. Não dar baixa contábil fictícia nem
 executar movimento externo por causa deste filtro.
 
+## Excluir novas verificacoes SAFE-T apos D+90 (proprietario, 09/11/2026)
+
+Na verificacao automatica de SAFE-T, usar apenas o instante comprovado do
+reembolso ao comprador (`refund_at`) como referencia. A partir de 90 dias
+UTC completos, **nao enfileirar ou continuar as leituras de descoberta
+(`SAFE_T_DISCOVERY`) e de status (`SAFE_T_READ`)** daquele reembolso.
+Tarefas `PENDING` e `PROCESSING` com lease realmente expirado passam a
+`SUPERSEDED`, com causa e diagnostico anterior preservados. Nao cancelar
+a execucao com lease ativo nem supor expiracao sem `refund_at` valido.
+
+Esta exclusao e **da rotina de verificacao**, nao uma regra externa da
+Amazon, nao cancela a reivindicacao existente nem recurso, atendimento,
+conciliacao financeira ou devolucao contabil. Nao apagar eventos e nao
+registrar credito ficticio. Ao encerrar casos administrativamente por D+90,
+**preservar a exclusao obrigatoria de recebimento fisico confirmado**:
+`RECEIVED_OK` ou evento `PHYSICAL_RECEIVED` da origem `WAREHOUSE`
+nao podem ser fechados automaticamente como perda.
+
 ## Channel and evidence safeguards
 Use SAFE-T only for applicable seller-fulfilled claims. Lost/damaged shipment, standard FBA, physical damage, existing appeal, active support and email reply each require their appropriate channel and evidence; D+45 alone is not authorization to use the wrong channel.
 An existing claim is resumed, not submitted as a new duplicate. A valid appeal window is required. If Amazon asks the seller to wait beyond the official internal SAFE-T appeal deadline, the internal appeal deadline preempts that wait and the existing SAFE-T is appealed while the window is still open. If that deadline is missing, fail closed to human review; if it already expired during the conflicting wait, record the missed-window conflict instead of pretending an internal appeal is still available.
