@@ -13,6 +13,12 @@ const SCOPES = Object.freeze({
     caseIds: Object.freeze([42471, 51429, 101669, 101670, 101671]),
     expiresAt: '2026-11-30T23:59:00Z',
   }),
+  3846: Object.freeze({
+    version: 'safet-d45-pr3846-renewal-of-3556-v1',
+    caseIds: Object.freeze([1263, 1314, 8803, 13210, 51429, 101669, 101670, 101671]),
+    expiresAt: null,
+    renewsGrant: 3556,
+  }),
 });
 const EXPECTED_ACTIONS = Object.freeze({
   SAFE_T_SUBMIT: true,
@@ -45,6 +51,14 @@ function utcTime(value) {
   return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 19) === normalized.slice(0, 19) ? ms : NaN;
 }
 function validateGrant(snapshot, scope, grantNumber, nowMs) {
+  // Renewal #3846 is independently owner-approved; never silently extend #3556.
+  // The renewed grant has no expiry field, while the original grants remain TTL-bound.
+  const renewalMatched = scope.renewsGrant === 3556 && scope.expiresAt === null &&
+    snapshot?.grant?.renews_grant === 3556 &&
+    !Object.hasOwn(snapshot?.grant ?? {}, 'expires_at_utc');
+  const originalMatched = typeof scope.expiresAt === 'string' &&
+    snapshot?.grant?.expires_at_utc === scope.expiresAt &&
+    !Object.hasOwn(snapshot?.grant ?? {}, 'renews_grant');
   requireGate(snapshot?.verifiedBy === 'canonical-github-owner-approval-verifier' &&
     snapshot?.owner === 'shopvivaliz-human' && snapshot?.approvedOnHead === true &&
     snapshot?.merged === true && snapshot?.grantNumber === grantNumber &&
@@ -54,13 +68,13 @@ function validateGrant(snapshot, scope, grantNumber, nowMs) {
     snapshot?.grant?.host === 'marina-a1-4c24g' &&
     snapshot?.grant?.tenant_id === 1 && snapshot?.grant?.amazon_connection_id === 1 &&
     snapshot?.grant?.one_use === true &&
-    snapshot?.grant?.expires_at_utc === scope.expiresAt &&
+    (renewalMatched || originalMatched) &&
     identicalSet(snapshot?.grant?.allowed_case_ids, scope.caseIds) &&
     Array.isArray(snapshot?.grant?.allowed_write_actions) &&
     snapshot.grant.allowed_write_actions.length === 1 &&
     snapshot.grant.allowed_write_actions[0] === 'SAFE_T_SUBMIT',
     'OWNER_GRANT_NOT_VERIFIED');
-  requireGate(nowMs < Date.parse(scope.expiresAt), 'OWNER_GRANT_EXPIRED');
+  if (scope.expiresAt !== null) requireGate(nowMs < Date.parse(scope.expiresAt), 'OWNER_GRANT_EXPIRED');
 }
 function assessLocalCase(item, nowMs) {
   if (!item || !Number.isSafeInteger(item.id)) return 'CASE_MISSING';
@@ -144,7 +158,7 @@ export async function activateScopedSafeTOpening({ grantNumber, adapter, now = (
     requireGate(await adapter.consumeOneUseGrant({ grantNumber, fencing: lock.fencing }) === true, 'GRANT_ALREADY_CONSUMED');
     const results = [];
     for (const row of ready) {
-      requireGate(now() < Date.parse(scope.expiresAt), 'OWNER_GRANT_EXPIRED');
+      if (scope.expiresAt !== null) requireGate(now() < Date.parse(scope.expiresAt), 'OWNER_GRANT_EXPIRED');
       const input = { grantNumber, profile: scope.version, caseId: row.caseId,
         caseIds: [...scope.caseIds], action: 'SAFE_T_SUBMIT', fencing: lock.fencing };
       // Re-read and revalidate just before the irreversible provider click.

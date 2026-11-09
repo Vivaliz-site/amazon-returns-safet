@@ -246,3 +246,34 @@ test('financial proof is fail-closed when refunded or credited amount is absent,
   assert.equal(b.state.restored, 1);
   assert.equal(b.state.released, 1);
 });
+
+test('grant #3846 renewal uses exact prior canary after original expiry, never an unconditional override', async () => {
+  const afterOriginalExpiry = Date.parse('2026-11-10T00:00:00Z');
+  function renewal() {
+    const proof=grant(3556);
+    proof.grantNumber=3846;
+    delete proof.grant.expires_at_utc;
+    proof.grant.renews_grant=3556;
+    return proof;
+  }
+  const b=build({verifyCanonicalOwnerGrant: async () => renewal()});
+  const result=await run(b.adapter,3846,afterOriginalExpiry);
+  assert.equal(result.status,'ACCEPTED_WITH_READBACK');
+  assert.equal(result.results.length,8);
+  assert.equal(b.state.restored,1);
+  assert.equal(b.state.released,1);
+  for (const alter of [
+    proof=>{delete proof.grant.renews_grant;},
+    proof=>{proof.grant.renews_grant=3673;},
+    proof=>{proof.grant.expires_at_utc=null;},
+    proof=>{proof.grant.allowed_case_ids.push(42471);},
+  ]) {
+    const denied=build({verifyCanonicalOwnerGrant:async()=>{const proof=renewal();alter(proof);return proof;}});
+    await denies(()=>run(denied.adapter,3846,afterOriginalExpiry),'OWNER_GRANT_NOT_VERIFIED');
+    assert.equal(denied.state.attempted,0);
+    assert.equal(denied.state.consumed,0);
+  }
+  const noAdapter=build().adapter;
+  await denies(()=>run({},3846,afterOriginalExpiry),'CERTIFIED_ADAPTER_REQUIRED');
+  assert.equal(typeof noAdapter.verifyOfficialEligibility,'function');
+});
