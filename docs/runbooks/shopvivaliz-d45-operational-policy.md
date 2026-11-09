@@ -33,6 +33,26 @@ This is an *administrative loss closure*, not an Amazon eligibility rule and not
 an authorization to submit or retry claims after their official deadlines.
 Existing D+45 opening, external eligibility and writing controls remain unchanged.
 
+## Verificação de novos SAFE-T: descartar reembolsos a partir de D+90 (09/11/2026)
+
+Por instrução expressa do proprietário, **não colocar em novas buscas
+`SAFE_T_DISCOVERY` reembolsos cujo `refund_at` confirmado complete
+90 dias UTC ou mais**. O mesmo corte vale para a reconciliação diária de
+reembolsos posterior ao último SAFE-T. Tarefas `SAFE_T_DISCOVERY` antigas
+ainda `PENDING`, ou `PROCESSING` somente após o lease vencer, devem ser
+marcadas `SUPERSEDED` com motivo `REFUND_D90_DISCOVERY_EXPIRED`,
+preservando a causa de `UI_DRIFT` anterior na outbox e todas as evidências
+históricas. Nunca presumir idade quando `refund_at` for desconhecido,
+inválido ou ausente: continuar com classificação apropriada, sem
+reivindicação externa baseada em suposição.
+
+**Importante:** a exclusão afeta a busca de **novas reivindicações**;
+não equivale a cancelar um SAFE-T já aberto. `SAFE_T_READ` de um
+`safe_t_id` conhecido, acompanhamento de recurso ou chamado existente,
+reconciliação financeira e conferência fiscal no ERP continuam independentes,
+inclusive quando ultrapassarem D+90. Não dar baixa contábil fictícia nem
+executar movimento externo por causa deste filtro.
+
 ## Channel and evidence safeguards
 Use SAFE-T only for applicable seller-fulfilled claims. Lost/damaged shipment, standard FBA, physical damage, existing appeal, active support and email reply each require their appropriate channel and evidence; D+45 alone is not authorization to use the wrong channel.
 An existing claim is resumed, not submitted as a new duplicate. A valid appeal window is required. If Amazon asks the seller to wait beyond the official internal SAFE-T appeal deadline, the internal appeal deadline preempts that wait and the existing SAFE-T is appealed while the window is still open. If that deadline is missing, fail closed to human review; if it already expired during the conflicting wait, record the missed-window conflict instead of pretending an internal appeal is still available.
