@@ -30,6 +30,11 @@ assert.equal(r.shipment.customer_delivery_confirmed,true,'Exact item identity pr
 r=parse({...base,tracking_dialog_text:'Código de rastreio: BR123456789XY\nStatus atual: Em trânsito'});
 assert.equal(r.shipment.customer_delivery_status,'IN_TRANSIT');
 assert.equal(r.shipment.customer_delivery_confirmed,false);
+r=parse({...base,tracking_dialog_text:'Rastreio\nStatus da entrega: Entregue',tracking_button_text:'TRACKING',page_text:base.page_text+'\nCódigo de rastreio: BR123456789XY'});
+assert.equal(r.shipment.customer_delivery_confirmed,false,'Generic tracking button or other item code must not prove delivery');
+assert.equal(r.shipment.customer_delivery_status,'UNKNOWN');
+r=parse({...base,tracking_dialog_text:'Rastreio\nStatus da entrega: Entregue',tracking_button_count:2,page_text:base.page_text+'\nCódigo de rastreio: BR123456789XY'});
+assert.equal(r.shipment.customer_delivery_confirmed,false,'Order-body code may belong to another package');
 r=parse({...base,tracking_dialog_text:'Rastreio\nStatus: Entregue',tracking_button_count:1});
 assert.equal(r.shipment.customer_delivery_confirmed,false,'Delivery without a tracking ID is not independently correlated');
 r=parse({...base,tracking_dialog_text:'Rastreio\nCódigo de rastreio: BR123456789XY\nStatus da entrega: devolvido ao remetente'});
