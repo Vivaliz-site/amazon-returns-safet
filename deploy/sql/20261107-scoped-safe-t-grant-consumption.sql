@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS `amazon_return_scoped_grant_consumptions` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_scoped_grant_once` (`tenant_id`, `amazon_connection_id`, `grant_number`),
     KEY `idx_scoped_grant_status` (`status`, `created_at`),
-    CONSTRAINT `chk_scoped_grant_known` CHECK (`grant_number` IN (3556,3673)),
+    CONSTRAINT `chk_scoped_grant_known` CHECK (`grant_number` IN (3556,3673,3846)),
     CONSTRAINT `chk_scoped_grant_state` CHECK (`status` IN ('RESERVED','CONSUMED','QUARANTINED')),
     CONSTRAINT `chk_scoped_grant_scope` CHECK (`tenant_id`=1 AND `amazon_connection_id`=1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

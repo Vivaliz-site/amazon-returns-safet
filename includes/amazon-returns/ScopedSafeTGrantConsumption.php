@@ -11,7 +11,7 @@ declare(strict_types=1);
  */
 final class SvAmazonScopedSafeTGrantConsumption
 {
-    private const ALLOWED_GRANTS = [3556, 3673];
+    private const ALLOWED_GRANTS = [3556, 3673, 3846];
 
     public function __construct(private PDO $db) {}
 

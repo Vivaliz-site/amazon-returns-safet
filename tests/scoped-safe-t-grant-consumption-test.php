@@ -10,7 +10,12 @@ $ddl=(string)file_get_contents(__DIR__.'/../deploy/sql/20261107-scoped-safe-t-gr
 checkOneUse(str_contains($ddl, 'UNIQUE KEY `uq_scoped_grant_once`'), 'missing atomic UNIQUE index');
 checkOneUse(str_contains($ddl, 'AUTO_INCREMENT'), 'no monotonic fencing candidate');
 checkOneUse(str_contains($ddl, 'ENGINE=InnoDB'), 'transactional storage required');
-checkOneUse(str_contains($ddl, "CHECK (`grant_number` IN (3556,3673))"), 'wrong grants in DDL');
+$migration=(string)file_get_contents(__DIR__.'/../deploy/sql/20261109-scoped-safe-t-grant-3846-migration.sql');
+checkOneUse(str_contains($migration, 'DROP CHECK `chk_scoped_grant_known`'), 'existing table migration missing');
+checkOneUse(str_contains($migration, 'CHECK (`grant_number` IN (3556,3673,3846))'), 'migration must preserve both prior grants');
+checkOneUse(!str_contains($migration, 'DELETE FROM') && !str_contains($migration, 'TRUNCATE'), 'ledger may not be erased');
+
+checkOneUse(str_contains($ddl, "CHECK (`grant_number` IN (3556,3673,3846))"), 'wrong grants in DDL');
 checkOneUse(str_contains($ddl, "`amazon_connection_id`=1"), 'scope missing');
 
 checkOneUse(in_array('sqlite', PDO::getAvailableDrivers(), true),
@@ -29,7 +34,7 @@ CREATE TABLE amazon_return_scoped_grant_consumptions(
     consumed_at TEXT NULL,
     quarantined_at TEXT NULL,
     UNIQUE(tenant_id,amazon_connection_id,grant_number),
-    CHECK(grant_number IN (3556,3673)),
+    CHECK(grant_number IN (3556,3673,3846)),
     CHECK(tenant_id=1 AND amazon_connection_id=1)
 )
 SQL);
@@ -63,10 +68,20 @@ checkOneUse(!$ledger->quarantine(3673,1,1,$fence3673),'quarantine unexpectedly r
 checkOneUse(!$ledger->consume(3673,1,1,$fence3673),'quarantined grant became consumable');
 checkOneUse($ledger->reserve(3673,1,1)===null,'quarantined grant replay accepted');
 
+// Approved renewal #3846 has a new one-use grant identity, not a replay of #3556.
+$fence3846=$ledger->reserve(3846,1,1);
+checkOneUse(is_int($fence3846) && $fence3846>$fence3673,'renewal missing independent fencing');
+checkOneUse($ledger->reserve(3846,1,1)===null,'renewal reserved twice');
+checkOneUse(!$ledger->consume(3556,1,1,$fence3846),'renewal fence crossed grant boundary');
+checkOneUse($ledger->consume(3846,1,1,$fence3846),'renewal consume CAS failed');
+checkOneUse(!$ledger->consume(3846,1,1,$fence3846),'renewal consumed twice');
+checkOneUse($ledger->readStatus(3846,1,1)['consumed']===true,'renewal consumption missing');
+
 unset($ledger);
 $reloaded=new SvAmazonScopedSafeTGrantConsumption($db);
 checkOneUse($reloaded->reserve(3556,1,1)===null,'restart bypassed prior consumption');
 checkOneUse($reloaded->reserve(3673,1,1)===null,'restart bypassed quarantine');
 checkOneUse($reloaded->readStatus(3673,1,1)['quarantined']===true,'quarantine state missing');
+checkOneUse($reloaded->reserve(3846,1,1)===null,'renewal restart replay accepted');
 
 echo "scoped-safe-t-grant-consumption-test: PASS (disposable SQLite only; MySQL migration staged, no production write)\n";
