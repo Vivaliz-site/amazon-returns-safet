@@ -92,8 +92,8 @@ foreach ([102=>'warehouse_proof_absent',103=>'original_audit_present',104=>'acti
     $r=$repair->repairOne($id,$now);
     d90wrSame('SKIPPED',$r['status'],'Guard for '.$id);
     d90wrSame($why,$r['reason'],'Guard reason for '.$id);
-    d90wrSame('CLOSED_LOSS',$db->query('SELECT state FROM amazon_return_cases WHERE id='.$id)->fetchColumn() === 'RECOVERED'
-        ? 'RECOVERED' : $db->query('SELECT state FROM amazon_return_cases WHERE id='.$id)->fetchColumn(),
+    d90wrSame($id === 106 ? 'RECOVERED' : 'CLOSED_LOSS',
+        $db->query('SELECT state FROM amazon_return_cases WHERE id='.$id)->fetchColumn(),
         'No state mutation for '.$id);
 }
 try {
