@@ -63,6 +63,7 @@ final class SvAmazonReturnProjector
             'exposed_quantity' => 0,
             'has_physical_discrepancy' => false,
             'customer_delivery_confirmed' => false,
+            'customer_delivery_status' => 'UNKNOWN',
             'customer_tracking_ids' => [],
             'customer_delivery_carriers' => [],
             'return_tracking_ids' => [],
@@ -95,10 +96,20 @@ final class SvAmazonReturnProjector
 
         switch ($type) {
             case 'ORDER_SYNCED':
+                // Evidence of in-transit shipment is actionable tracking, not
+                // proof the buyer received it or the seller received a return.
+                self::mergeTextList($facts, $payload, 'customer_tracking_ids');
+                self::mergeTextList($facts, $payload, 'customer_delivery_carriers');
                 if (($payload['customer_delivery_confirmed'] ?? false) === true) {
                     $facts['customer_delivery_confirmed'] = true;
-                    self::mergeTextList($facts, $payload, 'customer_tracking_ids');
-                    self::mergeTextList($facts, $payload, 'customer_delivery_carriers');
+                    $facts['customer_delivery_status'] = 'DELIVERED';
+                } elseif ($facts['customer_delivery_confirmed'] !== true) {
+                    $status=strtoupper(trim((string)($payload['customer_delivery_status'] ?? 'UNKNOWN')));
+                    if(in_array($status,[
+                        'PARTIALLY_DELIVERED','RETURNED_TO_SENDER','UNDELIVERABLE',
+                        'DELIVERY_ATTEMPTED','OUT_FOR_DELIVERY','IN_TRANSIT','SHIPPED','PENDING',
+                        'OTHER','UNKNOWN',
+                    ],true))$facts['customer_delivery_status']=$status;
                 }
                 break;
 
