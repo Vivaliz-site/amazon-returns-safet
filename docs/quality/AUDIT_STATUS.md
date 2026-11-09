@@ -285,3 +285,12 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Evidências: issue #532 comentário 6731660787, SHA do branch GitHub e MCP tasks citadas. Readback em produção permaneceu exclusivamente de versão/serviço, sem alteração de dados.
 - Pendências: CI e revisão da PR, demonstrar grant P2/lease/backup/rollback, e comprovar que reclassificação não reabre novas tentativas após D+90; somente depois considerar execução por operador canônico, caso a caso, com provas financeiras/warehouse. Sem UI Seller Central ou crédito conciliado novo.
 - Estado: NAO_APTO; produção e kill switch não alterados.
+
+## 2026-11-09 — #532: corregir divergencia do perfil PHP para renovacao SAFE-T #3846
+
+- Base SHA: `f660d879501bf50fc7c314f9ce0e052ab75458c4`.
+- Impacto: o verificador/core Node reconhece o grant #3846 aprovado no GitHub; o PHP rejeitava o perfil de renovacao nao cadastrado, inviabilizando o uso restrito do grant sem alterar sua canary.
+- Testes: regressao sintetica RED por falta de perfil PHP; GREEN esperado em PHP com kill switch ON, acao unica, oito IDs exatos, negativos de perfil forjado e preservacao do vencimento do grant original.
+- Evidencias: `includes/amazon-returns/Config.php`, `deploy/write-profile-safe-t-pr3846.json`, `tests/scoped-safe-t-pr3846-profile-test.php` e issue #532.
+- Pendencias: CI GitHub oficial, merge protegido, deploy canonico e readback da release; falta adaptador produtivo com principal/lease/fencing/watchdog, prova oficial Amazon e comprovacao financeira. Nenhum SAFE-T ou suporte deve ser enviado apenas por esta correcao.
+- Estado: NAO_APTO.
