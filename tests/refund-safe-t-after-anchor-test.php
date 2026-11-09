@@ -10,6 +10,7 @@ function anchorAssert(bool $ok, string $why): void
 $older='123-1111111-1111111';
 $recent='123-2222222-2222222';
 $unverified='123-3333333-3333333';
+$expired='123-4444444-4444444';
 $transport=new class($older,$recent,$unverified) {
     public function __construct(private string $older,private string $recent,private string $unverified) {}
     public function marketplaceId(): string { return 'BR_TEST'; }
@@ -111,12 +112,13 @@ $queueDb->byOrder=[
         ['id'=>12,'safe_t_id'=>null,'amazon_order_item_id'=>'ITEM-1'],
         ['id'=>13,'safe_t_id'=>null,'amazon_order_item_id'=>'ITEM-2'],
     ],
+    $expired=>[['id'=>14,'safe_t_id'=>null,'closed_at'=>null,'refund_at'=>'2026-01-01 00:00:00','amazon_order_item_id'=>'ITEM-3']],
 ];
 $scoped=SvAmazonTenantPersistence::create($queueDb,new SvAmazonTenantContext(1,1));
 $enqueue=(new SvAmazonReturnsStatusBridgeService($scoped))
-    ->ensureRefundClaimChecks([$older,$recent,$recent,$unverified],$now);
+    ->ensureRefundClaimChecks([$older,$recent,$recent,$unverified,$expired],$now);
 anchorAssert($enqueue['enqueued']===1 && $enqueue['locally_linked']===1
-    && $enqueue['ambiguous']===1,'Only unlinked single-item refunds should get new Seller Central reads');
+    && $enqueue['ambiguous']===1 && $enqueue['expired']===1,'Only unlinked in-window single-item refunds should get new Seller Central reads');
 $inserts=array_values(array_filter($queueDb->executed,
     static fn(array $item):bool=>str_starts_with($item['sql'],'INSERT INTO amazon_return_outbox')));
 anchorAssert(count($inserts)===1,'A duplicated order must not enqueue duplicate read jobs');
