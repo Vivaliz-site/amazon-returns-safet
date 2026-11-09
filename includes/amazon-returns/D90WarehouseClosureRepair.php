@@ -83,6 +83,8 @@ final class SvAmazonD90WarehouseClosureRepair
                     'previous_terminal_reason'=>(string)$case['terminal_reason'],
                     'previous_closed_at'=>(string)$case['closed_at'],
                     'new_state'=>'RECEIVED_OK',
+                    'new_terminal_reason'=>'WAREHOUSE_RECEIVED_ADMIN_FINAL_D90',
+                    'administratively_closed_no_reopen'=>true,
                     'warehouse_physical_receipt_confirmed'=>true,
                     'warehouse_receipt_event_id'=>$receiptEventId,
                     'financial_amounts_unchanged'=>true,
