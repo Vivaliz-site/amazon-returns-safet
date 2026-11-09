@@ -595,6 +595,74 @@ final class SvAmazonReturnCaseRepository
         return $id;
     }
 
+    /** @return array<string,mixed>|null */
+    public function lockD90WarehouseLossCandidate(int $caseId): ?array
+    {
+        $caseId = $this->positiveId($caseId, 'Case ID');
+        $driver = (string)$this->db->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $stmt = $this->prepare(
+            'SELECT c.* FROM amazon_return_cases c WHERE '
+            . 'c.id=:id AND c.tenant_id=:tenant_id AND c.amazon_connection_id=:amazon_connection_id '
+            . 'LIMIT 1' . ($driver === 'mysql' ? ' FOR UPDATE' : '')
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId]));
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    }
+
+    public function warehousePhysicalReceiptEventId(int $caseId): ?int
+    {
+        $caseId = $this->positiveId($caseId, 'Case ID');
+        $stmt = $this->prepare(
+            "SELECT id FROM amazon_return_events "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND case_id=:id AND event_type='PHYSICAL_RECEIVED' "
+            . "AND source='WAREHOUSE' ORDER BY id LIMIT 1"
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId]));
+        $id = $stmt->fetchColumn();
+        return $id === false ? null : (int)$id;
+    }
+
+    public function hasAdministrativeD90ClosureEvent(int $caseId): bool
+    {
+        $caseId = $this->positiveId($caseId, 'Case ID');
+        $stmt = $this->prepare(
+            "SELECT id FROM amazon_return_events "
+            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND case_id=:id AND event_type='CASE_CLOSED_ADMIN_90D' LIMIT 1"
+        );
+        $stmt->execute($this->scopeParams([':id'=>$caseId]));
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * CAS unitario para reparo MANUAL, nunca chamado por scheduler.
+     * O prazo D+90 e a autorizacao de operador sao validados pelo chamador.
+     */
+    public function compensateD90WarehouseClosure(int $caseId, array $snapshot, string $updatedAt): bool
+    {
+        $caseId = $this->positiveId($caseId, 'Case ID');
+        $stmt = $this->prepare(
+            "UPDATE amazon_return_cases SET state='RECEIVED_OK',"
+            . "terminal_reason=NULL,closed_at=NULL,next_action_at=NULL,updated_at=:updated_at "
+            . "WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
+            . "AND state='CLOSED_LOSS' AND terminal_reason='RECOVERY_WINDOW_EXPIRED_D90' "
+            . "AND physical_status='RECEIVED_OK' AND closed_at=:prior_closed_at "
+            . "AND EXISTS (SELECT 1 FROM amazon_return_events e "
+            . "WHERE e.tenant_id=amazon_return_cases.tenant_id "
+            . "AND e.amazon_connection_id=amazon_return_cases.amazon_connection_id "
+            . "AND e.case_id=amazon_return_cases.id "
+            . "AND e.event_type='PHYSICAL_RECEIVED' AND e.source='WAREHOUSE')"
+        );
+        $stmt->execute($this->scopeParams([
+            ':id'=>$caseId,
+            ':updated_at'=>$updatedAt,
+            ':prior_closed_at'=>(string)($snapshot['closed_at'] ?? ''),
+        ]));
+        return $stmt->rowCount() === 1;
+    }
+
     /**
      * Internal loss-closure candidate lookup, scoped to one connection.
      * Confirmed warehouse receipts are excluded even before their projection.
