@@ -143,4 +143,16 @@ d90wrSame(null,$after['next_action_at'],
     'No D90 recovery action may be rescheduled.');
 d90wrSame('16.38',$after['reconciled_credit_amount'],
     'A confirmed financial credit may still be reconciled.');
+// REGRESSAO: alterar APENAS next_action_at nao pode reativar uma perda D+90
+// nem um recebimento D+90 encerrado administrativamente.
+$scoped->cases->update(101,['next_action_at'=>'2026-11-11 00:00:00']);
+d90wrSame(null,$db->query('SELECT next_action_at FROM amazon_return_cases WHERE id=101')->fetchColumn(),
+    'A standalone scheduling patch must not reactivate the final D90 case.');
+$scoped->cases->update(102,['next_action_at'=>'2026-11-11 00:00:00']);
+d90wrSame(null,$db->query('SELECT next_action_at FROM amazon_return_cases WHERE id=102')->fetchColumn(),
+    'A CLOSED_LOSS D90 case must remain unscheduled.');
+$scoped->cases->update(109,['next_action_at'=>'2026-11-11 00:00:00']);
+d90wrSame('2026-11-11 00:00:00',
+    $db->query('SELECT next_action_at FROM amazon_return_cases WHERE id=109')->fetchColumn(),
+    'Open non-final case must remain schedulable.');
 echo "d90-warehouse-closure-repair-test: OK\n";

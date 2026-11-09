@@ -765,7 +765,8 @@ final class SvAmazonReturnCaseRepository
         // audited CLOSED_LOSS row. Non-terminal financial fields remain patchable.
         $terminalPatch = array_key_exists('state',$patch)
             || array_key_exists('closed_at',$patch)
-            || array_key_exists('terminal_reason',$patch);
+            || array_key_exists('terminal_reason',$patch)
+            || array_key_exists('next_action_at',$patch);
         $stmt = $this->prepare(
             'UPDATE amazon_return_cases SET ' . implode(',', $sets) . ',updated_at=UTC_TIMESTAMP() '
             . 'WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
