@@ -792,6 +792,21 @@ final class SvAmazonReturnCaseRepository
             default => throw new InvalidArgumentException('Unsupported case field: ' . $field),
         };
     }
+    /**
+     * Correlated ERP verification filter owned by the canonical case repository.
+     * Both sides are fixed tenant/connection-owned tables; the cutoff is bound.
+     * Orphan or undated case records stay visible for investigation.
+     */
+    public static function activeErpRefundVerificationSql(): string
+    {
+        $scope='c.tenant_id=amazon_return_erp_sales_returns.tenant_id '
+            .'AND c.amazon_connection_id=amazon_return_erp_sales_returns.amazon_connection_id '
+            .'AND c.amazon_order_id=amazon_return_erp_sales_returns.amazon_order_id';
+        return ' AND (NOT EXISTS (SELECT 1 FROM amazon_return_cases c WHERE '.$scope.')'
+            .' OR EXISTS (SELECT 1 FROM amazon_return_cases c WHERE '.$scope
+            .' AND (c.refund_at IS NULL OR c.refund_at>=:refund_cutoff)))';
+    }
+
     /** Consistent UTC cutoff, bound to keep MySQL and SQLite test SQL portable. */
     private static function refundCutoffUtc(): string
     {
