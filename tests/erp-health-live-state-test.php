@@ -11,7 +11,8 @@ ehlsAssert(method_exists(SvAmazonErpSalesReturnRepository::class,'countIncomplet
 ehlsAssert(method_exists(SvAmazonErpSalesReturnRepository::class,'healthBreakdown'),'ERP repository must expose status/error/duplicate health breakdown.');
 ehlsAssert(method_exists(SvAmazonErpSalesReturnRepository::class,'countStaleWaitingInvoices'),'ERP health must detect created returns whose NF reconciliation stopped running.');
 $repoSource=(string)file_get_contents($repo);
-ehlsAssert(str_contains($repoSource,"status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER')"),'Incomplete count must fail closed for active workflows including former date-exempted refunds.');
+ehlsAssert(str_contains($repoSource,"status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER')"),'Incomplete count must retain valid statuses and include the D90 eligibility check.');
+ehlsAssert(str_contains($repoSource,'activeRefundVerificationSql()'),'ERP health must filter historical refunds by D+90 without deleting financial rows.');
 ehlsAssert(str_contains($repoSource,"duplicate_groups"),'ERP health breakdown must audit duplicate identifiers, not only aggregate incompletes.');
 
 $runtimeSource=(string)file_get_contents($runtime);

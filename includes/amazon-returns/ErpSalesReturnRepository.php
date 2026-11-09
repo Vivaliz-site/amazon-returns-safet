@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/TenantContext.php';
+require_once __DIR__.'/CaseRepository.php';
 
 interface SvAmazonErpSalesReturnStore
 {
@@ -42,7 +43,8 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
     public function countIncomplete(): int
     {
         $stmt=$this->sql(
-            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER')"
+            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER')" . self::activeRefundVerificationSql(),
+            [':refund_cutoff'=>self::refundCutoffUtc()]
         );
         return max(0,(int)$stmt->fetchColumn());
     }
@@ -50,7 +52,8 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
     public function countStaleWaitingInvoices(): int
     {
         $stmt=$this->sql(
-            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status='RETURN_CREATED_WAITING_INVOICE' AND (last_checked_at IS NULL OR last_checked_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR))"
+            "SELECT COUNT(*) FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status='RETURN_CREATED_WAITING_INVOICE' AND (last_checked_at IS NULL OR last_checked_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR))" . self::activeRefundVerificationSql(),
+            [':refund_cutoff'=>self::refundCutoffUtc()]
         );
         return max(0,(int)$stmt->fetchColumn());
     }
@@ -59,7 +62,8 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
     public function incompleteAuditRows(): array
     {
         $stmt=$this->sql(
-            "SELECT amazon_order_id,status,last_error_code FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER') ORDER BY amazon_order_id"
+            "SELECT amazon_order_id,status,last_error_code FROM ".self::TABLE." WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER')" . self::activeRefundVerificationSql() . ' ORDER BY amazon_order_id',
+            [':refund_cutoff'=>self::refundCutoffUtc()]
         );
         $rows=[];
         while($row=$stmt->fetch(PDO::FETCH_ASSOC)){
@@ -73,6 +77,21 @@ final class SvAmazonErpSalesReturnRepository implements SvAmazonErpSalesReturnSt
             ];
         }
         return $rows;
+    }
+
+    /**
+     * Reuse the canonical, tenant-isolated case SQL to classify ERP refunds.
+     * Financial history is never deleted by active verification filtering.
+     */
+    private static function activeRefundVerificationSql(): string
+    {
+        return SvAmazonReturnCaseRepository::activeErpRefundVerificationSql();
+    }
+
+    private static function refundCutoffUtc(): string
+    {
+        return (new DateTimeImmutable('now',new DateTimeZone('UTC')))
+            ->sub(new DateInterval('P90D'))->format('Y-m-d H:i:s');
     }
 
     /** @return array{statuses:array<string,int>,errors:array<string,int>,duplicate_groups:array<string,int>} */

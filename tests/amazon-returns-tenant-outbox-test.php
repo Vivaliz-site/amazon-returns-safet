@@ -137,6 +137,19 @@ foreach(['SAFE_T_DISCOVERY','SELLER_SUPPORT_READ'] as $readKind){
 }
 toAssert(!str_contains($terminalSweep,'SAFE_T_READ'),'A terminal local state must not suppress monitoring of a real SAFE-T claim.');
 toAssert(!str_contains($terminalSweep,'SAFE_T_SUBMIT'),'Terminal read sweep must never touch external write kinds.');
+
+$db->queue(['row_count'=>2]);
+toSame(2,$outbox->supersedeExpiredRecoveryReads('RECOVERY_WINDOW_EXPIRED_D90'),
+    'D+90 expiry sweep must report read-only jobs superseded without touching writes.');
+$expiredSweep=$db->executed[array_key_last($db->executed)]['sql']??'';
+foreach(['SAFE_T_DISCOVERY','SAFE_T_READ','c.refund_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY)',
+    'c.tenant_id=o.tenant_id','c.amazon_connection_id=o.amazon_connection_id',
+    "o.status='PENDING' OR (o.status='PROCESSING' AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND))"] as $fragment){
+    toAssert(str_contains($expiredSweep,$fragment),'D+90 sweep must remain scoped, read-only and lease-aware: '.$fragment);
+}
+toAssert(!str_contains($expiredSweep,'SAFE_T_SUBMIT') && !str_contains($expiredSweep,'SELLER_SUPPORT_OPEN'),
+    'D+90 expiration must not mutate external write attempts.');
+
 toAssert(str_contains($terminalSweep, "o.status='PENDING' OR (o.status='PROCESSING' AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 300 SECOND))"), 'Terminal read sweep must keep a live PROCESSING lease and only supersede stale processing reads.');
 $db->queue(['row_count'=>2]);
 toAssert(method_exists($outbox,'supersedeDiscoveryJobsForKnownSafeT'),'Outbox must clear discovery jobs once SAFE-T identity is known.');

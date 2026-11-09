@@ -16,6 +16,7 @@ $db->exec('CREATE TABLE amazon_return_cases (
     tenant_id INTEGER NOT NULL,
     amazon_connection_id INTEGER NOT NULL,
     closed_at TEXT,
+    refund_at TEXT,
     safe_t_id TEXT
 )');
 $insert = $db->prepare('INSERT INTO amazon_return_cases

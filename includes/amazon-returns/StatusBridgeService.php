@@ -5,6 +5,7 @@ require_once __DIR__ . '/RemoteBridge.php';
 require_once __DIR__ . '/SafeTStatusService.php';
 require_once __DIR__ . '/SellerSupportStatus.php';
 require_once __DIR__ . '/TenantPersistence.php';
+require_once __DIR__ . '/RecoveryWindow.php';
 
 final class SvAmazonReturnsStatusBridgeService
 {
@@ -50,6 +51,7 @@ final class SvAmazonReturnsStatusBridgeService
     }
     public function ensureJobs(DateTimeImmutable $now): int
     {
+        $this->p->outbox->supersedeExpiredRecoveryReads('RECOVERY_WINDOW_EXPIRED_D90');
         $this->p->outbox->supersedeTerminalReadJobs('TERMINAL_CASE_NO_LONGER_REQUIRES_READ');
         $this->p->outbox->supersedeDiscoveryJobsForKnownSafeT('SAFE_T_ID_ALREADY_KNOWN');
         $ensured=0;
@@ -121,12 +123,12 @@ final class SvAmazonReturnsStatusBridgeService
      * Ambiguous multi-item orders must not inherit a claim by order alone.
      *
      * @param list<string> $orderIds
-     * @return array{enqueued:int,already_active:int,locally_linked:int,unmapped:int,ambiguous:int,closed:int}
+     * @return array{enqueued:int,already_active:int,locally_linked:int,unmapped:int,ambiguous:int,closed:int,expired:int}
      */
     public function ensureRefundClaimChecks(array $orderIds,DateTimeImmutable $now): array
     {
         $stats=['enqueued'=>0,'already_active'=>0,'locally_linked'=>0,
-            'unmapped'=>0,'ambiguous'=>0,'closed'=>0];
+            'unmapped'=>0,'ambiguous'=>0,'closed'=>0,'expired'=>0];
         $seen=[];
         $scope='seller-central-order-discovery-v1|'
             .$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');
@@ -143,6 +145,7 @@ final class SvAmazonReturnsStatusBridgeService
             $case=$cases[0];
             $caseId=(int)($case['id']??0);
             if($caseId<1)throw new UnexpectedValueException('Refund case has invalid identity.');
+            if(SvAmazonRecoveryWindow::expired($case,$now)){$stats['expired']++;continue;}
             if(trim((string)($case['safe_t_id']??''))!==''){
                 // The standard SAFE_T_READ path independently refreshes its status.
                 $stats['locally_linked']++;
