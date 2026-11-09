@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/amazon-returns/D90WarehouseClosureRepair.php';
+require_once __DIR__ . '/../workers/amazon-returns/reconcile.php';
 
 function d90wrSame(mixed $expected, mixed $actual, string $why): void {
     if ($expected !== $actual) {
@@ -16,10 +17,12 @@ final class D90WarehouseRepairSqlitePdo extends PDO {
 }
 $db = new D90WarehouseRepairSqlitePdo('sqlite::memory:');
 $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$db->sqliteCreateFunction('GREATEST', static fn($a,$b):float => max((float)$a,(float)$b), 2);
+$db->sqliteCreateFunction('UTC_TIMESTAMP', static fn():string => '2026-11-09 05:00:00', 0);
 $db->exec('CREATE TABLE amazon_return_cases (
     id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, amazon_connection_id INTEGER NOT NULL,
     state TEXT NOT NULL, terminal_reason TEXT, physical_status TEXT NOT NULL,
-    refund_at TEXT, closed_at TEXT, next_action_at TEXT, updated_at TEXT,
+    refund_at TEXT, closed_at TEXT, next_action_at TEXT, updated_at TEXT, refund_amount TEXT,
     expected_reimbursement_amount TEXT, reconciled_credit_amount TEXT,
     safe_t_id TEXT, support_case_id TEXT
 )');
@@ -107,4 +110,37 @@ try {
 d90wrSame(1,(int)$db->query("SELECT COUNT(*) FROM amazon_return_events
     WHERE event_type='CASE_D90_WAREHOUSE_CLOSURE_CORRECTED'")->fetchColumn(),
     'Only one compensating event must be written.');
+// REGRESSAO: o bootstrap e o worker de Finances nao podem reabrir
+// o encerramento administrativo D+90 que foi compensado.
+$seed->execute([109,1,1,'RECEIVED_OK','PHYSICAL_RETURN_RECEIVED','RECEIVED_OK',
+    '2026-11-06 00:00:00','2026-11-08 10:00:00',null,'2026-11-08 10:00:00',
+    '35.00','15.38',null,'SUPPORT-NORMAL']);
+$scoped = SvAmazonTenantPersistence::create($db,new SvAmazonTenantContext(1,1));
+d90wrSame(1,$scoped->cases->countPrematureReceivedOkClosures(),
+    'Only ordinary prematurely closed RECEIVED_OK can be counted.');
+d90wrSame(1,$scoped->cases->reopenPrematureReceivedOkClosures(),
+    'Bootstrap may reopen an ordinary case but never an administratively final D90.');
+d90wrSame(null,$db->query('SELECT closed_at FROM amazon_return_cases WHERE id=109')->fetchColumn(),
+    'Ordinary premature close remains repairable.');
+$protected=$db->query('SELECT * FROM amazon_return_cases WHERE id=101')->fetch(PDO::FETCH_ASSOC);
+d90wrSame('2026-11-08 10:00:00',$protected['closed_at'],
+    'Bootstrap must not reopen the D90 administrative case.');
+$latePatch=SvAmazonReturnsReconcileWorker::caseUpdate(
+    $protected,['state'=>'RECEIVED_OK','credit_amount'=>'16.38'],[],$now
+);
+d90wrSame(['reconciled_credit_amount'=>'16.38'],$latePatch,
+    'Late finance reconcile may update credit but no terminal fields.');
+$scoped->cases->update(101,$latePatch);
+$scoped->cases->update(101,[
+    'closed_at'=>null,'terminal_reason'=>null,'next_action_at'=>'2026-11-10 00:00:00'
+]);
+$after=$db->query('SELECT * FROM amazon_return_cases WHERE id=101')->fetch(PDO::FETCH_ASSOC);
+d90wrSame('2026-11-08 10:00:00',$after['closed_at'],
+    'A stale terminal patch must not clear administrative D90 closure.');
+d90wrSame('WAREHOUSE_RECEIVED_ADMIN_FINAL_D90',$after['terminal_reason'],
+    'The official D90 compensation reason must remain immutable to stale workers.');
+d90wrSame(null,$after['next_action_at'],
+    'No D90 recovery action may be rescheduled.');
+d90wrSame('16.38',$after['reconciled_credit_amount'],
+    'A confirmed financial credit may still be reconciled.');
 echo "d90-warehouse-closure-repair-test: OK\n";

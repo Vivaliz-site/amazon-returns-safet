@@ -531,7 +531,7 @@ final class SvAmazonReturnCaseRepository
         $stmt=$this->prepare(
             "SELECT COUNT(*) FROM amazon_return_cases WHERE tenant_id=:tenant_id "
             . "AND amazon_connection_id=:amazon_connection_id AND state='RECEIVED_OK' "
-            . "AND closed_at IS NOT NULL AND $outstanding>0.005"
+            . "AND closed_at IS NOT NULL AND (terminal_reason IS NULL OR terminal_reason<>'WAREHOUSE_RECEIVED_ADMIN_FINAL_D90') AND $outstanding>0.005"
         );
         $stmt->execute($this->scopeParams());
         return max(0,(int)$stmt->fetchColumn());
@@ -543,7 +543,7 @@ final class SvAmazonReturnCaseRepository
         $stmt=$this->prepare(
             "SELECT id,next_action_at FROM amazon_return_cases WHERE tenant_id=:tenant_id "
             . "AND amazon_connection_id=:amazon_connection_id AND state='RECEIVED_OK' "
-            . "AND closed_at IS NOT NULL AND $outstanding>0.005 ORDER BY id"
+            . "AND closed_at IS NOT NULL AND (terminal_reason IS NULL OR terminal_reason<>'WAREHOUSE_RECEIVED_ADMIN_FINAL_D90') AND $outstanding>0.005 ORDER BY id"
         );
         $stmt->execute($this->scopeParams());
         $reopened=0;
@@ -769,7 +769,9 @@ final class SvAmazonReturnCaseRepository
         $stmt = $this->prepare(
             'UPDATE amazon_return_cases SET ' . implode(',', $sets) . ',updated_at=UTC_TIMESTAMP() '
             . 'WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
-            . ($terminalPatch ? " AND NOT (state='CLOSED_LOSS' AND closed_at IS NOT NULL)" : '')
+            . ($terminalPatch ? " AND NOT ((state='CLOSED_LOSS' OR "
+                . "(state='RECEIVED_OK' AND terminal_reason='WAREHOUSE_RECEIVED_ADMIN_FINAL_D90')) "
+                . "AND closed_at IS NOT NULL)" : '')
         );
         $stmt->execute($params);
         if ($stmt->rowCount() === 0 && $this->find($caseId) === null) {
