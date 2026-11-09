@@ -8,8 +8,9 @@ function eiadAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeExce
 eiadAssert(method_exists(SvAmazonErpSalesReturnRepository::class,'incompleteAuditRows'),'ERP repository must expose sanitized incomplete workflow audit rows.');
 
 $repo=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/ErpSalesReturnRepository.php');
+eiadAssert(str_contains($repo,'activeRefundVerificationSql()'),'ERP detail must apply D90 without altering historical records.');
 eiadAssert(str_contains($repo,'amazon_order_id,status,last_error_code'),'Incomplete workflow audit must expose only sanitized operational fields.');
-eiadAssert(str_contains($repo,"status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER')"),'Incomplete audit must use the same completion boundary as countIncomplete(), without silently exempting age-ignored refunds.');
+eiadAssert(str_contains($repo,"status NOT IN ('RETURN_CREATED_WAITING_INVOICE','RETURN_INVOICE_EXISTS','IGNORED_BY_USER')"),'Incomplete audit must use the same statuses as the active D90 verification count.');
 
 $task=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/ErpSalesReturnTask.php');
 eiadAssert(str_contains($task,"['incomplete_workflows_detail']"),'ERP task must publish sanitized incomplete workflow detail.');
