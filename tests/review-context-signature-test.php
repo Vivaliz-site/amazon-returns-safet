@@ -99,4 +99,37 @@ $stableTrigger=SvAmazonReviewContext::build(rcsCase(),$laterFinance,$policy,$rev
 rcsSame('SAFE_T_DENIED',$stableTrigger['signature']['evidence_pattern'],'Later routine finance evidence must not replace the Amazon evidence that triggered this review');
 rcsSame($a['signature_hash'],$stableTrigger['signature_hash'],'Routine later evidence must not destabilize the similarity signature');
 
+$deliveryEvent=[
+    'id'=>1501,'case_id'=>31,'event_type'=>'ORDER_SYNCED','source'=>'SP_API_ORDERS',
+    'occurred_at'=>'2026-09-06 09:00:00','evidence_sha256'=>null,
+    'payload'=>['customer_delivery_confirmed'=>true,'customer_tracking_ids'=>['AMZ12345AB'],
+        'customer_delivery_status'=>'DELIVERED'],
+];
+$delivered=SvAmazonReviewContext::build(
+    rcsCase(['customer_delivery_confirmed'=>true,'customer_delivery_status'=>'DELIVERED',
+        'customer_tracking_ids'=>['AMZ12345AB'],'customer_delivery_carriers'=>['AMZBR']]),
+    array_merge(rcsTimeline(),[$deliveryEvent]),$policy,$review);
+rcsSame('DELIVERED',$delivered['signature']['customer_delivery_status'],'Delivery to buyer is material in review matching.');
+rcsSame('PRESENT',$delivered['signature']['outbound_tracking'],'Real outbound tracking must be distinguishable.');
+rcsSame(['AMZ12345AB'],$delivered['facts']['customer_tracking_ids'],'AI must receive source-backed tracking IDs.');
+rcsAssert($delivered['signature_hash']!==$a['signature_hash'],'Buyer delivery evidence must refresh an open review context.');
+rcsAssert(count($delivered['evidence_refs'])>=2,'Authoritative buyer-delivery event must be cited for AI.');
+rcsAssert(!str_contains(json_encode($delivered['signature']),'AMZ12345AB'),'Tracking literal cannot be part of learned rule identity.');
+$changedTracking=SvAmazonReviewContext::build(
+    rcsCase(['customer_delivery_confirmed'=>true,'customer_delivery_status'=>'DELIVERED',
+        'customer_tracking_ids'=>['AMZ98765ZX'],'customer_delivery_carriers'=>['AMZBR']]),
+    array_merge(rcsTimeline(),[$deliveryEvent]),$policy,$review);
+rcsSame($delivered['signature_hash'],$changedTracking['signature_hash'],'Codes cannot fragment categorical learned rules.');
+$inTransit=SvAmazonReviewContext::build(
+    rcsCase(['customer_delivery_confirmed'=>false,'customer_delivery_status'=>'IN_TRANSIT',
+        'customer_tracking_ids'=>['AMZ12345AB']]),rcsTimeline(),$policy,$review);
+rcsSame('IN_TRANSIT',$inTransit['signature']['customer_delivery_status'],'In-transit tracking is not delivered.');
+rcsSame(false,$inTransit['facts']['customer_delivery_confirmed'],'No false customer delivery claim.');
+rcsAssert($inTransit['signature_hash']!==$delivered['signature_hash'],'In-transit and delivered cases must not share learned effects.');
+$physicalReturn=SvAmazonReviewContext::build(
+    rcsCase(['return_tracking_ids'=>['RET9031']]),rcsTimeline(),$policy,$review);
+rcsSame('PRESENT',$physicalReturn['signature']['return_tracking'],'Return tracking must be distinguished from outbound tracking.');
+rcsSame(['RET9031'],$physicalReturn['facts']['return_tracking_ids'],'AI receives return tracking separately.');
+rcsAssert($physicalReturn['signature_hash']!==$a['signature_hash'],'New return proof must refresh pending review context.');
+
 echo "review-context-signature-test: OK\n";

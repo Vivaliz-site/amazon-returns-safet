@@ -144,9 +144,28 @@ final class SvAmazonReviewOperations
             if($order!=='')$line.=' · Pedido '.$order;
             $line.=' · Sugestão da IA: '.$this->actionLabel((string)($suggestion['action']??''));
             if($confidence!==null)$line.=' · Confiança '.$confidence.'%';
+            $facts=is_array($row['context']['facts']??null)?$row['context']['facts']:[];
+            if(array_key_exists('customer_delivery_status',$facts)){
+                $delivery=(string)$facts['customer_delivery_status'];
+                $line.=' · Entrega ao cliente: '.match($delivery){
+                    'DELIVERED'=>'confirmada',
+                    'PARTIALLY_DELIVERED'=>'parcial',
+                    'IN_TRANSIT'=>'em trânsito',
+                    'OUT_FOR_DELIVERY'=>'em rota de entrega',
+                    'DELIVERY_ATTEMPTED'=>'tentativa registrada',
+                    'RETURNED_TO_SENDER'=>'retorno indicado no rastreio',
+                    'UNDELIVERABLE'=>'entrega impossível',
+                    default=>'não verificada',
+                };
+                $outbound=is_array($facts['customer_tracking_ids']??null)?$facts['customer_tracking_ids']:[];
+                $return=is_array($facts['return_tracking_ids']??null)?$facts['return_tracking_ids']:[];
+                if($outbound!==[])$line.=' · Rastreio de envio disponível';
+                if($return!==[])$line.=' · Rastreio de devolução disponível';
+            }
             $lines[]=$line;
         }
         $lines[]='';
+        $lines[]='A entrega ao comprador não comprova retorno físico à ShopVivaliz nem crédito de ressarcimento. Confirme as evidências antes de decidir.';
         $lines[]='Acesse: https://returns.shopvivaliz.com.br/admin/amazon-returns/?view=reviews';
         $lines[]='Este lembrete será repetido a cada 2 horas enquanto houver revisão pendente.';
         return implode("\n",$lines);
