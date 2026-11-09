@@ -253,12 +253,27 @@ async function orderDeliveryRead(job) {
     const page = await authenticatedPage(
       cdp, `https://sellercentral.amazon.com.br/orders-v3/order/${encodeURIComponent(orderId)}`, 4800
     );
-    const state = page.state;
+    let state = page.state;
     if (page.auth === 'AUTH_REQUIRED') {
       return result('AUTH_REQUIRED', { reason: page.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
     }
     if (page.auth === 'HUMAN_CHALLENGE') {
       return result('HUMAN_CHALLENGE', { reason: page.reason || 'CAPTCHA_PRESENT', evidence: evidence(state) });
+    }
+    // Amazon may render a valid authenticated menu before hydrating the actual
+    // order-details view. This is NOT a verified order. Reuse the existing
+    // order-identity readiness waiter before searching tracking controls.
+    state = await waitForSafeTClaimOrderIdentity(cdp, orderId, 10000);
+    if (!String(state.text || '').includes(orderId)) {
+      return result('UI_DRIFT', {
+        reason:'SHIPMENT_ORDER_DETAILS_NOT_RENDERED',
+        retry_safe:true,
+        evidence:{
+          ...evidence(state),
+          order_identity_visible:false,
+          body_chars:Math.max(0,Math.min(30000,String(state.text || '').length)),
+        },
+      });
     }
     // The existing Seller Central order-details tracking button is a known
     // read-only path. Only a unique button is clicked to avoid wrong-package
