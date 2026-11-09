@@ -119,4 +119,5 @@ scopedAssert($legacyProfile->writeCaseAllowed(1263),'legacy default semantics ch
 
 require __DIR__."/scoped-safe-t-dispatch-canary-contract-test.php";
 require __DIR__."/scoped-safe-t-pr3673-profile-test.php";
+require __DIR__."/scoped-safe-t-pr3846-profile-test.php";
 echo "scoped-safe-t-pr3556-profile-test: OK (synthetic only; no runtime authorization)\n";
