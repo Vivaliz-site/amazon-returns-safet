@@ -15,7 +15,7 @@ final class RoReviews {
     public int $failures=0;
     public function __construct(){
         $this->rows=[
-            9=>['id'=>9,'case_id'=>501,'reason'=>'REFUND_INITIATOR_UNKNOWN','status'=>'OPEN','version'=>1,'context'=>['facts'=>['amazon_order_id'=>'702-0707321-6872209']]],
+            9=>['id'=>9,'case_id'=>501,'reason'=>'REFUND_INITIATOR_UNKNOWN','status'=>'OPEN','version'=>1,'context'=>['facts'=>['amazon_order_id'=>'702-0707321-6872209','customer_delivery_status'=>'DELIVERED','customer_delivery_confirmed'=>true,'customer_tracking_ids'=>['AMZ12345AB'],'return_tracking_ids'=>[]]]],
             10=>['id'=>10,'case_id'=>505,'reason'=>'OFFICIAL_APPEAL_WINDOW_EXPIRED','status'=>'OPEN','version'=>3,'context'=>['facts'=>['amazon_order_id'=>'702-8373627-4388208']],'ai_suggestion'=>['action'=>'SAFE_T_APPEAL','rationale'=>'Recorrer com as evidências disponíveis.','confidence'=>0.91,'uncertainties'=>[],'parameters'=>['date_binding'=>'APPEAL_DEADLINE']]],
         ];
     }
@@ -76,6 +76,9 @@ roAssert(str_contains((string)$raw,'2 revisões pendentes'),'reminder describes 
 roAssert(str_contains((string)$raw,'Verificar financeiro'),'generated action is shown in Portuguese');
 roAssert(str_contains((string)$raw,'Recorrer no SAFE-T'),'existing suggested action is shown in Portuguese');
 roAssert(!str_contains((string)$raw,'CHECK_FINANCES'),'operator reminder must not expose raw action enum');
+roAssert(str_contains((string)$raw,'Entrega ao cliente: confirmada'),'Email must report independently confirmed delivery.');
+roAssert(str_contains((string)$raw,'Rastreio de envio disponível'),'Email must distinguish real tracking availability.');
+roAssert(str_contains((string)$raw,'não comprova retorno físico'),'Email must not confuse buyer delivery with seller receipt.');
 
 $r2=$ops->run($now->modify('+1 hour'));
 roSame(0,$r2['reminder_sent']??null,'no reminder before two hours');
