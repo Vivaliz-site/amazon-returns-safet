@@ -240,6 +240,34 @@ final class SvAmazonTenantReturnsOutbox
         return max(0,$stmt->rowCount());
     }
 
+    /**
+     * Retire only unstarted or lease-expired first-claim discovery reads for
+     * confirmed refunds at D+90. Keep original UI-drift diagnosis in last_error
+     * and never cancel a live worker lease or a known claim/status/appeal read.
+     */
+    public function supersedeExpiredDiscoveryJobs(string $reason,DateTimeImmutable $now): int
+    {
+        $cutoff=$now->setTimezone(new DateTimeZone('UTC'))
+            ->sub(new DateInterval('P90D'))->format('Y-m-d H:i:s');
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_outbox o JOIN amazon_return_cases c ON c.id=o.case_id "
+            . "AND c.tenant_id=o.tenant_id AND c.amazon_connection_id=o.amazon_connection_id "
+            . "SET o.status='SUPERSEDED',o.locked_at=NULL,"
+            . "o.last_error=CONCAT(:last_error,CASE WHEN o.last_error IS NULL OR o.last_error='' "
+            . "THEN '' ELSE CONCAT('|',LEFT(o.last_error,120)) END),o.updated_at=UTC_TIMESTAMP() "
+            . "WHERE o.tenant_id=:tenant_id AND o.amazon_connection_id=:amazon_connection_id "
+            . "AND o.kind='SAFE_T_DISCOVERY' AND c.refund_at IS NOT NULL "
+            . "AND c.refund_at<=:refund_cutoff "
+            . "AND (o.status='PENDING' OR (o.status='PROCESSING' "
+            . "AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL " . self::LEASE_SECONDS . " SECOND)))"
+        );
+        $stmt->execute($this->scopeParams([
+            ':last_error'=>$this->errorMessage($reason),
+            ':refund_cutoff'=>$cutoff,
+        ]));
+        return max(0,$stmt->rowCount());
+    }
+
     public function supersedeDiscoveryJobsForKnownSafeT(string $reason): int
     {
         $stmt=$this->prepare(
