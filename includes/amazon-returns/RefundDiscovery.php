@@ -5,6 +5,7 @@ require_once __DIR__ . '/TenantPersistence.php';
 require_once __DIR__ . '/AmazonSpApiClient.php';
 require_once __DIR__ . '/SpApi.php';
 require_once __DIR__ . '/SpApiEventSink.php';
+require_once __DIR__ . '/StatusBridgeService.php';
 
 /**
  * Daily, API-first discovery of customer refunds missing from the case table.
@@ -16,12 +17,17 @@ final class SvAmazonRefundDiscovery
     private const CURSOR = 'buyer_refunds_daily';
     private const LIMIT = 25;
 
-    /** @return array{orders:list<string>,windows:int,pages:int,refunded_rows:int,unlinked_refund_rows:int} */
+    /**
+     * Full 90-day recheck remains mandatory even with an external SAFE-T
+     * watermark: late-arriving/older unresolved refunds must never disappear.
+     * @return array<string,mixed>
+     */
     public static function scan(
         object $transport,
         int $days = 90,
         ?DateTimeImmutable $now = null,
-        ?callable $pause = null
+        ?callable $pause = null,
+        ?DateTimeImmutable $lastConfirmedSafeTAt = null
     ): array {
         if ($days < 1 || $days > 90) throw new InvalidArgumentException('Refund scan days must be 1..90.');
         if (!method_exists($transport, 'marketplaceId') || !method_exists($transport, 'request')) {
@@ -33,6 +39,9 @@ final class SvAmazonRefundDiscovery
         $end = $now->modify('-3 minutes');
         $next = $end->modify('-' . $days . ' days');
         $orders = [];
+        $afterLatestSafeT = [];
+        $unknownRefundDates = [];
+        $lastConfirmedSafeTAt=$lastConfirmedSafeTAt?->setTimezone(new DateTimeZone('UTC'));
         $windows = 0;
         $pages = 0;
         $refundRows = 0;
@@ -93,7 +102,20 @@ final class SvAmazonRefundDiscovery
                     if ($malformedOrderId || count($candidateOrders) !== 1) {
                         $unlinkedRefundRows++;
                     } else {
-                        $orders[array_key_first($candidateOrders)] = true;
+                        $orderId=array_key_first($candidateOrders);
+                        $orders[$orderId] = true;
+                        if($lastConfirmedSafeTAt===null){
+                            $afterLatestSafeT[$orderId]=true;
+                        }else{
+                            $posted=self::verifiedRefundPostedAt(
+                                $row['postedDate']??$row['postedTime']??null
+                            );
+                            if($posted===null){
+                                $unknownRefundDates[$orderId]=true;
+                            }elseif($posted>$lastConfirmedSafeTAt){
+                                $afterLatestSafeT[$orderId]=true;
+                            }
+                        }
                     }
                 }
                 $token = $payload['nextToken'] ?? $data['nextToken'] ?? null;
@@ -107,8 +129,28 @@ final class SvAmazonRefundDiscovery
 
         $ids = array_keys($orders);
         sort($ids, SORT_STRING);
+        $after=array_keys($afterLatestSafeT);
+        $unknown=array_keys($unknownRefundDates);
+        sort($after,SORT_STRING);
+        sort($unknown,SORT_STRING);
         return ['orders' => $ids, 'windows' => $windows, 'pages' => $pages, 'refunded_rows' => $refundRows,
-            'unlinked_refund_rows' => $unlinkedRefundRows];
+            'unlinked_refund_rows' => $unlinkedRefundRows,
+            'orders_after_latest_safe_t'=>$after,
+            'orders_with_unknown_refund_date'=>$unknown];
+    }
+
+    private static function verifiedRefundPostedAt(mixed $value): ?DateTimeImmutable
+    {
+        if(!is_string($value))return null;
+        $raw=trim($value);
+        if(preg_match('/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/D',$raw)!==1){
+            return null;
+        }
+        try{
+            return (new DateTimeImmutable($raw))->setTimezone(new DateTimeZone('UTC'));
+        }catch(Throwable){
+            return null;
+        }
     }
 
     /**
@@ -251,8 +293,18 @@ final class SvAmazonRefundDiscovery
         $source = (string)($state['value'] ?? '1970-01-01');
         $metadata = ['last_attempt_at' => $now->format(DATE_ATOM)];
         try {
+            // Only a Seller Central-verified, externally identified SAFE-T can
+            // anchor the incremental view. The anchor is OBSERVED_AT, not an
+            // invented Amazon creation timestamp or an outbox success.
+            $lastClaim=$p->cases->latestConfirmedSafeTObservation();
+            $lastClaimAt=$lastClaim===null?null:new DateTimeImmutable(
+                $lastClaim['confirmed_at'],new DateTimeZone('UTC')
+            );
+            if($lastClaimAt!==null && $lastClaimAt>$now){
+                throw new UnexpectedValueException('SAFE-T observation is in the future.');
+            }
             $transport = new SvAmazonSpApiClient($config);
-            $scan = self::scan($transport, 90, $now);
+            $scan = self::scan($transport, 90, $now, null, $lastClaimAt);
             $missing = [];
             foreach ($scan['orders'] as $id) {
                 if ($p->cases->forOrder($id) === []) $missing[] = $id;
@@ -261,6 +313,19 @@ final class SvAmazonRefundDiscovery
             $batch = array_slice($missing, 0, self::LIMIT);
             $result = self::ingest($p, new SvAmazonReturnsSpApi($transport), $batch);
             $result['unlinked_refund_rows'] = (int)$scan['unlinked_refund_rows'];
+            // Use the existing scoped Seller Central READ outbox/worker. A
+            // missing claim locally is not proof of its absence at Amazon.
+            // Older unresolved refunds are still swept by ensureJobs().
+            $priorityOrders=array_values(array_unique(array_merge(
+                $scan['orders_after_latest_safe_t'],
+                $scan['orders_with_unknown_refund_date']
+            )));
+            $claimChecks=(new SvAmazonReturnsStatusBridgeService($p))
+                ->ensureRefundClaimChecks($priorityOrders,$now);
+            // Finances scan OK does not mean Amazon claims were verified.
+            // Only an independent Seller Central claim ID readback can do so.
+            $claimReadbackState=$priorityOrders===[]?'NO_POST_ANCHOR_REFUNDS'
+                :'PENDING_SELLER_CENTRAL_READBACK';
             $assessment = self::assessDailyCompletion(count($missing), $result);
             $finished = $assessment['completed'];
             $metadata += [
@@ -273,6 +338,14 @@ final class SvAmazonRefundDiscovery
                 'skipped_not_released' => $result['skipped_not_released'],
                 'unlinked_refund_rows' => $result['unlinked_refund_rows'],
                 'failed' => $result['failed'],
+                'latest_confirmed_safe_t_observed_at'=>$lastClaim['confirmed_at']??null,
+                'refund_orders_after_latest_safe_t'=>count($scan['orders_after_latest_safe_t']),
+                'refund_orders_date_unverified'=>count($scan['orders_with_unknown_refund_date']),
+                'seller_central_claim_checks_enqueued'=>$claimChecks['enqueued'],
+                'seller_central_claim_checks_already_active'=>$claimChecks['already_active'],
+                'seller_central_claim_checks_ambiguous'=>$claimChecks['ambiguous'],
+                'seller_central_claim_checks_unmapped'=>$claimChecks['unmapped'],
+                'seller_central_claim_verification_status'=>$claimReadbackState,
             ];
             $p->cursors->save(self::SOURCE, self::CURSOR, $finished ? $today : $source, $metadata);
             return [
@@ -281,6 +354,10 @@ final class SvAmazonRefundDiscovery
                 'refund_orders' => count($scan['orders']),
                 'missing_orders' => count($missing),
                 'review_required' => $assessment['review_required'],
+                'latest_confirmed_safe_t_observed_at'=>$lastClaim['confirmed_at']??null,
+                'refund_orders_after_latest_safe_t'=>count($scan['orders_after_latest_safe_t']),
+                'seller_central_claim_checks'=>$claimChecks,
+                'seller_central_claim_verification_status'=>$claimReadbackState,
             ] + $result;
         } catch (Throwable $e) {
             $p->cursors->save(self::SOURCE, self::CURSOR, $source,

@@ -4,9 +4,10 @@ function vpiAssert(bool $condition,string $message):void{if(!$condition)throw ne
 $root=dirname(__DIR__);
 $bridge=(string)file_get_contents($root.'/scripts/amazon-returns/seller-central-bridge-worker.mjs');
 $status=(string)file_get_contents($root.'/scripts/amazon-returns/seller-central-safe-t-read-worker.mjs');
+$tracking=(string)file_get_contents($root.'/scripts/amazon-returns/TrackingEvidence.mjs');
 $daemon=(string)file_get_contents($root.'/workers/amazon-returns/daemon.php');
 $provision=(string)file_get_contents($root.'/scripts/provision-seller-central-browser-host.sh');
-foreach([$bridge,$status] as $worker){
+foreach([$bridge,$status,$tracking] as $worker){
     vpiAssert(!str_contains($worker,'fred-win-'),'Primary runtime worker must not default to Fred-Win identity.');
     vpiAssert(!str_contains($worker,'C:\\\\ShopVivaliz\\\\amazon-returns-bridge'),'Primary runtime worker must not carry a Windows-only path default.');
 }

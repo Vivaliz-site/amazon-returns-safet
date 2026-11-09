@@ -492,14 +492,14 @@ final class SvAmazonTenantReturnsOutbox
     }
 
     /** @return array{status:string,next_at:?DateTimeImmutable,reason:string} */
-    public function markFailed(array $row, Throwable|string $error, ?DateTimeImmutable $now = null): array
+    public function markFailed(array $row, Throwable|string $error, ?DateTimeImmutable $now = null, bool $retryAllowed = true): array
     {
         $this->assertOwnedRow($row);
         $id = $this->positiveId((int)($row['id'] ?? 0), 'outbox ID');
         $caseId = $this->positiveId((int)($row['case_id'] ?? 0), 'case ID');
         $message = $this->errorMessage($error instanceof Throwable ? $error->getMessage() : $error);
         $now ??= new DateTimeImmutable('now', new DateTimeZone('UTC'));
-        $decision = self::retryDecision($row, $now);
+        $decision = self::retryDecision($row, $now, $retryAllowed);
         if ($decision['status'] === 'RETRY') {
             $stmt = $this->prepare(
                 "UPDATE amazon_return_outbox SET status='PENDING',available_at=:available_at,locked_at=NULL,"
@@ -559,9 +559,14 @@ final class SvAmazonTenantReturnsOutbox
     }
 
     /** @return array{status:string,next_at:?DateTimeImmutable,reason:string} */
-    public static function retryDecision(array $row, DateTimeImmutable $now): array
+    public static function retryDecision(array $row, DateTimeImmutable $now, bool $retryAllowed = true): array
     {
         $now = $now->setTimezone(new DateTimeZone('UTC'));
+        // A failed external write without a verified outcome is never safe to replay.
+        // A future business deadline is not evidence that the first submit failed.
+        if (!$retryAllowed) {
+            return ['status'=>'DEAD_LETTER','next_at'=>null,'reason'=>'UNSAFE_EXTERNAL_WRITE_RETRY'];
+        }
         $attempt = max(0, (int)($row['attempt_count'] ?? 0));
         $payload = is_array($row['payload'] ?? null)
             ? $row['payload']

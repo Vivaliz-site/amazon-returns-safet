@@ -4,6 +4,7 @@
  */
 const BASE='https://api.github.com/repos/Vivaliz-site/site-shopvivaliz';
 const GRANTS=Object.freeze({
+  3846: Object.freeze({blob:'cb5a40fcca09143f4b34b1503f32c0c57291afbc',ids:[1263,1314,8803,13210,51429,101669,101670,101671],expiry:null,renews:3556}),
   3830: Object.freeze({blob:'08dc564e79a42e537efc21bd014e26d97ba0a901',expiry:'2026-11-30T23:59:00Z',dynamic:true}),
   3556: Object.freeze({blob:'f340e8ce4be185bc1b8dd21b4e61269bc11afbd3',ids:[1263,1314,8803,13210,51429,101669,101670,101671],expiry:'2026-11-09T23:59:00Z'}),
   3673: Object.freeze({blob:'dfaee8e4a6dcb98a41e9087025835de36a07d5e1',ids:[42471,51429,101669,101670,101671],expiry:'2026-11-30T23:59:00Z'}),
@@ -72,7 +73,9 @@ function normalizeGrant(data,n,expected){
     data.principal==='amazon-returns-safet-service'&&data.host==='marina-a1-4c24g'&&
     data.target_repository==='Vivaliz-site/amazon-returns-safet'&&
     data.operation==='activate_scoped_safe_t_opening'&&data.tenant_id===1&&
-    data.amazon_connection_id===1&&data.one_use===true&&data.expires_at_utc===expected.expiry&&
+    data.amazon_connection_id===1&&data.one_use===true&&
+    (expected.expiry ? data.expires_at_utc===expected.expiry : !('expires_at_utc' in data)) &&
+    (expected.renews ? data.renews_grant===expected.renews : true) &&
     exactArray(data.capabilities,['safe_t_submit'])&&
     exactArray(data.allowed_write_actions,['SAFE_T_SUBMIT'])&&
     exactArray(data.allowed_case_ids,expected.ids),'GRANT_SCOPE_INVALID');
@@ -98,7 +101,9 @@ export async function verifyApprovedOwnerGrant(grantNumber,{
   expect(Boolean(expected),'GRANT_NUMBER_UNKNOWN');
   expect(typeof token==='string'&&token.length>=12,'GITHUB_READONLY_CREDENTIAL_REQUIRED');
   expect(typeof fetchImpl==='function','GITHUB_CLIENT_REQUIRED');
-  expect(Number.isFinite(nowMs)&&nowMs<Date.parse(expected.expiry),'GRANT_EXPIRED');
+  if(expected.expiry){
+    expect(Number.isFinite(nowMs)&&nowMs<Date.parse(expected.expiry),'GRANT_EXPIRED');
+  }
   const p=await githubJson('/pulls/'+grantNumber,{fetchImpl,token});
   expect(p?.number===grantNumber&&p?.base?.repo?.full_name==='Vivaliz-site/site-shopvivaliz'&&p?.base?.ref==='main'&&
     p?.head?.repo?.full_name==='Vivaliz-site/site-shopvivaliz'&&

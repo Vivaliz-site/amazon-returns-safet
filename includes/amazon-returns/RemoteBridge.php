@@ -80,6 +80,41 @@ final class SvAmazonReturnsRemoteBridge
         return !hash_equals($scoped, $current);
     }
 
+    /** @param array<string,mixed> $result */
+    public static function safeTSubmitResultRequiresReadback(array $result): bool
+    {
+        $status=strtoupper(trim((string)($result['status']??'')));
+        $reason=strtoupper(trim((string)($result['reason']??'')));
+        if($status==='FAILED'){
+            // All these failures can occur after Amazon's Submit button was clicked.
+            return $reason==='SAFE_T_WRITE_WITHOUT_READBACK_ID'
+                || $reason==='MULTIPLE_SAFE_T_CLAIMS_AFTER_SUBMIT'
+                || str_starts_with($reason,'UNHANDLED_');
+        }
+        return $status==='HUMAN_INTERVENTION_REQUIRED'
+            && $reason==='SAFE_T_SUBMIT_READBACK_UNVERIFIED';
+    }
+
+    /**
+     * Historical post-click ambiguity wins over a future retry timestamp.
+     * @param array<string,mixed> $row
+     * @param list<array<string,mixed>> $events
+     */
+    public static function safeTSubmitHasAmbiguousHistory(array $row,array $events): bool
+    {
+        if(strtoupper(trim((string)($row['kind']??'')))!=='SAFE_T_SUBMIT')return false;
+        $outboxId=(int)($row['id']??0);
+        if($outboxId<1)return false;
+        foreach($events as $event){
+            if(strtoupper(trim((string)($event['event_type']??'')))!=='SELLER_CENTRAL_ACTION_RESULT')continue;
+            if((string)($event['source_event_id']??'')!==(string)$outboxId)continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            if(strtoupper(trim((string)($payload['action']??'')))!=='SAFE_T_SUBMIT')continue;
+            if(self::safeTSubmitResultRequiresReadback($payload))return true;
+        }
+        return false;
+    }
+
     /** @param list<array<string,mixed>> $events */
     public static function supportRetryReconciliationEligible(array $row,array $events): bool
     {
