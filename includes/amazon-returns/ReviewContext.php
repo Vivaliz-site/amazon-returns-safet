@@ -95,7 +95,7 @@ final class SvAmazonReviewContext
         if(($case['customer_delivery_confirmed']??false)===true)return 'DELIVERED';
         $status=strtoupper(trim((string)($case['customer_delivery_status']??'UNKNOWN')));
         return in_array($status,[
-            'IN_TRANSIT','OUT_FOR_DELIVERY','DELIVERY_ATTEMPTED','UNDELIVERABLE',
+            'PARTIALLY_DELIVERED','IN_TRANSIT','OUT_FOR_DELIVERY','DELIVERY_ATTEMPTED','UNDELIVERABLE',
             'RETURNED_TO_SENDER','SHIPPED','PENDING','OTHER','UNKNOWN',
         ],true)?$status:'UNKNOWN';
     }
