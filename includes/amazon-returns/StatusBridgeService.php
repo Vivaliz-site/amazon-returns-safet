@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/RemoteBridge.php';
 require_once __DIR__ . '/SafeTStatusService.php';
+require_once __DIR__ . '/SafeTExternalWindow.php';
 require_once __DIR__ . '/SellerSupportStatus.php';
 require_once __DIR__ . '/TenantPersistence.php';
 
@@ -51,6 +52,7 @@ final class SvAmazonReturnsStatusBridgeService
     public function ensureJobs(DateTimeImmutable $now): int
     {
         $this->p->outbox->supersedeTerminalReadJobs('TERMINAL_CASE_NO_LONGER_REQUIRES_READ');
+        $this->p->outbox->supersedeExpiredDiscoveryJobs('REFUND_D90_DISCOVERY_EXPIRED',$now);
         $this->p->outbox->supersedeDiscoveryJobsForKnownSafeT('SAFE_T_ID_ALREADY_KNOWN');
         $ensured=0;
         foreach($this->p->cases->casesWithSafeTId(250) as $case){
@@ -93,7 +95,7 @@ final class SvAmazonReturnsStatusBridgeService
             foreach($page as $case){
                 $caseId=(int)($case['id'] ?? 0);
                 $orderId=trim((string)($case['amazon_order_id'] ?? ''));
-                if($caseId<1 || $orderId==='')continue;
+                if($caseId<1 || $orderId==='' || SvAmazonSafeTExternalWindow::discoveryVerificationExpired($case,$now))continue;
                 if($this->p->outbox->hasActive($caseId,'SAFE_T_DISCOVERY'))continue;
                 $key=$this->p->outbox->deterministicKey('SAFE_T_DISCOVERY',$caseId,$scope);
                 $this->p->outbox->enqueue('SAFE_T_DISCOVERY',$caseId,[
@@ -126,7 +128,7 @@ final class SvAmazonReturnsStatusBridgeService
     public function ensureRefundClaimChecks(array $orderIds,DateTimeImmutable $now): array
     {
         $stats=['enqueued'=>0,'already_active'=>0,'locally_linked'=>0,
-            'unmapped'=>0,'ambiguous'=>0,'closed'=>0];
+            'unmapped'=>0,'ambiguous'=>0,'closed'=>0,'expired_over90'=>0];
         $seen=[];
         $scope='seller-central-order-discovery-v1|'
             .$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');
@@ -149,6 +151,10 @@ final class SvAmazonReturnsStatusBridgeService
                 continue;
             }
             if(($case['closed_at']??null)!==null){$stats['closed']++;continue;}
+            if(SvAmazonSafeTExternalWindow::discoveryVerificationExpired($case,$now)){
+                $stats['expired_over90']++;
+                continue;
+            }
             if($this->p->outbox->hasActive($caseId,'SAFE_T_DISCOVERY')){
                 $stats['already_active']++;
                 continue;
