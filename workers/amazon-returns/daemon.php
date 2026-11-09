@@ -933,6 +933,15 @@ class SvAmazonReturnsDaemon
                     $caseId=(int)($row['case_id']??0);
                     $case=$this->persistence->cases->find($caseId);
                     if (!is_array($case)) throw new RuntimeException('SAFE_T_CASE_NOT_FOUND');
+                    $prior=$this->persistence->events->eventsForSourceEventId(
+                        $caseId,(string)$row['id'],'SELLER_CENTRAL_ACTION_RESULT'
+                    );
+                    if (SvAmazonReturnsRemoteBridge::safeTSubmitHasAmbiguousHistory($row,$prior)) {
+                        $this->persistence->outbox->markSuperseded(
+                            (int)$row['id'],'SAFE_T_POST_CLICK_READBACK_REQUIRED'
+                        );
+                        continue;
+                    }
                     // Do not execute an obsolete opening after an external
                     // claim was linked by an independent readback.
                     if (SvAmazonSafeTExternalWindow::openingAlreadyClaimed($case)) {
@@ -983,13 +992,18 @@ class SvAmazonReturnsDaemon
                     $this->persistence->outbox->markSucceeded((int)$row['id']);
                     $processed++;
                 }else{
+                    // Missing claim readback is not proof that Amazon rejected Submit.
+                    $retryAllowed=$kind!=='SAFE_T_SUBMIT'
+                        || (($actionResult['retry_safe']??false)===true
+                            && !SvAmazonReturnsRemoteBridge::safeTSubmitResultRequiresReadback($actionResult));
                     $this->persistence->outbox->markFailed(
-                        $row,(string)($actionResult['status'] ?? 'FAILED')
+                        $row,(string)($actionResult['status'] ?? 'FAILED'),null,$retryAllowed
                     );
                     $failed++;
                 }
             }catch(Throwable $e){
-                $this->persistence->outbox->markFailed($row,$e);
+                // An exception cannot prove whether a remote Submit click occurred.
+                $this->persistence->outbox->markFailed($row,$e,null,$kind!=='SAFE_T_SUBMIT');
                 $failed++;
             }
         }
