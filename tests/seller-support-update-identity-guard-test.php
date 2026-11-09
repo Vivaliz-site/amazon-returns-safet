@@ -14,5 +14,10 @@ if(!str_contains($fn,"bridgeResult('NOT_FOUND'")) throw new RuntimeException('mi
 if(!str_contains($fn,'external_id: caseId')) throw new RuntimeException('contaminated id must be reported');
 $service=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/StatusBridgeService.php');
 if(!str_contains($service,"SELLER_SUPPORT_UPDATE") || !str_contains($service,"completeSupportIdentityMismatch")) throw new RuntimeException("update mismatch recovery contract missing");
-if(!str_contains($service,"['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ','SELLER_SUPPORT_UPDATE']")) throw new RuntimeException("acceptResult allowlist must include SELLER_SUPPORT_UPDATE");
+// The acceptResult allowlist may grow with new *read-only* operations;
+// test the required action membership instead of a brittle literal array.
+if(!preg_match('/!in_array\\(\\$kind,\\[([^\\]]+)\\],true\\)/',$service,$m)) throw new RuntimeException('acceptResult allowlist not found');
+foreach(["'SAFE_T_READ'","'SAFE_T_DISCOVERY'","'SELLER_SUPPORT_READ'","'SELLER_SUPPORT_UPDATE'","'ORDER_DELIVERY_READ'"] as $required){
+    if(!str_contains($m[1],$required))throw new RuntimeException("acceptResult allowlist missing ".$required);
+}
 echo "seller-support-update-identity-guard-test: OK\n";

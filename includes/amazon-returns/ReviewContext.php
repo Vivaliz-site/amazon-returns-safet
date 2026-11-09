@@ -303,7 +303,10 @@ final class SvAmazonReviewContext
                 && strtoupper((string)($event['source']??''))==='SP_API_ORDERS'
                 && (($payload['customer_delivery_confirmed']??false)===true
                     || self::trackingIds($payload['customer_tracking_ids']??null)!==[]);
-            if(!$outboundObservation && self::classifyEvent($event)===null)continue;
+            $sellerShipmentObservation=strtoupper((string)($event['event_type']??''))==='CUSTOMER_SHIPMENT_STATUS_OBSERVED'
+                && strtoupper((string)($event['source']??''))==='SELLER_CENTRAL'
+                && self::trackingIds($payload['customer_tracking_ids']??null)!==[];
+            if(!$outboundObservation && !$sellerShipmentObservation && self::classifyEvent($event)===null)continue;
             $id=(int)($event['id']??0);
             if($id<1)continue;
             $ref=['event_id'=>$id,'event_type'=>(string)($event['event_type']??'')];

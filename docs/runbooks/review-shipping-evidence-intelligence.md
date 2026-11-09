@@ -14,7 +14,11 @@ A recomendação da IA recebe os fatos acima e referências a eventos `ORDER_SYN
 
 ## Ausência de prova não é prova de ausência
 
-`UNKNOWN`, `NOT_OBSERVED` e ausência de rastreio significam **pendência de verificação**, nunca certeza de não entrega, produto não devolvido ou ressarcimento inexistente. A SP-API pode não apresentar o andamento completo da transportadora; nesses casos, a próxima etapa investigativa é conferir o detalhamento oficial do pedido no Seller Central/transportadora, com identidade do pedido e item e comprovante de entrega. **Essa consulta independente de transportadora não é implementada por esta alteração**: os códigos atualmente são derivados da SP-API e o navegador do Seller Central continua responsável pelo rastreio anexado às ações de SAFE-T.
+`UNKNOWN`, `NOT_OBSERVED` e ausência de rastreio significam **pendência de verificação**, nunca certeza de não entrega, produto não devolvido ou ressarcimento inexistente. A SP-API pode não apresentar o andamento completo da transportadora. Nesses casos, a leitura diária `ORDER_DELIVERY_READ` do Seller Central recebe **prioridade depois das respostas SAFE-T/suporte e antes da busca histórica de reivindicações**, usando o navegador e o lease já existentes, sem abrir reclamações. Ela observa a tela oficial de detalhes do pedido e, quando disponível, o diálogo de rastreio. É obrigatória a identidade exata do pedido e item antes de registrar `CUSTOMER_SHIPMENT_STATUS_OBSERVED` no banco; a projeção separa envio ao comprador e devolução ao vendedor.
+
+O texto geral da página **nunca é prova de entrega**. Só se registra `DELIVERED` mediante situação explicitamente indicada no diálogo de rastreio e um identificador de rastreio verificável no próprio contexto do diálogo/botão, com vínculo não ambíguo ao item. Código de envio identificado na página, sem status conclusivo, fica como rastreio disponível e `UNKNOWN`. Se o site mudou, a leitura é deferida como `UI_DRIFT`; se não há evidência, o caso continua sem conclusão e é rechecado no próximo dia. Uma leitura no Seller Central não substitui confirmação independente diretamente no portal da transportadora caso a situação oficial permaneça ambígua.
+
+Os resultados são aceitos somente pelo bridge autenticado, escopo de tenant/conexão, idempotência diária e validação de identidade no servidor. A evidência de interface é registrada por hash, sem copiar endereço, nome ou outros dados privados para a recomendação.
 
 Não introduzir escrita externa, abertura duplicada de SAFE-T, novas restrições operacionais ou fechamento por simples ausência de rastreio. Preservar a janela e os controles oficiais já existentes.
 
@@ -27,6 +31,8 @@ php tests/review-operations-test.php
 php tests/customer-nonreceipt-delivery-contradiction-test.php
 php tests/amazon-returns-spapi-test.php
 php tests/review-service-test.php
+php tests/seller-central-shipment-result-test.php
+node tests/seller-central-shipment-parser.test.mjs
 ```
 
 ## Validação em produção

@@ -85,6 +85,28 @@ final class SvAmazonReturnsStatusBridgeService
             ],$key);
             $ensured++;
         }
+        // Once daily, source-backed buyer-delivery checks for pending AI reviews.
+        // This is a read-only Seller Central job, never a SAFE-T submission.
+        $shipScope='seller-central-order-shipment-v1|'.$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');
+        foreach($this->p->reviews->openQueue() as $review){
+            $caseId=(int)($review['case_id']??0);
+            if($caseId<1)continue;
+            $facts=is_array($review['context']['facts']??null)?$review['context']['facts']:[];
+            if(($facts['customer_delivery_confirmed']??false)===true)continue;
+            if($this->p->outbox->hasActive($caseId,'ORDER_DELIVERY_READ'))continue;
+            $case=$this->p->cases->find($caseId);
+            if(!is_array($case))continue;
+            $order=trim((string)($case['amazon_order_id']??''));
+            $item=trim((string)($case['amazon_order_item_id']??''));
+            if(preg_match('/^\\d{3}-\\d{7}-\\d{7}$/D',$order)!==1
+                || preg_match('/^[A-Za-z0-9._-]{1,128}$/D',$item)!==1)continue;
+            $key=$this->p->outbox->deterministicKey('ORDER_DELIVERY_READ',$caseId,$shipScope);
+            $created=$this->p->outbox->enqueueResult('ORDER_DELIVERY_READ',$caseId,[
+                'case_id'=>$caseId,'order_id'=>$order,'order_item_id'=>$item,
+                'read_only'=>true,'purpose'=>'AI_SHIPPING_EVIDENCE',
+            ],$key);
+            if($created['enqueued'])$ensured++;
+        }
         $scope='seller-central-order-discovery-v1|'.$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d');
         // A single LIMIT 250 would permanently omit new high-ID cases once
         // the active unmatched population exceeds one page. Keyset paging
@@ -221,6 +243,9 @@ final class SvAmazonReturnsStatusBridgeService
         // order-discovery searches. The fallback still drains every discovery.
         $rows=$this->p->outbox->claimBatch(1,['SAFE_T_READ','SELLER_SUPPORT_READ']);
         if($rows===[]){
+            $rows=$this->p->outbox->claimBatch(1,['ORDER_DELIVERY_READ']);
+        }
+        if($rows===[]){
             $rows=$this->p->outbox->claimBatch(1,['SAFE_T_DISCOVERY']);
         }
         if($rows===[])return ['status'=>'NO_JOB','ensured'=>$ensured];
@@ -255,7 +280,7 @@ final class SvAmazonReturnsStatusBridgeService
         $row=$this->p->outbox->findOwned($jobId);
         $kind=is_array($row)?strtoupper((string)($row['kind'] ?? '')):'';
         if(!is_array($row)
-            || !in_array($kind,['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ','SELLER_SUPPORT_UPDATE'],true)
+            || !in_array($kind,['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ','SELLER_SUPPORT_UPDATE','ORDER_DELIVERY_READ'],true)
             || !hash_equals((string)$row['idempotency_key'],$idempotencyKey)){
             return ['status'=>'JOB_NOT_FOUND','http_status'=>404];
         }
@@ -267,6 +292,9 @@ final class SvAmazonReturnsStatusBridgeService
         }
 
         $status=(string)$result['status'];
+        if($kind==='ORDER_DELIVERY_READ' && $status==='ACCEPTED' && is_array($result['shipment']??null)){
+            return $this->completeShipmentObservation($row,$result);
+        }
         if($kind==='SELLER_SUPPORT_READ' && $status==='ACCEPTED' && is_array($result['support'] ?? null)){
             return $this->completeSupportObservation($row,$result);
         }
@@ -337,6 +365,94 @@ final class SvAmazonReturnsStatusBridgeService
         if(preg_match('/^\\d{8,14}$/D',$scoped)===1)return $scoped;
         $primary=trim((string)($case['support_case_id']??''));
         return preg_match('/^\\d{8,14}$/D',$primary)===1?$primary:'';
+    }
+
+    /** Seller Central shipment read: order identity and item identity are mandatory. */
+    private function completeShipmentObservation(array $row,array $result): array
+    {
+        $shipment=$result['shipment'];
+        $caseId=(int)($row['case_id']??0);
+        $case=$this->p->cases->find($caseId);
+        if(!is_array($case))return ['status'=>'JOB_NOT_FOUND','http_status'=>404];
+        $expectedOrder=trim((string)($case['amazon_order_id']??''));
+        $expectedItem=trim((string)($case['amazon_order_item_id']??''));
+        if($expectedOrder==='' || $expectedItem===''
+            || !hash_equals($expectedOrder,(string)$shipment['order_id'])
+            || !hash_equals($expectedItem,(string)$shipment['order_item_id'])){
+            throw new RuntimeException('Seller Central shipment read identity did not match the scoped order item.');
+        }
+        $snapshot=$result['evidence']['snapshot_sha256']??null;
+        if(!is_string($snapshot) || preg_match('/^[a-f0-9]{64}$/iD',$snapshot)!==1)$snapshot=null;
+        $ids=$shipment['customer_tracking_ids'];
+        // No shipping facts means the browser was able to read the order,
+        // but proved nothing; acknowledge and retry tomorrow without inventing
+        // delivery, non-delivery, or physical-return evidence.
+        $record=$ids!==[] && $snapshot!==null;
+        $db=$this->p->db();$db->beginTransaction();
+        try{
+            $this->p->cases->assertOwned($caseId);
+            if(!$record && $snapshot!==null){
+                // A completed visit with no reliable tracking is auditable,
+                // but deliberately cannot change customer-delivery facts.
+                $this->p->events->append([
+                    'case_id'=>$caseId,
+                    'event_type'=>'CUSTOMER_SHIPMENT_LOOKUP_ATTEMPTED',
+                    'source'=>'SELLER_CENTRAL',
+                    'source_event_id'=>'shipment-attempt:'.(string)$row['id'],
+                    'idempotency_key'=>SvAmazonTenantReturnEventStore::deterministicKey(
+                        'seller-central-shipment-attempt',(string)$caseId,gmdate('Y-m-d')
+                    ),
+                    'occurred_at'=>gmdate('Y-m-d H:i:s'),
+                    'payload'=>[
+                        'order_id'=>$expectedOrder,
+                        'order_item_id'=>$expectedItem,
+                        'outcome'=>'NO_TRACKING_PROOF',
+                        'tracking_button_count'=>min(100,max(0,(int)($result['evidence']['tracking_button_count']??0))),
+                        'tracking_dialog_detected'=>($result['evidence']['tracking_dialog_detected']??false)===true,
+                    ],
+                    'evidence_sha256'=>$snapshot,
+                ]);
+            }
+            if($record){
+                $canonical=json_encode([
+                    'status'=>$shipment['customer_delivery_status'],
+                    'ids'=>$ids,
+                    'carriers'=>$shipment['customer_delivery_carriers'],
+                    'confirmed'=>$shipment['customer_delivery_confirmed'],
+                ],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);
+                $key=SvAmazonTenantReturnEventStore::deterministicKey(
+                    'seller-central-shipment',$expectedOrder,$expectedItem,hash('sha256',$canonical)
+                );
+                $this->p->events->append([
+                    'case_id'=>$caseId,
+                    'event_type'=>'CUSTOMER_SHIPMENT_STATUS_OBSERVED',
+                    'source'=>'SELLER_CENTRAL',
+                    'source_event_id'=>'shipment:'.(string)$row['id'],
+                    'idempotency_key'=>$key,
+                    'occurred_at'=>gmdate('Y-m-d H:i:s'),
+                    'payload'=>[
+                        'order_id'=>$expectedOrder,
+                        'order_item_id'=>$expectedItem,
+                        'customer_delivery_status'=>$shipment['customer_delivery_status'],
+                        'customer_delivery_confirmed'=>$shipment['customer_delivery_confirmed'],
+                        'customer_tracking_ids'=>$ids,
+                        'customer_delivery_carriers'=>$shipment['customer_delivery_carriers'],
+                        'source'=>'SELLER_CENTRAL_ORDER_DETAILS',
+                    ],
+                    'evidence_sha256'=>$snapshot,
+                ]);
+            }
+            $this->p->outbox->markSucceeded((int)$row['id']);
+            $db->commit();
+            return [
+                'status'=>'ACK','job_id'=>(int)$row['id'],
+                'result_status'=>'ACCEPTED','completed'=>true,
+                'shipment_observation'=>$record?'SOURCE_BACKED':'NO_TRACKING_PROOF',
+            ];
+        }catch(Throwable $e){
+            if($db->inTransaction())$db->rollBack();
+            throw $e;
+        }
     }
 
     /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */

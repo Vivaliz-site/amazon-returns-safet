@@ -113,6 +113,24 @@ final class SvAmazonReturnProjector
                 }
                 break;
 
+            case 'CUSTOMER_SHIPMENT_STATUS_OBSERVED':
+                // Confirmed buyer delivery is independent of any physical return.
+                // Never turn shipment tracking into seller warehouse receipt.
+                if(strtoupper((string)($event['source']??''))!=='SELLER_CENTRAL')break;
+                self::mergeTextList($facts,$payload,'customer_tracking_ids');
+                self::mergeTextList($facts,$payload,'customer_delivery_carriers');
+                $deliveryStatus=strtoupper(trim((string)($payload['customer_delivery_status']??'UNKNOWN')));
+                if(($payload['customer_delivery_confirmed']??false)===true && $deliveryStatus==='DELIVERED'){
+                    $facts['customer_delivery_confirmed']=true;
+                    $facts['customer_delivery_status']='DELIVERED';
+                }elseif($facts['customer_delivery_confirmed']!==true
+                    && in_array($deliveryStatus,[
+                        'IN_TRANSIT','OUT_FOR_DELIVERY','RETURNED_TO_SENDER','UNDELIVERABLE','UNKNOWN',
+                    ],true)){
+                    $facts['customer_delivery_status']=$deliveryStatus;
+                }
+                break;
+
             case 'CASE_CREATED':
                 break;
 

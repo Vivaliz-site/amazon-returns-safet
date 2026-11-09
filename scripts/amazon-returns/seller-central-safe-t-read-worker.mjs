@@ -8,6 +8,7 @@ import { scanSafeTClaimPages } from './safe-t-discovery-pages.mjs';
 import { resolveCycleDeadline, withinCycleBudget } from './seller-central-cycle-budget.mjs';
 import { scanSafeTExactOrder, resolveReadOnlySafeTDiscovery } from './safe-t-discovery-exact-search.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
+import { parseSellerCentralShipmentObservation } from './seller-central-shipment-parser.mjs';
 
 const ENDPOINT = process.env.SELLER_CENTRAL_STATUS_BRIDGE_ENDPOINT || 'https://returns.shopvivaliz.com.br/api/amazon-returns/status-bridge.php';
 const TOKEN_FILE = process.env.SELLER_CENTRAL_BRIDGE_TOKEN_FILE || '';
@@ -235,6 +236,97 @@ async function waitForSafeTClaimOrderIdentity(cdp, orderId, timeoutMs = 15000) {
     state = await cdp.pageState();
   }
   return state;
+}
+
+/**
+ * Read-only package tracking for an existing AI review. Never opens/submits a
+ * SAFE-T claim and never guesses delivery from unrelated order-page text.
+ */
+async function orderDeliveryRead(job) {
+  const orderId = clean(job.case?.order_id);
+  const orderItemId = clean(job.case?.order_item_id);
+  if (!/^\d{3}-\d{7}-\d{7}$/.test(orderId) || !/^[A-Za-z0-9._-]{1,128}$/.test(orderItemId)) {
+    return result('FAILED', { reason: 'SHIPMENT_ORDER_ITEM_IDENTITY_REQUIRED' });
+  }
+  const cdp = await Cdp.connect();
+  try {
+    const page = await authenticatedPage(
+      cdp, `https://sellercentral.amazon.com.br/orders-v3/order/${encodeURIComponent(orderId)}`, 4800
+    );
+    const state = page.state;
+    if (page.auth === 'AUTH_REQUIRED') {
+      return result('AUTH_REQUIRED', { reason: page.reason || 'SESSION_NOT_AUTHENTICATED', evidence: evidence(state) });
+    }
+    if (page.auth === 'HUMAN_CHALLENGE') {
+      return result('HUMAN_CHALLENGE', { reason: page.reason || 'CAPTCHA_PRESENT', evidence: evidence(state) });
+    }
+    // The existing Seller Central order-details tracking button is a known
+    // read-only path. Only a unique button is clicked to avoid wrong-package
+    // attribution; multiple-package orders remain unverified for the item.
+    const observed = await cdp.evaluate(`JSON.stringify((()=>{
+      const buttons=[...document.querySelectorAll('button.order-details-tracking-link-button')];
+      const count=buttons.length;
+      let clicked=false;
+      if(count===1 && !buttons[0].disabled){
+        buttons[0].scrollIntoView({block:'center',inline:'center'});
+        buttons[0].click();clicked=true;
+      }
+      return {button_count:count,button_text:buttons.length===1?(buttons[0].innerText||''):'',clicked};
+    })())`);
+    const control = JSON.parse(observed || '{}');
+    if (control.clicked) await sleep(1800);
+    const modalRaw = await cdp.evaluate(`JSON.stringify((()=>{
+      const roots=[document],seen=new Set(),candidates=[];
+      while(roots.length && seen.size<2500){
+        const root=roots.shift();
+        if(!root || seen.has(root))continue;
+        seen.add(root);
+        for(const element of root.querySelectorAll?.('*')||[]){
+          if(element.shadowRoot)roots.push(element.shadowRoot);
+        }
+        for(const element of root.querySelectorAll?.('[role="dialog"],kat-modal,[class*="tracking-modal"],[id*="tracking-modal"],[class*="tracking-details"]')||[]){
+          const rect=element.getBoundingClientRect?.();
+          if(!rect || rect.width<20 || rect.height<20)continue;
+          const text=String(element.shadowRoot?.innerText||element.innerText||'').slice(0,15000);
+          if(/rastre|tracking|entrega|delivery/i.test(text))candidates.push(text);
+        }
+      }
+      candidates.sort((a,b)=>b.length-a.length);
+      return {tracking_dialog_text:candidates[0]||''};
+    })())`);
+    const modal = JSON.parse(modalRaw || '{}');
+    const observation = parseSellerCentralShipmentObservation({
+      order_id:orderId,
+      order_item_id:orderItemId,
+      href:state.href,
+      page_text:state.text,
+      tracking_dialog_text:modal.tracking_dialog_text || '',
+      tracking_button_text:control.button_text,
+      tracking_button_count:control.button_count || 0,
+    });
+    const latest = await cdp.pageState(30000);
+    const browserEvidence = {
+      ...evidence(latest),
+      tracking_button_count: Number(control.button_count || 0),
+      tracking_dialog_detected: Boolean(modal.tracking_dialog_text),
+      tracking_code_count: Array.isArray(observation.shipment?.customer_tracking_ids)
+        ? observation.shipment.customer_tracking_ids.length : 0,
+    };
+    if(observation.status!=='ACCEPTED'){
+      return result('UI_DRIFT', {
+        reason:observation.reason || 'SHIPMENT_ORDER_IDENTITY_NOT_VERIFIED',
+        evidence:browserEvidence,retry_safe:true,
+      });
+    }
+    return result('ACCEPTED', {
+      reason:'ORDER_SHIPMENT_READ_ONLY',
+      retry_safe:true,
+      evidence:browserEvidence,
+      shipment:observation.shipment,
+    });
+  } finally {
+    await cdp.close();
+  }
 }
 
 async function safeTDiscovery(job) {
@@ -538,7 +630,8 @@ async function runOnce() {
   log('job_received', job);
   let readResult;
   try {
-    if (job.action === 'SAFE_T_READ') readResult = await safeTRead(job);
+    if (job.action === 'ORDER_DELIVERY_READ') readResult = await orderDeliveryRead(job);
+    else if (job.action === 'SAFE_T_READ') readResult = await safeTRead(job);
     else if (job.action === 'SAFE_T_DISCOVERY') readResult = await safeTDiscovery(job);
     else if (job.action === 'SELLER_SUPPORT_READ') readResult = await supportRead(job);
     else readResult = result('FAILED', { reason: 'UNSUPPORTED_READ_ACTION' });
