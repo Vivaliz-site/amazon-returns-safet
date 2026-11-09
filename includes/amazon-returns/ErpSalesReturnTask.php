@@ -9,6 +9,7 @@ require_once __DIR__.'/ErpSalesReturnGateway.php';
 require_once __DIR__.'/ErpSalesReturnService.php';
 require_once __DIR__.'/ErpApiRateLimiter.php';
 require_once __DIR__.'/CaseConsultation.php';
+require_once __DIR__.'/RecoveryWindow.php';
 
 final class SvAmazonErpSalesReturnTask
 {
@@ -119,10 +120,12 @@ final class SvAmazonErpSalesReturnTask
     private static function refundedOrders(SvAmazonTenantPersistence $p): array
     {
         $orderCases=[];$page=1;$perPage=100;
+        $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
         do{
             $found=$p->cases->search([], $page, $perPage);
             foreach($found['items']??[] as $case){
                 if(!is_array($case) || (int)($case['quantity_refunded']??0)<1)continue;
+                if(!self::refundWithinVerificationWindow($case,$now))continue;
                 $orderId=trim((string)($case['amazon_order_id']??''));
                 if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$orderId)!==1)continue;
                 $orderCases[$orderId][]=$case;
@@ -137,8 +140,8 @@ final class SvAmazonErpSalesReturnTask
                 if(is_array($workflow))$p->erpSalesReturns->markIgnoredByUser($orderId);
                 continue;
             }
-            // Refund age is never a reason to suppress ERP sales-return reconciliation.
-            // Historical age-exempted workflows must rejoin the normal idempotent path.
+            // Historical D+90 refunds remain in accounting records but are not
+            // retried during the active verification window.
             if(!self::hasConfirmedRefundQuantity($cases))continue;
             if(is_array($workflow) && in_array(strtoupper(trim((string)($workflow['status']??''))),['IGNORED_REFUND_OLDER_THAN_90D','IGNORED_REFUND_OUTSIDE_OPERATIONAL_WINDOW'],true)){
                 $workflow=$p->erpSalesReturns->reactivateIgnoredRefund($orderId);
@@ -168,6 +171,11 @@ final class SvAmazonErpSalesReturnTask
     }
 
     /** Refund quantity, not refund date, determines whether an ERP return is due. */
+    public static function refundWithinVerificationWindow(array $case,DateTimeImmutable $now): bool
+    {
+        return !SvAmazonRecoveryWindow::expired($case,$now);
+    }
+
     public static function hasConfirmedRefundQuantity(array $cases): bool
     {
         foreach($cases as $case){
@@ -180,8 +188,10 @@ final class SvAmazonErpSalesReturnTask
     public static function writeAllowedForOrderCases(SvAmazonReturnsConfig $config,array $cases): bool
     {
         $refunded=0;
+        $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
         foreach($cases as $case){
             if(!is_array($case) || (int)($case['quantity_refunded']??0)<1)continue;
+            if(!self::refundWithinVerificationWindow($case,$now))return false;
             $caseId=(int)($case['id']??0);
             if($caseId<1 || !$config->writeCaseAllowed($caseId))return false;
             $refunded++;
