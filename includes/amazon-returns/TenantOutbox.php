@@ -226,6 +226,26 @@ final class SvAmazonTenantReturnsOutbox
         return $rows;
     }
 
+    /**
+     * D+90 first-recovery verification expires on the confirmed refund date.
+     * Do not alter historical successes, external write jobs, or a live lease.
+     */
+    public function supersedeExpiredRecoveryReads(string $reason): int
+    {
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_outbox o JOIN amazon_return_cases c ON c.id=o.case_id "
+            . "AND c.tenant_id=o.tenant_id AND c.amazon_connection_id=o.amazon_connection_id "
+            . "SET o.status='SUPERSEDED',o.locked_at=NULL,o.last_error=:last_error,o.updated_at=UTC_TIMESTAMP() "
+            . "WHERE o.tenant_id=:tenant_id AND o.amazon_connection_id=:amazon_connection_id "
+            . "AND c.refund_at IS NOT NULL "
+            . "AND c.refund_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY) "
+            . "AND (o.status='PENDING' OR (o.status='PROCESSING' AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL " . self::LEASE_SECONDS . " SECOND))) "
+            . "AND o.kind IN ('SAFE_T_DISCOVERY','SAFE_T_READ')"
+        );
+        $stmt->execute($this->scopeParams([':last_error'=>$this->errorMessage($reason)]));
+        return max(0,$stmt->rowCount());
+    }
+
     public function supersedeTerminalReadJobs(string $reason): int
     {
         $stmt=$this->prepare(
