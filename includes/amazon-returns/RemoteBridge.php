@@ -10,6 +10,7 @@ final class SvAmazonReturnsRemoteBridge
     private const KINDS = [
         'SAFE_T_READ',
         'SAFE_T_DISCOVERY',
+        'ORDER_DELIVERY_READ',
         'SAFE_T_SUBMIT',
         'SAFE_T_APPEAL',
         'SELLER_SUPPORT_READ',
@@ -246,6 +247,47 @@ final class SvAmazonReturnsRemoteBridge
             'evidence' => is_array($result['evidence'] ?? null) ? $result['evidence'] : [],
             'support' => is_array($result['support'] ?? null) ? SvAmazonSellerSupportStatus::normalize($result['support']) : null,
             'read' => is_array($result['read'] ?? null) ? SvAmazonSafeTStatus::normalize($result['read']) : null,
+            'shipment' => is_array($result['shipment'] ?? null) ? self::normalizeShipment($result['shipment']) : null,
+        ];
+    }
+
+    /** Read-only shipping evidence is never inferred from a plain order page. */
+    public static function normalizeShipment(array $input): array
+    {
+        $order=trim((string)($input['order_id']??''));
+        $item=trim((string)($input['order_item_id']??''));
+        $status=strtoupper(trim((string)($input['customer_delivery_status']??'UNKNOWN')));
+        if(preg_match('/^\\d{3}-\\d{7}-\\d{7}$/D',$order)!==1
+            || preg_match('/^[A-Za-z0-9._-]{1,128}$/D',$item)!==1
+            || !in_array($status,['DELIVERED','IN_TRANSIT','OUT_FOR_DELIVERY','RETURNED_TO_SENDER','UNDELIVERABLE','UNKNOWN'],true)
+            || ($input['identity_verified']??false)!==true){
+            throw new RuntimeException('Shipment observation identity or status is invalid.');
+        }
+        $ids=[];
+        foreach(($input['customer_tracking_ids']??[]) as $raw){
+            if(!is_string($raw) || preg_match('/^[A-Za-z0-9._-]{8,96}$/D',$raw)!==1)continue;
+            $ids[$raw]=$raw;
+            if(count($ids)>=12)break;
+        }
+        $carriers=[];
+        foreach(($input['customer_delivery_carriers']??[]) as $raw){
+            if(!is_string($raw))continue;
+            $carrier=trim($raw);
+            if(preg_match('/^[\\p{L}A-Za-z0-9 ._-]{2,60}$/uD',$carrier)!==1)continue;
+            $carriers[$carrier]=$carrier;
+            if(count($carriers)>=12)break;
+        }
+        $confirmed=($input['customer_delivery_confirmed']??false)===true;
+        $statusEvidence=($input['status_evidence']??false)===true;
+        if($confirmed!==($status==='DELIVERED') || ($confirmed && (!$statusEvidence || count($ids)===0))){
+            throw new RuntimeException('Shipment delivery cannot be inferred without item-scoped tracking evidence.');
+        }
+        return [
+            'order_id'=>$order,'order_item_id'=>$item,
+            'customer_delivery_status'=>$status,'customer_delivery_confirmed'=>$confirmed,
+            'customer_tracking_ids'=>array_values($ids),
+            'customer_delivery_carriers'=>array_values($carriers),
+            'identity_verified'=>true,'status_evidence'=>$statusEvidence,
         ];
     }
 
