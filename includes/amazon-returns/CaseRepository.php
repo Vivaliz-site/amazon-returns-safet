@@ -267,6 +267,7 @@ final class SvAmazonReturnCaseRepository
     {
         $stmt=$this->prepare(
             'SELECT COUNT(*) FROM amazon_return_cases WHERE refund_at IS NOT NULL '
+            . 'AND refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY) '
             . 'AND refund_amount>0 AND quantity_refunded=0 '
             . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
         );
@@ -333,6 +334,7 @@ final class SvAmazonReturnCaseRepository
         $limit=max(1,min(1000,$limit));
         $stmt=$this->prepare(
             "SELECT * FROM amazon_return_cases WHERE safe_t_id IS NOT NULL AND safe_t_id<>'' "
+            . 'AND (refund_at IS NULL OR refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY)) '
             . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
             . 'ORDER BY id LIMIT '.$limit
         );
@@ -403,6 +405,7 @@ final class SvAmazonReturnCaseRepository
         $afterId=max(0,$afterId);
         $stmt=$this->prepare(
             "SELECT * FROM amazon_return_cases WHERE closed_at IS NULL AND (safe_t_id IS NULL OR safe_t_id='') "
+            . 'AND (refund_at IS NULL OR refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY)) '
             . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
             . 'AND id>:after_id ORDER BY id LIMIT '.$limit
         );
