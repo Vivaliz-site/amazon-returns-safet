@@ -694,12 +694,16 @@ final class SvAmazonSafeTDecisionEngine
             $blocker=$event;$blockerRank=$rank;
         }
         if(!is_array($blocker))return null;
-        if($supportId==='')return $blocker;
+        // A later verified Seller Central snapshot for the *same scoped case*
+        // supersedes an earlier uncertain chat click. The next decision still
+        // uses the current support thread and its own identity/idempotency
+        // checks; an email reference alone does not clear a pending write.
+        // The original attempt remains immutable in the audit timeline.
         foreach($timeline as $event){
             if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
             if(($event['event_type']??'')!=='SELLER_SUPPORT_STATUS_OBSERVED' || ($event['source']??'')!=='SELLER_CENTRAL')continue;
             $payload=is_array($event['payload']??null)?$event['payload']:[];
-            if(trim((string)($payload['case_id']??''))!==$supportId)continue;
+            try{SvAmazonSellerSupportStatus::normalize($payload);}catch(Throwable){continue;}
             try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
             if([$at->getTimestamp(),(int)($event['id']??0)]>$blockerRank)return null;
         }
