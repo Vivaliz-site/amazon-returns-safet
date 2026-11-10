@@ -33,6 +33,7 @@ final class SvAmazonReviewContext
         $outstanding=self::outstandingAmount($case);
         $facts=[
             'case_id'=>(int)($case['id']??0),
+            'reviewed_at_utc'=>gmdate('Y-m-d H:i:s'),
             'order_id'=>self::nullableScalar($case['amazon_order_id']??null),
             'safe_t_id'=>self::nullableScalar($case['safe_t_id']??null),
             'state'=>self::nullableScalar($case['state']??null),
@@ -306,7 +307,11 @@ final class SvAmazonReviewContext
             $sellerShipmentObservation=strtoupper((string)($event['event_type']??''))==='CUSTOMER_SHIPMENT_STATUS_OBSERVED'
                 && strtoupper((string)($event['source']??''))==='SELLER_CENTRAL'
                 && self::trackingIds($payload['customer_tracking_ids']??null)!==[];
-            if(!$outboundObservation && !$sellerShipmentObservation && self::classifyEvent($event)===null)continue;
+            $gmailDispatchObservation=strtoupper((string)($event['event_type']??''))==='FBA_SHIPMENT_EMAIL'
+                && strtoupper((string)($event['source']??''))==='GMAIL'
+                && self::trackingIds($payload['customer_tracking_ids']??null)!==[];
+            if(!$outboundObservation && !$sellerShipmentObservation && !$gmailDispatchObservation
+                && self::classifyEvent($event)===null)continue;
             $id=(int)($event['id']??0);
             if($id<1)continue;
             $ref=['event_id'=>$id,'event_type'=>(string)($event['event_type']??'')];
