@@ -9,16 +9,9 @@ function usDateStart(value) {
     d.getUTCDate() === day ? utc : NaN;
 }
 
-/**
- * Exhaustive read-only page evidence: never grants SAFE-T submission.
- * Only the authenticated Amazon ALL view, 90-day claim-date range, with
- * every visible row and external ID parsed, can finish a no-match scan.
- */
-export function completeClaimListCoverage(coverage, refundAt) {
-  if (!coverage || typeof coverage !== 'object' ||
-      typeof refundAt !== 'string' ||
-      !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(refundAt)) return false;
-  const refunded = Date.parse(refundAt.replace(' ', 'T') + 'Z');
+/** The official list itself was read completely (independent of the case refund date). */
+export function completeClaimListView(coverage) {
+  if (!coverage || typeof coverage !== 'object') return false;
   const start = usDateStart(coverage.start_date);
   const end = usDateStart(coverage.end_date);
   const count = coverage.total;
@@ -31,8 +24,21 @@ export function completeClaimListCoverage(coverage, refundAt) {
     coverage.range_start === 1 && coverage.range_end === count &&
     coverage.rendered === count && coverage.parsed_orders === count &&
     coverage.parsed_claims === count && coverage.unique_claims === count &&
-    Number.isFinite(start) && Number.isFinite(end) && start <= end &&
-    Number.isFinite(refunded) && refunded >= start && refunded < end + 86400000;
+    Number.isFinite(start) && Number.isFinite(end) && start <= end;
+}
+
+/**
+ * Exhaustive read-only page evidence: never grants SAFE-T submission.
+ * A no-match is only meaningful when the case refund date is known and
+ * falls inside the listed claim-date window.
+ */
+export function completeClaimListCoverage(coverage, refundAt) {
+  if (!completeClaimListView(coverage) || typeof refundAt !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(refundAt)) return false;
+  const refunded = Date.parse(refundAt.replace(' ', 'T') + 'Z');
+  const start = usDateStart(coverage.start_date);
+  const end = usDateStart(coverage.end_date);
+  return Number.isFinite(refunded) && refunded >= start && refunded < end + 86400000;
 }
 
 /**
@@ -105,6 +111,13 @@ export async function scanSafeTClaimPages({ readPage, advancePage, maxPages = 25
     if (completeClaimListCoverage(current.coverage, refundAt)) {
       return { status: 'VERIFIED_LIST_NO_MATCH',
         reason: 'OFFICIAL_90_DAY_COMPLETE_LIST_NO_MATCH',
+        pages_scanned: pageIndex + 1, coverage: current.coverage };
+    }
+    // Full list read, but this case's refund is unknown or outside the window:
+    // no absence is asserted and no further pages exist. Terminal read.
+    if (completeClaimListView(current.coverage)) {
+      return { status: 'LIST_OBSERVED_REFUND_NOT_IN_WINDOW',
+        reason: 'SAFE_T_DISCOVERY_REFUND_NOT_IN_LISTED_WINDOW',
         pages_scanned: pageIndex + 1, coverage: current.coverage };
     }
     if (pageIndex + 1 >= maxPages) break;

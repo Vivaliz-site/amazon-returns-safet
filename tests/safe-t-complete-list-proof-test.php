@@ -36,6 +36,20 @@ foreach([
  clAssert(!SvAmazonReturnsStatusBridgeService::verifiedCompleteClaimListEvidence($bad,$c,$now),
   'Invalid proof must never close discovery: '.json_encode($change));
 }
+// Refund date unknown/outside the listed window: observation only, never absence.
+$wres=$result;$wres['reason']='SAFE_T_DISCOVERY_REFUND_NOT_IN_LISTED_WINDOW';
+foreach([null,'2026-05-01 00:00:00','2026-09-09 18:38:59'] as $refund){
+ $wc=array_replace($case,['refund_at'=>$refund]);
+ clAssert(SvAmazonReturnsStatusBridgeService::verifiedListViewEvidence($wres,$wc,$now),
+  'Complete list with refund date '.json_encode($refund).' must close as observation only.');
+}
+clAssert(!SvAmazonReturnsStatusBridgeService::verifiedCompleteClaimListEvidence($wres,array_replace($case,['refund_at'=>null]),$now),
+ 'Unknown refund date must never satisfy the no-match (absence) proof.');
+foreach([['range_end'=>38],['rendered'=>38],['view'=>'pending'],['host'=>'evil.example'],['start_date'=>'01/01/2026']] as $change){
+ $bp=$wres;$bp['evidence']['claim_list_proof']=array_replace($proof,$change);
+ clAssert(!SvAmazonReturnsStatusBridgeService::verifiedListViewEvidence($bp,array_replace($case,['refund_at'=>null]),$now),
+  'Incomplete list must not close: '.json_encode($change));
+}
 $source=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/StatusBridgeService.php');
 clAssert(str_contains($source,'SAFE_T_DISCOVERY_COMPLETE_LIST_OBSERVED'),
  'A completed read must record a source-backed event, not grant permission to write.');
