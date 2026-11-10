@@ -199,7 +199,12 @@ final class SvAmazonSellerSupportStatus
     {
         $reimbursement=preg_match('/(?:ressarcimento|reembolso\s+fba|reimbursement)/u',$text)===1;
         $denied=preg_match('/(?:n[aã]o\s+[ée]\s+eleg[ií]vel|ineleg[ií]vel|not\s+eligible|(?:reembolso|ressarcimento).{0,80}n[aã]o\s+(?:pode\s+ser\s+)?aprovad[oa]|reembolso.{0,80}negad|ressarcimento.{0,80}negad|reimbursement.{0,80}denied|decis[aã]o\s+[ée]\s+definitiva)/u',$text)===1;
-        return $reimbursement && $denied;
+        // Amazon sometimes uses plain Portuguese 'reembolso' instead of the
+        // FBA/English reimbursement label. A *literal explicit refusal*
+        // remains a denial even when quoted older email text mentions a
+        // buyer credit, but generic refund text alone is not a denial.
+        $explicitRefundRefusal=preg_match('/(?:reembolso|ressarcimento).{0,80}n[aã]o\s+(?:pode\s+ser\s+)?aprovad[oa]/u',$text)===1;
+        return $explicitRefundRefusal || ($reimbursement && $denied);
     }
 
     private static function returnNotReceivedDispute(string $text): bool
