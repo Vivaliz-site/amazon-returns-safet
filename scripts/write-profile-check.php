@@ -36,5 +36,8 @@ if(!array_key_exists('AMAZON_RETURNS_WRITE_CANARY_CASE_IDS',$override))$override
 if(!isset($override['AMAZON_RETURNS_ENABLED']))$override['AMAZON_RETURNS_ENABLED']='1';
 if(!isset($override['AMAZON_RETURNS_MODE']))$override['AMAZON_RETURNS_MODE']='production';
 $config=new SvAmazonReturnsConfig($override);
-$killSwitchActive=in_array(strtolower($config->get('AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH','0')),['1','true','yes','on'],true);
+// Match Config::externalWriteAllowed: a missing, blank or malformed value
+// keeps the effective kill switch active. Only an explicit recognized OFF
+// value permits the narrower profile/tenant/provider checks to proceed.
+$killSwitchActive=!in_array(strtolower($config->get('AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH','1')),['0','false','no','off'],true);
 echo json_encode(['version'=>$config->writeProfileVersion(),'kill_switch_active'=>$killSwitchActive,'flags'=>$config->writeFlags()],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES).PHP_EOL;
