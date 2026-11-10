@@ -167,6 +167,28 @@ $scopedProfile=__DIR__.'/../deploy/write-profile-safe-t-pr3846.json';
   }finally{unlink($fixture);}
  }
 }
+// Synthetic RED/GREEN: current flags OFF must not hide latent broad writes.
+if(is_file($checker)){
+ foreach(['full'=>__DIR__.'/../deploy/write-profile.json','scoped'=>__DIR__.'/../deploy/write-profile-safe-t-pr3846.json'] as $kind=>$path){
+  $fixture=tempnam(sys_get_temp_dir(),'amazon-latent-');
+  if($fixture===false)throw new RuntimeException('Fixture unavailable');
+  try{
+   $envText="AMAZON_RETURNS_ENABLED=1\nAMAZON_RETURNS_MODE=production\nAMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH=1\nAMAZON_RETURNS_WRITE_PROFILE_FILE=".$path."\nAMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED=1\n";
+   if($kind==='scoped')$envText.="AMAZON_RETURNS_WRITE_CANARY_CASE_IDS=1263,1314,8803,13210,51429,101669,101670,101671\n";
+   file_put_contents($fixture,$envText);
+   $lines=[];$rc=-1;
+   exec(escapeshellarg(PHP_BINARY).' '.escapeshellarg($checker).' '.escapeshellarg('--env-file='.$fixture).' 2>&1',$lines,$rc);
+   $payload=json_decode(implode("\n",$lines),true);
+   wpSame(0,$rc,'risk probe executes '.$kind);
+   wpSame(true,$payload['kill_switch_active']??null,'kill switch active '.$kind);
+   $expected=$kind==='full'
+     ? ['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE','ERP_SALES_RETURN_CREATE']
+     : ['SAFE_T_SUBMIT'];
+   wpSame($expected,$payload['actions_if_kill_switch_off']??null,'latent actions '.$kind);
+   wpSame($kind==='full',$payload['unscoped_write_profile_risk']??null,'unscoped risk '.$kind);
+  }finally{unlink($fixture);}
+ }
+}
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
 wpSame(true,str_contains($daemon,'write_profile_revision'),'profile change must force scheduler reevaluation');
 if($errors){fwrite(STDERR,implode("\n",$errors)."\n");exit(1);}echo "write-profile-test: OK\n";
