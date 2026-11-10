@@ -116,6 +116,29 @@ if(is_file($checker)){
   } finally {unlink($env);}
  }
 }
+// The diagnostic must report the EFFECTIVE fail-closed kill switch, not
+// only literal '1'. A missing, blank or invalid value still disables every
+// external action in Config::externalWriteAllowed. Only synthetic fixtures
+// are read; no production environment or provider action is involved.
+if(is_file($checker)){
+ foreach(['missing'=>null,'blank'=>'','malformed'=>'unexpected'] as $scenario=>$rawSwitch){
+  $fixture=tempnam(sys_get_temp_dir(),'amazon-kill-readback-');
+  if($fixture===false)throw new RuntimeException('Synthetic kill-switch fixture unavailable.');
+  try{
+   $source="AMAZON_RETURNS_ENABLED=1\nAMAZON_RETURNS_MODE=production\n";
+   if($rawSwitch!==null)$source.="AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH=".$rawSwitch."\n";
+   file_put_contents($fixture,$source);
+   $lines=[];$exit=-1;
+   exec(escapeshellarg(PHP_BINARY).' '.escapeshellarg($checker).' '.escapeshellarg('--env-file='.$fixture).' 2>&1',$lines,$exit);
+   $readback=json_decode(implode("\n",$lines),true);
+   wpSame(0,$exit,'diagnostic exits successfully with synthetic '.$scenario);
+   wpSame(true,$readback['kill_switch_active']??null,'effective kill switch is active for '.$scenario);
+   foreach(['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE','ERP_SALES_RETURN_CREATE'] as $action){
+    wpSame(false,$readback['flags'][$action]??null,'effective write disabled '.$scenario.' '.$action);
+   }
+  }finally{unlink($fixture);}
+ }
+}
 // Regression: the verifier must read the exact scoped canary from the
 // explicit synthetic env-file, never silently ignore it or borrow process env.
 // This is read-only verification and never changes the live kill switch.
