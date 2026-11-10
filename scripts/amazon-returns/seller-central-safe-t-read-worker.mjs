@@ -359,7 +359,36 @@ async function safeTDiscovery(job) {
     // Search additional pages only through the list pagination control.
     // Never interpret a missing match as proof that no external claim exists.
     const readPage = async () => {
-      const raw = await cdp.evaluate(`JSON.stringify((()=>{const wanted=${expected};const cards=[...document.querySelectorAll('div[id^="claim-content-wrapper-"]')];const rows=cards.map(e=>{const safe=(e.id.match(/\\d{5}-\\d{5}-\\d{7}/)||[])[0]||'';const href=e.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';const order=(href.match(/\\d{3}-\\d{7}-\\d{7}/)||[])[0]||'';return {safe,order}});return {signature:rows.length?rows.map(x=>x.safe+'|'+x.order).join(';'):'',matches:rows.filter(x=>x.order===wanted).map(x=>x.safe)}})())`);
+      const raw = await cdp.evaluate(`JSON.stringify((()=>{
+        const wanted=${expected};
+        const cards=[...document.querySelectorAll('div[id^="claim-content-wrapper-"]')];
+        const rows=cards.map(e=>{
+          const safe=(e.id.match(/[0-9]{5}-[0-9]{5}-[0-9]{7}/)||[])[0]||'';
+          const href=e.querySelector('a[href*="/orders-v3/order/"]')?.getAttribute('href')||'';
+          const order=(href.match(/[0-9]{3}-[0-9]{7}-[0-9]{7}/)||[])[0]||'';
+          return {safe,order};
+        });
+        const section=document.querySelector('#list-claims-claim-list-section');
+        const range=((section?.innerText||'').match(/showing[ ]+([0-9]+)[ ]+to[ ]+([0-9]+)[ ]+of[ ]+([0-9]+)/i)||[]);
+        const inputValue=id=>document.getElementById(id)?.value||'';
+        const coverage={
+          host:location.hostname,view:inputValue('lastCurrentView'),
+          claim_type:inputValue('lastClaimTypeFilter'),
+          fulfillment:inputValue('lastFulfillmentChannelFilter'),
+          date_filter_type:inputValue('lastDateFilterType'),
+          date_filter_days:Number(inputValue('lastDateFilterValue')),
+          page_size:Number(inputValue('page-size-dropdown')),
+          page_start_key:Number(inputValue('pageStartKey')),
+          range_start:Number(range[1]||0),range_end:Number(range[2]||0),
+          total:Number(range[3]||0),rendered:rows.length,
+          parsed_orders:rows.filter(r=>r.order!=='').length,
+          parsed_claims:rows.filter(r=>r.safe!=='').length,
+          unique_claims:new Set(rows.map(r=>r.safe)).size,
+          start_date:inputValue('lastStartDate'),end_date:inputValue('lastEndDate'),
+        };
+        return {signature:rows.length?rows.map(x=>x.safe+'|'+x.order).join(';'):'',
+          matches:rows.filter(x=>x.order===wanted).map(x=>x.safe),coverage};
+      })())`);
       return JSON.parse(raw || '{}');
     };
     const advancePage = async previousSignature => {
@@ -414,7 +443,7 @@ async function safeTDiscovery(job) {
         return JSON.parse(raw||'{}');
       },
       pause: sleep,
-      maxChecks: 8,
+      maxChecks: 16,
     });
     const discovery = await resolveReadOnlySafeTDiscovery({
       exactSearch,
@@ -426,8 +455,21 @@ async function safeTDiscovery(job) {
       },
       // The claim list cannot establish absence. Bound the additional
       // read-only fallback to three pages per job to protect the existing worker.
-      scanList: () => scanSafeTClaimPages({ readPage, advancePage, maxPages: 3 }),
+      scanList: () => scanSafeTClaimPages({ readPage, advancePage, maxPages: 3, refundAt: job.case?.refund_at }),
     });
+    if (discovery.status === 'VERIFIED_LIST_NO_MATCH') {
+      // Concludes only the complete, filtered 90-day UI READ. The provider's
+      // absence of any claim outside that window is NOT proven, and no write
+      // action or eligibility decision is authorized by this outcome.
+      const latest=await cdp.pageState();
+      return result('NOT_FOUND', {
+        reason:'OFFICIAL_90_DAY_COMPLETE_LIST_NO_MATCH',
+        retry_safe:false, pages_scanned:discovery.pages_scanned,
+        evidence:{...evidence(latest),claim_list_proof:{
+          ...discovery.coverage,order_id:orderId,
+        }},
+      });
+    }
     if (discovery.status !== 'FOUND') return result(discovery.status, {
       reason: discovery.reason,
       retry_safe: discovery.status === 'UI_DRIFT',
