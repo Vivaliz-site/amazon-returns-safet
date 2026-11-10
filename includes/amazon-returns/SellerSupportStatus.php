@@ -135,12 +135,16 @@ final class SvAmazonSellerSupportStatus
             if($sellerAction)return 'SELLER_ACTION_REQUIRED';
             return 'ACTIVE';
         }
+        // A clear provider refusal overrides generic subject lines and quoted
+        // prior responses that mention a processed or applied buyer credit.
+        // Neither an email subject nor 'case resolved' establishes a seller
+        // reimbursement; only Finances can reconcile actual settlement.
+        if(self::reimbursementDenied($text))return 'REIMBURSEMENT_DENIED';
         $money=preg_match('/(?:reembols|reimbursement|cr[eé]dito|credit)/u',$text)===1;
         $processed=preg_match('/(?:processad|processed|successful|sucesso|emitid|issued)/u',$text)===1;
         $delay=preg_match('/(?:4\s*(?:a|to|[-–])\s*5\s*(?:dias\s*[uú]teis|business\s*days)|reimbursement\s*id|id\s*(?:do|de)?\s*reembolso)/u',$text)===1;
         if($money && $processed && $delay)return 'REIMBURSEMENT_PROCESSING';
         if(self::sellerReimbursementClaimed($text))return 'SELLER_REIMBURSEMENT_CLAIMED';
-        if(self::reimbursementDenied($text))return 'REIMBURSEMENT_DENIED';
         if(self::returnNotReceivedDispute($text))return 'RETURN_NOT_RECEIVED_DISPUTE';
         if(self::buyerRefundOnly($text))return 'BUYER_REFUND_ONLY';
         return 'TERMINAL_AMBIGUOUS';
@@ -187,14 +191,14 @@ final class SvAmazonSellerSupportStatus
     private static function sellerReimbursementClaimed(string $text): bool
     {
         $sellerMoney=preg_match('/(?:ressarcimento|reembolso\s+fba|seller\s+reimbursement|pagamento|cr[eé]dito)/u',$text)===1;
-        $claimed=preg_match('/(?:problema.{0,80}resolvid|ressarcimento.{0,100}(?:resolvid|processad|efetuad|creditad)|pagamento.{0,100}(?:efetuad|realizad)|cr[eé]dito.{0,100}(?:aplicad|efetuad|creditad)|(?:resolved|processed|credited|paid).{0,100}(?:reimbursement|payment|seller))/u',$text)===1;
+        $claimed=preg_match('/(?:problema.{0,80}resolvid|ressarcimento.{0,100}(?:resolvid|processad|efetuad|creditad)|pagamento.{0,100}(?:efetuad|realizad)|cr[eé]dito.{0,100}(?:aplicad|efetuad|creditad)|(?:processed|credited|paid).{0,100}(?:reimbursement|payment|seller))/u',$text)===1;
         return $sellerMoney && $claimed;
     }
 
     private static function reimbursementDenied(string $text): bool
     {
         $reimbursement=preg_match('/(?:ressarcimento|reembolso\s+fba|reimbursement)/u',$text)===1;
-        $denied=preg_match('/(?:n[aã]o\s+[ée]\s+eleg[ií]vel|ineleg[ií]vel|not\s+eligible|reembolso.{0,80}negad|ressarcimento.{0,80}negad|reimbursement.{0,80}denied|decis[aã]o\s+[ée]\s+definitiva)/u',$text)===1;
+        $denied=preg_match('/(?:n[aã]o\s+[ée]\s+eleg[ií]vel|ineleg[ií]vel|not\s+eligible|(?:reembolso|ressarcimento).{0,80}n[aã]o\s+(?:pode\s+ser\s+)?aprovad[oa]|reembolso.{0,80}negad|ressarcimento.{0,80}negad|reimbursement.{0,80}denied|decis[aã]o\s+[ée]\s+definitiva)/u',$text)===1;
         return $reimbursement && $denied;
     }
 
