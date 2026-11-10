@@ -331,6 +331,13 @@ final class SvAmazonReturnsStatusBridgeService
                 return $this->completeReadOnlyNoMatch($row,$result,$case);
             }
         }
+        if($kind==='SAFE_T_DISCOVERY' && $status==='NOT_FOUND'
+            && (string)($result['reason']??'')==='SAFE_T_DISCOVERY_REFUND_NOT_IN_LISTED_WINDOW'){
+            $case=$this->p->cases->find((int)$row['case_id']);
+            if(is_array($case) && self::verifiedListViewEvidence($result,$case)){
+                return $this->completeReadOnlyNoMatch($row,$result,$case,'WINDOW_NOT_COVERING_REFUND');
+            }
+        }
         if($kind==='SAFE_T_DISCOVERY' && $status==='NOT_FOUND'){
             // A search of the visible first page is not evidence of complete
             // Seller Central history. Older workers may still emit NOT_FOUND.
@@ -607,8 +614,56 @@ final class SvAmazonReturnsStatusBridgeService
             && $end>=$now->modify('-2 days') && $end<=$now->modify('+2 days');
     }
 
+    /**
+     * The official claim list was read completely for the case's order, but the
+     * case refund date is unknown or outside the listed window. This is only an
+     * observation: no absence, eligibility or write authorization is implied and
+     * official reconciliation (Finances/D+45 preflight) still decides the case.
+     */
+    public static function verifiedListViewEvidence(
+        array $result,array $case,?DateTimeImmutable $now=null
+    ):bool{
+        if(($result['status']??null)!=='NOT_FOUND'
+            || ($result['reason']??null)!=='SAFE_T_DISCOVERY_REFUND_NOT_IN_LISTED_WINDOW'
+            || ($result['submitted']??false)!==false
+            || !empty($result['external_id'])
+            || trim((string)($case['safe_t_id']??''))!==''
+            || trim((string)($case['closed_at']??''))!=='')return false;
+        $e=is_array($result['evidence']??null)?$result['evidence']:[];
+        $hash=$e['snapshot_sha256']??null;
+        if(!is_string($hash)||preg_match('/^[a-f0-9]{64}$/D',$hash)!==1)return false;
+        $proof=is_array($e['claim_list_proof']??null)?$e['claim_list_proof']:[];
+        $order=trim((string)($case['amazon_order_id']??''));
+        if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$order)!==1
+            || ($proof['order_id']??null)!==$order
+            || ($proof['host']??null)!=='sellercentral.amazon.com.br'
+            || ($proof['view']??null)!=='all'
+            || ($proof['claim_type']??null)!=='ALL'
+            || ($proof['fulfillment']??null)!=='ALL'
+            || ($proof['date_filter_type']??null)!=='CLAIM_DATE'
+            || ($proof['date_filter_days']??null)!==90
+            || ($proof['page_size']??null)!==100
+            || ($proof['page_start_key']??null)!==0
+            || ($proof['range_start']??null)!==1)return false;
+        $count=$proof['total']??null;
+        if(!is_int($count)||$count<1||$count>100)return false;
+        foreach(['range_end','rendered','parsed_orders','parsed_claims','unique_claims'] as $field){
+            if(($proof[$field]??null)!==$count)return false;
+        }
+        $tz=new DateTimeZone('UTC');
+        $startRaw=$proof['start_date']??null;$endRaw=$proof['end_date']??null;
+        if(!is_string($startRaw)||!is_string($endRaw))return false;
+        $start=DateTimeImmutable::createFromFormat('!m/d/Y',$startRaw,$tz);
+        $end=DateTimeImmutable::createFromFormat('!m/d/Y',$endRaw,$tz);
+        if(!$start||!$end||$start->format('m/d/Y')!==$startRaw||$end->format('m/d/Y')!==$endRaw)return false;
+        $now=($now??new DateTimeImmutable('now',$tz))->setTimezone($tz);
+        $window=$end->getTimestamp()-$start->getTimestamp();
+        return $window>=88*86400 && $window<=92*86400
+            && $end>=$now->modify('-2 days') && $end<=$now->modify('+2 days');
+    }
+
     /** An immutable audit observation, NOT a provider absence/eligibility grant. */
-    private function completeReadOnlyNoMatch(array $row,array $result,array $case):array
+    private function completeReadOnlyNoMatch(array $row,array $result,array $case,string $coverage='REFUND_IN_LISTED_WINDOW'):array
     {
         $caseId=(int)$row['case_id'];
         $proof=$result['evidence']['claim_list_proof'];
@@ -616,7 +671,10 @@ final class SvAmazonReturnsStatusBridgeService
         try{
             $this->p->cases->assertOwned($caseId);
             $fresh=$this->p->cases->find($caseId);
-            if(!is_array($fresh) || !self::verifiedCompleteClaimListEvidence($result,$fresh)){
+            $stillValid=is_array($fresh) && ($coverage==='WINDOW_NOT_COVERING_REFUND'
+                ? self::verifiedListViewEvidence($result,$fresh)
+                : self::verifiedCompleteClaimListEvidence($result,$fresh));
+            if(!$stillValid){
                 throw new RuntimeException('Seller Central list proof changed before readback.');
             }
             $this->p->events->append([
@@ -634,6 +692,8 @@ final class SvAmazonReturnsStatusBridgeService
                     'start_date'=>$proof['start_date'],
                     'end_date'=>$proof['end_date'],
                     'listed_claim_count'=>$proof['total'],
+                    'refund_window_coverage'=>$coverage,
+                    'requires_official_reconciliation'=>$coverage==='WINDOW_NOT_COVERING_REFUND',
                     'provider_claim_absence_certified'=>false,
                     'external_write_authorized'=>false,
                 ],

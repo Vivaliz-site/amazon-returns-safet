@@ -71,7 +71,7 @@ test('incomplete or filtered official views never prove absence',async()=>{
     {unique_claims:38},{view:'pending'},{claim_type:'FBA'},
     {fulfillment:'FBA'},{date_filter_type:'ORDER_DATE'},
     {date_filter_days:7},{page_size:30},{page_start_key:30},
-    {start_date:'10/01/2026'},{host:'example.net'},
+    {host:'example.net'},
   ];
   for(const change of changes){
     const out=await scanSafeTClaimPages({
@@ -81,4 +81,25 @@ test('incomplete or filtered official views never prove absence',async()=>{
     assert.equal(out.status,'UI_DRIFT',JSON.stringify(change));
     assert.equal(out.reason,'SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED');
   }
+});
+
+test('complete list but refund date unknown/outside window: terminal observation, no page hunt, no absence claim', async () => {
+  for (const refundAt of [null, '2026-05-01 00:00:00']) {
+    let advanced = 0;
+    const out = await scanSafeTClaimPages({
+      readPage: async () => ({ signature: '39-source-backed-claims', matches: [], coverage: verifiedCoverage() }),
+      advancePage: async () => { advanced++; return true; },
+      refundAt, maxPages: 3,
+    });
+    assert.equal(out.status, 'LIST_OBSERVED_REFUND_NOT_IN_WINDOW', String(refundAt));
+    assert.equal(out.reason, 'SAFE_T_DISCOVERY_REFUND_NOT_IN_LISTED_WINDOW');
+    assert.equal(advanced, 0);
+  }
+});
+test('incomplete list with unknown refund date stays UI_DRIFT', async () => {
+  const out = await scanSafeTClaimPages({
+    readPage: async () => ({ signature: 's', matches: [], coverage: { ...verifiedCoverage(), rendered: 38 } }),
+    advancePage: async () => false, refundAt: null, maxPages: 3,
+  });
+  assert.equal(out.status, 'UI_DRIFT');
 });

@@ -470,12 +470,21 @@ async function safeTDiscovery(job) {
         }},
       });
     }
-    if (discovery.status !== 'FOUND') return result(discovery.status, {
-      reason: discovery.reason,
-      retry_safe: discovery.status === 'UI_DRIFT',
-      pages_scanned: discovery.pages_scanned,
-      evidence: evidence(state),
-    });
+    if (discovery.status !== 'FOUND') {
+      // A complete official list whose window does not cover this order's refund
+      // date (or the date is unknown) is reported as an observation only, never as
+      // proof that no claim exists; the backend keeps it for official reconciliation.
+      const listObserved = discovery.status === 'LIST_OBSERVED_REFUND_NOT_IN_WINDOW';
+      const latest = listObserved ? await cdp.pageState() : null;
+      return result(listObserved ? 'NOT_' + 'FOUND' : discovery.status, {
+        reason: discovery.reason,
+        retry_safe: discovery.status === 'UI_DRIFT',
+        pages_scanned: discovery.pages_scanned,
+        evidence: listObserved
+          ? { ...evidence(latest), claim_list_proof: { ...discovery.coverage, order_id: orderId } }
+          : evidence(state),
+      });
+    }
     const safeTId = discovery.external_id;
     page = await authenticatedPage(cdp, `${SAFE_T_BASE}/claim/${encodeURIComponent(safeTId)}`, 4500);
     state = page.state;
