@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
 import { parseSafeTStatus } from './safe-t-status-parser.mjs';
-import { scanSafeTClaimPages } from './safe-t-discovery-pages.mjs';
+import { scanSafeTClaimPages, coverageMismatchCodes } from './safe-t-discovery-pages.mjs';
 import { resolveCycleDeadline, withinCycleBudget } from './seller-central-cycle-budget.mjs';
 import { scanSafeTExactOrder, resolveReadOnlySafeTDiscovery } from './safe-t-discovery-exact-search.mjs';
 import { classifyAmazonAuthState, ensureSellerCentralAuthenticated } from './seller-central-auth.mjs';
@@ -22,6 +22,7 @@ const RESULT_RETRY_MS = Number.isFinite(resultRetryRaw) ? Math.max(10, Math.min(
 const RESULT_RETRY_ATTEMPTS = 3;
 const QUIESCE_MARKER = process.env.AMAZON_RETURNS_QUIESCE_MARKER || '/run/amazon-returns-seller-central.quiesce';
 const SAFE_T_BASE = 'https://sellercentral.amazon.com.br/safet-claims';
+const coverageDiagnosticsReported = new Set();
 const CASE_LOBBY = 'https://sellercentral.amazon.com.br/cu/case-lobby';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -457,6 +458,19 @@ async function safeTDiscovery(job) {
       // read-only fallback to three pages per job to protect the existing worker.
       scanList: () => scanSafeTClaimPages({ readPage, advancePage, maxPages: 3, refundAt: job.case?.refund_at }),
     });
+    // Existing owned CDP session only: one redacted invariant report per
+    // date-evidence class per service cycle. No extra browser or bridge job.
+    if (discovery.status === 'UI_DRIFT' &&
+        discovery.reason === 'SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED') {
+      const group = job.case?.refund_at ? 'DATED_REFUND' : 'MISSING_REFUND';
+      if (!coverageDiagnosticsReported.has(group)) {
+        const observed = await readPage().catch(() => null);
+        log('safe_t_coverage_invariants', {
+          group, codes:coverageMismatchCodes(observed?.coverage, job.case?.refund_at),
+        });
+        coverageDiagnosticsReported.add(group);
+      }
+    }
     if (discovery.status === 'VERIFIED_LIST_NO_MATCH') {
       // Concludes only the complete, filtered 90-day UI READ. The provider's
       // absence of any claim outside that window is NOT proven, and no write
@@ -683,6 +697,11 @@ function log(event, data = {}) {
     external_id: data.external_id ?? null,
     claim_status: data.read?.claim_status ?? null,
     reason: event === 'job_result' ? safeReadLogReason(data.reason) : null,
+    coverage_group: event === 'safe_t_coverage_invariants' &&
+      ['DATED_REFUND', 'MISSING_REFUND'].includes(data.group) ? data.group : null,
+    coverage_invariants: event === 'safe_t_coverage_invariants' && Array.isArray(data.codes)
+      ? data.codes.filter(v => typeof v === 'string' &&
+          /^[A-Z_]{1,40}$/.test(v)).slice(0, 20) : null,
     pages_scanned: event === 'job_result' && Number.isSafeInteger(data.pages_scanned)
       && data.pages_scanned >= 1 && data.pages_scanned <= 25 ? data.pages_scanned : null,
   })}\n`);
