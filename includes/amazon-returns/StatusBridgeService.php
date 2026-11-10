@@ -324,6 +324,13 @@ final class SvAmazonReturnsStatusBridgeService
                 ? $this->completeDiscovery($row,$result)
                 : $this->completeObservation($row,$result);
         }
+        if($kind==='SAFE_T_DISCOVERY' && $status==='NOT_FOUND'
+            && (string)($result['reason']??'')==='OFFICIAL_90_DAY_COMPLETE_LIST_NO_MATCH'){
+            $case=$this->p->cases->find((int)$row['case_id']);
+            if(is_array($case) && self::verifiedCompleteClaimListEvidence($result,$case)){
+                return $this->completeReadOnlyNoMatch($row,$result,$case);
+            }
+        }
         if($kind==='SAFE_T_DISCOVERY' && $status==='NOT_FOUND'){
             // A search of the visible first page is not evidence of complete
             // Seller Central history. Older workers may still emit NOT_FOUND.
@@ -548,6 +555,101 @@ final class SvAmazonReturnsStatusBridgeService
     }
 
     /** @param array<string,mixed> $row @param array<string,mixed> $result @return array<string,mixed> */
+    /**
+     * A validated full 90-day CLAIM_DATE view only completes the scoped
+     * read-only search. It is not a universal no-claim certificate and must
+     * never enable external SAFE-T submission or bypass the provider preflight.
+     */
+    public static function verifiedCompleteClaimListEvidence(
+        array $result,array $case,?DateTimeImmutable $now=null
+    ):bool{
+        if(($result['status']??null)!=='NOT_FOUND'
+            || ($result['reason']??null)!=='OFFICIAL_90_DAY_COMPLETE_LIST_NO_MATCH'
+            || ($result['submitted']??false)!==false
+            || !empty($result['external_id'])
+            || trim((string)($case['safe_t_id']??''))!==''
+            || trim((string)($case['closed_at']??''))!=='')return false;
+        $e=is_array($result['evidence']??null)?$result['evidence']:[];
+        $hash=$e['snapshot_sha256']??null;
+        if(!is_string($hash)||preg_match('/^[a-f0-9]{64}$/D',$hash)!==1)return false;
+        $proof=is_array($e['claim_list_proof']??null)?$e['claim_list_proof']:[];
+        $order=trim((string)($case['amazon_order_id']??''));
+        if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/D',$order)!==1
+            || ($proof['order_id']??null)!==$order
+            || ($proof['host']??null)!=='sellercentral.amazon.com.br'
+            || ($proof['view']??null)!=='all'
+            || ($proof['claim_type']??null)!=='ALL'
+            || ($proof['fulfillment']??null)!=='ALL'
+            || ($proof['date_filter_type']??null)!=='CLAIM_DATE'
+            || ($proof['date_filter_days']??null)!==90
+            || ($proof['page_size']??null)!==100
+            || ($proof['page_start_key']??null)!==0
+            || ($proof['range_start']??null)!==1)return false;
+        $count=$proof['total']??null;
+        if(!is_int($count)||$count<1||$count>100)return false;
+        foreach(['range_end','rendered','parsed_orders','parsed_claims','unique_claims'] as $field){
+            if(($proof[$field]??null)!==$count)return false;
+        }
+        $tz=new DateTimeZone('UTC');
+        $startRaw=$proof['start_date']??null;$endRaw=$proof['end_date']??null;
+        $refundRaw=$case['refund_at']??null;
+        if(!is_string($startRaw)||!is_string($endRaw)||!is_string($refundRaw))return false;
+        $start=DateTimeImmutable::createFromFormat('!m/d/Y',$startRaw,$tz);
+        $end=DateTimeImmutable::createFromFormat('!m/d/Y',$endRaw,$tz);
+        $refunded=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$refundRaw,$tz);
+        if(!$start||!$end||!$refunded
+            ||$start->format('m/d/Y')!==$startRaw||$end->format('m/d/Y')!==$endRaw
+            ||$refunded->format('Y-m-d H:i:s')!==$refundRaw)return false;
+        $now=($now??new DateTimeImmutable('now',$tz))->setTimezone($tz);
+        $window=$end->getTimestamp()-$start->getTimestamp();
+        return $window>=88*86400 && $window<=92*86400
+            && $start<=$refunded && $refunded<$end->modify('+1 day')
+            && $end>=$now->modify('-2 days') && $end<=$now->modify('+2 days');
+    }
+
+    /** An immutable audit observation, NOT a provider absence/eligibility grant. */
+    private function completeReadOnlyNoMatch(array $row,array $result,array $case):array
+    {
+        $caseId=(int)$row['case_id'];
+        $proof=$result['evidence']['claim_list_proof'];
+        $db=$this->p->db();$db->beginTransaction();
+        try{
+            $this->p->cases->assertOwned($caseId);
+            $fresh=$this->p->cases->find($caseId);
+            if(!is_array($fresh) || !self::verifiedCompleteClaimListEvidence($result,$fresh)){
+                throw new RuntimeException('Seller Central list proof changed before readback.');
+            }
+            $this->p->events->append([
+                'case_id'=>$caseId,
+                'event_type'=>'SAFE_T_DISCOVERY_COMPLETE_LIST_OBSERVED',
+                'source'=>'SELLER_CENTRAL',
+                'source_event_id'=>'safet-list-read:'.(string)$row['id'],
+                'idempotency_key'=>SvAmazonTenantReturnEventStore::deterministicKey(
+                    'seller-central-safet-complete-list',(string)$caseId,(string)$row['id']
+                ),
+                'occurred_at'=>gmdate('Y-m-d H:i:s'),
+                'payload'=>[
+                    'order_id'=>$fresh['amazon_order_id'],
+                    'search_scope'=>'COMPLETE_OFFICIAL_90_DAY_LIST',
+                    'start_date'=>$proof['start_date'],
+                    'end_date'=>$proof['end_date'],
+                    'listed_claim_count'=>$proof['total'],
+                    'provider_claim_absence_certified'=>false,
+                    'external_write_authorized'=>false,
+                ],
+                'evidence_sha256'=>$result['evidence']['snapshot_sha256'],
+            ]);
+            $this->p->outbox->markSucceeded((int)$row['id']);
+            $db->commit();
+            return ['status'=>'ACK','job_id'=>(int)$row['id'],
+                'result_status'=>'LIST_READ_COMPLETED_NO_MATCH',
+                'completed'=>true,'external_write_authorized'=>false];
+        }catch(Throwable $e){
+            if($db->inTransaction())$db->rollBack();
+            throw $e;
+        }
+    }
+
     private function completeDiscovery(array $row,array $result): array
     {
         $read=$result['read'];

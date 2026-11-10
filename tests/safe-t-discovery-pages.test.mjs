@@ -45,3 +45,40 @@ test('bounded navigation never pretends completeness', async () => {
   assert.equal(outcome.reason, 'SAFE_T_DISCOVERY_PAGE_LIMIT_REACHED');
   assert.equal(n, 1);
 });
+
+
+const verifiedCoverage=()=>({
+  host:'sellercentral.amazon.com.br',view:'all',claim_type:'ALL',fulfillment:'ALL',
+  date_filter_type:'CLAIM_DATE',date_filter_days:90,
+  page_size:100,page_start_key:0,range_start:1,range_end:39,total:39,
+  rendered:39,parsed_orders:39,parsed_claims:39,unique_claims:39,
+  start_date:'08/13/2026',end_date:'11/11/2026',
+});
+test('complete official 90-day all-claims view acknowledges read-only no-match',async()=>{
+  let advanced=0;
+  const out=await scanSafeTClaimPages({
+    readPage:async()=>({signature:'39-source-backed-claims',matches:[],coverage:verifiedCoverage()}),
+    advancePage:async()=>{advanced++;return true;},
+    refundAt:'2026-09-09 18:38:59',maxPages:3,
+  });
+  assert.equal(out.status,'VERIFIED_LIST_NO_MATCH');
+  assert.equal(out.coverage.total,39);
+  assert.equal(advanced,0);
+});
+test('incomplete or filtered official views never prove absence',async()=>{
+  const changes=[
+    {range_end:38},{rendered:38},{parsed_orders:38},{parsed_claims:38},
+    {unique_claims:38},{view:'pending'},{claim_type:'FBA'},
+    {fulfillment:'FBA'},{date_filter_type:'ORDER_DATE'},
+    {date_filter_days:7},{page_size:30},{page_start_key:30},
+    {start_date:'10/01/2026'},{host:'example.net'},
+  ];
+  for(const change of changes){
+    const out=await scanSafeTClaimPages({
+      readPage:async()=>({signature:'39-source-backed-claims',matches:[],coverage:{...verifiedCoverage(),...change}}),
+      advancePage:async()=>false,refundAt:'2026-09-09 18:38:59',maxPages:3,
+    });
+    assert.equal(out.status,'UI_DRIFT',JSON.stringify(change));
+    assert.equal(out.reason,'SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED');
+  }
+});
