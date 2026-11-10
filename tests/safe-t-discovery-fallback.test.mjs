@@ -23,6 +23,18 @@ test("no positive claim after fallback remains UI_DRIFT, never NOT_FOUND", async
   assert.equal(out.status,"UI_DRIFT");
 });
 
+test("verified complete list observation without refund window match is preserved through fallback", async () => {
+  for (const status of ["VERIFIED_LIST_NO_MATCH", "LIST_OBSERVED_REFUND_NOT_IN_WINDOW"]) {
+    const scanned = { status, pages_scanned: 1, coverage: { total: 39, unique_claims: 39 } };
+    const out = await resolveReadOnlySafeTDiscovery({
+      exactSearch: drift,
+      resetToUnfilteredList: async () => true,
+      scanList: async () => scanned,
+    });
+    assert.deepEqual(out, scanned);
+  }
+});
+
 test("multiple claim failures and successful exact lookup never trigger fallback", async () => {
   for(const input of [{status:"FAILED",reason:"MULTIPLE_SAFE_T_CLAIMS_FOR_ORDER"},{status:"FOUND",external_id:"64204-51742-6364222"}]){
     const out=await resolveReadOnlySafeTDiscovery({exactSearch:input,

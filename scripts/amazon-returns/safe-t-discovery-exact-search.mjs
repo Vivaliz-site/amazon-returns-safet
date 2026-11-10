@@ -67,7 +67,7 @@ export async function resolveReadOnlySafeTDiscovery({
   }
   const scanned = await scanList();
   if (scanned?.status === "FOUND" && CLAIM_ID.test(scanned.external_id ?? "")) return scanned;
-  if (scanned?.status === 'VERIFIED_LIST_NO_MATCH') return scanned;
+  if (scanned?.status === 'VERIFIED_LIST_NO_MATCH' || scanned?.status === 'LIST_OBSERVED_REFUND_NOT_IN_WINDOW') return scanned;
   if (scanned?.status === "FAILED" || scanned?.status === "UI_DRIFT") return scanned;
   return {status:"UI_DRIFT", reason:"SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED",
     pages_scanned:Number.isSafeInteger(scanned?.pages_scanned) ? scanned.pages_scanned : exactSearch.pages_scanned};
