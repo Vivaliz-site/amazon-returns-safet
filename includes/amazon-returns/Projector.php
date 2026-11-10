@@ -113,6 +113,19 @@ final class SvAmazonReturnProjector
                 }
                 break;
 
+            case 'FBA_SHIPMENT_EMAIL':
+                // An Amazon dispatch notification is source-backed outbound tracking,
+                // never proof of delivery to the buyer or return to the seller.
+                if (strtoupper((string)($event['source']??'')) !== 'GMAIL') break;
+                self::mergeTextList($facts,$payload,'customer_tracking_ids');
+                self::mergeTextList($facts,$payload,'customer_delivery_carriers');
+                if ($facts['customer_delivery_confirmed'] !== true
+                    && $facts['customer_delivery_status'] === 'UNKNOWN'
+                    && $facts['customer_tracking_ids'] !== []) {
+                    $facts['customer_delivery_status'] = 'SHIPPED';
+                }
+                break;
+
             case 'CUSTOMER_SHIPMENT_STATUS_OBSERVED':
                 // Confirmed buyer delivery is independent of any physical return.
                 // Never turn shipment tracking into seller warehouse receipt.
