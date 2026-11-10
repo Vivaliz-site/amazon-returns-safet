@@ -80,7 +80,7 @@ function renderSupportReferences(items){
   if(!Array.isArray(items)||items.length===0){root.append(text('p','Nenhum chamado identificado no histórico.','muted'));return root;}
   for(const item of items){
     const id=String(item?.id||'');
-    if(!/^\\d{8,14}$/.test(id))continue;
+    if(!/^\d{8,14}$/.test(id))continue;
     const primary=item.is_primary===true?'vínculo principal do cadastro':'referência adicional';
     const verification=item.seller_central_verified===true
       ?'situação observada no Seller Central (pode ter mudado)'
