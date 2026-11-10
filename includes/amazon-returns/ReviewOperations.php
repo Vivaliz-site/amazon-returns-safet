@@ -41,7 +41,26 @@ final class SvAmazonReviewOperations
         $ready=[];
         foreach($rows as $row){
             if(!is_array($row))continue;
-            if(is_array($row['ai_suggestion']??null)){$ready[]=$row;continue;}
+            if(is_array($row['ai_suggestion']??null)){
+                // Saved AI suggestions can become invalid as official appeal deadlines pass.
+                // Repair only the advisory, preserving the case, claim and review evidence.
+                try{
+                    $context=is_array($row['context']??null)?$row['context']:[];
+                    $guarded=SvAmazonOpenAiReviewAdvisor::guardSuggestion($row['ai_suggestion'],$context,$now);
+                    if($guarded!==$row['ai_suggestion']){
+                        $model=trim((string)($row['ai_model']??''))?:'review-advisor';
+                        $row=$this->persistence->reviews->saveSuggestion(
+                            (int)$row['id'],(int)($row['version']??0),$guarded,$model
+                        );
+                        $result['suggested']++;
+                    }
+                    $ready[]=$row;
+                }catch(Throwable){
+                    $result['ai_failed']++;
+                    $result['status']='PARTIAL';
+                }
+                continue;
+            }
             if(!$this->config->reviewAiReady()){
                 $result['ai_failed']++;
                 $result['status']='PARTIAL';
