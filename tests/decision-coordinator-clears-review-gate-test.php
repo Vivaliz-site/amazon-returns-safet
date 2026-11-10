@@ -102,4 +102,30 @@ gateSame('WAIT',$decision6['action'],'fresh classic FBA residual before D45 must
 gateSame('CLASSIC_FBA_D45_PENDING',$decision6['reason']??null,'pre-D45 classic FBA must expose the exact wait reason');
 gateSame('2026-10-09 20:00:05',$decision6['next_action_at']??null,'pre-D45 classic FBA must wake exactly at D45 from refund');
 gateSame([['case_id'=>6,'patch'=>['state'=>SvAmazonReturnStates::CREDIT_PENDING]]],$p6->cases->updates,'automatic Seller Support escalation must clear the persisted human-review gate');
+// FBA Onsite refund with no issuer proof must wait for the already approved D+45
+// review point, not ask the owner to decide before there is an actionable claim.
+$p7=new GatePersistence();
+$time7=new DateTimeImmutable('2026-11-10 12:00:00',new DateTimeZone('UTC'));
+$coordinator7=new SvAmazonDecisionCoordinator(new SvAmazonSafeTDecisionEngine(null,$time7),$p7,new SvAmazonReturnsConfig());
+$case7=[
+    'id'=>7,'amazon_order_id'=>'702-1602890-5168236','safe_t_id'=>null,
+    'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED,'physical_status'=>SvAmazonReturnPhysicalStatuses::NOT_RECEIVED,
+    'refund_at'=>'2026-10-20 22:36:35','seller_debit_at'=>'2026-10-20 22:36:35',
+    'refund_initiator'=>SvAmazonRefundInitiators::UNKNOWN,
+    'expected_reimbursement_amount'=>'24.62','reconciled_credit_amount'=>'0.00',
+    'marketplace_id'=>'A2Q3Y263D00KWC','program'=>SvAmazonReturnPrograms::FBA_ONSITE,
+];
+$unprovenPolicy=['eligible'=>false,'state'=>SvAmazonReturnStates::POLICY_REVIEW_REQUIRED];
+$before=$coordinator7->nextAction($case7,[],$unprovenPolicy,$time7);
+gateSame('WAIT',$before['action'],'D+45 eligibility before the issuer is proved is scheduled, not human review.');
+gateSame('REFUND_ISSUER_CHECK_PENDING_D45',$before['reason'],'Reason must identify automatic issuer evidence check.');
+gateSame('2026-12-04 22:36:35',$before['next_action_at'],'Exact refund based 45-day wake.');
+gateSame([7],$p7->reviews->resolved,'No premature human review after an automatic future wake is known.');
+gateSame([['case_id'=>7,'patch'=>['state'=>SvAmazonReturnStates::CREDIT_PENDING]]],
+    $p7->cases->updates,'The pending-review state must be reset for the automatic scheduled path.');
+$due=(new SvAmazonSafeTDecisionEngine())->nextAction($case7,[],$unprovenPolicy,
+    new DateTimeImmutable('2026-12-04 22:36:35',new DateTimeZone('UTC')));
+gateSame('BLOCKED_REVIEW',$due['action'],'D+45 does not fabricate issuer proof or authorize a SAFE-T claim.');
+gateSame('REFUND_INITIATOR_UNKNOWN',$due['reason'],'At D+45 the issuer must still be confirmed.');
+
 echo "decision-coordinator-clears-review-gate-test: OK\n";
