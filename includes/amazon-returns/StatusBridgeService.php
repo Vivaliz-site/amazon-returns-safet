@@ -6,6 +6,7 @@ require_once __DIR__ . '/SafeTStatusService.php';
 require_once __DIR__ . '/SellerSupportStatus.php';
 require_once __DIR__ . '/TenantPersistence.php';
 require_once __DIR__ . '/RecoveryWindow.php';
+require_once __DIR__ . '/CaseConsultation.php';
 
 final class SvAmazonReturnsStatusBridgeService
 {
@@ -69,6 +70,32 @@ final class SvAmazonReturnsStatusBridgeService
                 'read_only'=>true,
             ],$key);
             $ensured++;
+        }
+        // The canonical support_case_id may refer to a closed older thread.
+        // Read all *source-backed* sibling threads for currently open reviews
+        // before the older primary; this only enqueues authenticated READ jobs.
+        // A Gmail reference is not a provider status until Seller Central
+        // confirms its order/claim identity through the existing worker.
+        foreach($this->p->reviews->openQueue() as $review){
+            $caseId=(int)($review['case_id']??0);
+            if($caseId<1 || $this->p->outbox->hasActive($caseId,'SELLER_SUPPORT_READ'))continue;
+            $case=$this->p->cases->find($caseId);
+            if(!is_array($case) || trim((string)($case['closed_at']??''))!=='')continue;
+            $timeline=$this->p->events->eventsForCase($caseId);
+            foreach(SvAmazonCaseConsultation::supportCaseReferences($case,$timeline) as $ref){
+                if(($ref['is_primary']??false)===true)continue;
+                $refId=trim((string)($ref['id']??''));
+                if(preg_match('/^\d{8,14}$/D',$refId)!==1)continue;
+                $key=SvAmazonSellerSupportStatus::readKeyForTimeline($caseId,$refId,$now,$timeline);
+                $created=$this->p->outbox->enqueueResult('SELLER_SUPPORT_READ',$caseId,[
+                    'case_id'=>$caseId,
+                    'order_id'=>(string)($case['amazon_order_id']??''),
+                    'safe_t_id'=>$case['safe_t_id']??null,
+                    'support_case_id'=>$refId,
+                    'read_only'=>true,
+                ],$key);
+                if(($created['enqueued']??false)===true){$ensured++;break;}
+            }
         }
         foreach($this->p->cases->casesWithSupportCaseId(250) as $case){
             $caseId=(int)($case['id'] ?? 0);
