@@ -234,6 +234,22 @@ final class SvAmazonSafeTDecisionEngine
         }
 
         if(trim((string)($case['refund_at']??''))==='')return $this->decision('WAIT','REFUND_NOT_CONFIRMED',$caseId);
+        // Missing issuer proof is not a human decision before the approved first
+        // D+45 eligibility attempt. Wake on the original refund date, then
+        // require authoritative issuer evidence before opening any SAFE-T.
+        if($safeTId==='' && ($case['program']??'')===SvAmazonReturnPrograms::FBA_ONSITE
+            && $initiator===SvAmazonRefundInitiators::UNKNOWN
+            && !$deliveryBackedUnknownRefund && !$reimbursementBackedUnknownRefund){
+            $refundAt=SvAmazonRequestedWait::timestamp($case['refund_at']??null);
+            if($refundAt!==null){
+                $firstAttemptAt=$refundAt->modify('+45 days');
+                if($now<$firstAttemptAt){
+                    $waiting=$this->decision('WAIT','REFUND_ISSUER_CHECK_PENDING_D45',$caseId);
+                    $waiting['next_action_at']=$firstAttemptAt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+                    return $waiting;
+                }
+            }
+        }
         if((!SvAmazonRefundInitiators::isValid($initiator) || $initiator===SvAmazonRefundInitiators::UNKNOWN)
             && !$deliveryBackedUnknownRefund && !$reimbursementBackedUnknownRefund){
             return $this->decision('BLOCKED_REVIEW','REFUND_INITIATOR_UNKNOWN',$caseId);
