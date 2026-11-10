@@ -35,6 +35,45 @@ export function completeClaimListCoverage(coverage, refundAt) {
     Number.isFinite(refunded) && refunded >= start && refunded < end + 86400000;
 }
 
+/**
+ * Diagnostic-only labels for the EXISTING coverage predicate. Never logs
+ * order IDs, claim IDs, raw dates, page text or credentials. It does not
+ * change the verdict, retry policy, eligibility or write authorizations.
+ */
+export function coverageMismatchCodes(coverage, refundAt) {
+  if (!coverage || typeof coverage !== 'object') return ['COVERAGE_UNREADABLE'];
+  const failures = [];
+  const check = (label, ok) => { if (!ok) failures.push(label); };
+  check('HOST', coverage.host === 'sellercentral.amazon.com.br');
+  check('VIEW', coverage.view === 'all');
+  check('CLAIM_TYPE', coverage.claim_type === 'ALL');
+  check('FULFILLMENT', coverage.fulfillment === 'ALL');
+  check('DATE_FILTER_TYPE', coverage.date_filter_type === 'CLAIM_DATE');
+  check('DATE_FILTER_DAYS', coverage.date_filter_days === 90);
+  check('PAGE_SIZE', coverage.page_size === 100);
+  check('PAGE_START', coverage.page_start_key === 0);
+  const count = coverage.total;
+  check('LIST_TOTAL', Number.isSafeInteger(count) && count >= 1 && count <= 100);
+  check('LIST_RANGE_START', coverage.range_start === 1);
+  check('LIST_RANGE_END', coverage.range_end === count);
+  check('LIST_RENDERED', coverage.rendered === count);
+  check('LIST_PARSED_ORDERS', coverage.parsed_orders === count);
+  check('LIST_PARSED_CLAIMS', coverage.parsed_claims === count);
+  check('LIST_UNIQUE_CLAIMS', coverage.unique_claims === count);
+  const start = usDateStart(coverage.start_date);
+  const end = usDateStart(coverage.end_date);
+  check('DATE_RANGE_FORMAT', Number.isFinite(start) && Number.isFinite(end) && start <= end);
+  const refundFormat = typeof refundAt === 'string' &&
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(refundAt);
+  check('REFUND_AT_FORMAT', refundFormat);
+  const refunded = refundFormat ? Date.parse(refundAt.replace(' ', 'T') + 'Z') : NaN;
+  if (refundFormat && Number.isFinite(start) && Number.isFinite(end)) {
+    check('REFUND_OUTSIDE_WINDOW', Number.isFinite(refunded) &&
+      refunded >= start && refunded < end + 86400000);
+  }
+  return failures;
+}
+
 /** Read-only SAFE-T discovery. An unverified list never proves absence. */
 export async function scanSafeTClaimPages({ readPage, advancePage, maxPages = 25, refundAt = null }) {
   if (typeof readPage !== 'function' || typeof advancePage !== 'function') {
