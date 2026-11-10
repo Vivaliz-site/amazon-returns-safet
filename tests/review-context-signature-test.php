@@ -132,4 +132,17 @@ rcsSame('PRESENT',$physicalReturn['signature']['return_tracking'],'Return tracki
 rcsSame(['RET9031'],$physicalReturn['facts']['return_tracking_ids'],'AI receives return tracking separately.');
 rcsAssert($physicalReturn['signature_hash']!==$a['signature_hash'],'New return proof must refresh pending review context.');
 
+$shipEvent=[
+    'id'=>1601,'case_id'=>31,'event_type'=>'FBA_SHIPMENT_EMAIL','source'=>'GMAIL',
+    'occurred_at'=>'2026-09-06 09:20:00','evidence_sha256'=>hash('sha256','source-email'),
+    'payload'=>['customer_tracking_ids'=>['TBR420573721'],'customer_delivery_carriers'=>['Amazon Logistics BR']],
+];
+$shipContext=SvAmazonReviewContext::build(rcsCase([
+    'customer_tracking_ids'=>['TBR420573721'],'customer_delivery_status'=>'SHIPPED',
+]),array_merge(rcsTimeline(),[$shipEvent]),$policy,$review);
+rcsSame('PRESENT',$shipContext['signature']['outbound_tracking'],'Gmail shipment tracking must be distinguishable.');
+$shipTypes=array_column($shipContext['evidence_refs'],'event_type');
+rcsAssert(in_array('FBA_SHIPMENT_EMAIL',$shipTypes,true),'Gmail shipment source event must be cited as evidence.');
+rcsSame(false,$shipContext['facts']['customer_delivery_confirmed'],'Shipment cannot become delivery proof.');
+
 echo "review-context-signature-test: OK\n";
