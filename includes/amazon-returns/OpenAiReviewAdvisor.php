@@ -5,7 +5,7 @@ require_once __DIR__.'/Config.php';
 final class SvAmazonOpenAiReviewAdvisor implements SvAmazonReviewAdvisor
 {
     private const ACTIONS=['WAIT','CHECK_FINANCES','SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE','CLOSE_LOSS'];
-    private const LANGUAGE_INSTRUCTION='Recommend one SAFE-T review action using only supplied structured facts. Before choosing, independently compare: outbound shipment tracking and delivery to the buyer; return shipment and actual physical receipt by the seller; refund paid to the buyer; and reimbursement actually credited to the seller. DELIVERED to the buyer is NOT a returned item and is NOT proof of reimbursement. A tracking number without a DELIVERED status is NOT proof of delivery, and an UNKNOWN status is NOT evidence that delivery failed. Cite exact source-backed tracking IDs and event references where provided; identify missing carrier, return or financial verification as uncertainties and avoid unjustified confidence. Check an existing SAFE-T claim/thread before suggesting a new one. Do not invent dates, physical receipts, carrier events, credits or execute actions. Write the rationale and every uncertainty in Brazilian Portuguese (pt-BR), understandable to a non-technical operator. Keep enum values exactly as required by the schema.';
+    private const LANGUAGE_INSTRUCTION='Recommend one SAFE-T review action using only supplied structured facts. Compare the appeal deadline with the current UTC date; do not suggest SAFE_T_APPEAL if the deadline is expired, unavailable or the claim is APPEAL_DENIED_FINAL. Before choosing, independently compare: outbound shipment tracking and delivery to the buyer; return shipment and actual physical receipt by the seller; refund paid to the buyer; and reimbursement actually credited to the seller. DELIVERED to the buyer is NOT a returned item and is NOT proof of reimbursement. A tracking number without a DELIVERED status is NOT proof of delivery, and an UNKNOWN status is NOT evidence that delivery failed. Cite exact source-backed tracking IDs and event references where provided; identify missing carrier, return or financial verification as uncertainties and avoid unjustified confidence. Check an existing SAFE-T claim/thread before suggesting a new one. Do not invent dates, physical receipts, carrier events, credits or execute actions. Write the rationale and every uncertainty in Brazilian Portuguese (pt-BR), understandable to a non-technical operator. Keep enum values exactly as required by the schema.';
     private ?string $selectedModel=null;
     public function __construct(private SvAmazonReturnsConfig $config,private $transport=null){}
     public function model():string{return $this->selectedModel ?? $this->config->reviewAiModel();}
@@ -19,7 +19,7 @@ final class SvAmazonOpenAiReviewAdvisor implements SvAmazonReviewAdvisor
                 $response=$this->transport?($this->transport)($provider['request']):$this->post($provider['request']);
                 $status=(int)($response['status']??0);
                 if($status<200||$status>=300)throw new RuntimeException('Provider request failed.');
-                $suggestion=self::validate($provider['parse']($response['body']??[]));
+                $suggestion=self::guardSuggestion(self::validate($provider['parse']($response['body']??[])),$reviewContext);
                 $this->selectedModel=$provider['model'];
                 return $suggestion;
             }catch(Throwable){continue;}
@@ -37,6 +37,35 @@ final class SvAmazonOpenAiReviewAdvisor implements SvAmazonReviewAdvisor
             ['key'=>$this->config->geminiKey(),'model'=>$geminiFallbackModel,'request'=>['url'=>'https://generativelanguage.googleapis.com/v1beta/models/'.rawurlencode($geminiFallbackModel).':generateContent','headers'=>['x-goog-api-key'=>$this->config->geminiKey(),'Content-Type'=>'application/json'],'body'=>['contents'=>[['role'=>'user','parts'=>[['text'=>$instruction.'\n'.$prompt]]]],'generationConfig'=>['responseMimeType'=>'application/json','responseJsonSchema'=>$schema,'thinkingConfig'=>['thinkingLevel'=>'LOW']]]],'parse'=>static function(array $body):mixed{$text=$body['candidates'][0]['content']['parts'][0]['text']??null;return self::decode($text);}],
         ];
     }
+    /** Advisory-only date guard; never authorizes an external write or rewrites claim state. */
+    public static function guardSuggestion(array $suggestion,array $context,?DateTimeImmutable $now=null):array
+    {
+        if(($suggestion['action']??null)!=='SAFE_T_APPEAL')return $suggestion;
+        $facts=is_array($context['facts']??null)?$context['facts']:[];
+        $state=strtoupper(trim((string)($facts['state']??'')));
+        $raw=trim((string)($facts['appeal_deadline_at']??''));
+        $tz=new DateTimeZone('UTC');
+        $now=($now??new DateTimeImmutable('now',$tz))->setTimezone($tz);
+        $deadline=$raw!==''?DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$raw,$tz):false;
+        $deadlineValid=$deadline instanceof DateTimeImmutable && $deadline->format('Y-m-d H:i:s')===$raw;
+        $final=$state==='APPEAL_DENIED_FINAL';
+        $expired=$deadlineValid && $now>$deadline;
+        $unverified=array_key_exists('appeal_deadline_at',$facts) && !$deadlineValid;
+        if(!$final && !$expired && !$unverified)return $suggestion;
+        $suggestion['action']='CHECK_FINANCES';
+        $suggestion['rationale']=$final
+            ? 'A Amazon ja negou o recurso SAFE-T em definitivo. Nao repetir a apelacao: conferir o credito efetivo, a contestacao por email e o suporte no canal ja existente, sem duplicar solicitacoes.'
+            : ($expired
+                ? 'O prazo oficial do recurso SAFE-T ja venceu. Nao recomendar envio fora do prazo: conferir credito e o canal alternativo aplicavel, sem duplicar solicitacoes.'
+                : 'O prazo oficial do recurso SAFE-T nao esta confirmado. Antes de qualquer nova acao, conferir o credito e a elegibilidade real do canal.');
+        $suggestion['confidence']=min((float)($suggestion['confidence']??0.0),0.70);
+        $unknown='Verificar no Seller Central qual canal legitimo de recuperacao permanece disponivel.';
+        $uncertainties=is_array($suggestion['uncertainties']??null)?$suggestion['uncertainties']:[];
+        if(!in_array($unknown,$uncertainties,true))$uncertainties[]=$unknown;
+        $suggestion['uncertainties']=array_slice($uncertainties,0,10);
+        return $suggestion;
+    }
+
     public static function schema():array{return ['type'=>'object','additionalProperties'=>false,'required'=>['action','rationale','confidence','uncertainties','parameters'],'properties'=>['action'=>['type'=>'string','enum'=>self::ACTIONS],'rationale'=>['type'=>'string','minLength'=>1,'maxLength'=>2000],'confidence'=>['type'=>'number','minimum'=>0,'maximum'=>1],'uncertainties'=>['type'=>'array','items'=>['type'=>'string','maxLength'=>500],'maxItems'=>10],'parameters'=>['type'=>'object','additionalProperties'=>false,'required'=>['date_binding'],'properties'=>['date_binding'=>['type'=>'string','enum'=>['NONE','PROMISED_DATE','APPEAL_DEADLINE']]]]]];}
     private static function decode(mixed $text):mixed{if(!is_string($text)||trim($text)==='')throw new RuntimeException('Review AI output missing.');try{return json_decode($text,true,32,JSON_THROW_ON_ERROR);}catch(Throwable $e){throw new RuntimeException('Review AI output malformed.',0,$e);}}
     private static function validate(mixed $s):array
