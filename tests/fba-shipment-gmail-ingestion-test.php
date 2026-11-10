@@ -48,6 +48,9 @@ $timeline=[
 $projected=SvAmazonReturnProjector::projectFrom($case,$timeline);
 fbaSame('FBA',$projected['program']??null,'Projection replay must preserve FBA classification.');
 fbaSame(false,$projected['customer_delivery_confirmed']??null,'Shipment/tracking evidence alone must not assert customer delivery.');
+fbaSame(['TBR420573721'],$projected['customer_tracking_ids']??null,'Shipment Gmail tracking must survive projection and reach the review engine.');
+fbaSame(['Amazon Logistics BR'],$projected['customer_delivery_carriers']??null,'Shipment carrier must be projected from source evidence.');
+fbaSame('SHIPPED',$projected['customer_delivery_status']??null,'Shipment email proves dispatch, never buyer delivery.');
 $decision=(new SvAmazonSafeTDecisionEngine())->nextAction($projected,$timeline,[],new DateTimeImmutable('2026-09-09T11:00:00Z'));
 fbaSame('CHECK_FINANCES',$decision['action']??null,'Known classic FBA refund must use the automatic FBA recovery path instead of REFUND_INITIATOR_UNKNOWN human review.');
 fbaSame('CLASSIC_FBA_SEPARATE_REIMBURSEMENT_ROUTE',$decision['reason']??null,'Automatic FBA route must remain auditable.');
