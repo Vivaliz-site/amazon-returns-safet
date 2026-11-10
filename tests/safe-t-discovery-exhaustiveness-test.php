@@ -24,7 +24,18 @@ $begin = strpos($js, 'async function safeTDiscovery(job)');
 $end = strpos($js, 'async function safeTRead(job)', $begin);
 dxAssert($begin !== false && $end !== false, 'Discovery function present');
 $function = substr($js, $begin, $end-$begin);
-dxAssert(!str_contains($function, "result('NOT_FOUND'"), 'A single unpaginated Seller Central page must not prove absence');
+// The only permitted NOT_FOUND is a fully verified read-only 90-day ALL
+// view, explicitly guarded again in the bridge; never infer global absence
+// from one incomplete/filtered page or make this a submission permission.
+dxAssert(substr_count($function, "result('NOT_FOUND'")===1
+    && str_contains($function, "if (discovery.status === 'VERIFIED_LIST_NO_MATCH')")
+    && str_contains($function, "'OFFICIAL_90_DAY_COMPLETE_LIST_NO_MATCH'")
+    && strpos($function,"if (discovery.status === 'VERIFIED_LIST_NO_MATCH')") <
+       strpos($function, "result('NOT_FOUND'"),
+    'Only a verified complete 90-day ALL-view may emit scoped NOT_FOUND.');
+dxAssert(str_contains($source,'verifiedCompleteClaimListEvidence')
+    && str_contains($source,'SAFE_T_DISCOVERY_NOT_EXHAUSTIVE'),
+    'Backend must independently validate full-list evidence and defer unverified absence.');
 dxAssert(str_contains($function, 'scanSafeTClaimPages'), 'Discovery must use bounded read-only page scanner');
 $helper = (string)file_get_contents(__DIR__.'/../scripts/amazon-returns/safe-t-discovery-pages.mjs');
 dxAssert(str_contains($helper, 'SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED'), 'Incomplete claim-list coverage must be explicit');
