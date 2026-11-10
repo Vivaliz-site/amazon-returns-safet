@@ -60,6 +60,7 @@ try{
         $salesInvoiceNumber=$invoiceFacts['sales_invoice_number']??$invoiceNumber;$salesInvoiceSource=$invoiceFacts['sales_invoice_source']??null;
         if(($salesInvoiceNumber===null||$salesInvoiceNumber==='') && is_array($erpReturnRow)){$candidate=trim((string)($erpReturnRow['original_invoice_number']??''));if($candidate!==''){$salesInvoiceNumber=$candidate;$salesInvoiceSource='ERP_OLIST_INVOICE';}}
         $returnInvoiceNumbers=array_values(is_array($invoiceFacts['return_invoice_numbers']??null)?$invoiceFacts['return_invoice_numbers']:[]);$erpReturnNumber=trim((string)($erpReturn['invoice_number']??''));if($erpReturnNumber!==''&&!in_array($erpReturnNumber,$returnInvoiceNumbers,true))$returnInvoiceNumbers[]=$erpReturnNumber;
+        $case['support_case_references']=SvAmazonCaseConsultation::supportCaseReferences($case,$events);
         $case['sales_invoice_number']=$salesInvoiceNumber;$case['sales_invoice_source']=$salesInvoiceSource;$case['return_invoice_numbers']=$returnInvoiceNumbers;
         $case['amazon_reimbursement_at']=$financialFacts['amazon_reimbursement_at']??null;$case['amazon_reimbursement_amount']=$financialFacts['amazon_reimbursement_amount']??'0.00';
         $case['safe_t_submitted_at']=$safeTSubmittedAt;$case['amazon_decision_at']=$amazonDecisionAt;

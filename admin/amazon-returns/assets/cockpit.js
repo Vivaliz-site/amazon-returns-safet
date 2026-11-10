@@ -74,7 +74,22 @@ function renderMessageThread(items){
   }
   if(!count)root.append(text('p','Nenhuma mensagem foi registrada para este caso até o momento.','muted'));return root;
 }
-async function openCase(caseId){try{clearError();const j=await json(`/admin/amazon-returns/api/case.php?case_id=${encodeURIComponent(caseId)}`);state.selectedCase=caseId;const root=document.querySelector('#case-detail');root.replaceChildren(text('h2',`Pedido ${j.case.amazon_order_id||'—'}`));const grid=text('div','', 'detail-grid');for(const [label,value] of [['SAFE-T',j.case.safe_t_id||'—'],['Situação',stateLabel(j.case.state)],['Recebimento',physicalLabel(j.case.physical_status)],['Tipo de logística',programLabel(j.case.program)],['SKU',j.case.sku||'—'],['Valor reembolsado ao cliente',brl(j.case.refund_amount)],['Valor já recuperado',brl(j.case.reconciled_credit_amount)],['Pode ser solicitado a partir de',date(j.case.eligibility_at)],['Prazo para recurso',date(j.case.appeal_deadline_at)]])grid.append(field(label,value));root.append(grid,renderTimeline(j.timeline))}catch(e){showError(e.message,()=>openCase(caseId))}}
+function renderSupportReferences(items){
+  const root=text('section','','review-section support-case-references');
+  root.append(text('h3','Chamados de suporte relacionados'));
+  if(!Array.isArray(items)||items.length===0){root.append(text('p','Nenhum chamado identificado no histórico.','muted'));return root;}
+  for(const item of items){
+    const id=String(item?.id||'');
+    if(!/^\d{8,14}$/.test(id))continue;
+    const primary=item.is_primary===true?'vínculo principal do cadastro':'referência adicional';
+    const verification=item.seller_central_verified===true
+      ?'situação observada no Seller Central (pode ter mudado)'
+      :'situação ainda não confirmada no Seller Central';
+    root.append(text('p',`Chamado ${id} · ${primary} · ${verification}`));
+  }
+  return root;
+}
+async function openCase(caseId){try{clearError();const j=await json(`/admin/amazon-returns/api/case.php?case_id=${encodeURIComponent(caseId)}`);state.selectedCase=caseId;const root=document.querySelector('#case-detail');root.replaceChildren(text('h2',`Pedido ${j.case.amazon_order_id||'—'}`));const grid=text('div','', 'detail-grid');for(const [label,value] of [['SAFE-T',j.case.safe_t_id||'—'],['Situação',stateLabel(j.case.state)],['Recebimento',physicalLabel(j.case.physical_status)],['Tipo de logística',programLabel(j.case.program)],['SKU',j.case.sku||'—'],['Valor reembolsado ao cliente',brl(j.case.refund_amount)],['Valor já recuperado',brl(j.case.reconciled_credit_amount)],['Pode ser solicitado a partir de',date(j.case.eligibility_at)],['Prazo para recurso',date(j.case.appeal_deadline_at)]])grid.append(field(label,value));root.append(grid,renderSupportReferences(j.case.support_case_references),renderTimeline(j.timeline))}catch(e){showError(e.message,()=>openCase(caseId))}}
 function rulePlainSummary(rule){const effect=rule?.effect||{};const action=effect.final_action||effect.action||effect.current_action;if(action)return `Quando aparecer um caso equivalente, o sistema deverá: ${actionLabel(action)}.`;return 'Quando aparecer um caso equivalente, o sistema repetirá automaticamente a decisão que já foi aprovada.';}
 async function loadRules(){try{clearError();const j=await json('/admin/amazon-returns/api/rules.php');const list=document.querySelector('#case-list');list.replaceChildren();document.querySelector('#result-count').textContent=`${j.rules.length} decisões aprendidas`;document.querySelector('#pager').replaceChildren();for(const r of j.rules){const card=text('article','', 'rule-card');card.append(text('strong','Decisão aprendida'),text('div',`${statusLabel(r.status)} · usada em ${Number(r.application_count||0)} casos`),text('p',rulePlainSummary(r)));if(r.status==='ACTIVE'){const stop=button('Parar de usar automaticamente',()=>requestDisableRule(r.id,r.version,stop),'danger');card.append(stop)}list.append(card)}}catch(e){showError(e.message,loadRules)}}
 function requestDisableRule(ruleId,expectedVersion,control){if(control.dataset.confirmDisable==='true'){disableRule(ruleId,expectedVersion);return;}control.dataset.confirmDisable='true';control.classList.add('confirming');control.textContent='Confirmar: parar de usar automaticamente';setTimeout(()=>{if(!control.isConnected)return;control.dataset.confirmDisable='false';control.classList.remove('confirming');control.textContent='Parar de usar automaticamente';},8000);}

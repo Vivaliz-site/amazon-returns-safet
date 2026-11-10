@@ -29,4 +29,29 @@ $reportFacts=SvAmazonCaseConsultation::invoiceFacts([[
 ]]);
 ccfSame('007700',$reportFacts['sales_invoice_number']??null,'Amazon returns-report invoice must be a fallback sales invoice for consultation.');
 ccfSame('SP_API_REPORTS',$reportFacts['sales_invoice_source']??null,'Report-derived invoice origin must remain explicit until ERP confirms it.');
+
+// A newer Amazon Support email must be visible without silently replacing the
+// older canonical binding, and Gmail alone must never count as Seller Central proof.
+$supportRefs=SvAmazonCaseConsultation::supportCaseReferences(
+    ['support_case_id'=>'22000000001'],
+    [
+        ['event_type'=>'SELLER_SUPPORT_STATUS_OBSERVED','source'=>'SELLER_CENTRAL',
+         'occurred_at'=>'2026-10-15 10:00:00','payload'=>['case_id'=>'22000000001','case_status'=>'OPEN']],
+        ['event_type'=>'SELLER_SUPPORT_EMAIL','source'=>'GMAIL',
+         'occurred_at'=>'2026-10-27 21:19:01','payload'=>['support_case_id'=>'22000000002']],
+        ['event_type'=>'SELLER_SUPPORT_EMAIL','source'=>'GMAIL',
+         'occurred_at'=>'2026-10-27 22:00:00','payload'=>['support_case_id'=>'22000000002']],
+        ['event_type'=>'SELLER_SUPPORT_EMAIL','source'=>'GMAIL',
+         'occurred_at'=>'2026-10-28 10:00:00','payload'=>['support_case_id'=>'123']],
+    ]
+);
+ccfSame(2,count($supportRefs),'Support references must deduplicate valid IDs and ignore malformed IDs.');
+ccfSame('22000000002',$supportRefs[0]['id'],'Newest support thread should be visible first.');
+ccfSame(false,$supportRefs[0]['is_primary'],'Newer Gmail thread must not overwrite the binding.');
+ccfSame(false,$supportRefs[0]['seller_central_verified'],'A support email is not an official portal status readback.');
+ccfSame('2026-10-27 22:00:00',$supportRefs[0]['last_observed_at'],'Latest support email timestamp must win.');
+ccfSame('22000000001',$supportRefs[1]['id'],'Canonical support binding must remain visible.');
+ccfSame(true,$supportRefs[1]['is_primary'],'Canonical binding must remain distinguished.');
+ccfSame(true,$supportRefs[1]['seller_central_verified'],'Only a Seller Central status event proves an observed status.');
+ccfSame([],SvAmazonCaseConsultation::supportCaseReferences([],[]),'Absent support evidence must project an empty catalog.');
 echo "case-consultation-facts-test: OK\n";

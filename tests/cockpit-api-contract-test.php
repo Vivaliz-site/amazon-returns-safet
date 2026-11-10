@@ -131,4 +131,10 @@ caAssert(str_contains($caseSrc,"'applied_rule'"),'Case detail must expose a safe
 caAssert(str_contains($caseSrc,'RETURN_REPORT_OBSERVED'),'Case detail must derive return reason from the actual returns report event.');
 caAssert(!str_contains($caseSrc,'new SvAmazonReturnsSpApi'),'Opening case detail must not trigger an external SP-API read.');
 
+
+caAssert(str_contains($caseSrc,"'support_case_references'"),'Case detail must expose all support threads cited by scoped evidence.');
+caAssert(str_contains($caseSrc,'SvAmazonCaseConsultation::supportCaseReferences'),'Case detail must use read-only source-backed support thread projection.');
+$uiSrc=caSource('admin/amazon-returns/assets/cockpit.js');
+caAssert(str_contains($uiSrc,'renderSupportReferences(j.case.support_case_references)'),'The operator case detail must render multiple support threads.');
+caAssert(str_contains($uiSrc,'situação ainda não confirmada no Seller Central'),'Gmail-only support references must show an explicit unverified state.');
 echo "cockpit-api-contract-test: OK\n";
