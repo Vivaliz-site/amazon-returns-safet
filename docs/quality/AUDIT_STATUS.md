@@ -304,3 +304,14 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - GREEN: teste SQLite one-use/fencing/CAS e regressao do perfil PHP #3846 PASS; php -l e git diff --check PASS em branch isolada (MCP task 48929e0e-40ca-4250-89c3-f245e09b8fcb). Migracao DDL exige backup, restore isolado, exclusive lease e aprovacao P2 antes de execucao. CI oficial e gate aguardam PR.
 - Escopo: apenas preparacao de compatibilidade para operador; nenhum adaptador de producao instalado, nenhuma verificacao Seller Central completa, nenhuma SAFE-T submetida, nenhum credito financeiro recebido, kill switch ON.
 - Estado: NAO_APTO #532, ate operador efetivo certificado e provas independentes por caso (D+45..89, Amazon-initiated, WAREHOUSE, Finances, duplicidade, readback).
+
+## 2026-11-10 — #532 P0: corrigir teste do canary apos expiracao do grant #3556
+
+- Base SHA: `f469fdb7a8132872b5730cef49e3866d9127c98a` (PR #639 ja integrada; release Marina aguardando CI main).
+- Impacto: o CI main falhou em `tests/write-profile-test.php` porque a verificacao sintetica ainda esperava `SAFE_T_SUBMIT=true` no perfil original #3556 apos seu vencimento em 09/11 23:59Z, embora `Config.php` o recusasse corretamente. O gate de deploy canônico registrou `ci_not_green` e manteve release anterior; NAO relaxar o vencimento.
+- Testes RED: [Amazon Returns CI push 42724775599](https://github.com/Vivaliz-site/amazon-returns-safet/actions/runs/42724775599), job 129527488517, `exact scoped case canary complete expected=true actual=false`; MCP Marina `14a7fff7-cf4c-4251-938a-e35b1a7a829e` reproduziu `test_rc=1` no release anterior.
+- Correcao: `tests/write-profile-test.php` valida a canary exata de oito casos pelo perfil renovado #3846 (ja aprovado pelo proprietario), mantendo os testes separados da expiracao #3556. Nenhum codigo da aplicacao, gatilho de escrita, grant, schema ou worker alterado.
+- Testes GREEN: clone isolado Marina HEAD `0663c80a43f50d7b8d8fe1cdf2315a3b49374879` task `491eae37-fdfe-417c-98ec-b3fb6b1b7e30` exit0: `write-profile-test.php`, perfis #3556/#3673/#3846, consumo SQLite, PHP lint, `git diff --check`. Checks GitHub oficiais para o HEAD final da PR ainda exigidos.
+- Evidencias: #532, #639, runs/job GitHub acima e MCP task/audits citados; sem dados de clientes e sem escrita Amazon.
+- Pendencias: PR tecnica, CI obrigatoria, merge conforme gates, checks de push main GREEN, deploy canonico Marina e readback do SHA, verificacao de kill switch ON. Schema MySQL #3846 continua staged, sem backup+restore/lease; operador certificado, evidencias oficiais Amazon e conciliacao financeira continuam faltando.
+- Estado: NAO_APTO #532 ate elegibilidade e claims externos comprovados por caso. Sem claim ou credito confirmado nesta correcao.

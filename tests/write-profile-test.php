@@ -120,7 +120,10 @@ if(is_file($checker)){
 // explicit synthetic env-file, never silently ignore it or borrow process env.
 // This is read-only verification and never changes the live kill switch.
 if(is_file($checker)){
- $scopedProfile=__DIR__.'/../deploy/write-profile-safe-t-pr3556.json';
+ // The original #3556 expired at 2026-11-09T23:59:00Z. Verify the
+// exact eight-case canary using its separately approved renewal #3846;
+// other tests explicitly assert that #3556 remains expired.
+$scopedProfile=__DIR__.'/../deploy/write-profile-safe-t-pr3846.json';
  $allowedCanary='1263,1314,8803,13210,51429,101669,101670,101671';
  foreach(['complete'=>$allowedCanary,'missing'=>null,'expanded'=>$allowedCanary.',999999'] as $scenario=>$canary){
   $fixture=tempnam(sys_get_temp_dir(),'amazon-scoped-check-');
@@ -133,7 +136,7 @@ if(is_file($checker)){
    exec(escapeshellarg(PHP_BINARY).' '.escapeshellarg($checker).' '.escapeshellarg('--env-file='.$fixture).' 2>&1',$lines,$exit);
    $checked=json_decode(implode("\n",$lines),true);
    wpSame(0,$exit,'synthetic scoped verifier must run '.$scenario);
-   wpSame('safet-d45-pr3556-scoped-v1',$checked['version']??null,'scoped version '.$scenario);
+   wpSame('safet-d45-pr3846-renewal-of-3556-v1',$checked['version']??null,'scoped version '.$scenario);
    wpSame($scenario==='complete',$checked['flags']['SAFE_T_SUBMIT']??null,'exact scoped case canary '.$scenario);
    foreach(['SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE','ERP_SALES_RETURN_CREATE'] as $other){
     wpSame(false,$checked['flags'][$other]??null,'scoped verifier forbids '.$other.' in '.$scenario);
