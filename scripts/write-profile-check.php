@@ -40,4 +40,20 @@ $config=new SvAmazonReturnsConfig($override);
 // keeps the effective kill switch active. Only an explicit recognized OFF
 // value permits the narrower profile/tenant/provider checks to proceed.
 $killSwitchActive=!in_array(strtolower($config->get('AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH','1')),['0','false','no','off'],true);
-echo json_encode(['version'=>$config->writeProfileVersion(),'kill_switch_active'=>$killSwitchActive,'flags'=>$config->writeFlags()],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES).PHP_EOL;
+// Report dormant capabilities separately: an active kill switch must not
+// mask an unrestricted profile that could become effective if switched OFF.
+// Read-only diagnostics; no grant, case, permission or configuration mutation.
+$unlockedOverride=$override;
+$unlockedOverride['AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH']='0';
+$unlockedConfig=new SvAmazonReturnsConfig($unlockedOverride);
+$actionsIfOff=array_keys(array_filter(
+ $unlockedConfig->writeFlags(),static fn(bool $enabled):bool=>$enabled
+));
+$unscopedWriteRisk=$actionsIfOff!==[] && $unlockedConfig->scopedWriteCaseIds()===null;
+echo json_encode([
+ 'version'=>$config->writeProfileVersion(),
+ 'kill_switch_active'=>$killSwitchActive,
+ 'flags'=>$config->writeFlags(),
+ 'actions_if_kill_switch_off'=>$actionsIfOff,
+ 'unscoped_write_profile_risk'=>$unscopedWriteRisk,
+],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES).PHP_EOL;
