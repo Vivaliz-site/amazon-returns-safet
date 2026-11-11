@@ -273,6 +273,15 @@ final class SvAmazonReturnsStatusBridgeService
             $rows=$this->p->outbox->claimBatch(1,['ORDER_DELIVERY_READ']);
         }
         if($rows===[]){
+            // Under heavy daily discovery backlogs, read the D+45..D+89 cases
+            // closest to D+90 first. This does not submit a claim or bypass
+            // the ordinary transactional claimBatch lease/idempotency.
+            $urgentIds=$this->p->outbox->urgentDiscoveryCaseIds(50);
+            if($urgentIds!==[]){
+                $rows=$this->p->outbox->claimBatch(1,['SAFE_T_DISCOVERY'],$urgentIds);
+            }
+        }
+        if($rows===[]){
             $rows=$this->p->outbox->claimBatch(1,['SAFE_T_DISCOVERY']);
         }
         if($rows===[])return ['status'=>'NO_JOB','ensured'=>$ensured];
