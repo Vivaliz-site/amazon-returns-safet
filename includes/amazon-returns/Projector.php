@@ -59,6 +59,11 @@ final class SvAmazonReturnProjector
                 && isset($voided[(int)($event['id']??0)]))continue;
             self::applyEvent($facts,$event,$caseId);
         }
+        // A corrected historical physical closure must not survive a replay
+        // where the only receipt was voided. Financial/SAFE-T evidence remains.
+        if($voided!==[] && ($facts['terminal_reason']??null)==='PHYSICAL_RETURN_RECEIVED'){
+            $facts['terminal_reason']=null;
+        }
         // Historical events can still say FBA after this account migrated to FBA Onsite.
         // Apply only the configured account override; never rewrite other sellers by default.
         if($facts['program']===SvAmazonReturnPrograms::FBA){
