@@ -102,6 +102,31 @@ final class SvAmazonGmailEventSink
         return count($items) === 1 ? $items[0] : self::UNRESOLVED_ITEM_ID;
     }
 
+    /**
+     * A SAFE-T update email requests a fresh read of the existing claim.
+     * The email is not a provider decision and never authorizes an external write.
+     * @return array{idempotency_key:string,payload:array<string,mixed>}|null
+     */
+    public static function statusUpdateReadPlan(array $event,int $caseId,string $orderId): ?array
+    {
+        if(strtoupper(trim((string)($event['event_type']??'')))!=='SAFE_T_UPDATED_EMAIL')return null;
+        $claimId=trim((string)($event['safe_t_id']??''));
+        $sourceId=trim((string)($event['source_event_id']??$event['message_id']??''));
+        if($caseId<1 || $claimId==='' || $sourceId==='' || trim($orderId)==='')return null;
+        return [
+            'idempotency_key'=>hash('sha256',implode('|',[
+                'gmail-safe-t-status-refresh-v1',(string)$caseId,$claimId,$sourceId,
+            ])),
+            'payload'=>[
+                'case_id'=>$caseId,
+                'order_id'=>$orderId,
+                'safe_t_id'=>$claimId,
+                'read_only'=>true,
+                'trigger'=>'SAFE_T_UPDATED_EMAIL',
+            ],
+        ];
+    }
+
     public static function persist(SvAmazonTenantPersistence $p, array $event, string $programOverride=''): int
     {
         $event=self::applyProgramOverride($event,$programOverride);
@@ -132,6 +157,15 @@ final class SvAmazonGmailEventSink
             'payload'=>self::payload($event, $orderId),
             'evidence_sha256'=>isset($event['content_sha256']) ? (string)$event['content_sha256'] : null,
         ]);
+        // Reuse the single existing Seller Central reader and its scoped outbox.
+        // A notification only schedules a read; it does not post an appeal or claim.
+        $refresh=self::statusUpdateReadPlan($event,$caseId,$orderId);
+        if($itemId!==self::UNRESOLVED_ITEM_ID && $refresh!==null
+            && !$p->outbox->hasActive($caseId,'SAFE_T_READ')){
+            $p->outbox->enqueue(
+                'SAFE_T_READ',$caseId,$refresh['payload'],$refresh['idempotency_key']
+            );
+        }
         $initiatorEvidence = self::refundInitiatorEvidence($caseId, $event, $orderId, $occurredAt, $sourceEventId);
         if ($initiatorEvidence !== null) $p->events->append($initiatorEvidence);
         $programEvidence = self::programEvidence($caseId, $event, $orderId, $occurredAt, $sourceEventId);
