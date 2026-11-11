@@ -11,8 +11,9 @@ function operatorCompactResponsibility(c){
 }
 function operatorFinancialSummary(c){
   const outstanding=Math.max(0,Number(c?.outstanding_amount||0));
+  const recovered=Math.max(0,Number(c?.reconciled_credit_amount||0));
+  if(outstanding>0&&recovered>0)return {value:brl(outstanding),label:'diferença nominal após crédito; tarifas a conferir'};
   if(outstanding>0)return {value:brl(outstanding),label:'saldo ainda a recuperar'};
-  const recovered=Number(c?.reconciled_credit_amount||0);
   const pending=['SAFE_T_APPROVED','APPEAL_APPROVED','CREDIT_PENDING'].includes(String(c?.state||''));
   if(recovered>0&&pending)return {value:brl(0),label:'Crédito identificado; aguardando confirmação final.'};
   return {value:brl(0),label:'Nenhum saldo financeiro em aberto.'};
@@ -29,6 +30,12 @@ function operatorStatus(c){
   if(state==='RECOVERED')return 'Valor recuperado';
   if(state==='CLOSED_LOSS')return 'Encerrado sem recuperação';
   if(state==='RECEIVED_OK')return 'Devolução recebida';
+  const credited=Math.max(0,Number(c?.reconciled_credit_amount||0));
+  if(['CREDIT_PENDING','SAFE_T_APPROVED','APPEAL_APPROVED'].includes(state)&&credited>0){
+    return Math.max(0,Number(c?.outstanding_amount||0))>0
+      ?'Crédito parcial identificado; diferença em análise'
+      :'Crédito identificado; conferência final';
+  }
   if(['CREDIT_PENDING','SAFE_T_APPROVED','APPEAL_APPROVED'].includes(state)||action==='CHECK_FINANCES')return 'Aguardando crédito da Amazon';
   if(['APPEAL_SUBMITTED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SAFE_T_SUBMITTED','SUPPORT_ESCALATION'].includes(state))return 'Aguardando resposta da Amazon';
   if(action==='SAFE_T_APPEAL')return 'Recurso será enviado pelo sistema';
@@ -48,7 +55,9 @@ function operatorNextStep(c){
   const action=String(c?.current_action||''),reason=String(c?.current_reason||'');
   if(action==='SAFE_T_SUBMIT')return 'O sistema solicitará o ressarcimento à Amazon automaticamente.';
   if(action==='SAFE_T_APPEAL')return 'O sistema enviará o recurso automaticamente.';
-  if(action==='CHECK_FINANCES')return 'O sistema verificará se o crédito da Amazon entrou.';
+  if(action==='CHECK_FINANCES')return Number(c?.reconciled_credit_amount||0)>0
+    ?'O sistema verificará o crédito já identificado e a diferença, incluindo tarifas documentadas.'
+    :'O sistema verificará se o crédito da Amazon entrou.';
   if(action==='SAFE_T_EMAIL_REVIEW')return 'O sistema pedirá uma nova análise à Amazon.';
   if(action==='SAFE_T_EMAIL_REPLY')return 'O sistema responderá à Amazon com as informações necessárias.';
   if(action==='SELLER_SUPPORT_OPEN')return 'O sistema abrirá atendimento com o Suporte da Amazon.';
@@ -171,12 +180,18 @@ function operatorUnresolvedFacts(c){
   if(['RECOVERED','CLOSED_LOSS','RECEIVED_OK'].includes(String(c?.state||'')))return [];
   const items=[],state=String(c?.state||''),action=String(c?.current_action||'');
   const outstanding=Math.max(0,Number(c?.outstanding_amount||0));
-  if(outstanding>0)items.push(`Ainda há ${brl(outstanding)} a recuperar para a loja.`);
+  const credited=Math.max(0,Number(c?.reconciled_credit_amount||0));
+  if(outstanding>0&&credited>0)items.push(`Crédito de ${brl(credited)} identificado; resta diferença nominal de ${brl(outstanding)} a conferir, incluindo tarifas e ajustes. Isso não prova valor adicional devido pela Amazon.`);
+  else if(outstanding>0)items.push(`Ainda há ${brl(outstanding)} a recuperar para a loja.`);
   if(operatorResponsibility(c)==='Sua decisão é necessária')items.push('Existe uma decisão sua pendente antes da próxima providência automática.');
   if(c?.physical_status==='NOT_RECEIVED')items.push('A devolução física ainda não foi registrada como recebida pela loja.');
   else if(c?.physical_status==='IN_TRANSIT')items.push('A devolução física ainda está em transporte.');
   else if(c?.physical_status==='CARRIER_DELIVERED_PENDING_PHYSICAL')items.push('A transportadora indica entrega da devolução, mas a conferência física da loja ainda está pendente.');
-  if(action==='CHECK_FINANCES'||['SAFE_T_APPROVED','APPEAL_APPROVED','CREDIT_PENDING'].includes(state))items.push('O crédito da Amazon ainda precisa ser confirmado no financeiro.');
+  if(action==='CHECK_FINANCES'||['SAFE_T_APPROVED','APPEAL_APPROVED','CREDIT_PENDING'].includes(state)){
+    items.push(credited>0
+      ?'O financeiro da Amazon já registra crédito; a diferença nominal exige conciliação de tarifas e outros ajustes.'
+      :'O crédito da Amazon ainda precisa ser confirmado no financeiro.');
+  }
   if(['APPEAL_SUBMITTED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SAFE_T_SUBMITTED','SUPPORT_ESCALATION'].includes(state))items.push('A resposta da Amazon ainda está pendente.');
   const next=c?.next_action_at||(!c?.next_action_at?c?.eligibility_at:null);
   if(next)items.push(`A próxima referência de acompanhamento é ${date(next)}.`);
