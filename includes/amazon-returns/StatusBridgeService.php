@@ -278,7 +278,7 @@ final class SvAmazonReturnsStatusBridgeService
             // the ordinary transactional claimBatch lease/idempotency.
             $urgentIds=$this->p->outbox->urgentDiscoveryCaseIds(50);
             if($urgentIds!==[]){
-                $rows=$this->p->outbox->claimBatch(1,['SAFE_T_DISCOVERY'],$urgentIds);
+                $rows=$this->p->outbox->claimBatch(1,['SAFE_T_DISCOVERY'],$urgentIds,true);
             }
         }
         if($rows===[]){
