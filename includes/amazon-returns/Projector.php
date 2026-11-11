@@ -25,9 +25,44 @@ final class SvAmazonReturnProjector
     public static function projectFrom(array $case,array $events): array
     {
         $facts=self::initialFacts($case);
+        $caseId=(int)($case['id'] ?? 0);
+
+        // A physical receipt can be corrected without destroying its original
+        // audit event. Only the exact warehouse intake referenced by the later
+        // correction is excluded from the replay; other receipts remain valid.
+        $receipts=[];
         foreach($events as $event){
             if(!is_array($event))throw new InvalidArgumentException('Projection event must be an array.');
-            self::applyEvent($facts,$event,(int)($case['id'] ?? 0));
+            if(($event['event_type']??null)!=='PHYSICAL_RECEIVED'
+                || ($event['source']??null)!=='WAREHOUSE'
+                || (int)($event['case_id']??0)!==$caseId)continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            $id=(int)($event['id']??0);
+            if($id>0 && trim((string)($event['source_event_id']??''))!==''
+                && (int)($payload['operator_id']??0)>0)$receipts[$id]=$event;
+        }
+        $voided=[];
+        foreach($events as $event){
+            if(($event['event_type']??null)!=='PHYSICAL_RECEIPT_VOIDED'
+                || ($event['source']??null)!=='WAREHOUSE'
+                || (int)($event['case_id']??0)!==$caseId
+                || trim((string)($event['source_event_id']??''))==='')continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            $receiptId=filter_var($payload['receipt_event_id']??null,FILTER_VALIDATE_INT);
+            if($receiptId===false || $receiptId<1 || (int)($payload['operator_id']??0)<1
+                || !isset($receipts[$receiptId]))continue;
+            if((string)($event['occurred_at']??'')<(string)($receipts[$receiptId]['occurred_at']??''))continue;
+            $voided[$receiptId]=true;
+        }
+        foreach($events as $event){
+            if(($event['event_type']??null)==='PHYSICAL_RECEIVED'
+                && isset($voided[(int)($event['id']??0)]))continue;
+            self::applyEvent($facts,$event,$caseId);
+        }
+        // A corrected historical physical closure must not survive a replay
+        // where the only receipt was voided. Financial/SAFE-T evidence remains.
+        if($voided!==[] && ($facts['terminal_reason']??null)==='PHYSICAL_RETURN_RECEIVED'){
+            $facts['terminal_reason']=null;
         }
         // Historical events can still say FBA after this account migrated to FBA Onsite.
         // Apply only the configured account override; never rewrite other sellers by default.
