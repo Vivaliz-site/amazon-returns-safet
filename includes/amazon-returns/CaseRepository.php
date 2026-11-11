@@ -755,7 +755,7 @@ final class SvAmazonReturnCaseRepository
             . "AND rv.event_type='PHYSICAL_RECEIPT_VOIDED' AND rv.source='WAREHOUSE' "
             . "AND rv.source_event_id IS NOT NULL AND rv.source_event_id<>'' "
             . "AND rv.occurred_at>={$receiptAlias}.occurred_at "
-            . "AND CAST(JSON_UNQUOTE(JSON_EXTRACT(rv.payload_json,'$.operator_id')) AS UNSIGNED)>0 "
+            . "AND CAST(JSON_EXTRACT(rv.payload_json,'$.operator_id') AS UNSIGNED)>0 "
             . "AND JSON_EXTRACT(rv.payload_json,'$.receipt_event_id')={$receiptAlias}.id)";
     }
 
