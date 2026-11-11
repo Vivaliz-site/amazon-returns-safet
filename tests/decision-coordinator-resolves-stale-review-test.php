@@ -18,12 +18,14 @@ $engine=new SvAmazonSafeTDecisionEngine(null,new DateTimeImmutable('2026-09-06T2
 $coordinator=new SvAmazonDecisionCoordinator($engine,$p,new SvAmazonReturnsConfig());
 $case=['id'=>1263,'amazon_order_id'=>'702-2491487-8294621','safe_t_id'=>null,'state'=>'POLICY_REVIEW_REQUIRED','physical_status'=>'NOT_RECEIVED','refund_at'=>'2026-09-01 12:00:00','refund_initiator'=>'UNKNOWN','expected_reimbursement_amount'=>'35.50','reconciled_credit_amount'=>'0.00','marketplace_id'=>'A2Q3Y263D00KWC','program'=>'DELIVERY_BY_AMAZON'];
 $policy=['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'];
+$p->reviews->open[1263]=['case_id'=>1263,'reason'=>'REFUND_INITIATOR_UNKNOWN'];
 $first=$coordinator->nextAction($case,[],$policy);
-staleSame('BLOCKED_REVIEW',$first['action'],'unknown initiator with confirmed refund opens review');
-staleSame(1,count($p->reviews->open),'one open review');
+staleSame('BLOCKED_REVIEW',$first['action'],'unknown initiator remains blocked without source proof');
+staleSame('SYSTEM',$first['review_owner']??null,'source proof is operational investigation');
+staleSame(0,count($p->reviews->open),'old automated review is resolved instead of reopened');
 $case['refund_at']=null;$case['expected_reimbursement_amount']='0.00';
 $second=$coordinator->nextAction($case,[],$policy);
 staleSame('WAIT',$second['action'],'new deterministic evidence resolves prior review');
 staleSame(0,count($p->reviews->open),'deterministic decision must remove stale open review');
-staleSame([1263],$p->reviews->resolved,'resolution must be case-scoped');
+staleSame([1263],$p->reviews->resolved,'only the original legacy review is closed, case-scoped');
 echo "decision-coordinator-resolves-stale-review-test: OK\n";
