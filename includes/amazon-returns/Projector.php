@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/CaseRepository.php';
 require_once __DIR__ . '/TenantEventStore.php';
+require_once __DIR__ . '/WarehouseReceiptCorrections.php';
 
 final class SvAmazonReturnProjector
 {
@@ -25,6 +26,9 @@ final class SvAmazonReturnProjector
     public static function projectFrom(array $case,array $events): array
     {
         $facts=self::initialFacts($case);
+        $events=SvAmazonWarehouseReceiptCorrections::effectiveTimeline(
+            $events,(int)($case['id'] ?? 0)
+        );
         foreach($events as $event){
             if(!is_array($event))throw new InvalidArgumentException('Projection event must be an array.');
             self::applyEvent($facts,$event,(int)($case['id'] ?? 0));

@@ -614,10 +614,12 @@ final class SvAmazonReturnCaseRepository
     {
         $caseId = $this->positiveId($caseId, 'Case ID');
         $stmt = $this->prepare(
-            "SELECT id FROM amazon_return_events "
-            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
-            . "AND case_id=:id AND event_type='PHYSICAL_RECEIVED' "
-            . "AND source='WAREHOUSE' ORDER BY id LIMIT 1"
+            "SELECT e.id FROM amazon_return_events e "
+            . "WHERE e.tenant_id=:tenant_id AND e.amazon_connection_id=:amazon_connection_id "
+            . "AND e.case_id=:id AND e.event_type='PHYSICAL_RECEIVED' "
+            . "AND e.source='WAREHOUSE' "
+            . self::warehouseReceiptNotVoidedSql('e')
+            . " ORDER BY e.id LIMIT 1"
         );
         $stmt->execute($this->scopeParams([':id'=>$caseId]));
         $id = $stmt->fetchColumn();
@@ -654,7 +656,8 @@ final class SvAmazonReturnCaseRepository
             . "WHERE e.tenant_id=amazon_return_cases.tenant_id "
             . "AND e.amazon_connection_id=amazon_return_cases.amazon_connection_id "
             . "AND e.case_id=amazon_return_cases.id "
-            . "AND e.event_type='PHYSICAL_RECEIVED' AND e.source='WAREHOUSE')"
+            . "AND e.event_type='PHYSICAL_RECEIVED' AND e.source='WAREHOUSE'"
+            . self::warehouseReceiptNotVoidedSql('e') . ")"
         );
         $stmt->execute($this->scopeParams([
             ':id'=>$caseId,
@@ -738,7 +741,19 @@ final class SvAmazonReturnCaseRepository
             . "AND c.physical_status<>'RECEIVED_OK' AND c.quantity_received=0 "
             . "AND NOT EXISTS (SELECT 1 FROM amazon_return_events e "
             . "WHERE e.tenant_id=c.tenant_id AND e.amazon_connection_id=c.amazon_connection_id "
-            . "AND e.case_id=c.id AND e.event_type='PHYSICAL_RECEIVED' AND e.source='WAREHOUSE')";
+            . "AND e.case_id=c.id AND e.event_type='PHYSICAL_RECEIVED' AND e.source='WAREHOUSE'"
+            . self::warehouseReceiptNotVoidedSql('e') . ")";
+    }
+
+    /** Exclude explicitly rescinded intake from existing warehouse SQL reads. */
+    private static function warehouseReceiptNotVoidedSql(string $receiptAlias): string
+    {
+        return " AND NOT EXISTS (SELECT 1 FROM amazon_return_events rv "
+            . "WHERE rv.tenant_id={$receiptAlias}.tenant_id "
+            . "AND rv.amazon_connection_id={$receiptAlias}.amazon_connection_id "
+            . "AND rv.case_id={$receiptAlias}.case_id "
+            . "AND rv.event_type='WAREHOUSE_RECEIPT_VOIDED' AND rv.source='ADMIN_AUDIT' "
+            . "AND JSON_EXTRACT(rv.payload_json,'$.receipt_event_id')={$receiptAlias}.id)";
     }
 
     /** @param array<string,mixed> $patch */

@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/WarehouseReceiptCorrections.php';
 
 require_once __DIR__ . '/Enums.php';
 require_once __DIR__ . '/DenialAnalyzer.php';
@@ -482,6 +483,7 @@ final class SvAmazonSafeTDecisionEngine
     private function sellerAppConfirmedPhysicalReceipt(array $case,array $timeline): bool
     {
         $caseId=(int)($case['id']??0);
+        $timeline=SvAmazonWarehouseReceiptCorrections::effectiveTimeline($timeline,$caseId);
         foreach($timeline as $event){
             if(!is_array($event) || (int)($event['case_id']??0)!==$caseId)continue;
             if(($event['event_type']??'')!=='PHYSICAL_RECEIVED' || ($event['source']??'')!=='WAREHOUSE')continue;
