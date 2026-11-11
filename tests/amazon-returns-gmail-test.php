@@ -103,6 +103,19 @@ gmSame('EMAIL_REVIEW_RESPONSE_PENDING', $reviewPatch['state'] ?? null, 'Denied d
 $updated = $parser->parse(message('m-update', 'Atualização da solicitação do SAFE-T 12472-25597-6629839 para o pedido 702-5555555-6666666'));
 gmSame('SAFE_T_UPDATED_EMAIL', $updated[0]['event_type'], 'SAFE-T update event type.');
 gmSame('12472-25597-6629839', $updated[0]['safe_t_id'], 'SAFE-T update ID.');
+$refresh=SvAmazonGmailEventSink::statusUpdateReadPlan($updated[0],101669,'700-0000000-0000000');
+gmAssert(is_array($refresh),'A new SAFE-T email status must request an official claim read.');
+gmSame('SAFE_T_UPDATED_EMAIL',$refresh['payload']['trigger']??null,'Status email must be a read trigger, not an official decision.');
+gmSame(true,$refresh['payload']['read_only']??null,'The refresh must be read-only.');
+gmSame('12472-25597-6629839',$refresh['payload']['safe_t_id']??null,'Read must target the SAME claim.');
+gmSame($refresh['idempotency_key']??null,SvAmazonGmailEventSink::statusUpdateReadPlan($updated[0],101669,'700-0000000-0000000')['idempotency_key']??null,'Replaying one email cannot create a different read key.');
+$nextNotice=$updated[0];
+$nextNotice['source_event_id']='m-update-2';
+gmAssert(SvAmazonGmailEventSink::statusUpdateReadPlan($nextNotice,101669,'700-0000000-0000000')['idempotency_key']!==$refresh['idempotency_key'],'A later status notice must allow an independent read.');
+gmSame(null,SvAmazonGmailEventSink::statusUpdateReadPlan($refund[0],101669,'700-0000000-0000000'),'Refund emails must not schedule claim status reads.');
+gmSame(null,SvAmazonGmailEventSink::statusUpdateReadPlan($updated[0],0,'700-0000000-0000000'),'Unknown case cannot schedule a read.');
+gmAssert(!array_key_exists('claim_status',$refresh['payload']),'An email must never invent a provider decision.');
+
 
 $unread = message('m-state', 'Reembolso de 22,44 BRL iniciado para o pedido 701-7777777-8888888', 'Mesmo corpo', ['INBOX','UNREAD']);
 $read = $unread;
