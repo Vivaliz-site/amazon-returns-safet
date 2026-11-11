@@ -68,6 +68,7 @@ try{
         'checked_at'=>$asOf,
         'operator_status'=>$health['operator_status'],
         'human_action_count'=>$health['human_action_count'],
+        'operational_review_count'=>$health['operational_review_count'],
         'automatic_work_count'=>$health['automatic_work_count'],
         'concluded_count'=>$health['concluded_count'],
         'operational_problem_count'=>$health['operational_problem_count'],

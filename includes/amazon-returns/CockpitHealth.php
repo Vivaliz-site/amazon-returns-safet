@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/Runtime.php';
+require_once __DIR__.'/ReviewOperations.php';
 
 final class SvAmazonCockpitHealth
 {
@@ -23,7 +24,10 @@ final class SvAmazonCockpitHealth
     ): array {
         $now=$now->setTimezone(new DateTimeZone('UTC'));
         $runtime=SvAmazonReturnsRuntime::health($p,$config,$now);
-        $humanActions=max(0,(int)($runtime['pending_reviews']??0));
+        // An OPEN recovery investigation does not imply an owner action.
+        $openReviews=$p->reviews->openQueue();
+        $humanActions=count(array_filter($openReviews,SvAmazonReviewOperations::requiresManualDecision(...)));
+        $operationalReviewCount=count($openReviews)-$humanActions;
         $automaticWork=max(0,(int)($caseSummary['automatic_work_cases']??0));
         $concluded=max(0,(int)($caseSummary['concluded_cases']??0));
         $problems=[];
@@ -85,6 +89,7 @@ final class SvAmazonCockpitHealth
         return [
             'operator_status'=>self::operatorStatus($humanActions,$problemCount),
             'human_action_count'=>$humanActions,
+            'operational_review_count'=>$operationalReviewCount,
             'automatic_work_count'=>$automaticWork,
             'concluded_count'=>$concluded,
             'operational_problem_count'=>$problemCount,
