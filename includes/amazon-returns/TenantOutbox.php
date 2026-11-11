@@ -131,6 +131,40 @@ final class SvAmazonTenantReturnsOutbox
         return ['id'=>$id,'enqueued'=>false];
     }
 
+    /**
+     * Discovery reads approaching D+90 go first; this only selects case IDs.
+     * claimBatch() remains the sole fenced, transactional claimant, and the
+     * ordinary due-date queue remains the fallback for all other cases.
+     *
+     * @return list<int>
+     */
+    public function urgentDiscoveryCaseIds(int $limit=50): array
+    {
+        $limit=max(1,min(50,$limit));
+        $stmt=$this->prepare(
+            "SELECT o.case_id FROM amazon_return_outbox o "
+            . "INNER JOIN amazon_return_cases c ON c.id=o.case_id "
+            . "AND c.tenant_id=o.tenant_id AND c.amazon_connection_id=o.amazon_connection_id "
+            . "WHERE o.tenant_id=:tenant_id AND o.amazon_connection_id=:amazon_connection_id "
+            . "AND o.kind='SAFE_T_DISCOVERY' "
+            . "AND ((o.status='PENDING' AND o.available_at<=UTC_TIMESTAMP()) "
+            . "OR (o.status='PROCESSING' AND o.locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL "
+            . self::LEASE_SECONDS . " SECOND))) "
+            . "AND c.closed_at IS NULL AND (c.safe_t_id IS NULL OR c.safe_t_id='') "
+            . "AND c.refund_at>DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY) "
+            . "AND c.refund_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 45 DAY) "
+            . "AND c.quantity_received=0 "
+            . "ORDER BY c.refund_at ASC,o.available_at ASC,o.id ASC LIMIT ".$limit
+        );
+        $stmt->execute($this->scopeParams());
+        $ids=[];
+        foreach($stmt->fetchAll(PDO::FETCH_COLUMN) as $id){
+            $parsed=filter_var($id,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+            if($parsed!==false)$ids[$parsed]=$parsed;
+        }
+        return array_values($ids);
+    }
+
     /** @return list<array<string,mixed>> */
     public function claimBatch(int $limit = 10, array $kinds = [], ?array $allowedCaseIds=null): array
     {
