@@ -16,7 +16,7 @@ final class RoReviews {
     public function __construct(){
         $this->rows=[
             9=>['id'=>9,'case_id'=>501,'reason'=>'REFUND_INITIATOR_UNKNOWN','status'=>'OPEN','version'=>1,'context'=>['facts'=>['amazon_order_id'=>'702-0707321-6872209','customer_delivery_status'=>'DELIVERED','customer_delivery_confirmed'=>true,'customer_tracking_ids'=>['AMZ12345AB'],'return_tracking_ids'=>[]]]],
-            10=>['id'=>10,'case_id'=>505,'reason'=>'OFFICIAL_APPEAL_WINDOW_EXPIRED','status'=>'OPEN','version'=>3,'context'=>['facts'=>['amazon_order_id'=>'702-8373627-4388208']],'ai_suggestion'=>['action'=>'SAFE_T_APPEAL','rationale'=>'Recorrer com as evidências disponíveis.','confidence'=>0.91,'uncertainties'=>[],'parameters'=>['date_binding'=>'APPEAL_DEADLINE']]],
+            10=>['id'=>10,'case_id'=>505,'reason'=>'EMAIL_REVIEW_FINAL_REQUIRES_TERMINAL_REVIEW','status'=>'OPEN','version'=>3,'context'=>['facts'=>['amazon_order_id'=>'702-8373627-4388208','customer_delivery_status'=>'DELIVERED','customer_delivery_confirmed'=>true,'customer_tracking_ids'=>['AMZ777GG'],'return_tracking_ids'=>[]]],'ai_suggestion'=>['action'=>'SAFE_T_APPEAL','rationale'=>'Recorrer com as evidências disponíveis.','confidence'=>0.91,'uncertainties'=>[],'parameters'=>['date_binding'=>'APPEAL_DEADLINE']]],
         ];
     }
     public function openQueue(array $filters=[]):array{return array_values($this->rows);}
@@ -65,16 +65,18 @@ roSame('OK',$r['status']??null,'review operations status');
 roSame(2,$r['open_reviews']??null,'all open reviews inspected');
 roSame(1,$r['suggested']??null,'missing AI suggestion generated automatically');
 roSame(2,$r['ready_reviews']??null,'all reviews are AI-ready before notification');
-roSame(1,$r['reminder_sent']??null,'first pending-review reminder sent immediately');
+roSame(1,$r['reminder_sent']??null,'first genuine manual review gets one notification');
+roSame(1,$r['manual_reviews']??null,'one exception genuinely requires owner decision');
+roSame(1,$r['operational_reviews']??null,'one review remains operational work');
 roSame(1,$advisor->calls,'existing AI suggestion is not regenerated');
 roSame(1,$p->reviews->saved,'generated suggestion persisted with optimistic version');
 roSame(1,count($posts),'one reminder POST');
 roSame(1,$p->cursors->saved,'notification timestamp persisted');
 $raw=base64_decode(strtr((string)($posts[0]['raw']??''),'-_','+/'));
 roAssert(is_string($raw)&&str_contains($raw,'To: fredmourao@gmail.com'),'reminder targets configured operator email');
-roAssert(str_contains((string)$raw,'2 revisões pendentes'),'reminder describes pending review count in Portuguese');
-roAssert(str_contains((string)$raw,'Verificar financeiro'),'generated action is shown in Portuguese');
-roAssert(str_contains((string)$raw,'Recorrer no SAFE-T'),'existing suggested action is shown in Portuguese');
+roAssert(str_contains((string)$raw,'1 decisão humana necessária'),'only true manual exception is in email');
+roAssert(!str_contains((string)$raw,'Verificar financeiro'),'operational financial investigation must not be mailed to owner');
+roAssert(str_contains((string)$raw,'Recorrer no SAFE-T'),'the genuine manual exception keeps its adviser suggestion');
 roAssert(!str_contains((string)$raw,'CHECK_FINANCES'),'operator reminder must not expose raw action enum');
 roAssert(str_contains((string)$raw,'Entrega ao cliente: confirmada'),'Email must report independently confirmed delivery.');
 roAssert(str_contains((string)$raw,'Rastreio de envio disponível'),'Email must distinguish real tracking availability.');
@@ -84,8 +86,8 @@ $r2=$ops->run($now->modify('+1 hour'));
 roSame(0,$r2['reminder_sent']??null,'no reminder before two hours');
 roSame(1,count($posts),'no duplicate Gmail write inside two-hour interval');
 $r3=$ops->run($now->modify('+2 hours +1 minute'));
-roSame(1,$r3['reminder_sent']??null,'reminder repeats after two hours while review remains open');
-roSame(2,count($posts),'second reminder has a new idempotent send episode');
+roSame(0,$r3['reminder_sent']??null,'unchanged genuine decision does not spam every two hours');
+roSame(1,count($posts),'no second email for the same human exception');
 
 $p->reviews->rows=[];
 $r4=$ops->run($now->modify('+2 hours +6 minutes'));
@@ -94,7 +96,7 @@ roSame(1,$p->cursors->cleared,'notification episode resets after queue drains');
 
 $runtime=(string)file_get_contents(__DIR__.'/../includes/amazon-returns/Runtime.php');
 $daemon=(string)file_get_contents(__DIR__.'/../workers/amazon-returns/daemon.php');
-roAssert(str_contains($runtime,"'review_operations'=>7200"),'review operations must run every two hours so pending-review reminders meet the approved cadence');
+roAssert(str_contains($runtime,"'review_operations'=>7200"),'review inspections remain on their existing cadence, independently of owner notifications');
 roAssert(str_contains($daemon,"'review_operations'"),'daemon must dispatch automatic review operations');
 roAssert(str_contains($daemon,'SvAmazonReviewOperations'),'daemon must use the review operations service');
 
