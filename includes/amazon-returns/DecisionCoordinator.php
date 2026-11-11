@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/SafeTDecisionEngine.php';
 require_once __DIR__.'/ReviewContext.php';
 require_once __DIR__.'/LearnedRuleEngine.php';
+require_once __DIR__.'/ReviewOperations.php';
 final class SvAmazonDecisionCoordinator
 {
     public function __construct(private SvAmazonSafeTDecisionEngine $base,private object $persistence,private ?object $config=null,private ?SvAmazonLearnedRuleEngine $ruleEngine=null)
@@ -49,8 +50,28 @@ final class SvAmazonDecisionCoordinator
             return $decision;
         }
         $reason=$match['status']==='CONFLICT'?'LEARNED_RULE_CONFLICT':(string)($base['reason']??'UNRESOLVED_REVIEW');
-        if($persist)$this->persistence->reviews->open((int)$case['id'],$reason,$context['signature_hash'],$context);
-        return $base+['review_reason'=>$reason,'review_context'=>$context,'learned_rule_conflicts'=>$match['conflicts']??[]];
+        // A missing source fact, support readback or partial credit is work for
+        // financial/Seller Central recovery, not a fresh owner decision each cycle.
+        // Preserve the original blocking reason and external-write controls.
+        $ownerDecisionRequired=($base['action']??'')==='HUMAN_REVIEW'
+            || $match['status']==='CONFLICT'
+            || SvAmazonReviewOperations::requiresManualDecision([
+                'reason'=>$reason,'context'=>$context,
+            ]);
+        if($persist){
+            if($ownerDecisionRequired){
+                $this->persistence->reviews->open((int)$case['id'],$reason,$context['signature_hash'],$context);
+            }else{
+                if(method_exists($this->persistence->reviews,'resolveOpenForCase')){
+                    $this->persistence->reviews->resolveOpenForCase((int)$case['id']);
+                }
+                $this->clearResolvedReviewGate($case,$policy,$base);
+            }
+        }
+        return $base+[
+            'review_reason'=>$reason,'review_owner'=>$ownerDecisionRequired?'HUMAN':'SYSTEM',
+            'review_context'=>$context,'learned_rule_conflicts'=>$match['conflicts']??[],
+        ];
     }
     public static function enforceSupportCaseReuse(array $decision,array $case): array
     {
