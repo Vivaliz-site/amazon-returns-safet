@@ -7,15 +7,15 @@ require_once __DIR__.'/OpenAiReviewAdvisor.php';
 require_once __DIR__.'/GmailApi.php';
 
 /**
- * Keeps the human-review queue operator-ready without weakening decision gates.
- * Genuine reviews receive an AI recommendation first; only then may the operator
- * receive a reminder. The reminder repeats every two hours while the queue stays open.
+ * Enriches operational investigations with AI advice but notifies the owner only
+ * when a genuine manual decision exists. Notifications are event-based, not
+ * repeated while the same decision stays open. The operational queue remains
+ * intact for the scheduler, finance and Seller Central recovery workers.
  */
 final class SvAmazonReviewOperations
 {
     private const CURSOR_SOURCE='REVIEW_OPERATIONS';
     private const CURSOR_KEY='last_notification_at';
-    private const REMINDER_SECONDS=7200;
 
     public function __construct(
         private object $persistence,
@@ -31,7 +31,8 @@ final class SvAmazonReviewOperations
         $rows=$this->persistence->reviews->openQueue();
         $result=[
             'status'=>'OK','open_reviews'=>count($rows),'suggested'=>0,'ai_failed'=>0,
-            'ready_reviews'=>0,'reminder_sent'=>0,'reminder_skipped'=>0,'notification_failed'=>0,
+            'ready_reviews'=>0,'operational_reviews'=>0,'manual_reviews'=>0,
+            'reminder_sent'=>0,'reminder_skipped'=>0,'notification_failed'=>0,
         ];
         if($rows===[]){
             $this->persistence->cursors->clear(self::CURSOR_SOURCE,self::CURSOR_KEY);
@@ -87,15 +88,27 @@ final class SvAmazonReviewOperations
             }
         }
         $result['ready_reviews']=count($ready);
-
-        // A human notification is only valid when every currently-open review is AI-ready.
-        if(count($ready)!==count($rows)){
+        // An open recovery investigation is not a request for owner approval.
+        // Do not silently resolve financial/support cases merely to stop email.
+        $manualRows=array_values(array_filter($rows,self::requiresManualDecision(...)));
+        $result['manual_reviews']=count($manualRows);
+        $result['operational_reviews']=count($rows)-count($manualRows);
+        $readyManual=array_values(array_filter($ready,self::requiresManualDecision(...)));
+        if($readyManual===[]){
             $result['reminder_skipped']=1;
             return $result;
         }
 
         $last=$this->persistence->cursors->load(self::CURSOR_SOURCE,self::CURSOR_KEY);
-        if(!$this->reminderDue($last,$now)){
+        $previous=is_array($last['metadata']??null)?$last['metadata']:[];
+        // Support the previous cursor, whose review_ids included operational work.
+        $priorIds=$previous['notified_review_ids']??$previous['review_ids']??[];
+        if(!is_array($priorIds))$priorIds=[];
+        $notified=array_fill_keys(array_map('intval',$priorIds),true);
+        $newManual=array_values(array_filter(
+            $readyManual,static fn(array $review):bool=>!isset($notified[(int)$review['id']])
+        ));
+        if($newManual===[]){
             $result['reminder_skipped']=1;
             return $result;
         }
@@ -108,22 +121,25 @@ final class SvAmazonReviewOperations
 
         try{
             $gmail=$this->gmail??=new SvAmazonGmailApiClient($this->config);
-            $episode=is_array($last)?trim((string)($last['value']??'')):'new-episode';
-            if($episode==='')$episode='new-episode';
-            $identity=[];
-            foreach($ready as $row)$identity[]=(int)$row['id'].':'.(int)($row['version']??0);
-            sort($identity,SORT_STRING);
+            $identity=array_map(static fn(array $r):int=>(int)$r['id'],$newManual);
+            sort($identity,SORT_NUMERIC);
             $ctx=method_exists($this->persistence,'context')?$this->persistence->context():null;
             $tenant=is_object($ctx)&&method_exists($ctx,'tenantId')?(int)$ctx->tenantId():0;
             $connection=is_object($ctx)&&method_exists($ctx,'amazonConnectionId')?(int)$ctx->amazonConnectionId():0;
-            $key=hash('sha256',implode('|',['review-reminder-v1',$tenant,$connection,$to,$episode,implode(',',$identity)]));
-            $count=count($ready);
-            $subject='Amazon Returns: '.$count.' '.($count===1?'revisão pendente':'revisões pendentes');
-            $sent=$gmail->sendOnce($to,$subject,$this->message($ready),$key);
+            // Stable ID set makes uncertain Gmail retries idempotent.
+            $key=hash('sha256',implode('|',['owner-review-new-v2',$tenant,$connection,$to,implode(',',$identity)]));
+            $count=count($newManual);
+            $subject='Amazon Returns: '.$count.' '.($count===1?'decisão humana necessária':'decisões humanas necessárias');
+            $sent=$gmail->sendOnce($to,$subject,$this->message($newManual),$key);
+            foreach($identity as $id)$notified[$id]=true;
+            $notifiedIds=array_map('intval',array_keys($notified));
+            sort($notifiedIds,SORT_NUMERIC);
             $this->persistence->cursors->save(
                 self::CURSOR_SOURCE,self::CURSOR_KEY,$now->format(DATE_ATOM),[
                     'review_count'=>$count,
-                    'review_ids'=>array_values(array_map(static fn(array $r):int=>(int)$r['id'],$ready)),
+                    'review_ids'=>$notifiedIds,
+                    'notified_review_ids'=>$notifiedIds,
+                    'new_review_ids'=>$identity,
                     'gmail_message_id'=>(string)($sent['message_id']??''),
                 ]
             );
@@ -135,14 +151,21 @@ final class SvAmazonReviewOperations
         return $result;
     }
 
-    /** @param array{value?:string}|null $last */
-    private function reminderDue(?array $last,DateTimeImmutable $now):bool
+    /** A manual exception is evidence-based, not implied by an OPEN status or AI suggestion. */
+    public static function requiresManualDecision(array $review):bool
     {
-        $raw=is_array($last)?trim((string)($last['value']??'')):'';
-        if($raw==='')return true;
-        try{$at=(new DateTimeImmutable($raw))->setTimezone(new DateTimeZone('UTC'));}
-        catch(Throwable){return true;}
-        return $now->getTimestamp()-$at->getTimestamp()>=self::REMINDER_SECONDS;
+        $context=is_array($review['context']??null)?$review['context']:[];
+        $signature=is_array($context['signature']??null)?$context['signature']:[];
+        $facts=is_array($context['facts']??null)?$context['facts']:[];
+        if(($signature['material_conflict']??false)===true || ($facts['material_conflict']??false)===true){
+            return true;
+        }
+        $reason=strtoupper(trim((string)($review['reason']??$context['review_reason']??'')));
+        return in_array($reason,[
+            'DAMAGED_RETURN_INITIAL_CLAIM_MANUAL_ONLY',
+            'EMAIL_REVIEW_FINAL_REQUIRES_TERMINAL_REVIEW',
+            'EMAIL_REVIEW_REQUIRES_HUMAN_DECISION',
+        ],true);
     }
 
     /** @param list<array<string,mixed>> $rows */
@@ -150,8 +173,8 @@ final class SvAmazonReviewOperations
     {
         $count=count($rows);
         $lines=[
-            'Há '.$count.' '.($count===1?'revisão pendente':'revisões pendentes').' no Amazon Returns / SAFE-T.',
-            'Cada situação abaixo já foi analisada pelo sistema e possui uma recomendação de IA antes da sua decisão.',
+            'Há '.$count.' '.($count===1?'decisão humana necessária':'decisões humanas necessárias').' no Amazon Returns / SAFE-T.',
+            'Somente exceções que realmente dependem de sua decisão são incluídas nesta mensagem.',
             '',
         ];
         foreach($rows as $row){
@@ -186,7 +209,7 @@ final class SvAmazonReviewOperations
         $lines[]='';
         $lines[]='A entrega ao comprador não comprova retorno físico à ShopVivaliz nem crédito de ressarcimento. Confirme as evidências antes de decidir.';
         $lines[]='Acesse: https://returns.shopvivaliz.com.br/admin/amazon-returns/?view=reviews';
-        $lines[]='Este lembrete será repetido a cada 2 horas enquanto houver revisão pendente.';
+        $lines[]='As pendências operacionais permanecem registradas no sistema para investigação e processamento automático.';
         return implode("\n",$lines);
     }
 
