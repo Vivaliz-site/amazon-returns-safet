@@ -12,6 +12,11 @@ final class DiscoveryPriorityDb extends PDO {
     public array $executed=[];
     public array $ids=[13210,1263,13210,0,'not-an-id'];
     public function __construct(){}
+    private bool $transaction=false;
+    public function beginTransaction():bool {$this->transaction=true;return true;}
+    public function commit():bool {$this->transaction=false;return true;}
+    public function rollBack():bool {$this->transaction=false;return true;}
+    public function inTransaction():bool {return $this->transaction;}
     public function prepare(string $query,array $options=[]):PDOStatement|false {
         return new DiscoveryPriorityStmt($this,$query);
     }
@@ -23,8 +28,7 @@ final class DiscoveryPriorityStmt extends PDOStatement {
         return true;
     }
     public function fetchAll(int $mode=PDO::FETCH_DEFAULT,mixed ...$args):array {
-        priorityCheck($mode===PDO::FETCH_COLUMN,'Urgency lookup must read case IDs only.');
-        return $this->db->ids;
+        return $mode===PDO::FETCH_COLUMN?$this->db->ids:[];
     }
 }
 
@@ -51,6 +55,27 @@ foreach([
 priorityCheck(($params[':tenant_id']??null)===1
     && ($params[':amazon_connection_id']??null)===1,
     'Priority selection must preserve tenant/connection isolation.');
+// Regression: claimBatch's traditional due-date ordering previously discarded
+// urgentDiscoveryCaseIds()'s D+90 order. The real transactional claimant must
+// preserve the provided priority when, and only when, requested.
+$outbox->claimBatch(1,['SAFE_T_DISCOVERY'],[13210,1263],true);
+$scopedQuery=$db->executed[array_key_last($db->executed)]['sql']??'';
+priorityCheck(str_contains($scopedQuery,
+    'ORDER BY FIELD(case_id,13210,1263),available_at,id LIMIT 1 FOR UPDATE SKIP LOCKED'),
+    'D+90 priority was lost when the scoped transactional claim re-sorted by available_at.');
+priorityCheck(str_contains($scopedQuery,'case_id IN (:allowed_case_0,:allowed_case_1)')
+    && str_contains($scopedQuery,'FOR UPDATE SKIP LOCKED'),
+    'Urgent claim must keep the existing scoped and fenced transactional path.');
+$scopedParams=$db->executed[array_key_last($db->executed)]['params']??[];
+priorityCheck(($scopedParams[':allowed_case_0']??null)===13210
+    && ($scopedParams[':allowed_case_1']??null)===1263,
+    'Urgent claim must bind only the two authorized case IDs.');
+$outbox->claimBatch(1,['SAFE_T_DISCOVERY'],[13210,1263]);
+$ordinaryQuery=$db->executed[array_key_last($db->executed)]['sql']??'';
+priorityCheck(str_contains($ordinaryQuery,'ORDER BY available_at,id LIMIT 1 FOR UPDATE SKIP LOCKED')
+    && !str_contains($ordinaryQuery,'FIELD(case_id,'),
+    'Non-urgent claims must preserve their original order and lease semantics.');
+
 priorityCheck(!preg_match('/\\b(UPDATE|DELETE|INSERT|FOR UPDATE)\\b/i',$query),
     'Priority probe must never mutate or claim pending jobs.');
 priorityCheck(str_contains(($db->executed[0]['sql']??''),'SELECT o.case_id'),
@@ -64,7 +89,7 @@ $pull=substr($source,$begin,$end-$begin);
 $known=strpos($pull,"claimBatch(1,['SAFE_T_READ','SELLER_SUPPORT_READ'])");
 $delivery=strpos($pull,"claimBatch(1,['ORDER_DELIVERY_READ'])");
 $urgent=strpos($pull,'urgentDiscoveryCaseIds(50)');
-$scoped=strpos($pull,"claimBatch(1,['SAFE_T_DISCOVERY'],\$urgentIds)");
+$scoped=strpos($pull,"claimBatch(1,['SAFE_T_DISCOVERY'],\$urgentIds,true)");
 $fallback=strpos($pull,"claimBatch(1,['SAFE_T_DISCOVERY'])");
 priorityCheck($known!==false && $delivery!==false && $urgent!==false
     && $scoped!==false && $fallback!==false

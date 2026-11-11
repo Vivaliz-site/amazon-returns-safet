@@ -166,7 +166,7 @@ final class SvAmazonTenantReturnsOutbox
     }
 
     /** @return list<array<string,mixed>> */
-    public function claimBatch(int $limit = 10, array $kinds = [], ?array $allowedCaseIds=null): array
+    public function claimBatch(int $limit = 10, array $kinds = [], ?array $allowedCaseIds=null, bool $preserveAllowedOrder=false): array
     {
         // Filter inside SELECT FOR UPDATE to avoid changing any out-of-grant
         // outbox status, attempt count or lease before dispatch.
@@ -206,13 +206,22 @@ final class SvAmazonTenantReturnsOutbox
             $caseSql=' AND case_id IN (' . implode(',', $placeholders) . ')';
         }
 
+        // The urgency probe returns IDs sorted by refund_at (nearest D+90).
+        // An IN (...) filter alone would lose that order to available_at,id.
+        // All IDs were validated as positive integers above; only the
+        // read-only discovery caller opts into this deterministic ordering.
+        $orderSql=' ORDER BY available_at,id';
+        if ($allowedCaseIds!==null && $preserveAllowedOrder) {
+            $orderSql=' ORDER BY FIELD(case_id,'.implode(',',$allowedCaseIds).'),available_at,id';
+        }
+
         $this->db->beginTransaction();
         try {
             $select = $this->prepare(
                 "SELECT * FROM amazon_return_outbox WHERE tenant_id=:tenant_id "
                 . "AND amazon_connection_id=:amazon_connection_id AND ((status='PENDING' AND available_at<=UTC_TIMESTAMP()) "
                 . "OR (status='PROCESSING' AND locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL " . self::LEASE_SECONDS . " SECOND)))"
-                . $kindSql . $caseSql . ' ORDER BY available_at,id LIMIT ' . $limit . ' FOR UPDATE SKIP LOCKED'
+                . $kindSql . $caseSql . $orderSql . ' LIMIT ' . $limit . ' FOR UPDATE SKIP LOCKED'
             );
             $select->execute($params);
             $rows = array_values(array_filter($select->fetchAll(PDO::FETCH_ASSOC), 'is_array'));
