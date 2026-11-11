@@ -183,7 +183,7 @@ final class SvAmazonReviewContext
             if(str_contains($reason,$word))return ['FINANCIAL_RECONCILIATION_CHECKED','FINANCIAL_RECONCILIATION_CONFIRMED'];
         }
         foreach(['PHYSICAL','CARRIER','RETURN_TRANSPORT','DAMAG','DELIVERY','RECEIPT'] as $word){
-            if(str_contains($reason,$word))return ['WAREHOUSE_RECEIPT_VOIDED','PHYSICAL_RECEIVED','RETURN_REPORT_OBSERVED','RETURN_TRANSPORT_OBSERVED'];
+            if(str_contains($reason,$word))return ['PHYSICAL_RECEIPT_VOIDED','PHYSICAL_RECEIVED','RETURN_REPORT_OBSERVED','RETURN_TRANSPORT_OBSERVED'];
         }
         foreach(['PROMIS','WAIT','APPEAL','DENIAL','SAFE_T','EMAIL','AMAZON_'] as $word){
             if(str_contains($reason,$word))return ['SAFE_T_STATUS_OBSERVED','SAFE_T_EMAIL_REVIEW_RESPONSE','SELLER_CENTRAL_ACTION_RESULT'];
@@ -204,7 +204,7 @@ final class SvAmazonReviewContext
             $outcome=self::token($payload['review_outcome']??null,48);
             return $outcome==='UNKNOWN'?'EMAIL_REVIEW_UNKNOWN':'EMAIL_REVIEW_'.$outcome;
         }
-        if($type==='WAREHOUSE_RECEIPT_VOIDED')return 'WAREHOUSE_RECEIPT_CORRECTION';
+        if($type==='PHYSICAL_RECEIPT_VOIDED')return 'WAREHOUSE_RECEIPT_CORRECTION';
         if($type==='PHYSICAL_RECEIVED')return 'WAREHOUSE_RECEIPT';
         if(in_array($type,['RETURN_REPORT_OBSERVED','RETURN_TRANSPORT_OBSERVED'],true))return 'RETURN_TRANSPORT';
         if(in_array($type,['FINANCIAL_RECONCILIATION_CHECKED','FINANCIAL_RECONCILIATION_CONFIRMED'],true))return 'FINANCIAL_RECONCILIATION';

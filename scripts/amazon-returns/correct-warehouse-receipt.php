@@ -80,12 +80,13 @@ try {
     $now=gmdate('Y-m-d H:i:s');
     $payload=[
         'receipt_event_id'=>(int)$receiptEventId,'reason'=>$reason,'evidence_ref'=>$reference,
+        'operator_id'=>max(1,(int)(function_exists('posix_geteuid')?posix_geteuid():getmyuid())),
         'actor'=>'GPT_EXECUTOR_ON_OWNER_INSTRUCTION','external_claims_unchanged'=>true,
         'financial_amounts_unchanged'=>true,'erp_and_stock_unchanged'=>true,
     ];
     $correction=[
-        'case_id'=>(int)$caseId,'event_type'=>'WAREHOUSE_RECEIPT_VOIDED',
-        'source'=>'ADMIN_AUDIT',
+        'case_id'=>(int)$caseId,'event_type'=>'PHYSICAL_RECEIPT_VOIDED',
+        'source'=>'WAREHOUSE',
         'source_event_id'=>'receipt-void-'.$caseId.'-'.$receiptEventId,
         'idempotency_key'=>$key,'occurred_at'=>$now,'payload'=>$payload,
         'evidence_sha256'=>hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES)),

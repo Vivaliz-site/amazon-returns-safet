@@ -752,7 +752,10 @@ final class SvAmazonReturnCaseRepository
             . "WHERE rv.tenant_id={$receiptAlias}.tenant_id "
             . "AND rv.amazon_connection_id={$receiptAlias}.amazon_connection_id "
             . "AND rv.case_id={$receiptAlias}.case_id "
-            . "AND rv.event_type='WAREHOUSE_RECEIPT_VOIDED' AND rv.source='ADMIN_AUDIT' "
+            . "AND rv.event_type='PHYSICAL_RECEIPT_VOIDED' AND rv.source='WAREHOUSE' "
+            . "AND rv.source_event_id IS NOT NULL AND rv.source_event_id<>'' "
+            . "AND rv.occurred_at>={$receiptAlias}.occurred_at "
+            . "AND CAST(JSON_UNQUOTE(JSON_EXTRACT(rv.payload_json,'$.operator_id')) AS UNSIGNED)>0 "
             . "AND JSON_EXTRACT(rv.payload_json,'$.receipt_event_id')={$receiptAlias}.id)";
     }
 

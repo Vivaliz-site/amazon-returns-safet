@@ -28,16 +28,14 @@ final class SvAmazonWarehouseReceiptCorrections
         $voided = [];
         foreach ($timeline as $event) {
             if (!is_array($event) || (int)($event['case_id'] ?? 0) !== $caseId
-                || ($event['event_type'] ?? '') !== 'WAREHOUSE_RECEIPT_VOIDED'
-                || ($event['source'] ?? '') !== 'ADMIN_AUDIT'
+                || ($event['event_type'] ?? '') !== 'PHYSICAL_RECEIPT_VOIDED'
+                || ($event['source'] ?? '') !== 'WAREHOUSE'
                 || trim((string)($event['source_event_id'] ?? '')) === '') continue;
             $id = (int)($event['id'] ?? 0);
             $payload = $event['payload'] ?? null;
-            if (!is_array($payload) || $id < 1
-                || trim((string)($payload['reason'] ?? '')) === ''
-                || trim((string)($payload['evidence_ref'] ?? '')) === '') continue;
+            if (!is_array($payload) || (int)($payload['operator_id'] ?? 0) < 1) continue;
             $target = filter_var($payload['receipt_event_id'] ?? null, FILTER_VALIDATE_INT);
-            if ($target === false || $target < 1 || !isset($receipts[$target]) || $id <= $target) continue;
+            if ($target === false || $target < 1 || !isset($receipts[$target])) continue;
             $receiptAt = (string)($receipts[$target]['occurred_at'] ?? '');
             $correctionAt = (string)($event['occurred_at'] ?? '');
             if ($receiptAt === '' || $correctionAt === '' || $correctionAt < $receiptAt) continue;

@@ -29,11 +29,12 @@ $id=$p->events->append([
 vSame($id,$p->cases->warehousePhysicalReceiptEventId(101669),'live intake exists');
 vSame([], $p->cases->agedUnreceivedCaseIds('2026-09-30 00:00:00'), 'unretracted warehouse receipt excludes D90');
 $voidId=$p->events->append([
-    'case_id'=>101669,'event_type'=>'WAREHOUSE_RECEIPT_VOIDED','source'=>'ADMIN_AUDIT',
+    'case_id'=>101669,'event_type'=>'PHYSICAL_RECEIPT_VOIDED','source'=>'WAREHOUSE',
     'source_event_id'=>'op-retract','idempotency_key'=>hash('sha256','void'),
     'occurred_at'=>'2026-10-04 15:00:00',
     'payload'=>['receipt_event_id'=>$id,'reason'=>'OWNER_CORRECTION_NOT_RECEIVED',
-        'evidence_ref'=>'https://github.com/Vivaliz-site/amazon-returns-safet/issues/532'],
+        'evidence_ref'=>'https://github.com/Vivaliz-site/amazon-returns-safet/issues/532',
+        'operator_id'=>123],
 ]);
 vSame(null,$p->cases->warehousePhysicalReceiptEventId(101669),'retracted receipt no longer warehouse proof');
 vSame([101669],$p->cases->agedUnreceivedCaseIds('2026-09-30 00:00:00'),'old D90 candidates no longer masked by retracted receipt');
