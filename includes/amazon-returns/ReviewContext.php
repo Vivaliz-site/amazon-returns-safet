@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/Enums.php';
 require_once __DIR__.'/AmazonRequestedWait.php';
+require_once __DIR__.'/WarehouseReceiptCorrections.php';
 
 final class SvAmazonReviewContext
 {
@@ -11,7 +12,10 @@ final class SvAmazonReviewContext
     {
         $wait=self::waitInfo($case,$timeline);
         $financial=self::financialPosture($case);
-        $conflict=self::materialConflict($case,$timeline,$financial);
+        $effectiveTimeline=SvAmazonWarehouseReceiptCorrections::effectiveTimeline(
+            $timeline,(int)($case['id']??0)
+        );
+        $conflict=self::materialConflict($case,$effectiveTimeline,$financial);
         $signature=[
             'review_reason'=>self::token($baseDecision['reason']??null,128),
             'marketplace'=>self::marketplace($case['marketplace_id']??null),
@@ -23,7 +27,7 @@ final class SvAmazonReviewContext
             'return_tracking'=>self::trackingIds($case['return_tracking_ids']??null)!==[]?'PRESENT':'NOT_OBSERVED',
             'refund_initiator'=>self::refundInitiator($case['refund_initiator']??null),
             'financial'=>$financial,
-            'evidence_pattern'=>self::evidencePattern($timeline,$baseDecision),
+            'evidence_pattern'=>self::evidencePattern($effectiveTimeline,$baseDecision),
             'wait_condition'=>$wait['category'],
             'appeal_window'=>self::appealPosture($case,$baseDecision),
             'damaged_manual_opening'=>self::damagedManualOpening($case),
@@ -179,7 +183,7 @@ final class SvAmazonReviewContext
             if(str_contains($reason,$word))return ['FINANCIAL_RECONCILIATION_CHECKED','FINANCIAL_RECONCILIATION_CONFIRMED'];
         }
         foreach(['PHYSICAL','CARRIER','RETURN_TRANSPORT','DAMAG','DELIVERY','RECEIPT'] as $word){
-            if(str_contains($reason,$word))return ['PHYSICAL_RECEIVED','RETURN_REPORT_OBSERVED','RETURN_TRANSPORT_OBSERVED'];
+            if(str_contains($reason,$word))return ['PHYSICAL_RECEIPT_VOIDED','PHYSICAL_RECEIVED','RETURN_REPORT_OBSERVED','RETURN_TRANSPORT_OBSERVED'];
         }
         foreach(['PROMIS','WAIT','APPEAL','DENIAL','SAFE_T','EMAIL','AMAZON_'] as $word){
             if(str_contains($reason,$word))return ['SAFE_T_STATUS_OBSERVED','SAFE_T_EMAIL_REVIEW_RESPONSE','SELLER_CENTRAL_ACTION_RESULT'];
@@ -200,6 +204,7 @@ final class SvAmazonReviewContext
             $outcome=self::token($payload['review_outcome']??null,48);
             return $outcome==='UNKNOWN'?'EMAIL_REVIEW_UNKNOWN':'EMAIL_REVIEW_'.$outcome;
         }
+        if($type==='PHYSICAL_RECEIPT_VOIDED')return 'WAREHOUSE_RECEIPT_CORRECTION';
         if($type==='PHYSICAL_RECEIVED')return 'WAREHOUSE_RECEIPT';
         if(in_array($type,['RETURN_REPORT_OBSERVED','RETURN_TRANSPORT_OBSERVED'],true))return 'RETURN_TRANSPORT';
         if(in_array($type,['FINANCIAL_RECONCILIATION_CHECKED','FINANCIAL_RECONCILIATION_CONFIRMED'],true))return 'FINANCIAL_RECONCILIATION';
