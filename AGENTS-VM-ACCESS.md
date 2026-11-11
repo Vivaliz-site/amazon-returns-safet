@@ -1,80 +1,38 @@
-# Acesso direto dos agentes as VMs
+# Acesso MCP dos agentes aos hosts ShopVivaliz
 
-Instrucao operacional obrigatoria para agentes que precisem executar comandos nas VMs Oracle Cloud da ShopVivaliz. Nunca versionar, imprimir ou copiar para logs/prompts chaves privadas, tokens, senhas, headers de autenticacao ou conteudo de `security_token_file`.
+**Inventário operacional atualizado em 11/11/2026.** Este runbook substitui instruções de acesso remoto anteriores ao cutover e utiliza como fonte vigente o `main` de `Vivaliz-site/site-shopvivaliz`: `docs/knowledge/atendimento-chatgpt-bootstrap.md`, `docs/knowledge/host-access.md`, `docs/knowledge/agent-rules.md` e `docs/ops/mcp-first-agent-execution-2026-11-05.md`.
 
-## VMs atuais
+## Hosts operacionais
 
-| Alias | Instancia OCI | SSH no Fred-Win |
+| Host | Função | Rota |
 | --- | --- | --- |
-| `vm1` | `shopvivaliz-free-a1` | `shopvivaliz-a1-site-raw` |
-| `vm2` | `always-free-arm-1787907847-26` | `shopvivaliz-a1-backend-raw` |
+| `marina-a1-4c24g` | Produção web, Amazon Returns, bancos, workers, releases e runners | **ShopVivaliz Remote Control MCP** com grant válido, identidade e lease verificados |
+| `always-free-arm-1787907847-26` | Backend, controlador, MCP, navegador corporativo e integrações | **ShopVivaliz Remote Control MCP** |
+| `Fred-Win` | Estação Windows de apoio | MCP central, conforme autenticação e escopo da sessão |
+| `KOCEPSV` | Estação Windows auxiliar | MCP central somente quando o relay estiver efetivamente conectado |
 
-- Regiao OCI: `sa-saopaulo-1`.
-- Controlador canonico: Fred-Win (`LAPTOP-NIG4IFUU`).
-- Perfil OCI obrigatorio: `AGENTS`.
-- Config OCI protegida: `C:\Users\FRED\.oci\agents\config`.
-- Helper OCI: `C:\Users\FRED\.local\bin\sv-oci-vm-run.ps1`.
-- Executavel SSH canonico no Fred-Win: `C:\Program Files\Git\usr\bin\ssh.exe`.
+A VM de origem `shopvivaliz-free-a1` foi excluída. Seus aliases, comandos de bootstrap, IPs e perfis operacionais de setembro de 2026 são apenas históricos e não devem ser reaproveitados.
 
-## Ordem obrigatoria de acesso
+## Evidências recentes (11/11/2026)
 
-1. **Remote Desktop Commander** diretamente pelo `device_name`, quando online, para operacao comum sem privilegio elevado.
-2. **SSH administrativo pelo Fred-Win**, usando o SSH do Git e os aliases cadastrados, quando a tarefa exigir `sudo`/root.
-3. **OCI Compute Instance Run Command**, via perfil `AGENTS`, como shell de fallback independente de SSH e de porta de entrada.
-4. **OCI serial console** somente como ultimo recurso de recuperacao.
+- MCP central `admin_command_run` para Marina: `hostname -s; id -un` devolveu `marina-a1-4c24g` / `ubuntu`, exit code 0.
+- MCP central para backend: `hostname -s` confirmou `always-free-arm-1787907847-26`, serviço da controladora ativo.
+- MCP central para Fred-Win: `hostname; whoami` retornou `LAPTOP-NIG4IFUU` e a identidade local `fred`, exit code 0.
+- A tentativa MCP para KOCEPSV encontrou `127.0.0.1:2223 connection refused`. O catálogo anunciar o host não prova transporte funcional; esta rota permanece sem certificação até novo readback.
 
-Nao enfraquecer os bloqueios de `sudo`/`NoNewPrivileges` do Remote Desktop Commander para conseguir root.
+Esses testes comprovam execução dos comandos citados, **não** habilitam escrita SAFE-T, acesso total, navegador autenticado ou conclusão do controller `continuity_ready`.
 
-## Shell direto via OCI
+## Procedimento MCP
 
-Preferir o helper validado:
+1. Descobrir o host e a operação permitidos no **schema vigente** do conector ShopVivaliz Remote Control; confirmar identidade real e autorização efetiva, não apenas `hosts_list`.
+2. Para comando curto e inócuo, utilizar `admin_command_run` com timeout de até cinco segundos. Para duração maior, utilizar a fila oficial `task_submit` com `request_id` estável, consultar `task_status` até estado terminal e exigir leitura posterior do efeito.
+3. Antes de mutação, confirmar ownership, lease/fencing, regras do serviço, branch protection, revisão formal de grants quando aplicável e ausência de executor concorrente. Não liberar lock de outro operador.
+4. Em produção, preservar releases imutáveis e realizar deploy somente pelo mecanismo canônico. Para SAFE-T, consultar Seller Central/SP-API, financeiro e warehouse, verificar elegibilidade/idempotência e usar grants específicos.
+5. Para UI, usar as ferramentas MCP de navegador e desktop publicadas para o host e perfil autorizado, com validação visual, reload e persistência; shell e HTTP 200 não substituem E2E de interface.
+6. Em erro de transporte, diagnosticar causa e verificar rotas de manutenção **independentemente autorizadas**. Uma recusa de MFA, RBAC, segurança do provedor, lease ou grant não pode ser contornada por outro canal.
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\FRED\.local\bin\sv-oci-vm-run.ps1 vm1 "hostname; id -un; pwd"
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\FRED\.local\bin\sv-oci-vm-run.ps1 vm2 "hostname; id -un; pwd"
-```
+Nunca imprimir, versionar ou compartilhar em logs/prompts chaves privadas, cookies, senhas, tokens, OTPs, cabeçalhos de autenticação ou segredos de configuração. Operações de recuperação OCI/SSH exigem provas de identidade, host key e escopo próprios; não utilizar aliases históricos como destino.
 
-O helper usa somente `C:\Users\FRED\.oci\agents\config` + perfil `AGENTS`; nunca usar `DEFAULT` como fallback.
+## Rastreabilidade
 
-### Privilegio do Run Command
-
-- O Run Command executa como `ocarun` (UID 999) nas duas VMs.
-- Em validacao real de 2026-09-06, `sudo -n` como `ocarun` exigiu senha nas duas VMs; nao presuma root pelo token OCI.
-- Use Run Command para diagnostico e shell sem root. Para operacao administrativa, use o SSH autorizado ou o console serial.
-- `ACCEPTED` nao prova execucao. Sucesso exige `SUCCEEDED`, stdout coerente e exit code `0`.
-- O polling do Oracle Agent pode levar alguns minutos; nao relance comandos duplicados apenas por permanecerem em `ACCEPTED` por um ciclo.
-
-## SSH administrativo canonico
-
-No Fred-Win, usar o OpenSSH distribuido com Git:
-
-```powershell
-& 'C:\Program Files\Git\usr\bin\ssh.exe' -o BatchMode=yes shopvivaliz-a1-site-raw 'hostname; id -un; sudo -n id -u'
-& 'C:\Program Files\Git\usr\bin\ssh.exe' -o BatchMode=yes shopvivaliz-a1-backend-raw 'hostname; id -un; sudo -n id -u'
-```
-
-Validacao real de 2026-09-06: ambos os aliases autenticaram e `sudo -n id -u` retornou `0` com exit code local `0`. Na sessao automatizada do Fred-Win, o SSH do Windows retornou exit `255` sem stderr, enquanto o SSH do Git funcionou; ate nova validacao, preferir o SSH do Git. Nunca usar `StrictHostKeyChecking=no`.
-
-## Remote Desktop Commander
-
-Device names atuais:
-
-- `shopvivaliz-free-a1`
-- `always-free-arm-1787907847-26`
-
-O DC e o caminho mais simples para comandos sem root. Seu bloqueio de comandos privilegiados e intencional; nao alterar essa politica como atalho operacional.
-
-## Estado validado em 2026-09-06
-
-- Oracle Cloud Agent e plugin `Compute Instance Run Command`: ativos nas duas instancias.
-- `sv-oci-vm-run vm1`: `SUCCEEDED`, hostname `shopvivaliz-free-a1`, usuario `ocarun`, exit code `0`.
-- `sv-oci-vm-run vm2`: `SUCCEEDED`, hostname `always-free-arm-1787907847-26`, usuario `ocarun`, exit code `0`.
-- SSH Git + `shopvivaliz-a1-site-raw`: acesso administrativo com `sudo` validado.
-- SSH Git + `shopvivaliz-a1-backend-raw`: acesso administrativo com `sudo` validado.
-
-## Seguranca e verificacao
-
-- Nunca copiar chave privada OCI ou SSH para as VMs por conveniencia.
-- Nunca incluir segredo no texto do Run Command.
-- Se Run Command ficar parado, revisar o plugin e `/var/log/oracle-cloud-agent/plugins/runcommand/runcommand.log`.
-- Depois de qualquer mudanca, confirmar `hostname`, resultado funcional e exit code antes de declarar sucesso.
+Instruções substituídas de setembro/outubro permanecem no histórico Git para auditoria. Esta revisão é documental: não altera serviços dos hosts, não cria permissões e não prova disponibilidade de sessão gráfica em todos os destinos.
