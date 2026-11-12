@@ -21,7 +21,10 @@ try{
  $db=amazon_returns_pdo();if(!$db instanceof PDO)sv_amz_admin_action_reply(['success'=>false,'error'=>'Banco indisponível.'],503);
  SvAmazonReturnsSchema::ensure($db);$config=new SvAmazonReturnsConfig();$context=SvAmazonTenantRegistry::resolveCurrent($db,$config);$p=SvAmazonTenantPersistence::create($db,$context);
  $result=SvAmazonAdminCaseOverride::apply($p,(int)$caseId,(string)$input['action'],is_array($input['fields']??null)?$input['fields']:[],(string)($input['reason']??''),SvAmazonReturnsAdminAuth::username(),(string)($input['request_id']??''),(string)($input['expected_updated_at']??''));
- sv_amz_admin_action_reply(['success'=>true,'result'=>$result,'notice'=>'Alteração administrativa interna registrada. Nenhuma operação externa foi enviada à Amazon.']);
+ $notice=($result['recovery_claim_pending']??false)
+     ?'Indicação de recuperação registrada apenas no histórico. O caso continua ativo até a conciliação financeira. Nenhuma operação externa foi enviada à Amazon.'
+     :'Alteração administrativa interna registrada. Nenhuma operação externa foi enviada à Amazon.';
+ sv_amz_admin_action_reply(['success'=>true,'result'=>$result,'notice'=>$notice]);
 }catch(InvalidArgumentException $e){sv_amz_admin_action_reply(['success'=>false,'error'=>$e->getMessage()],422);}
 catch(Throwable $e){
  if(in_array($e->getMessage(),['STALE_CASE_VERSION'],true))sv_amz_admin_action_reply(['success'=>false,'error'=>'O caso foi atualizado por outro processo. Recarregue os dados e tente novamente.'],409);
