@@ -2,6 +2,14 @@
 
 **Status corrente:** NÃO APTO — auditoria extrema V5 em andamento em 2026-09-24.
 
+## 2026-11-12 — Auditoria V5 (UI real): lista de casos contradizia o resumo de decisões humanas
+
+- **Achado (P2 / DEFECT / SAFE):** na UI real do release `2494429`, o resumo dizia "Nenhuma ação sua é necessária" e a aba Revisões tinha 0, mas a lista marcava 2 casos como "Precisa da sua decisão / Você" e o filtro "Precisa da minha atenção" retornava 2. Os dados live mostram duas revisões OPEN operacionais (`SELLER_SUPPORT_CHAT_READ_BACK_NOT_CONFIRMED`, `SUPPORT_CASE_NOT_REOPENABLE`), que não exigem decisão do proprietário.
+- **Causa raiz:** o commit `6a23fc5` separou revisões humanas e operacionais no resumo e na API de revisões, mas `api/cases.php`, `CockpitFilters::acceptsDecision` e `operatorResponsibility` continuaram tratando qualquer revisão OPEN como decisão humana.
+- **Classe de falha / busca sistêmica:** mesma regra de negócio aplicada em três superfícies com critérios diferentes. A fonte única passou a ser `SvAmazonReviewOperations::requiresManualDecision`, exposta como `requires_human_decision` na lista.
+- **Correção/prevenção:** testes `cockpit-human-decision-filter-test.php` e `cockpit-human-decision-alignment.test.mjs` (RED antes, GREEN depois) e contrato em `cockpit-api-contract-test.php`. Nenhuma escrita externa nem controle novo.
+- **Pendências:** deploy do SHA da correção, reauditoria visual da lista/filtro/resumo no release, demais jornadas, certifier oficial e reauditoria independente. Estado: NAO_APTO.
+
 ## 2026-11-12 — #532: cache dos assets e instruções do usuário de agente integrados
 
 - **Achado:** a correção do rótulo `CLOSED_LOSS` e da URL da aba `Revisões` ficou inicialmente fora do `main`; mesmo após a integração, tags estáticas de assets permitiam JavaScript antigo em sessões com cache.

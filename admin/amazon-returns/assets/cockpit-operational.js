@@ -1,5 +1,8 @@
 function operatorResponsibility(c){
-  if(c?.review_status==='OPEN'||c?.current_action==='HUMAN_REVIEW'||c?.current_action==='BLOCKED_REVIEW')return 'Sua decisão é necessária';
+  const needsHuman=typeof c?.requires_human_decision==='boolean'
+    ?c.requires_human_decision
+    :(c?.review_status==='OPEN'||c?.current_action==='HUMAN_REVIEW'||c?.current_action==='BLOCKED_REVIEW');
+  if(needsHuman)return 'Sua decisão é necessária';
   if(['RECOVERED','CLOSED_LOSS','RECEIVED_OK'].includes(String(c?.state||'')))return 'Caso concluído';
   return 'Nenhuma ação sua é necessária';
 }
