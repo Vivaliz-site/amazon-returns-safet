@@ -289,7 +289,7 @@ function renderAdminCaseControls(data){
  const feedback=text('div','','admin-case-feedback');feedback.setAttribute('role','status');form.append(feedback);
  const submit=button('Salvar alteração',async()=>{
   const chosen=action.value,patch={};if(chosen==='SET_STATE')patch.state=stateSelect.value;
-  if(chosen==='UPDATE_FIELDS'){const raw=value.value.trim();if(!raw){feedback.textContent='Informe o novo valor.';return;}patch[fieldSelect.value]=['quantity_ordered','quantity_refunded','quantity_received'].includes(fieldSelect.value)?Number(raw):raw;}
+  if(chosen==='UPDATE_FIELDS'){const raw=value.value.trim();if(!raw){feedback.textContent='Informe o novo valor.';return;}patch[fieldSelect.value]=['quantity_ordered','quantity_refunded','quantity_received'].includes(fieldSelect.value)?Number(raw):(['refund_amount','expected_reimbursement_amount'].includes(fieldSelect.value)?raw.replace(/\./g,'').replace(',','.'):raw);}
   if(!reason.value.trim()){feedback.textContent='A justificativa é obrigatória.';return;}
   if(!window.confirm(`Confirmar ${labels[chosen]} no pedido ${c.amazon_order_id||c.id}? A alteração será registrada e não enviará ação externa à Amazon.`))return;
   submit.disabled=true;feedback.textContent='Salvando…';
