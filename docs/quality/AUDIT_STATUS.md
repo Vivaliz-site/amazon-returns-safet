@@ -2,6 +2,14 @@
 
 **Status corrente:** NÃO APTO — auditoria extrema V5 em andamento em 2026-09-24.
 
+## 2026-11-12 — #532: revalidação da UI do cockpit e invalidação de cache de assets
+
+- **Achado corrigido:** o código do rótulo `CLOSED_LOSS` e da sincronização da aba `Revisões` existia em branch histórica, mas o `main` ainda não o continha; além disso, as tags de `cockpit.js` e `cockpit-operational.js` mantinham versões fixas e podiam servir JavaScript antigo por até quatro horas.
+- **Correção:** integração do fix de UI em `8765ac3`, versões dos dois assets atualizadas para `20261112-ec5f6f2`, e instruções não secretas adicionadas ao runbook sobre o usuário canônico `returns-agent`.
+- **Regressões:** `cockpit-closed-loss-and-view-url.test.mjs` 5/5, contratos PHP focais `cockpit-operational-audit-test.php`, `cockpit-ui-contract-test.php`, `cockpit-summary-ui-test.php` e `admin-auth-test.php` PASS; Node completo 294/297 no host Windows, com 3 falhas preexistentes nos testes `seller-central-managed-lock` (2) e `seller-support-hill-expression` (1), reproduzíveis no baseline e fora do diff.
+- **Pendências de aptidão:** PR/CI, merge no `main`, deploy imutável, reauditoria na UI publicada do #1263 e da aba `Revisões`, e certificador oficial para o mesmo SHA/release. Nenhuma escrita Amazon foi executada.
+- **Estado:** NAO_APTO até concluir os gates de integração, deploy e E2E real.
+
 O SHA atualmente implantado é `069fdf712498a5eca81870eeaeee6a4d4a4396ef`. A evidência live de 2026-09-24 mostra health `DEGRADED`, com falha de Gmail OAuth/refund reconciliation e outbox SAFE-T em `UI_DRIFT: SAFE_T_SUBREASON_OPTION_MISSING`. A certificação histórica abaixo não cobre este SHA nem este estado operacional e não pode ser reutilizada como prova de aptidão corrente.
 
 ## Última auditoria historicamente válida

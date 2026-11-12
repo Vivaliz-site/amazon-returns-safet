@@ -28,5 +28,5 @@ csuAssert(str_contains($page,'class="operator-glance"'),'Top operator glance sum
 csuAssert(str_contains($summary,'response.status===401'),'Summary loader must detect an expired admin session explicitly.');
 csuAssert(str_contains($summary,"throw new Error('SESSION_EXPIRED')"),'Summary loader must propagate the session-expired sentinel.');
 csuAssert(str_contains($page,'cockpit-summary.js?v=autonomy-2'),'Summary auth fix must use a fresh browser asset version.');
-csuAssert(str_contains($page,'cockpit.js?v=admin-session-expiry-1'),'Base cockpit auth fix must use a fresh browser asset version.');
+csuAssert(str_contains($page,'cockpit.js?v=20261112-ec5f6f2'),'Base cockpit auth fix must use a fresh browser asset version.');
 echo "cockpit-summary-ui-test: OK\n";

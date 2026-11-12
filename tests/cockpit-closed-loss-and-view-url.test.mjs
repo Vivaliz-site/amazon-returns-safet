@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const operational=readFileSync(new URL('../admin/amazon-returns/assets/cockpit-operational.js',import.meta.url),'utf8');
 const base=readFileSync(new URL('../admin/amazon-returns/assets/cockpit.js',import.meta.url),'utf8');
+const index=readFileSync(new URL('../admin/amazon-returns/index.php',import.meta.url),'utf8');
 
 const opContext={brl:n=>'R$ '+Number(n).toFixed(2).replace('.',','),date:x=>String(x),stateLabel:x=>x};
 vm.createContext(opContext);
@@ -50,4 +51,11 @@ test('switching to the rules tab updates the URL',()=>{
   const {context,urls}=loadSelectView();
   context.selectView('rules');
   assert.match(urls[0],/view=rules/);
+});
+
+test('changed cockpit assets use a release-specific cache version',()=>{
+  assert.match(index,/cockpit\.js\?v=20261112-ec5f6f2/);
+  assert.match(index,/cockpit-operational\.js\?v=20261112-ec5f6f2/);
+  assert.doesNotMatch(index,/cockpit\.js\?v=admin-session-expiry-1/);
+  assert.doesNotMatch(index,/cockpit-operational\.js\?v=refund-consultation-2/);
 });
