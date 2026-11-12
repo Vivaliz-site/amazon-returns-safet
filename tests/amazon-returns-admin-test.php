@@ -37,6 +37,7 @@ adAssert(str_contains($caseRepo,'AND c.closed_at IS NULL'),'Unclassified gate mu
 adAssert(str_contains($caseRepo,"c.state IN ('REFUND_DETECTED','AWAITING_RETURN','NO_RETURN','IN_TRANSIT','RECEIVED_DISCREPANT','SAFE_T_ELIGIBLE','SAFE_T_READY','POLICY_REVIEW_REQUIRED','BLOCKED_REVIEW')"),'Unclassified gate must only flag lifecycle states where missing classification can still block routing.');
 adAssert(str_contains($caseRepo,'c.refund_at IS NOT NULL OR c.seller_debit_at IS NOT NULL'),'Unclassified gate must ignore placeholder imports without confirmed financial exposure.');
 adAssert(str_contains($caseRepo,"c.refund_initiator='UNKNOWN'"),'Unclassified gate must not treat a missing separate seller debit as unclassified when initiator evidence is present.');
+adAssert(str_contains($caseRepo,"o.kind='SAFE_T_DISCOVERY'")&&str_contains($caseRepo,"o.status IN ('PENDING','PROCESSING')"),'Unclassified gate must not report a case while its classification discovery is queued or running.');
 adAssert(!str_contains($caseRepo,"c.current_action='SAFE_T_APPEAL'"),'Summary SQL must not query derived current_action from the case table.');
 adAssert(str_contains($caseRepo,"c.refund_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY)"),'Expired appeal gate must ignore refunds older than 90 days.');
 adAssert(str_contains($caseRepo,"o.kind='SAFE_T_APPEAL'")&&str_contains($caseRepo,"o.status IN ('PENDING','PROCESSING','SUCCEEDED')"),'Expired appeal gate must ignore appeals already being processed or completed.');
