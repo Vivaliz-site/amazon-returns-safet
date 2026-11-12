@@ -92,6 +92,12 @@ final class SvAmazonGmailEventSink
         return $event;
     }
 
+    /** A sale dispatch notification: evidence for an existing case, never a case trigger. */
+    public static function isDispatchOnlyEvent(array $event): bool
+    {
+        return strtoupper(trim((string)($event['event_type'] ?? ''))) === 'FBA_SHIPMENT_EMAIL';
+    }
+
     /** @param list<string> $resolvedItemIds */
     public static function targetItemId(array $resolvedItemIds): string
     {
@@ -132,6 +138,12 @@ final class SvAmazonGmailEventSink
         $event=self::applyProgramOverride($event,$programOverride);
         $orderId = trim((string)($event['order_id'] ?? ''));
         if ($orderId === '') throw new InvalidArgumentException('Gmail event order_id is required.');
+        // Owner decision 12/11/2026: only refunds are handled. An FBA dispatch
+        // notification is sent for every sale; it may add tracking evidence to an
+        // existing case but must never open a case for an order without one.
+        if (self::isDispatchOnlyEvent($event) && $p->cases->forOrder($orderId) === []) {
+            return 0;
+        }
         [$caseId,$itemId] = self::ensureTargetCaseScoped($p, $orderId, $event);
         $existing=[];
         foreach($p->cases->forOrder($orderId) as $row){
