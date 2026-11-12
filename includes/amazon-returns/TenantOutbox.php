@@ -399,7 +399,7 @@ final class SvAmazonTenantReturnsOutbox
             . "(kind='SELLER_SUPPORT_OPEN' AND last_error IN "
             . "(:lookup_error,:support_open_write_without_readback,:support_open_legacy_write_without_readback)) OR "
             . "(kind='SELLER_SUPPORT_UPDATE' AND last_error IN "
-            . "(:reply_send_missing,:reply_field_missing,:reply_field_not_writable,:native_reply_not_writable,:reply_not_confirmed,:support_general_troubleshooter_exhausted,:support_update_write_without_readback,:support_update_legacy_write_without_readback)))"
+            . "(:reply_send_missing,:reply_field_missing,:reply_field_not_writable,:native_reply_not_writable,:reply_not_confirmed,:support_general_troubleshooter_exhausted,:support_general_category_missing,:support_update_write_without_readback,:support_update_legacy_write_without_readback)))"
         );
         $stmt->execute($this->scopeParams([
             ':safe_t_order_input_missing'=>'UI_DRIFT: SAFE_T_ORDER_INPUT_MISSING',
@@ -418,6 +418,7 @@ final class SvAmazonTenantReturnsOutbox
             ':native_reply_not_writable'=>'UI_DRIFT: SUPPORT_NATIVE_REPLY_NOT_WRITABLE',
             ':reply_not_confirmed'=>'FAILED: SUPPORT_REPLY_NOT_CONFIRMED',
             ':support_general_troubleshooter_exhausted'=>'UI_DRIFT: SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED',
+            ':support_general_category_missing'=>'UI_DRIFT: SUPPORT_GENERAL_CATEGORY_MISSING',
         ]));
         return max(0,$stmt->rowCount());
     }
