@@ -6,7 +6,7 @@ foreach(['AdminAuth.php','Csrf.php','SvAmazonReturnsAdminAuth::requireLogin(true
 foreach(['CLOSE_LOSS','REOPEN','MARK_RECOVERED','REQUEST_REVIEW','PREPARE_CONTESTATION','SET_STATE','UPDATE_FIELDS'] as $action)aca(str_contains($service,$action),'Service action unavailable: '.$action);
 aca(str_contains($api,"REQUEST_METHOD")&&str_contains($api,"'POST'"),'Endpoint must accept POST only.');
 aca(str_contains($detail,"'admin_actions'=>['CLOSE_LOSS','REOPEN','MARK_RECOVERED','REQUEST_REVIEW','PREPARE_CONTESTATION','SET_STATE','UPDATE_FIELDS']"),'Case detail must expose the same action set for every case state.');
-aca(str_contains($detail,"'admin_states'=>SvAmazonReturnStates::all()"),'Case detail must expose all valid states.');aca(str_contains($detail,'admin_state_override'),'Case detail must disclose the active manual state override.');
+aca(str_contains($detail,"'admin_states'=>SvAmazonReturnStates::all()"),'Case detail must expose all valid states.');aca(str_contains($detail,'admin_state_override'),'Case detail must disclose the active manual state override.');aca(str_contains($detail,'admin_recovery_claim'),'Case detail must disclose pending recovery assertions.');
 aca(str_contains($index,"token('case-admin-action')")&&str_contains($index,'id="case-admin-action-csrf"'),'Admin UI must receive scoped CSRF token.');
 aca(str_contains($service,"'external_operation'=>'NOT_REQUESTED'")&&str_contains($service,"'financial_credit_changed'=>false"),'Audit must separate internal override from external result and credit.');
 aca(str_contains($service,'reconciled_credit_amount'),'Service must document protected reconciled credit.');aca(str_contains($repo, "field === 'reconciled_credit_amount'"),'Repository must reject reconciled credit edits.');
