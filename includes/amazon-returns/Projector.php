@@ -70,7 +70,37 @@ final class SvAmazonReturnProjector
             $facts['program']=SvAmazonReturnPrograms::applyAccountFulfillmentOverride($facts['program']);
         }
         self::finalize($facts);
+        self::applyAdminOverrides($facts,$events,$caseId);
         return array_replace($case,$facts);
+    }
+
+    /**
+     * Apply owner/admin choices after source-event projection. Source evidence keeps
+     * flowing, but an explicit administrative override remains authoritative until
+     * another administrative override changes the same field.
+     * @param array<string,mixed> $facts
+     * @param list<array<string,mixed>> $events
+     */
+    private static function applyAdminOverrides(array &$facts,array $events,int $caseId):void
+    {
+        $editable=[
+            'quantity_ordered','quantity_refunded','quantity_received','program','refund_initiator',
+            'refund_at','seller_debit_at','refund_amount','expected_reimbursement_amount','physical_status',
+            'state','policy_version_id','eligibility_at','next_action_at','safe_t_id','support_case_id',
+            'repeated_denial_count','last_denial_fingerprint','appeal_deadline_at','terminal_reason','closed_at',
+        ];
+        foreach($events as $event){
+            if(!is_array($event)||($event['event_type']??null)!=='ADMIN_CASE_OVERRIDE'
+                ||strtoupper((string)($event['source']??''))!=='ADMIN_UI'
+                ||(int)($event['case_id']??0)!==$caseId)continue;
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            $after=is_array($payload['after']??null)?$payload['after']:[];
+            foreach($editable as $field){
+                if(!array_key_exists($field,$after))continue;
+                if($field==='state'&&!SvAmazonReturnStates::isValid((string)$after[$field]))continue;
+                $facts[$field]=$after[$field];
+            }
+        }
     }
 
     /** @return array<string,mixed> */
