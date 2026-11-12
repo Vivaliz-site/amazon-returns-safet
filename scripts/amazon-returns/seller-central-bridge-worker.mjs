@@ -1648,7 +1648,7 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
   // Portuguese labels, and has changed the noun used for the FBA category
   // across Help UI revisions. Keep the candidates semantic and explicit;
   // never click an arbitrary enabled control as a fallback.
-  const associateCategories = text(job.case?.program).toUpperCase() === 'FBA'
+  const associateCategories = ['FBA', 'FBA_ONSITE'].includes(text(job.case?.program).toUpperCase())
     ? [
       'FBA related',
       'FBA-related',
