@@ -75,3 +75,6 @@ Required lifecycle: `start` before substantive work; `progress` after material p
 
 If the canonical controller is unavailable, the adapter fails closed. Do not create an unmonitored local substitute. Restore/use the A1 control plane before continuing work that depends on interruption recovery. Detached recovery does not reopen the same ChatGPT conversation.
 <!-- /GLOBAL_TASK_CONTINUITY_V8 -->
+
+<!-- MARINA_MCP_AS_USER_20261112 -->
+> **MCP Marina: executar como `ubuntu` e root do backend (2026-11-12):** `marina_admin_shell` aceita o argumento opcional `as_user="ubuntu"` (sudo -n -u ubuntu, auditado por hash; exclusivo com `as_root`; qualquer outro usuario e recusado). Ativo na Marina desde a release `eb81e37c` (grant PR #3918 do `site-shopvivaliz`). No backend, o usuario `root` tambem tem os MCPs `shopvivaliz-marina-admin` e `shopvivaliz-remote-control` e a credencial do Marina MCP ja provisionada. Fonte de verdade e procedimento: `Vivaliz-site/site-shopvivaliz` em `docs/knowledge/marina-mcp-admin-agent-access.md`. Credenciais continuam so em arquivos protegidos (0600), sem expor valores.
