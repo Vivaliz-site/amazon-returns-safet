@@ -165,17 +165,17 @@ ensure_env_key 'AMAZON_MARKETPLACE_ID' 'A2Q3Y263D00KWC'
 ensure_env_key 'AMAZON_RETURNS_REVIEW_AI_MODEL' 'gpt-5.6-terra'
 set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '1'
 set_env_key 'AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL' 'fredmourao@gmail.com'
-set_env_key 'AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED' '1'
+set_env_key 'AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED' '0'
 # The owner explicitly authorized the complete Amazon Returns recovery flow.
 # Keep first provisioning fail-closed above, then enable the already-versioned
 # full recovery profile only during an explicit production reconciliation.
-set_env_key 'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH' '0'
-set_env_key 'AMAZON_RETURNS_SAFE_T_WRITE' '1'
-set_env_key 'AMAZON_RETURNS_APPEAL_WRITE' '1'
-set_env_key 'AMAZON_RETURNS_EMAIL_REVIEW_WRITE' '1'
-set_env_key 'AMAZON_RETURNS_EMAIL_REPLY_WRITE' '1'
-set_env_key 'AMAZON_RETURNS_SUPPORT_WRITE' '1'
-set_env_key 'AMAZON_RETURNS_POLICY_MONITOR' '1'
+set_env_key 'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH' '1'
+set_env_key 'AMAZON_RETURNS_SAFE_T_WRITE' '0'
+set_env_key 'AMAZON_RETURNS_APPEAL_WRITE' '0'
+set_env_key 'AMAZON_RETURNS_EMAIL_REVIEW_WRITE' '0'
+set_env_key 'AMAZON_RETURNS_EMAIL_REPLY_WRITE' '0'
+set_env_key 'AMAZON_RETURNS_SUPPORT_WRITE' '0'
+set_env_key 'AMAZON_RETURNS_POLICY_MONITOR' '0'
 
 tenant_slug="$(awk -F= '$1=="AMAZON_RETURNS_TENANT_SLUG"{sub(/^[^=]*=/,"");print;exit}' "$env_file")"
 connection_key="$(awk -F= '$1=="AMAZON_RETURNS_CONNECTION_KEY"{sub(/^[^=]*=/,"");print;exit}' "$env_file")"
