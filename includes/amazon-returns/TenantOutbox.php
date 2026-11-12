@@ -166,7 +166,7 @@ final class SvAmazonTenantReturnsOutbox
     }
 
     /** @return list<array<string,mixed>> */
-    public function claimBatch(int $limit = 10, array $kinds = [], ?array $allowedCaseIds=null, bool $preserveAllowedOrder=false): array
+    public function claimBatch(int $limit = 10, array $kinds = [], ?array $allowedCaseIds=null, bool $preserveAllowedOrder=false, bool $excludeStaleDiscovery=false): array
     {
         // Filter inside SELECT FOR UPDATE to avoid changing any out-of-grant
         // outbox status, attempt count or lease before dispatch.
@@ -215,13 +215,27 @@ final class SvAmazonTenantReturnsOutbox
             $orderSql=' ORDER BY FIELD(case_id,'.implode(',',$allowedCaseIds).'),available_at,id';
         }
 
+        // Stale discovery jobs (refund older than the 90-day list window) can
+        // never be verified by the list. Leaving them claimable let them consume
+        // the shared drain budget on every cycle ahead of in-window cases.
+        // They stay PENDING for the existing D+90 sweep; nothing is marked here.
+        $staleSql='';
+        if ($excludeStaleDiscovery) {
+            $params[':stale_cutoff'] = (new DateTimeImmutable('now', new DateTimeZone('UTC')))
+                ->sub(new DateInterval('P90D'))->format('Y-m-d H:i:s');
+            $staleSql=" AND NOT (kind='SAFE_T_DISCOVERY' AND EXISTS (SELECT 1 FROM amazon_return_cases sc "
+                . "WHERE sc.id=amazon_return_outbox.case_id AND sc.tenant_id=amazon_return_outbox.tenant_id "
+                . "AND sc.amazon_connection_id=amazon_return_outbox.amazon_connection_id "
+                . "AND sc.refund_at IS NOT NULL AND sc.refund_at < :stale_cutoff))";
+        }
+
         $this->db->beginTransaction();
         try {
             $select = $this->prepare(
                 "SELECT * FROM amazon_return_outbox WHERE tenant_id=:tenant_id "
                 . "AND amazon_connection_id=:amazon_connection_id AND ((status='PENDING' AND available_at<=UTC_TIMESTAMP()) "
                 . "OR (status='PROCESSING' AND locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL " . self::LEASE_SECONDS . " SECOND)))"
-                . $kindSql . $caseSql . $orderSql . ' LIMIT ' . $limit . ' FOR UPDATE SKIP LOCKED'
+                . $kindSql . $caseSql . $staleSql . $orderSql . ' LIMIT ' . $limit . ' FOR UPDATE SKIP LOCKED'
             );
             $select->execute($params);
             $rows = array_values(array_filter($select->fetchAll(PDO::FETCH_ASSOC), 'is_array'));

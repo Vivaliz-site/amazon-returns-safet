@@ -282,7 +282,9 @@ final class SvAmazonReturnsStatusBridgeService
             }
         }
         if($rows===[]){
-            $rows=$this->p->outbox->claimBatch(1,['SAFE_T_DISCOVERY']);
+            // Refunds older than the 90-day list window are left for the D+90
+            // sweep instead of re-consuming the shared drain budget every cycle.
+            $rows=$this->p->outbox->claimBatch(1,['SAFE_T_DISCOVERY'],null,false,true);
         }
         if($rows===[])return ['status'=>'NO_JOB','ensured'=>$ensured];
         $row=$rows[0];

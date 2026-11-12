@@ -90,7 +90,7 @@ $known=strpos($pull,"claimBatch(1,['SAFE_T_READ','SELLER_SUPPORT_READ'])");
 $delivery=strpos($pull,"claimBatch(1,['ORDER_DELIVERY_READ'])");
 $urgent=strpos($pull,'urgentDiscoveryCaseIds(50)');
 $scoped=strpos($pull,"claimBatch(1,['SAFE_T_DISCOVERY'],\$urgentIds,true)");
-$fallback=strpos($pull,"claimBatch(1,['SAFE_T_DISCOVERY'])");
+$fallback=strpos($pull,"claimBatch(1,['SAFE_T_DISCOVERY'],null,false,true)");
 priorityCheck($known!==false && $delivery!==false && $urgent!==false
     && $scoped!==false && $fallback!==false
     && $known<$delivery && $delivery<$urgent && $urgent<$scoped && $scoped<$fallback,

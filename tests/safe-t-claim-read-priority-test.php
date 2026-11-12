@@ -11,7 +11,7 @@ priorityAssert($begin!==false && $end!==false && $end>$begin,
     'Read bridge pull must exist before result handling.');
 $pull=substr($source,$begin,$end-$begin);
 $knownRead="claimBatch(1,['SAFE_T_READ','SELLER_SUPPORT_READ'])";
-$discovery="claimBatch(1,['SAFE_T_DISCOVERY'])";
+$discovery="claimBatch(1,['SAFE_T_DISCOVERY'],null,false,true)";
 $readAt=strpos($pull,$knownRead);
 $discoveryAt=strpos($pull,$discovery);
 priorityAssert($readAt!==false,
