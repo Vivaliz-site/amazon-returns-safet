@@ -373,3 +373,13 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Observacao nao corrigida: a lista leva ~14 s para popular numa busca por um unico pedido (investigar custo de `api/cases.php` por caso candidato).
 - Pendencias: CI GitHub, merge, deploy canonico e repeticao do E2E na release implantada.
 - Estado: NAO_APTO.
+
+## 2026-11-12 — #532: selecao de categoria Seller Support para FBA Onsite
+
+- Base SHA: d30c08abc2c366faa7d2423004ab17568e14a553.
+- Defeito: openGeneralSupportRoute() oferecia categorias FBA somente quando case.program era FBA, mas o programa efetivo de Seller Flex e FBA_ONSITE. Isso excluia os rotulos FBA e mantinha apenas categorias A-to-z; o health da release de 12/11 registrou OUTBOX_UI_DRIFT_REASON_SUPPORT_GENERAL_CATEGORY_MISSING. A falha explica uma causa reproduzivel de selecao, sem provar que o layout externo da Amazon permaneça igual.
+- RED: teste tests/support-program-category-contract.test.mjs executado contra main original no clone isolado do backend — 2/3 PASS, 1/3 FAIL exatamente para FBA_ONSITE (task MCP 71bf9dde-ccea-4095-84a4-427329c15961).
+- Correcao: incluir FBA_ONSITE no mesmo conjunto explicito de rotulos FBA ja existente, preservando a categoria DBA e o comportamento fail-closed quando nenhum rotulo oficial e encontrado. Sem ativacao de escrita, alteracao de fila, claims ou configuracao do Seller Central.
+- GREEN: contra a alteracao isolada no backend, node --check PASS, node --test tests/support-program-category-contract.test.mjs tests/seller-support-asin-expression-syntax.test.mjs 4/4 PASS, git diff --check PASS (tasks MCP d1aca647-c6a7-4ca7-87b3-eeb53c67222d e 39c54b53-a2fc-4da0-b1eb-31ccea6f0025). Conferir CI oficial no HEAD exato da PR.
+- Risco e pendencias: configuracao efetiva da Marina ainda foi lida com kill_switch_active=false, sete flags externas true e unscoped_write_profile_risk=true (task MCP 52f6c64f-8340-4dcc-91c6-8b42c95708df). Pelo controle owner-only de 10/11, so o proprietario pode restaurar essas restricoes. A alteracao funcional fica em PR Draft sem merge/deploy, para nao facilitar novo suporte externo sob perfil amplo; apos restauracao pessoal e readback, finalizar gates, merge e E2E grafico oficial com deduplicacao e autorizacao por caso.
+- Estado: NAO_APTO; nenhuma mensagem ou SAFE-T foi enviada por este reparo.
