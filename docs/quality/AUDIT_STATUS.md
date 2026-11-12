@@ -2,6 +2,15 @@
 
 **Status corrente:** NÃO APTO — auditoria extrema V5 em andamento em 2026-09-24.
 
+## 2026-11-12 — Reauditoria visual pós-deploy `1f37e00` (UI real, VM backend)
+
+- **Release:** `1f37e00507f96c04e4d253bc9207a7070bd8fd46` (inclui #682 e #689), serviço `amazon-returns-safet` ativo. Sessão logada do cockpit no Chrome da VM backend (`fredconsole:0`); recarga forçada e revisita após o deploy.
+- **Comprovado na UI:** aba Revisões com `view=reviews` mantida após F5 ("0 casos para decidir"); rótulo de perda "Encerrado sem recuperação / valor não recuperado; caso encerrado como perda"; busca por pedido mantida na URL; banner "Operando normalmente — Nenhuma ação sua é necessária", 63 em tratamento + 209 concluídos = 272 casos, sem os 2 problemas operacionais anteriores.
+- **Segundo achado (P2 / DEFECT / SAFE):** caso encerrado continuava "Precisa da sua decisão / Você" por ação `HUMAN_REVIEW` residual (concluído era checado depois de decisão humana). Corrigido no #689 com testes RED→GREEN; confirmado na UI após deploy.
+- **Ação do proprietário:** a pedido do proprietário, os pedidos `701-1433354-4637803` (caso 13205, SAFE-T negado, prazo de recurso vencido) e `702-2966589-9716253` (caso 250174, reembolso de R$ 42,00 em 09/11) foram encerrados como perda pelo caminho interno (evento `CASE_CLOSED_OWNER_LOSS` + `CLOSED_LOSS`), sem escrita na Amazon. Backups do estado anterior em `shared/backups/close-loss-case-{13205,250174}-20261112/` na Marina, para restauração.
+- **Classe e busca sistêmica:** estado de responsabilidade derivado de fontes diferentes (revisão, ação, estado terminal). Falta varrer demais superfícies que reutilizem `review_status`/`current_action` (por exemplo o filtro `action=HUMAN_REVIEW` da lista).
+- **Ainda não validado (NAO_APTO):** detalhe e linha do tempo, Decisões aprendidas, registro de devolução recebida, SAFE-T, financeiro e ERP caso a caso; pacote de evidência com hash e certifier; reauditoria independente; continuidade (`continuity_ready=false`); checkpoint do controlador A1 indisponível.
+
 ## 2026-11-12 — Auditoria V5 (UI real): lista de casos contradizia o resumo de decisões humanas
 
 - **Achado (P2 / DEFECT / SAFE):** na UI real do release `2494429`, o resumo dizia "Nenhuma ação sua é necessária" e a aba Revisões tinha 0, mas a lista marcava 2 casos como "Precisa da sua decisão / Você" e o filtro "Precisa da minha atenção" retornava 2. Os dados live mostram duas revisões OPEN operacionais (`SELLER_SUPPORT_CHAT_READ_BACK_NOT_CONFIRMED`, `SUPPORT_CASE_NOT_REOPENABLE`), que não exigem decisão do proprietário.
