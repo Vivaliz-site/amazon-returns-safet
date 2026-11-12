@@ -81,3 +81,10 @@ Por determinação do proprietário, a descoberta diária de SAFE-T no Seller Ce
 Motivo: em 12/11/2026 havia 523 casos sem data de reembolso gerando cerca de 495 jobs de descoberta por dia, contra uma capacidade de leitura de cerca de 100 por ciclo, o que impedia a fila de esvaziar. O proprietário confirmou que não existe essa quantidade de reembolsos reais.
 
 Esta decisão supersede, apenas para a descoberta, a regra anterior de manter investigável o caso com data de reembolso desconhecida. O monitoramento de reivindicações SAFE-T já identificadas (`casesWithSafeTId`) e as consultas de saúde do ERP não mudam. Nenhum gate de escrita externa é alterado.
+
+## Decisão de 12/11/2026: só tratar reembolso; e-mail de envio não abre caso
+Por determinação do proprietário, o aplicativo só trata pedidos com reembolso. Uma venda sem reembolso não deve gerar caso nem aparecer relacionada.
+
+Causa encontrada em 12/11/2026: o e-mail "A Amazon enviou os itens vendidos" (evento `FBA_SHIPMENT_EMAIL`), enviado a cada venda FBA, criava um caso para o pedido quando ainda não existia nenhum. Dos 485 casos abertos sem data de reembolso, 475 nasceram desse e-mail. No mesmo período, o Gmail tinha 56 e-mails "Reembolso de ... iniciado para o pedido ...", que correspondem exatamente aos 56 casos com reembolso nos últimos 90 dias.
+
+Regra: o e-mail de envio pode acrescentar rastreio a um caso já existente do pedido, mas nunca cria caso. O título real do e-mail de reembolso é "Reembolso de X BRL iniciado para o pedido N"; a frase exata "reembolso iniciado" não ocorre no assunto.
