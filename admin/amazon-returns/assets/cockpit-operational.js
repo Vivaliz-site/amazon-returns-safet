@@ -17,6 +17,7 @@ function operatorFinancialSummary(c){
   const outstanding=Math.max(0,Number(c?.outstanding_amount||0));
   const recovered=Math.max(0,Number(c?.reconciled_credit_amount||0));
   if(outstanding>0&&recovered>0)return {value:brl(outstanding),label:'diferença nominal após crédito; tarifas a conferir'};
+  if(outstanding>0&&String(c?.state||'')==='RECOVERED')return {value:brl(outstanding),label:'classificação administrativa; crédito ainda não conciliado'};
   if(outstanding>0&&String(c?.state||'')==='CLOSED_LOSS')return {value:brl(outstanding),label:'valor não recuperado; caso encerrado como perda'};
   if(outstanding>0)return {value:brl(outstanding),label:'saldo ainda a recuperar'};
   const pending=['SAFE_T_APPROVED','APPEAL_APPROVED','CREDIT_PENDING'].includes(String(c?.state||''));
@@ -39,8 +40,9 @@ function operatorDataIsStale(c,nowMs=Date.now()){
 function operatorStatus(c){
   const state=String(c?.state||''),action=String(c?.current_action||''),reason=String(c?.current_reason||'');
   if(operatorResponsibility(c)==='Sua decisão é necessária')return 'Precisa da sua decisão';
-  if(state==='RECOVERED')return 'Valor recuperado';
-  if(state==='CLOSED_LOSS')return 'Encerrado sem recuperação';
+  if(state==='RECOVERED')return c?.admin_state_override?.state===state?(Number(c?.outstanding_amount||0)>0?'Marcado como recuperado administrativamente — crédito ainda não conciliado':'Recuperação classificada pelo administrador'):(Number(c?.outstanding_amount||0)>0?'Marcado como recuperado — crédito ainda não conciliado':'Valor recuperado');
+  if(state==='CLOSED_LOSS')return c?.admin_state_override?.state===state?'Encerrado como perda por decisão administrativa':'Encerrado sem recuperação';
+  if(c?.admin_state_override?.state===state)return `Situação administrativa: ${stateLabel(state)} — não confirma ação externa`;
   if(state==='RECEIVED_OK')return 'Devolução recebida';
   const credited=Math.max(0,Number(c?.reconciled_credit_amount||0));
   if(['CREDIT_PENDING','SAFE_T_APPROVED','APPEAL_APPROVED'].includes(state)&&credited>0){
@@ -142,6 +144,7 @@ function operationalTimelineTitle(item){
   if(raw.includes('FINANCIAL_TRANSACTION_OBSERVED'))return 'Movimentação financeira identificada';
   if(raw.includes('SAFE_T_STATUS_OBSERVED'))return 'Situação da solicitação consultada na Amazon';
   if(raw.includes('REIMBURSEMENT'))return 'Ressarcimento identificado';
+  if(raw.includes('ADMIN_CASE_OVERRIDE'))return 'Alteração administrativa registrada';
   return humanText(item?.title||item?.category||'Atualização do caso');
 }
 function condenseTimeline(items){
@@ -266,6 +269,38 @@ function renderOperationalEvidence(c,timeline){
   if(returnInvoiceDisplay(c))details.append(text('p',`Nota fiscal de devolução: ${returnInvoiceDisplay(c)}.`));
   block.append(details);return block;
 }
+function renderAdminCaseControls(data){
+ const c=data.case||{},section=sectionBlock('Ações administrativas','admin-case-controls');
+ section.append(text('p','A operação automática continua ativa. Estas alterações são internas e não enviam comandos à Amazon.','admin-case-note'));
+ if(c.admin_state_override?.state)section.append(text('p',`Última situação administrativa: ${stateLabel(c.admin_state_override.state)}. ${c.admin_state_override.actor||'Administrador'} — ${c.admin_state_override.reason||'sem justificativa adicional'}`,'admin-case-note'));
+ if(String(c.state||'')==='RECOVERED'&&Number(c.outstanding_amount||0)>0)section.append(text('p','Classificação de recuperação não cria crédito financeiro. O valor só será reconhecido após conciliação.','admin-case-warning'));
+ const form=document.createElement('form');form.className='admin-case-form';
+ const action=document.createElement('select');action.name='action';
+ const labels={CLOSE_LOSS:'Encerrar como perda',REOPEN:'Reabrir para revisão',MARK_RECOVERED:'Marcar como recuperado',REQUEST_REVIEW:'Solicitar nova análise interna',PREPARE_CONTESTATION:'Preparar contestação (interno)',SET_STATE:'Alterar situação',UPDATE_FIELDS:'Editar dados do caso'};
+ (data.admin_actions||Object.keys(labels)).forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=labels[v]||v;action.append(o);});
+ const actionLabel=text('label','Ação administrativa');actionLabel.append(action);form.append(actionLabel);
+ const stateSelect=document.createElement('select');(data.admin_states||[]).forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=stateLabel(v);stateSelect.append(o);});
+ const stateLabelWrap=text('label','Nova situação');stateLabelWrap.append(stateSelect);form.append(stateLabelWrap);
+ const fields=[['program','Tipo de logística'],['physical_status','Situação física'],['refund_initiator','Origem do reembolso'],['refund_amount','Valor reembolsado'],['expected_reimbursement_amount','Valor esperado'],['refund_at','Data do reembolso'],['seller_debit_at','Data do débito'],['eligibility_at','Data de elegibilidade'],['next_action_at','Próxima ação'],['appeal_deadline_at','Prazo de recurso'],['safe_t_id','Identificador SAFE-T'],['support_case_id','Chamado Amazon'],['quantity_ordered','Quantidade pedida'],['quantity_refunded','Quantidade reembolsada'],['quantity_received','Quantidade recebida'],['terminal_reason','Motivo de encerramento'],['closed_at','Data de encerramento']];
+ const fieldSelect=document.createElement('select');fields.forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;fieldSelect.append(o);});
+ const fieldLabel=text('label','Campo que deseja alterar');fieldLabel.append(fieldSelect);form.append(fieldLabel);
+ const value=document.createElement('input');value.type='text';value.autocomplete='off';value.placeholder='Novo valor';const valueLabel=text('label','Novo valor');valueLabel.append(value);form.append(valueLabel);
+ const reason=document.createElement('textarea');reason.required=true;reason.maxLength=2000;reason.rows=3;reason.placeholder='Explique o motivo da intervenção';const reasonLabel=text('label','Justificativa obrigatória');reasonLabel.append(reason);form.append(reasonLabel);
+ const feedback=text('div','','admin-case-feedback');feedback.setAttribute('role','status');form.append(feedback);
+ const submit=button('Salvar alteração',async()=>{
+  const chosen=action.value,patch={};if(chosen==='SET_STATE')patch.state=stateSelect.value;
+  if(chosen==='UPDATE_FIELDS'){const raw=value.value.trim();if(!raw){feedback.textContent='Informe o novo valor.';return;}patch[fieldSelect.value]=['quantity_ordered','quantity_refunded','quantity_received'].includes(fieldSelect.value)?Number(raw):raw;}
+  if(!reason.value.trim()){feedback.textContent='A justificativa é obrigatória.';return;}
+  if(!window.confirm(`Confirmar ${labels[chosen]} no pedido ${c.amazon_order_id||c.id}? A alteração será registrada e não enviará ação externa à Amazon.`))return;
+  submit.disabled=true;feedback.textContent='Salvando…';
+  try{const r=await fetch('/admin/amazon-returns/api/case-admin-action.php',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:Number(c.id),action:chosen,fields:patch,reason:reason.value.trim(),request_id:globalThis.crypto?.randomUUID?.()||`admin-${Date.now()}-${Math.random()}`,expected_updated_at:c.updated_at,csrf_token:document.querySelector('#case-admin-action-csrf')?.value||''})});const j=await r.json().catch(()=>({}));if(!r.ok||!j.success)throw new Error(j.error||'Não foi possível salvar.');feedback.textContent=j.notice||'Intervenção registrada.';await openCase(c.id);await loadCases();}
+  catch(e){feedback.textContent=e.message||'Falha ao salvar.';if(/atualizado por outro processo/i.test(feedback.textContent))await openCase(c.id);}
+  finally{submit.disabled=false;}
+ },'btn admin-case-submit');submit.type='button';form.append(submit);
+ function sync(){const a=action.value;stateLabelWrap.hidden=a!=='SET_STATE';fieldLabel.hidden=a!=='UPDATE_FIELDS';valueLabel.hidden=a!=='UPDATE_FIELDS';}
+ action.addEventListener('change',sync);sync();section.append(form);return section;
+}
+
 function renderOperationalCase(data,relatedCount=null){
   const c=data.case||{},timeline=data.timeline||[],root=document.querySelector('#case-detail');root.replaceChildren();root.append(button('← Voltar aos casos',closeMobileCaseDetail,'case-detail-back'));
   const head=text('header','', 'case-summary');head.append(text('div',`Pedido ${c.amazon_order_id||'—'}`,'case-order'),text('h2',operatorStatus(c)));
@@ -282,6 +317,7 @@ function renderOperationalCase(data,relatedCount=null){
   root.append(renderCaseMessages(timeline));
   root.append(renderOperationalEvidence(c,timeline));
   root.append(renderDecisionExplanation({...c,review_status:data.current_review?.status}));
+  root.append(renderAdminCaseControls(data));
   root.append(renderCondensedTimeline(timeline));
   const stateName=String(c.state||''),appealAlreadyHandled=['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','RECOVERED','CLOSED_LOSS'].includes(stateName);
   if(appealAlreadyHandled){for(const field of document.querySelectorAll('#case-detail .operational-field')){if(field.querySelector('.muted')?.textContent==='Prazo para recurso')field.remove();}if(['APPEAL_SUBMITTED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING'].includes(stateName)){const note=text('div','', 'flow-item');note.append(text('strong','Prazo do recurso'),text('p','O recurso já foi enviado; agora o sistema aguarda a resposta da Amazon.'));flow.append(note);}}
