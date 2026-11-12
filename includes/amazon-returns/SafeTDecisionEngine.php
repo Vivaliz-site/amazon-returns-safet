@@ -117,6 +117,8 @@ final class SvAmazonSafeTDecisionEngine
         }
         $requestedWait=SvAmazonRequestedWait::decision($case,$timeline,$now);
         if($requestedWait!==null)return $requestedWait;
+        $statusFollowUp=$this->statusFollowUpDecision($case,$timeline,$safeTId,$state,$now);
+        if($statusFollowUp!==null)return $statusFollowUp;
         if($safeTId==='' && $reimbursementBackedUnknownRefund && ($policy['eligible']??false)===true
             && $this->hasFreshConfirmedResidual($case,$timeline,$now)){
             if((string)($case['physical_status']??'')===SvAmazonReturnPhysicalStatuses::RECEIVED_DISCREPANT){
@@ -369,6 +371,41 @@ final class SvAmazonSafeTDecisionEngine
             if(is_array($event) && ($event['event_type'] ?? '')==='SAFE_T_EMAIL_REVIEW_RESPONSE')return $event;
         }
         return null;
+    }
+
+    /**
+     * An accepted SAFE-T submission is not a terminal state.  Keep polling
+     * Seller Central so an approval/denial can drive the next stage of the
+     * lifecycle instead of leaving the case parked forever at WAIT.
+     */
+    private function statusFollowUpDecision(array $case,array $timeline,string $safeTId,string $state,DateTimeImmutable $now): ?array
+    {
+        if($safeTId==='' || !in_array($state,[SvAmazonReturnStates::SAFE_T_SUBMITTED,SvAmazonReturnStates::APPEAL_SUBMITTED],true))return null;
+        $latestAt=null;
+        foreach($timeline as $event){
+            if(!is_array($event) || (int)($event['case_id']??0)!==(int)($case['id']??0))continue;
+            if(($event['source']??'')!=='SELLER_CENTRAL')continue;
+            $type=(string)($event['event_type']??'');
+            $payload=is_array($event['payload']??null)?$event['payload']:[];
+            $action=strtoupper(trim((string)($payload['action']??'')));
+            if($type!=='SAFE_T_STATUS_OBSERVED' && !($type==='SELLER_CENTRAL_ACTION_RESULT' && in_array($action,['SAFE_T_SUBMIT','SAFE_T_APPEAL'],true)))continue;
+            $claim=trim((string)($payload['safe_t_id']??$payload['external_id']??''));
+            if($claim!=='' && $claim!==$safeTId)continue;
+            try{$at=new DateTimeImmutable((string)($event['occurred_at']??''),new DateTimeZone('UTC'));}catch(Throwable){continue;}
+            if($latestAt===null || $at>$latestAt)$latestAt=$at;
+        }
+        // No observation means the existing first-read path owns the case.
+        if(!$latestAt instanceof DateTimeImmutable)return null;
+        if($now->getTimestamp()-$latestAt->getTimestamp()<12*3600){
+            return $this->decision('WAIT','SAFE_T_STATUS_FOLLOWUP_COOLDOWN',(int)($case['id']??0));
+        }
+        $action=$state===SvAmazonReturnStates::APPEAL_SUBMITTED?'appeal':'claim';
+        return [
+            'action'=>'SAFE_T_READ',
+            'reason'=>'SAFE_T_'.$action.'_STATUS_FOLLOWUP_REQUIRED',
+            'case_id'=>(int)($case['id']??0),
+            'idempotency_key'=>hash('sha256','safe-t-status-followup-v1|'.$case['id'].'|'.$safeTId.'|'.$now->format('Y-m-d')),
+        ];
     }
 
     /** @return array{action:string,reason:string,case_id:int} */
