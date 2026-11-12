@@ -18,18 +18,33 @@ final class SvAmazonAdminCaseOverride
         $ctx=$p->context();$db=$p->db();$key=hash('sha256',$ctx->scopeKey().'|ADMIN_CASE_OVERRIDE|'.$caseId.'|'.$requestId);
         $existing=$p->events->findIdByIdempotencyKey($key);
         if($existing!==null){$case=$p->cases->find($caseId);if(!$case)throw new RuntimeException('CASE_NOT_FOUND');return ['case'=>$case,'override_id'=>null,'event_id'=>$existing,'idempotent_replay'=>true];}
-        $patch=self::patch($action,$fields);$before=$p->cases->find($caseId);if(!$before)throw new RuntimeException('CASE_NOT_FOUND');
+        $before=$p->cases->find($caseId);if(!$before)throw new RuntimeException('CASE_NOT_FOUND');
         if((string)($before['updated_at']??'')!==$expectedUpdatedAt)throw new RuntimeException('STALE_CASE_VERSION');
+        $requestedState=$action==='MARK_RECOVERED'?'RECOVERED':strtoupper(trim((string)($fields['state']??'')));
+        $claimOnly=in_array($action,['MARK_RECOVERED','SET_STATE'],true)
+            &&$requestedState===SvAmazonReturnStates::RECOVERED
+            &&!self::hasReconciledRecovery($before);
+        if($action==='UPDATE_FIELDS'&&$requestedState===SvAmazonReturnStates::RECOVERED&&!self::hasReconciledRecovery($before)){
+            throw new InvalidArgumentException('RECOVERED exige crédito financeiro conciliado. Use Marcar como recuperado para registrar apenas a indicação.');
+        }
+        $patch=$claimOnly?[]:self::patch($action,$fields);
         $db->beginTransaction();
         try{
-            $p->cases->adminOverrideUpdate($caseId,$patch,$expectedUpdatedAt);
+            // An unconfirmed recovery is audit-only. Do not close the case, stop
+            // scheduling or overwrite its financial/operational state.
+            if(!$claimOnly)$p->cases->adminOverrideUpdate($caseId,$patch,$expectedUpdatedAt);
             $after=$p->cases->find($caseId);if(!$after)throw new RuntimeException('CASE_NOT_FOUND');
+            if((string)($after['updated_at']??'')!==$expectedUpdatedAt&&$claimOnly)throw new RuntimeException('STALE_CASE_VERSION');
             $actorId=(int)sprintf('%u',crc32($actor));if($actorId<1)$actorId=1;
             $beforeSnap=self::snapshot($before,array_keys($patch));$afterSnap=self::snapshot($after,array_keys($patch));
-            $overrideId=$p->cases->recordAdminOverride($caseId,$actorId,$reason,$beforeSnap,$afterSnap);$payload=['action'=>$action,'actor'=>$actor,'actor_id'=>$actorId,'reason'=>$reason,'request_id'=>$requestId,'override_id'=>$overrideId,'before'=>$beforeSnap,'after'=>$afterSnap,'external_operation'=>'NOT_REQUESTED','financial_credit_changed'=>false];
+            if($claimOnly){
+                $beforeSnap['admin_recovery_claim']=null;
+                $afterSnap['admin_recovery_claim']='PENDING_FINANCIAL_RECONCILIATION';
+            }
+            $overrideId=$p->cases->recordAdminOverride($caseId,$actorId,$reason,$beforeSnap,$afterSnap);$payload=['action'=>$action,'actor'=>$actor,'actor_id'=>$actorId,'reason'=>$reason,'request_id'=>$requestId,'override_id'=>$overrideId,'before'=>$beforeSnap,'after'=>$afterSnap,'recovery_claim_pending'=>$claimOnly,'external_operation'=>'NOT_REQUESTED','financial_credit_changed'=>false];
             $json=json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
             $eventId=$p->events->append(['case_id'=>$caseId,'event_type'=>'ADMIN_CASE_OVERRIDE','source'=>'ADMIN_UI','source_event_id'=>$requestId,'idempotency_key'=>$key,'occurred_at'=>gmdate('Y-m-d H:i:s'),'payload'=>$payload,'evidence_sha256'=>hash('sha256',$json)]);
-            $db->commit();return ['case'=>$after,'override_id'=>$overrideId,'event_id'=>$eventId,'idempotent_replay'=>false];
+            $db->commit();return ['case'=>$after,'override_id'=>$overrideId,'event_id'=>$eventId,'idempotent_replay'=>false,'recovery_claim_pending'=>$claimOnly];
         }catch(Throwable $e){
             if($db->inTransaction())$db->rollBack();
             if($e->getMessage()==='STALE_CASE_VERSION'){
@@ -38,6 +53,13 @@ final class SvAmazonAdminCaseOverride
             }
             throw $e;
         }
+    }
+    /** RECOVERED is a financial fact, never just an administrative opinion. */
+    private static function hasReconciledRecovery(array $case):bool
+    {
+        $expected=(float)($case['expected_reimbursement_amount']??0);
+        $credited=(float)($case['reconciled_credit_amount']??0);
+        return $expected>0 && $credited>0 && round(($credited-$expected)*100)>=0;
     }
     private static function patch(string $action,array $fields):array
     {
@@ -61,9 +83,11 @@ final class SvAmazonAdminCaseOverride
                 $fields['terminal_reason']=$fields['terminal_reason']??null;
             }
         }
-        if(isset($fields['program'])&&!in_array(strtoupper((string)$fields['program']),SvAmazonReturnPrograms::all(),true))throw new InvalidArgumentException('Tipo de logística inválido.');
-        if(isset($fields['physical_status'])&&!in_array(strtoupper((string)$fields['physical_status']),SvAmazonReturnPhysicalStatuses::all(),true))throw new InvalidArgumentException('Situação física inválida.');
-        if(isset($fields['refund_initiator'])&&!in_array(strtoupper((string)$fields['refund_initiator']),SvAmazonRefundInitiators::all(),true))throw new InvalidArgumentException('Origem do reembolso inválida.');
+        foreach(['program'=>SvAmazonReturnPrograms::class,'physical_status'=>SvAmazonReturnPhysicalStatuses::class,'refund_initiator'=>SvAmazonRefundInitiators::class] as $field=>$enum){
+            if(!isset($fields[$field]))continue;
+            $fields[$field]=strtoupper(trim((string)$fields[$field]));
+            if(!in_array($fields[$field],$enum::all(),true))throw new InvalidArgumentException('Valor de domínio inválido: '.$field);
+        }
         return $fields;
     }
     private static function snapshot(array $case,array $fields):array{$out=['id'=>(int)($case['id']??0),'updated_at'=>$case['updated_at']??null];foreach($fields as $field)$out[$field]=$case[$field]??null;return $out;}
