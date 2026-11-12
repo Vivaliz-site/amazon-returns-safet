@@ -38,7 +38,7 @@ foreach([
     sgrAssert(str_contains($generic,$needle),'General Seller Support must advance the observed suggested-tool flow before associate contact: '.$needle);
 }
 sgrAssert(str_contains($worker,'async function clickFirstFrameTextWhenReady'),'Dynamic associate categories must be polled until an enabled live category exists.');
-sgrAssert(str_contains($generic,"const associateCategories = text(job.case?.program).toUpperCase() === 'FBA'"),'FBA-only terminal categories must be scoped to FBA cases.');
+sgrAssert(str_contains($generic,"const associateCategories = ['FBA', 'FBA_ONSITE'].includes(text(job.case?.program).toUpperCase())"),'FBA terminal categories must cover both FBA and FBA_ONSITE cases.');
 sgrAssert(str_contains($generic,"? [") && strpos($generic,"'FBA related'") < strpos($generic,"'A-to-z Claims'"),'FBA general support must prefer the semantically correct FBA associate category before the A-to-z fallback.');
 sgrAssert(str_contains($generic,"\n    : ['A-to-z Claims'"),'Non-FBA general support must fail closed rather than route through an FBA-only category.');
 sgrAssert(str_contains($generic,"clickFirstFrameTextWhenReady(cdp, associateCategories"),'General Seller Support must poll only terminal associate categories.');
