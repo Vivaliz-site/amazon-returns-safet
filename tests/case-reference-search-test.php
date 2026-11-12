@@ -24,11 +24,20 @@ final class CrsStatement extends PDOStatement{
     public function execute(?array $params=null):bool{$this->db->executed[]=['sql'=>$this->sql,'params'=>$params??[]];return true;}
     public function fetchAll(int $mode=PDO::FETCH_DEFAULT,mixed ...$args):array{return $this->columns;}
 }
+$context=new SvAmazonTenantContext(11,22);
+
+$orderDb=new CrsPdo();$orderDb->queue([6]);
+crsSame([6],SvAmazonCaseReferenceSearch::caseIds($orderDb,$context,'702-1234567-7654321'),'Exact Amazon order ID must resolve.');
+crsSame(1,count($orderDb->executed),'Order search must use only the direct case reference query.');
+$orderExecution=$orderDb->executed[0];
+crsAssert(str_contains($orderExecution['sql'],'amazon_return_cases'),'Order search must use the scoped case repository.');
+crsAssert(!str_contains($orderExecution['sql'],'amazon_return_events'),'Order search must not scan event JSON.');
+crsSame('702-1234567-7654321',$orderExecution['params'][':ref_order']??null,'Order search must bind the exact order ID.');
+
 $db=new CrsPdo();
 $db->queue([7]);
 $db->queue([7,8]);
 $db->queue([8]);
-$context=new SvAmazonTenantContext(11,22);
 $ids=SvAmazonCaseReferenceSearch::caseIds($db,$context,'TBR015328001');
 crsSame([7,8],$ids,'Reference resolver must de-duplicate case IDs.');
 crsAssert(count($db->executed)>=2,'Reference resolver must query scoped case/evidence sources.');
@@ -47,6 +56,7 @@ crsAssert(is_array($eventExecution),'Event evidence query must execute.');
 crsSame('TBR015328001',$eventExecution['params'][':event_return_tracking_ids']??null,'Structured TBR array lookup must bind the exact token.');
 crsSame('TBR015328001',$eventExecution['params'][':event_return_tracking_id']??null,'Scalar structured TBR must remain exact.');
 crsAssert(str_contains($eventExecution['sql'],'JSON_CONTAINS'),'Structured TBR array lookup must compare an exact JSON array element.');
+
 $invoiceDb=new CrsPdo();
 $invoiceDb->queue([]);$invoiceDb->queue([]);$invoiceDb->queue([]);$invoiceDb->queue([9]);
 crsSame([9],SvAmazonCaseReferenceSearch::caseIds($invoiceDb,$context,'123456'),'Exact NF evidence must resolve.');
@@ -57,6 +67,7 @@ $erpInvoiceExecution=null;
 foreach($invoiceDb->executed as $execution){if(str_contains($execution['sql'],'amazon_return_erp_sales_returns')){$erpInvoiceExecution=$execution;break;}}
 crsAssert(is_array($erpInvoiceExecution),'Exact return-NF search must include the canonical ERP return workflow.');
 crsSame('123456',$erpInvoiceExecution['params'][':erp_return_invoice']??null,'ERP return-NF lookup must bind the exact invoice number.');
+
 $source=(string)file_get_contents($root.'/includes/amazon-returns/CaseReferenceSearch.php');
 $caseRepository=(string)file_get_contents($root.'/includes/amazon-returns/CaseRepository.php');
 $eventStore=(string)file_get_contents($root.'/includes/amazon-returns/TenantEventStore.php');
