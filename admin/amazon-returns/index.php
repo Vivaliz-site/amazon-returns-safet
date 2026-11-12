@@ -7,13 +7,17 @@ $reviewAiCsrf=SvAmazonReturnsCsrf::token('review-ai');
 $reviewPreviewCsrf=SvAmazonReturnsCsrf::token('review-preview');
 $reviewDecisionCsrf=SvAmazonReturnsCsrf::token('review-decision');
 $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
+$assetVersion = static function (string $filename): string {
+    $hash = hash_file('sha256', __DIR__ . '/assets/' . $filename);
+    return is_string($hash) ? substr($hash, 0, 16) : 'unversioned';
+};
 ?>
 <!doctype html>
 <html lang="pt-BR"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Devoluções Amazon</title>
-<link rel="stylesheet" href="/admin/amazon-returns/assets/cockpit.css">
-<link rel="stylesheet" href="/admin/amazon-returns/assets/cockpit-operational.css?v=1">
+<link rel="stylesheet" href="/admin/amazon-returns/assets/cockpit.css?v=<?=$assetVersion('cockpit.css')?>">
+<link rel="stylesheet" href="/admin/amazon-returns/assets/cockpit-operational.css?v=<?=$assetVersion('cockpit-operational.css')?>">
 </head><body><main class="wrap">
 <div class="top"><div><h1>Devoluções Amazon</h1><div class="muted">Acompanhe valores, prazos, mensagens e ações necessárias para recuperar reembolsos.</div></div><a class="btn" href="/admin/amazon-returns/intake.php">Registrar devolução recebida</a></div>
 <section id="autonomy-status" class="autonomy-status" aria-live="polite"><span class="muted">Carregando situação do sistema…</span></section>
@@ -54,4 +58,4 @@ $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
 </section>
 </section>
 <details id="operations-detail" class="operations-detail"><summary>Detalhes da operação</summary><div class="operations-detail-body"><section id="automation-work" class="operator-section" aria-label="Sistema tratando agora"></section><details id="money-breakdown" class="money-breakdown"><summary>Ver detalhes financeiros</summary><div id="money-breakdown-items"></div></details><section id="operational-problems" class="operator-section" aria-label="Saúde operacional"></section><section id="deadline-list" class="operator-section" aria-label="Prazos importantes"></section><section id="connector-health" class="connector-health" aria-label="Conexões do sistema"></section></div></details>
-</main><script src="/admin/amazon-returns/assets/cockpit-summary.js?v=autonomy-2" defer></script><script src="/admin/amazon-returns/assets/cockpit.js?v=admin-session-expiry-1" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=review-open-2" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational.js?v=refund-consultation-2" defer></script></body></html>
+</main><script src="/admin/amazon-returns/assets/cockpit-summary.js?v=<?=$assetVersion('cockpit-summary.js')?>" defer></script><script src="/admin/amazon-returns/assets/cockpit.js?v=<?=$assetVersion('cockpit.js')?>" defer></script><script src="/admin/amazon-returns/assets/review-focus.js?v=<?=$assetVersion('review-focus.js')?>" defer></script><script src="/admin/amazon-returns/assets/cockpit-operational.js?v=<?=$assetVersion('cockpit-operational.js')?>" defer></script></body></html>

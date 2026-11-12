@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const operational=readFileSync(new URL('../admin/amazon-returns/assets/cockpit-operational.js',import.meta.url),'utf8');
 const base=readFileSync(new URL('../admin/amazon-returns/assets/cockpit.js',import.meta.url),'utf8');
+const cockpitPage=readFileSync(new URL('../admin/amazon-returns/index.php',import.meta.url),'utf8');
 
 const opContext={brl:n=>'R$ '+Number(n).toFixed(2).replace('.',','),date:x=>String(x),stateLabel:x=>x};
 vm.createContext(opContext);
@@ -50,4 +51,11 @@ test('switching to the rules tab updates the URL',()=>{
   const {context,urls}=loadSelectView();
   context.selectView('rules');
   assert.match(urls[0],/view=rules/);
+});
+
+test('every cockpit asset URL is versioned from that file content',()=>{
+  for(const file of ['cockpit.css','cockpit-operational.css','cockpit-summary.js','cockpit.js','review-focus.js','cockpit-operational.js']){
+    assert.ok(cockpitPage.includes(`?v=<?=$assetVersion('${file}')?>`),`${file} must use its content hash as the cache key`);
+  }
+  assert.ok(!['?v=1','?v=autonomy-2','?v=admin-session-expiry-1','?v=review-open-2','?v=refund-consultation-2'].some(version=>cockpitPage.includes(version)));
 });
