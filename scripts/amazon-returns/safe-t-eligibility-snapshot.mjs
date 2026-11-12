@@ -2,34 +2,87 @@
  * Observe the exact SAFE-T order result inside same-origin nested iframes.
  * A result from more than one document is ambiguous, never an approval.
  * Only read browser state: no Next, Submit, Send, or outbox action.
+ *
+ * Order identity comes from text actually rendered for the user. Seller Central
+ * draws the order link inside kat-* shadow roots, which innerText does not
+ * reach, so rendered text is also collected through the composed tree (open shadow roots
+ * and slots). Input values are not text nodes and scripts/styles/non-rendered
+ * nodes are skipped, so a search-field echo can never prove the identity of a
+ * result.
  */
+function pageSnapshot(id) {
+  const ORDER = /\b\d{3}-\d{7}-\d{7}\b/g;
+  const SKIPPED_TAGS = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT', 'HEAD']);
+  const docs = [];
+  let inaccessibleFrame = false;
+  const visit = d => {
+    if (!d || docs.includes(d)) return;
+    docs.push(d);
+    for (const f of d.querySelectorAll('iframe')) {
+      try {
+        const child = f.contentDocument;
+        if (!child) { inaccessibleFrame = true; continue; }
+        visit(child);
+      } catch { inaccessibleFrame = true; }
+    }
+  };
+  visit(document);
+  const renderedText = root => {
+    const parts = [];
+    const walk = (n, parentVisible) => {
+      if (!n) return;
+      if (n.nodeType === 3) { if (parentVisible) parts.push(n.nodeValue || ''); return; }
+      if (n.nodeType !== 1 && n.nodeType !== 9 && n.nodeType !== 11) return;
+      let visible = parentVisible;
+      if (n.nodeType === 1) {
+        if (SKIPPED_TAGS.has(n.tagName)) return;
+        if (n.hidden) return;
+        const style = typeof getComputedStyle === 'function' ? getComputedStyle(n) : null;
+        // display:none removes the whole subtree; display:contents (common on
+        // kat-* hosts) still renders its children, so only "none" is skipped.
+        if (style && style.display === 'none') return;
+        if (style) visible = style.visibility !== 'hidden' && style.visibility !== 'collapse';
+      }
+      if (n.tagName === 'SLOT') {
+        // A slot renders only what is assigned to it, else its fallback content.
+        const assigned = typeof n.assignedNodes === 'function' ? n.assignedNodes({ flatten: true }) : [];
+        for (const c of (assigned.length ? assigned : n.childNodes || [])) walk(c, visible);
+        return;
+      }
+      // Composed tree: a shadow host renders its shadow root, never its raw
+      // light children (those appear only through a <slot>).
+      if (n.shadowRoot) {
+        for (const c of n.shadowRoot.childNodes || []) walk(c, visible);
+        return;
+      }
+      for (const c of n.childNodes || []) walk(c, visible);
+    };
+    try { walk(root, true); } catch { /* unreadable subtree contributes no identity */ }
+    return parts.join(' ');
+  };
+  const matches = docs.map(d => {
+    const body = (d.body && d.body.innerText) || '';
+    const text = body + ' ' + renderedText(d.body);
+    const visibleOrderIds = text.match(ORDER) || [];
+    const orderMatched = visibleOrderIds.length > 0 && visibleOrderIds.every(candidate => candidate === id);
+    const existingClaim = d.querySelector('kat-link.ClaimAlreadyExists')?.getAttribute('label') || '';
+    const items = [...d.querySelectorAll('kat-checkbox.QuantityCheckbox')];
+    const selectableCount = items.filter(h => {
+      const r = h.getBoundingClientRect();
+      const inner = h.shadowRoot?.querySelector('input[type=checkbox],[role=checkbox]');
+      return r.width > 0 && r.height > 0 && h.getClientRects().length > 0
+        && !h.disabled && !h.hasAttribute('disabled')
+        && h.getAttribute('aria-disabled') !== 'true'
+        && inner && !inner.disabled && !inner.hasAttribute('disabled');
+    }).length;
+    return { orderMatched, existingClaim, itemCount: items.length, selectableCount, pageText: text.slice(0, 12000) };
+  });
+  const relevant = matches.filter(m => m.orderMatched || m.existingClaim || m.itemCount > 0);
+  return !inaccessibleFrame && relevant.length === 1 ? relevant[0] : { ambiguous: true };
+}
+
 export async function safeTEligibilitySnapshot(cdp, orderId) {
-  const query = 'JSON.stringify((()=>{'
-    + 'const id=' + JSON.stringify(orderId) + ';'
-    + 'const docs=[];let inaccessibleFrame=false;'
-    + 'const visit=d=>{if(!d||docs.includes(d))return;docs.push(d);'
-    + 'for(const f of d.querySelectorAll("iframe")){try{const child=f.contentDocument;if(!child){inaccessibleFrame=true;continue;}visit(child)}catch{inaccessibleFrame=true}}};'
-    + 'visit(document);'
-    + 'const matches=docs.map(d=>{'
-    + 'const body=d.body?.innerText||"";'
-    + 'const visibleOrderIds=body.match(/\\b\\d{3}-\\d{7}-\\d{7}\\b/g)||[];'
-    + 'const orderMatched=visibleOrderIds.length>0&&visibleOrderIds.every(candidate=>candidate===id);'
-    + 'const existingClaim=d.querySelector("kat-link.ClaimAlreadyExists")?.getAttribute("label")||"";'
-    + 'const items=[...d.querySelectorAll("kat-checkbox.QuantityCheckbox")];'
-    + 'const selectableCount=items.filter(h=>{'
-    + 'const r=h.getBoundingClientRect();'
-    + 'const inner=h.shadowRoot?.querySelector("input[type=checkbox],[role=checkbox]");'
-    + 'return r.width>0&&r.height>0&&h.getClientRects().length>0'
-    + '&&!h.disabled&&!h.hasAttribute("disabled")'
-    + '&&h.getAttribute("aria-disabled")!=="true"'
-    + '&&inner&&!inner.disabled&&!inner.hasAttribute("disabled");'
-    + '}).length;'
-    + 'return {orderMatched,existingClaim,itemCount:items.length,selectableCount,'
-    + 'pageText:body.slice(0,12000)};'
-    + '});'
-    + 'const relevant=matches.filter(m=>m.orderMatched||m.existingClaim||m.itemCount>0);'
-    + 'return !inaccessibleFrame&&relevant.length===1?relevant[0]:{ambiguous:true};'
-    + '})())';
+  const query = 'JSON.stringify((' + pageSnapshot.toString() + ')(' + JSON.stringify(orderId) + '))';
   try {
     const raw = await cdp.evaluate(query);
     const result = JSON.parse(raw || '{}');
