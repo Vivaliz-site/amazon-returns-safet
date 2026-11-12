@@ -73,14 +73,23 @@ try{
         $case['outstanding_amount']=max(0,($expected>0?$expected:$refund)-$credit);
         $case['erp_return']=$erpReturn;
         $adminStateOverride=null;
+        $adminRecoveryClaim=null;
         foreach($events as $adminEvent){
             if(($adminEvent['event_type']??null)!=='ADMIN_CASE_OVERRIDE'||strtoupper((string)($adminEvent['source']??''))!=='ADMIN_UI')continue;
             $adminPayload=is_array($adminEvent['payload']??null)?$adminEvent['payload']:[];
+            if(($adminPayload['recovery_claim_pending']??false)===true){
+                $adminRecoveryClaim=['pending'=>true,'actor'=>$adminPayload['actor']??null,'reason'=>$adminPayload['reason']??null,'occurred_at'=>$adminEvent['occurred_at']??null];
+            }elseif(in_array((string)($adminPayload['action']??''),['MARK_RECOVERED','SET_STATE'],true)
+                &&($adminPayload['recovery_claim_pending']??null)===false
+                &&($adminPayload['after']['state']??null)==='RECOVERED'){
+                $adminRecoveryClaim=null;
+            }
             $adminAfter=is_array($adminPayload['after']??null)?$adminPayload['after']:[];
             if(!array_key_exists('state',$adminAfter))continue;
             $adminStateOverride=['state'=>$adminAfter['state'],'action'=>$adminPayload['action']??null,'actor'=>$adminPayload['actor']??null,'reason'=>$adminPayload['reason']??null,'occurred_at'=>$adminEvent['occurred_at']??null];
         }
         $case['admin_state_override']=$adminStateOverride;
+        $case['admin_recovery_claim']=$adminRecoveryClaim;
         sv_amz_case_reply(['success'=>true,'case'=>$case,'timeline'=>$timeline,'current_review'=>$currentReview,'rule_applications'=>$apps,'last_external_write'=>$lastWrite,'last_read_back'=>$lastRead,'admin_actions'=>['CLOSE_LOSS','REOPEN','MARK_RECOVERED','REQUEST_REVIEW','PREPARE_CONTESTATION','SET_STATE','UPDATE_FIELDS'],'admin_states'=>SvAmazonReturnStates::all(),'admin_editable_fields'=>['quantity_ordered','quantity_refunded','quantity_received','program','refund_initiator','refund_at','seller_debit_at','refund_amount','expected_reimbursement_amount','physical_status','state','eligibility_at','next_action_at','safe_t_id','support_case_id','appeal_deadline_at','terminal_reason','closed_at']]);
     }
     if(preg_match('/^[0-9]{3}-[0-9]{7}-[0-9]{7}$/',$orderId)!==1)sv_amz_case_reply(['success'=>false,'error'=>'Informe um pedido Amazon válido.'],422);
