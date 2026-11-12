@@ -1,6 +1,6 @@
 # Plano — intervenção administrativa manual
 
-Tarefa 1: serviço transacional de override; testes RED/GREEN para ações, before/after, tenant scope, crédito protegido e conflito de versão.
+Tarefa 1: serviço transacional de override; testes RED/GREEN para ações, before/after, tenant scope, crédito protegido e conflito de versão. Inclui registro somente de auditoria para recuperação não conciliada, sem criar estado terminal, além de normalização de enums.
 
 Tarefa 2: endpoint POST com autenticação admin, CSRF, request_id idempotente e ações CLOSE_LOSS, REOPEN, MARK_RECOVERED, SET_STATE, UPDATE_FIELDS.
 
