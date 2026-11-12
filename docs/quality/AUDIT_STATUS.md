@@ -346,3 +346,13 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Testes: RED no codigo original (4/4 testes JS novos falham; contrato PHP exige o helper); GREEN: `tests/cockpit-read-freshness-test.php` e `tests/cockpit-stale-data-note.test.mjs` 4/4. Node completo 290/292 e PHP relacionado: as falhas restantes (`seller-central-managed-lock`, `seller-support-hill-expression`, `safe-t-discovery-pagination-contract-test` sem driver PDO) tambem falham no main sem alteracoes neste host Windows.
 - Pendencias: CI GitHub, merge, deploy canonico e repeticao do mesmo E2E na release implantada (o aviso nao deve mais aparecer no #8803 nem no #1263).
 - Estado: NAO_APTO.
+
+## 2026-11-12 — #532: rotulo financeiro de caso encerrado como perda e URL da aba Revisoes (E2E real na UI)
+
+- Base SHA: `6a8fc41d8cc3f604e2292bece9f9003788f1a5be` (main e release da Marina).
+- Achados no E2E somente leitura na UI real publicada (sessao do operador): (1) o #1263, encerrado como perda, exibia "saldo ainda a recuperar R$ 36,38" (screenshot `5d812c967ac2c1b36808c6b8e4d5c3ac2bb490058121fc5bbaae092f9ae5824e`), contradizendo "Encerrado sem recuperacao"; (2) a aba Revisoes nao atualizava a URL, entao recarregar voltava para Casos.
+- Correcao: `operatorFinancialSummary()` passa a rotular `CLOSED_LOSS` com saldo como "valor nao recuperado; caso encerrado como perda"; `selectView()` chama `syncUrl()` ao trocar de aba. Nenhum valor, estado, politica, flag ou grant alterado.
+- Testes: RED no codigo original (3/3 novos falham); GREEN 10/10 nas suites cockpit; Node completo 294/296 e PHP cockpit sem falhas; as 2 falhas Node (`seller-central-managed-lock`, `seller-support-hill-expression`) tambem falham no main sem alteracoes neste host Windows.
+- Observacao nao corrigida: a lista leva ~14 s para popular numa busca por um unico pedido (investigar custo de `api/cases.php` por caso candidato).
+- Pendencias: CI GitHub, merge, deploy canonico e repeticao do E2E na release implantada.
+- Estado: NAO_APTO.
