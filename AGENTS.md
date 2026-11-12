@@ -130,6 +130,9 @@ Antes de executar qualquer comando em VM Oracle Cloud, leia e siga obrigatoriame
 - Só solicitar intervenção do usuário se houver evidência fresca de que a credencial provisionada está ausente, inválida/revogada, se o TOTP remoto estiver indisponível após diagnóstico, ou se houver CAPTCHA/recovery/novo consentimento que exija ação humana.
 - Senhas, hashes, seeds, OTPs, cookies, tokens e chaves jamais devem ser escritos em documentação, logs, commits, PRs ou respostas de chat. Documente apenas a localização/fonte segura e o procedimento de uso.
 
+## Amazon Returns: identidade administrativa dos agentes
+Para entrar no cockpit interno, use o usuário de aplicação `returns-agent`; a senha fica no cofre protegido da Marina em `/home/ubuntu/.shopvivaliz/secrets/amazon-returns-agent.password` (modo 0600). Localize-a pelo MCP autorizado da Marina somente quando a tarefa exigir login e consuma-a dentro de um processo protegido; não a imprima, não a coloque em argumentos de comando, logs, issues ou mensagens. Não peça a senha ao proprietário enquanto esse arquivo estiver disponível. Esse usuário concede acesso administrativo ao cockpit, não ao Linux nem às credenciais da Amazon, e não habilita os gates de escrita externa. Consulte `docs/runbooks/admin-agent-access.md` para configuração e limites; mantenha cada identidade em perfil/sessão próprios e não copie cookies.
+
 ## Latest owner decision: 2026-09-05
 First operational SAFE-T eligibility/opening attempt for ShopVivaliz is D+45 after the confirmed customer refund. Never silently defer this first attempt to an alternative internal calendar.
 When Amazon requests a wait, preserve its actual requested date and response evidence; resume/reopen in the correct existing channel on that date, after real financial revalidation.
