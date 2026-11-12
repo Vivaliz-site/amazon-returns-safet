@@ -8,6 +8,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitFilters.php';
+require_once __DIR__.'/../../../includes/amazon-returns/ReviewOperations.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CaseReferenceSearch.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitReadFreshness.php';
 require_once __DIR__.'/../../../includes/amazon-returns/GmailApi.php';
@@ -56,7 +57,8 @@ try{
         $decision=$coordinator->previewAction($case,$timeline,$policy,$now);
         $reviews=$p->reviews->forCase($caseId);$currentReview=null;
         for($i=count($reviews)-1;$i>=0;$i--){if(($reviews[$i]['status']??'')==='OPEN'){$currentReview=$reviews[$i];break;}}
-        if(!$filters->acceptsDecision($decision,$currentReview['status']??null))continue;
+        $requiresHuman=$currentReview!==null?SvAmazonReviewOperations::requiresManualDecision($currentReview):null;
+        if(!$filters->acceptsDecision($decision,$currentReview['status']??null,$requiresHuman))continue;
         $apps=$p->ruleApplications->forCase($caseId);$app=$apps!==[]?$apps[array_key_last($apps)]:null;
         $history=$p->outbox->historyForCase($caseId);$lastWrite=null;
         for($i=count($history)-1;$i>=0;$i--){if(in_array($history[$i]['kind']??'',['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){$lastWrite=$history[$i];break;}}
@@ -79,7 +81,7 @@ try{
             'return_tracking_id'=>(is_array($case['return_tracking_ids']??null)&&$case['return_tracking_ids']!==[])?$case['return_tracking_ids'][0]:null,
             'eligibility_at'=>$policy['eligibility_at']??($case['eligibility_at']??null),'next_action_at'=>array_key_exists('next_action_at',$decision)?$decision['next_action_at']:($case['next_action_at']??null),'appeal_deadline_at'=>$case['appeal_deadline_at']??null,
             'current_action'=>$decision['action']??'WAIT','current_reason'=>$decision['reason']??null,
-            'review_status'=>$currentReview['status']??null,'review_id'=>$currentReview['id']??null,
+            'review_status'=>$currentReview['status']??null,'review_id'=>$currentReview['id']??null,'requires_human_decision'=>$requiresHuman??in_array(strtoupper((string)($decision['action']??'')),['HUMAN_REVIEW','BLOCKED_REVIEW'],true),
             'applied_rule'=>$app?['rule_id'=>(int)($app['rule_id']??0),'version'=>(int)($app['rule_version']??0),'result'=>$app['result']??null,'outcome'=>$app['outcome']??null]:null,
             'last_external_write'=>$lastWrite?['id'=>(int)$lastWrite['id'],'kind'=>$lastWrite['kind'],'status'=>$lastWrite['status'],'updated_at'=>$lastWrite['updated_at']??null,'created_at'=>$lastWrite['created_at']??null]:null,
             'last_read_back'=>$lastRead?['id'=>(int)$lastRead['id'],'event_type'=>$lastRead['event_type'],'occurred_at'=>$lastRead['occurred_at']??null,'source'=>$lastRead['source']??null]:null,

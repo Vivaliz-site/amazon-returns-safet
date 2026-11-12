@@ -102,7 +102,8 @@ caAssert(str_contains($casesSrc,'SvAmazonCaseReferenceSearch::caseIds'),'Cockpit
 caAssert(str_contains($casesSrc,'SvAmazonGmailReturnReferenceLookup'),'TBR search may use read-only Gmail recovery when local evidence is absent.');
 caAssert(str_contains($casesSrc,'$requiresPostFilter=$filters->requiresDecisionFilter();'),'Decision-aware filters must use exact post-filter pagination.');
 caAssert(str_contains($casesSrc,'count($rawItems)<$rawTotal')&&str_contains($casesSrc,'$batchItems!==[]'),'Decision post-filtering must scan all server-side candidate pages with an empty-batch guard.');
-caAssert(str_contains($casesSrc,'if(!$filters->acceptsDecision($decision,$currentReview[\'status\']??null))continue;'),'Projected decisions plus review status must enforce attention/system bucket membership.');
+caAssert(str_contains($casesSrc,'if(!$filters->acceptsDecision($decision,$currentReview[\'status\']??null,$requiresHuman))continue;'),'Projected decisions plus review status must enforce attention/system bucket membership.');
+caAssert(str_contains($casesSrc,'SvAmazonReviewOperations::requiresManualDecision($currentReview)')&&str_contains($casesSrc,"'requires_human_decision'=>"),'Case listing must classify open reviews as human or operational exactly as the summary does.');
 caAssert(str_contains($casesSrc,'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')&&str_contains($casesSrc,'beginTransaction()'),'Decision post-filter scan must use one repeatable-read snapshot.');
 caAssert(str_contains($casesSrc,'assertDecisionCandidateCount($rawTotal)'),'Decision post-filter scan must enforce its candidate bound before projection.');
 caAssert(str_contains($casesSrc,'commit()')&&str_contains($casesSrc,'rollBack()'),'Decision snapshot must be closed on success and failure.');
