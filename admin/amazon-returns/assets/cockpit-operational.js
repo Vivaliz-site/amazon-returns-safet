@@ -13,6 +13,7 @@ function operatorFinancialSummary(c){
   const outstanding=Math.max(0,Number(c?.outstanding_amount||0));
   const recovered=Math.max(0,Number(c?.reconciled_credit_amount||0));
   if(outstanding>0&&recovered>0)return {value:brl(outstanding),label:'diferença nominal após crédito; tarifas a conferir'};
+  if(outstanding>0&&String(c?.state||'')==='CLOSED_LOSS')return {value:brl(outstanding),label:'valor não recuperado; caso encerrado como perda'};
   if(outstanding>0)return {value:brl(outstanding),label:'saldo ainda a recuperar'};
   const pending=['SAFE_T_APPROVED','APPEAL_APPROVED','CREDIT_PENDING'].includes(String(c?.state||''));
   if(recovered>0&&pending)return {value:brl(0),label:'Crédito identificado; aguardando confirmação final.'};
