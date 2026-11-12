@@ -14,4 +14,6 @@ assert.match(detail,/admin_actions/,'case API must expose administrative actions
 assert.match(js,/crédito ainda não conciliado/,'manual recovered classification must not be presented as financial credit');
 assert.match(js,/não confirma ação externa/,'manual state must not be presented as an accepted Amazon operation');
 assert.match(js,/admin_state_override/,'UI must disclose the latest manual state override');
+assert.match(js,/admin_recovery_claim/,'UI must disclose audit-only recovery claim without closing the case');
+assert.match(js,/moneyReconciled/,'UI must distinguish credited recovery from pending assertion');
 console.log('admin-case-intervention-ui: OK');
