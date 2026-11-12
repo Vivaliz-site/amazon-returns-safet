@@ -29,15 +29,24 @@ final class SvAmazonCaseReferenceSearch
         if($term==='')return [];
         $kind=self::kind($term);
         $exact=in_array($kind,[self::ORDER,self::INVOICE,self::RETURN_TRACKING],true);
-        $ids=array_merge(
-            (new SvAmazonReturnCaseRepository($db,$context))->caseIdsForReference($term,$exact),
-            (new SvAmazonTenantReturnEventStore($db,$context))->caseIdsForReference($term,$exact)
-        );
+        $caseRepository=new SvAmazonReturnCaseRepository($db,$context);
+        $ids=$caseRepository->caseIdsForReference($term,$exact);
 
-        $invoiceIds=$kind===self::INVOICE
-            ? SvAmazonInvoiceSearch::caseIdsExact($db,$context,$term)
-            : SvAmazonInvoiceSearch::caseIds($db,$context,$term);
-        foreach($invoiceIds as $id)if($id>0)$ids[]=$id;
+        // A syntactically valid Amazon order ID is an exact case reference. Searching
+        // event JSON and invoice evidence for it cannot produce a semantic match and
+        // forces table scans across the entire event history on every order lookup.
+        if($kind!==self::ORDER){
+            $ids=array_merge($ids,(new SvAmazonTenantReturnEventStore($db,$context))->caseIdsForReference($term,$exact));
+        }
+
+        if($kind===self::INVOICE){
+            $invoiceIds=SvAmazonInvoiceSearch::caseIdsExact($db,$context,$term);
+            foreach($invoiceIds as $id)if($id>0)$ids[]=$id;
+        }elseif($kind===self::REFERENCE){
+            $invoiceIds=SvAmazonInvoiceSearch::caseIds($db,$context,$term);
+            foreach($invoiceIds as $id)if($id>0)$ids[]=$id;
+        }
+
         $ids=array_values(array_unique($ids));
         sort($ids,SORT_NUMERIC);
         return $ids;
