@@ -24,6 +24,13 @@ function operatorWaitDate(c){
   if(String(c?.current_reason||'')==='NOT_YET_ELIGIBLE'&&c?.eligibility_at)return c.eligibility_at;
   return null;
 }
+const TERMINAL_CASE_STATES=['CLOSED_LOSS','RECOVERED','APPEAL_DENIED_FINAL'];
+function operatorDataIsStale(c,nowMs=Date.now()){
+  if(!c||c.closed_at||TERMINAL_CASE_STATES.includes(String(c.state||'')))return false;
+  const checked=c.last_read_back?.occurred_at;if(!checked)return false;
+  const checkedAt=new Date(String(checked).replace(' ','T')+'Z');
+  return !Number.isNaN(checkedAt.getTime())&&nowMs-checkedAt.getTime()>36*60*60*1000;
+}
 function operatorStatus(c){
   const state=String(c?.state||''),action=String(c?.current_action||''),reason=String(c?.current_reason||'');
   if(operatorResponsibility(c)==='Sua decisão é necessária')return 'Precisa da sua decisão';
@@ -273,7 +280,7 @@ function renderOperationalCase(data,relatedCount=null){
   root.append(renderCondensedTimeline(timeline));
   const stateName=String(c.state||''),appealAlreadyHandled=['APPEAL_SUBMITTED','APPEAL_APPROVED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING','SUPPORT_ESCALATION','RECOVERED','CLOSED_LOSS'].includes(stateName);
   if(appealAlreadyHandled){for(const field of document.querySelectorAll('#case-detail .operational-field')){if(field.querySelector('.muted')?.textContent==='Prazo para recurso')field.remove();}if(['APPEAL_SUBMITTED','EMAIL_REVIEW_SENT','EMAIL_REVIEW_RESPONSE_PENDING'].includes(stateName)){const note=text('div','', 'flow-item');note.append(text('strong','Prazo do recurso'),text('p','O recurso já foi enviado; agora o sistema aguarda a resposta da Amazon.'));flow.append(note);}}
-  const checked=c.last_read_back?.occurred_at;if(checked){const checkedAt=new Date(String(checked).replace(' ','T')+'Z');if(!Number.isNaN(checkedAt.getTime())&&Date.now()-checkedAt.getTime()>36*60*60*1000)head.append(text('div','Dados podem estar desatualizados: a última verificação ocorreu há mais de 36 horas.','stale-data-note'));}
+  if(operatorDataIsStale(c))head.append(text('div','Dados podem estar desatualizados: a última verificação ocorreu há mais de 36 horas.','stale-data-note'));
 }
 let operationalBucket='all';
 async function loadBucketCases(filters,bucket){

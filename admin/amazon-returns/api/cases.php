@@ -9,6 +9,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitFilters.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CaseReferenceSearch.php';
+require_once __DIR__.'/../../../includes/amazon-returns/CockpitReadFreshness.php';
 require_once __DIR__.'/../../../includes/amazon-returns/GmailApi.php';
 require_once __DIR__.'/../../../includes/amazon-returns/GmailReturnReferenceLookup.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
@@ -59,7 +60,7 @@ try{
         $apps=$p->ruleApplications->forCase($caseId);$app=$apps!==[]?$apps[array_key_last($apps)]:null;
         $history=$p->outbox->historyForCase($caseId);$lastWrite=null;
         for($i=count($history)-1;$i>=0;$i--){if(in_array($history[$i]['kind']??'',['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){$lastWrite=$history[$i];break;}}
-        $lastRead=null;for($i=count($timeline)-1;$i>=0;$i--){if(in_array($timeline[$i]['event_type']??'',['SAFE_T_STATUS_OBSERVED','SELLER_CENTRAL_ACTION_RESULT','SAFE_T_EMAIL_REVIEW_RESPONSE','FINANCIAL_TRANSACTION_OBSERVED','SAFE_T_REIMBURSEMENT_OBSERVED'],true)){$lastRead=$timeline[$i];break;}}
+        $lastRead=SvAmazonCockpitReadFreshness::latest($timeline,$history);
         $expected=(float)($case['expected_reimbursement_amount']??0);$refund=(float)($case['refund_amount']??0);$credit=(float)($case['reconciled_credit_amount']??0);
         $outstanding=max(0,($expected>0?$expected:$refund)-$credit);
         $orderId=trim((string)($case['amazon_order_id']??''));

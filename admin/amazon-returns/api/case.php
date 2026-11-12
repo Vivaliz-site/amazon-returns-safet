@@ -8,6 +8,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitTimeline.php';
+require_once __DIR__.'/../../../includes/amazon-returns/CockpitReadFreshness.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 require_once __DIR__.'/../../../includes/amazon-returns/PolicyEngine.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SafeTDecisionEngine.php';
@@ -64,7 +65,7 @@ try{
         $case['sales_invoice_number']=$salesInvoiceNumber;$case['sales_invoice_source']=$salesInvoiceSource;$case['return_invoice_numbers']=$returnInvoiceNumbers;
         $case['amazon_reimbursement_at']=$financialFacts['amazon_reimbursement_at']??null;$case['amazon_reimbursement_amount']=$financialFacts['amazon_reimbursement_amount']??'0.00';
         $case['safe_t_submitted_at']=$safeTSubmittedAt;$case['amazon_decision_at']=$amazonDecisionAt;
-        $case['return_reason']=$returnReason;$case['physical_received_at']=$physicalReceivedAt;$case['last_external_write']=$lastWrite;$case['last_read_back']=$lastRead;
+        $case['return_reason']=$returnReason;$case['physical_received_at']=$physicalReceivedAt;$case['last_external_write']=$lastWrite;$lastRead=SvAmazonCockpitReadFreshness::latest($events,$outbox);$case['last_read_back']=$lastRead;
         $case['return_tracking_ids']=$returnTracks;$case['return_tracking_id']=$returnTracks[0]??null;$case['applied_rule']=$appliedRule;
         $case['current_action']=$decision['action']??'WAIT';$case['current_reason']=$decision['reason']??null;$case['eligibility_at']=$policy['eligibility_at']??($case['eligibility_at']??null);
         $case['next_action_at']=array_key_exists('next_action_at',$decision)?$decision['next_action_at']:($case['next_action_at']??null);
