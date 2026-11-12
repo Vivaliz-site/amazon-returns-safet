@@ -36,6 +36,8 @@ $caseRepo=(string)file_get_contents($root.'/includes/amazon-returns/CaseReposito
 foreach(['concluded_cases','automatic_work_cases','automationPreview','upcomingDeadlines'] as $needle){
     cshAssert(str_contains($caseRepo,$needle),'Case repository summary contract missing '.$needle);
 }
+$health=(string)file_get_contents($root.'/includes/amazon-returns/CockpitHealth.php');
+cshAssert(str_contains($health,"externalWriteAllowed('SAFE_T_APPEAL')"),'Expired appeal health gate must respect effective SAFE_T_APPEAL capability.');
 
 cshAssert(str_contains($summary,"'breakdown'"),'Summary must preserve detailed financial breakdown.');
 cshAssert(str_contains($summary,"'awaiting_credit'"),'Summary must expose awaiting-credit headline.');

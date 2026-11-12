@@ -37,6 +37,11 @@ final class SvAmazonCockpitHealth
             'expired_without_treatment'=>['amount'=>'expired_without_treatment_amount','status'=>'OVERDUE'],
             'credit_without_reconciliation'=>['amount'=>'credit_without_reconciliation_amount','status'=>'RECONCILIATION'],
         ];
+        // A denied claim whose appeal window elapsed is terminal while the
+        // SAFE-T appeal write capability is disabled. It must not be reported
+        // as an executable system failure or imply that the system should
+        // silently decide a financial disposition.
+        if(!$config->externalWriteAllowed('SAFE_T_APPEAL'))unset($gateDefinitions['expired_without_treatment']);
         foreach($gateDefinitions as $key=>$definition){
             $count=max(0,(int)($caseSummary[$key]??0));
             if($count<1)continue;
