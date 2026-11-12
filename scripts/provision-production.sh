@@ -166,9 +166,9 @@ ensure_env_key 'AMAZON_RETURNS_REVIEW_AI_MODEL' 'gpt-5.6-terra'
 set_env_key 'AMAZON_RETURNS_LEARNED_RULE_EXECUTION' '1'
 set_env_key 'AMAZON_RETURNS_REVIEW_NOTIFY_EMAIL' 'fredmourao@gmail.com'
 set_env_key 'AMAZON_RETURNS_ERP_SALES_RETURN_CREATE_ENABLED' '0'
-# The owner explicitly authorized the complete Amazon Returns recovery flow.
-# Keep first provisioning fail-closed above, then enable the already-versioned
-# full recovery profile only during an explicit production reconciliation.
+# Restore the owner-approved production baseline on every provisioning.
+# External write activation requires its separate scoped, authorized operation;
+# provisioning must not leave the seven channels broadly enabled.
 set_env_key 'AMAZON_RETURNS_EXTERNAL_WRITES_KILL_SWITCH' '1'
 set_env_key 'AMAZON_RETURNS_SAFE_T_WRITE' '0'
 set_env_key 'AMAZON_RETURNS_APPEAL_WRITE' '0'
