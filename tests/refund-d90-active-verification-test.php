@@ -71,8 +71,10 @@ $cases->casesWithoutSafeTId(10);
 $discoverySql=(string)end($db->queries);
 d90Assert(str_contains($discoverySql,'refund_at>=:refund_cutoff'),
     'Discovery must not re-enqueue D+90 expired refund cases.');
-d90Assert(str_contains($discoverySql,'refund_at IS NULL'),
-    'Unknown refund date must remain investigable.');
+d90Assert(str_contains($discoverySql,'refund_at IS NOT NULL'),
+    'Discovery requires a known refund date (owner decision 12/11/2026).');
+d90Assert(!str_contains($discoverySql,'refund_at IS NULL'),
+    'Cases without a refund date are excluded from discovery.');
 d90Assert(str_contains($discoverySql,'closed_at IS NULL'),
     'Closed cases must remain excluded from new discovery.');
 

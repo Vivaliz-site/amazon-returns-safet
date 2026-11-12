@@ -55,6 +55,7 @@ final class SvAmazonReturnsStatusBridgeService
         $this->p->outbox->supersedeExpiredRecoveryReads('RECOVERY_WINDOW_EXPIRED_D90');
         $this->p->outbox->supersedeTerminalReadJobs('TERMINAL_CASE_NO_LONGER_REQUIRES_READ');
         $this->p->outbox->supersedeDiscoveryJobsForKnownSafeT('SAFE_T_ID_ALREADY_KNOWN');
+        $this->p->outbox->supersedeDiscoveryWithoutRefundWindow('DISCOVERY_NO_REFUND_DATE_OR_OVER_90_DAYS');
         $ensured=0;
         foreach($this->p->cases->casesWithSafeTId(250) as $case){
             $caseId=(int)($case['id'] ?? 0);

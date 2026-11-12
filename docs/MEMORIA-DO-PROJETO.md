@@ -74,3 +74,10 @@ A auditoria deve verificar também o momento da decisão, prazos, rastreamento/l
 Comunicações externas de contestação, recurso, justificativa ou cobrança da ShopVivaliz devem ser redigidas em primeira pessoa, como a própria empresa falando diretamente com a Amazon.
 
 A matriz consolidada é obrigatória ao final, mas nunca pode substituir as linhas individuais dos casos.
+
+## Decisão de 12/11/2026: descoberta SAFE-T exclui casos sem data de reembolso
+Por determinação do proprietário, a descoberta diária de SAFE-T no Seller Central (`SAFE_T_DISCOVERY`) considera somente casos com data de reembolso conhecida e dentro de 90 dias. Casos sem data de reembolso e casos com reembolso há mais de 90 dias são desconsiderados: não são enfileirados e os jobs pendentes deles são marcados como `SUPERSEDED`, sem leitura e sem escrita externa.
+
+Motivo: em 12/11/2026 havia 523 casos sem data de reembolso gerando cerca de 495 jobs de descoberta por dia, contra uma capacidade de leitura de cerca de 100 por ciclo, o que impedia a fila de esvaziar. O proprietário confirmou que não existe essa quantidade de reembolsos reais.
+
+Esta decisão supersede, apenas para a descoberta, a regra anterior de manter investigável o caso com data de reembolso desconhecida. O monitoramento de reivindicações SAFE-T já identificadas (`casesWithSafeTId`) e as consultas de saúde do ERP não mudam. Nenhum gate de escrita externa é alterado.

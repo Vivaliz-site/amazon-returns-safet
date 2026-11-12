@@ -289,6 +289,25 @@ final class SvAmazonTenantReturnsOutbox
         return max(0,$stmt->rowCount());
     }
 
+    /**
+     * Owner decision 12/11/2026: SAFE-T discovery disregards cases without a
+     * refund date and cases refunded more than 90 days ago. Their pending
+     * discovery jobs are superseded: never read, never written externally.
+     */
+    public function supersedeDiscoveryWithoutRefundWindow(string $reason): int
+    {
+        $stmt=$this->prepare(
+            "UPDATE amazon_return_outbox o JOIN amazon_return_cases c ON c.id=o.case_id "
+            . "AND c.tenant_id=o.tenant_id AND c.amazon_connection_id=o.amazon_connection_id "
+            . "SET o.status='SUPERSEDED',o.locked_at=NULL,o.last_error=:last_error,o.updated_at=UTC_TIMESTAMP() "
+            . "WHERE o.tenant_id=:tenant_id AND o.amazon_connection_id=:amazon_connection_id "
+            . "AND o.status='PENDING' AND o.kind='SAFE_T_DISCOVERY' "
+            . "AND (c.refund_at IS NULL OR c.refund_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 90 DAY))"
+        );
+        $stmt->execute($this->scopeParams([':last_error'=>$this->errorMessage($reason)]));
+        return max(0,$stmt->rowCount());
+    }
+
     public function supersedeTerminalReadJobs(string $reason): int
     {
         $stmt=$this->prepare(

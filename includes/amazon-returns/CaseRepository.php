@@ -405,7 +405,7 @@ final class SvAmazonReturnCaseRepository
         $afterId=max(0,$afterId);
         $stmt=$this->prepare(
             "SELECT * FROM amazon_return_cases WHERE closed_at IS NULL AND (safe_t_id IS NULL OR safe_t_id='') "
-            . 'AND (refund_at IS NULL OR refund_at>=:refund_cutoff) '
+            . 'AND refund_at IS NOT NULL AND refund_at>=:refund_cutoff '
             . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
             . 'AND id>:after_id ORDER BY id LIMIT '.$limit
         );
