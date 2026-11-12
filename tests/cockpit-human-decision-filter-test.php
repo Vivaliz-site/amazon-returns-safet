@@ -18,3 +18,7 @@ chfSame(true,$attention->acceptsDecision($wait,'OPEN'),'Legacy call keeps previo
 chfSame(true,$attention->acceptsDecision(['action'=>'HUMAN_REVIEW'],null,null),'Human action without review stays attention.');
 chfSame(false,$attention->acceptsDecision(['action'=>'HUMAN_REVIEW'],'OPEN',false),'Operational review overrides generic action flag.');
 echo "cockpit-human-decision-filter-test OK\n";
+// Caso encerrado: o servidor deve classificar como não humano e fora da atenção.
+$src=(string)file_get_contents($root.'/admin/amazon-returns/api/cases.php');
+if(!str_contains($src,"'CLOSED_LOSS'")||!str_contains($src,'$caseClosed'))throw new RuntimeException('cases.php must force requires_human_decision=false for closed/terminal cases.');
+echo "closed-case contract OK\n";

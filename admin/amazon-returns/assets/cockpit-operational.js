@@ -1,9 +1,10 @@
 function operatorResponsibility(c){
+  // Caso encerrado nunca é decisão pendente, mesmo com ação ou revisão residual.
+  if(c?.closed_at||['RECOVERED','CLOSED_LOSS','RECEIVED_OK','APPEAL_DENIED_FINAL'].includes(String(c?.state||'')))return 'Caso concluído';
   const needsHuman=typeof c?.requires_human_decision==='boolean'
     ?c.requires_human_decision
     :(c?.review_status==='OPEN'||c?.current_action==='HUMAN_REVIEW'||c?.current_action==='BLOCKED_REVIEW');
   if(needsHuman)return 'Sua decisão é necessária';
-  if(['RECOVERED','CLOSED_LOSS','RECEIVED_OK'].includes(String(c?.state||'')))return 'Caso concluído';
   return 'Nenhuma ação sua é necessária';
 }
 function operatorCompactResponsibility(c){

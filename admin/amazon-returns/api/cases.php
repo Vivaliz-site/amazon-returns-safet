@@ -57,7 +57,8 @@ try{
         $decision=$coordinator->previewAction($case,$timeline,$policy,$now);
         $reviews=$p->reviews->forCase($caseId);$currentReview=null;
         for($i=count($reviews)-1;$i>=0;$i--){if(($reviews[$i]['status']??'')==='OPEN'){$currentReview=$reviews[$i];break;}}
-        $requiresHuman=$currentReview!==null?SvAmazonReviewOperations::requiresManualDecision($currentReview):null;
+        $caseClosed=($case['closed_at']??null)!==null||in_array((string)($case['state']??''),['RECOVERED','CLOSED_LOSS','RECEIVED_OK','APPEAL_DENIED_FINAL'],true);
+        $requiresHuman=$caseClosed?false:($currentReview!==null?SvAmazonReviewOperations::requiresManualDecision($currentReview):null);
         if(!$filters->acceptsDecision($decision,$currentReview['status']??null,$requiresHuman))continue;
         $apps=$p->ruleApplications->forCase($caseId);$app=$apps!==[]?$apps[array_key_last($apps)]:null;
         $history=$p->outbox->historyForCase($caseId);$lastWrite=null;
