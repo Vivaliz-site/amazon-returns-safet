@@ -1644,9 +1644,27 @@ async function openGeneralSupportRoute(cdp, job, narrative, asin, sku) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_TROUBLESHOOTER_EXHAUSTED', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
   }
 
+  // Seller Central has served this same terminal choice with English and
+  // Portuguese labels, and has changed the noun used for the FBA category
+  // across Help UI revisions. Keep the candidates semantic and explicit;
+  // never click an arbitrary enabled control as a fallback.
   const associateCategories = text(job.case?.program).toUpperCase() === 'FBA'
-    ? ['FBA related','A-to-z Claims']
-    : ['A-to-z Claims'];
+    ? [
+      'FBA related',
+      'FBA-related',
+      'FBA related issues',
+      'FBA issue',
+      'FBA Issues',
+      'FBA relacionado',
+      'Problemas relacionados ao FBA',
+      'Problemas com o FBA',
+      'Reembolso de devoluções com FBA - Logística da Amazon',
+      'A-to-z Claims',
+      'A-to-Z Claims',
+      'Reivindicações A a Z',
+      'Reivindicações A-to-z',
+    ]
+    : ['A-to-z Claims', 'A-to-Z Claims', 'Reivindicações A a Z', 'Reivindicações A-to-z'];
   const category = await clickFirstFrameTextWhenReady(cdp, associateCategories, 45000);
   if (!category) {
     return bridgeResult('UI_DRIFT', { reason: 'SUPPORT_GENERAL_CATEGORY_MISSING', retry_safe: true, evidence: await evidence(cdp, 'help-v1') });
