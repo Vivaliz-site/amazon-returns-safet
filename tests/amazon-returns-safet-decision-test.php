@@ -57,6 +57,9 @@ sdSame('WAIT', $engine->nextAction(eligibleCase(['reconciled_credit_amount'=>'19
 sdSame('WAIT', $engine->nextAction(eligibleCase(), [], ['eligible'=>false,'state'=>'AWAITING_RETURN'])['action'], 'Ineligible policy must wait.');
 sdSame('BLOCKED_REVIEW', $engine->nextAction(eligibleCase(), [], ['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'])['action'], 'Policy ambiguity must block a new claim.');
 sdSame('WAIT', $engine->nextAction(eligibleCase(['safe_t_id'=>'12797-64249-3531034','state'=>'SAFE_T_SUBMITTED']), [], $eligiblePolicy)['action'], 'Existing active claim suppresses duplicate submission.');
+$oldStatus=['case_id'=>77,'event_type'=>'SAFE_T_STATUS_OBSERVED','source'=>'SELLER_CENTRAL','occurred_at'=>'2026-09-01 00:00:00','payload'=>['safe_t_id'=>'12797-64249-3531034','claim_status'=>'PENDING']];
+sdSame('SAFE_T_READ', $engine->nextAction(eligibleCase(['safe_t_id'=>'12797-64249-3531034','state'=>'SAFE_T_SUBMITTED']), [$oldStatus], $eligiblePolicy, new DateTimeImmutable('2026-09-02 00:00:00',new DateTimeZone('UTC')))['action'], 'An active claim with stale status must be polled again.');
+sdSame('SAFE_T_READ', $engine->nextAction(eligibleCase(['safe_t_id'=>'12797-64249-3531034','state'=>'APPEAL_SUBMITTED']), [$oldStatus], $eligiblePolicy, new DateTimeImmutable('2026-09-02 00:00:00',new DateTimeZone('UTC')))['action'], 'A submitted appeal with stale status must be polled until terminal.');
 sdSame('WAIT', $engine->nextAction(eligibleCase(['safe_t_id'=>'12797-64249-3531034','state'=>'SAFE_T_SUBMITTED','refund_initiator'=>'UNKNOWN','seller_debit_at'=>null]), [], ['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED'])['action'], 'Existing claim lifecycle must not be blocked by historical eligibility facts that were never captured.');
 
 $analyzer = new SvAmazonDenialAnalyzer();
