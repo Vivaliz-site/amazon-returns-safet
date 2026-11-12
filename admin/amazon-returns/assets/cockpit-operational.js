@@ -271,12 +271,14 @@ function renderOperationalEvidence(c,timeline){
 }
 function renderAdminCaseControls(data){
  const c=data.case||{},section=sectionBlock('Ações administrativas','admin-case-controls');
- section.append(text('p','A operação automática continua ativa. Estas alterações são internas e não enviam comandos à Amazon.','admin-case-note'));
+ section.append(text('p','A operação automática continua ativa. Estas alterações são internas e não enviam comandos à Amazon. RECOVERED só encerra o caso após crédito financeiro conciliado.','admin-case-note'));
+ if(c.admin_recovery_claim?.pending)section.append(text('p',`Recuperação informada, aguardando conciliação financeira. Registro: ${c.admin_recovery_claim.actor||'Administrador'} — ${c.admin_recovery_claim.reason||'sem justificativa adicional'}`,'admin-case-warning'));
  if(c.admin_state_override?.state)section.append(text('p',`Última situação administrativa: ${stateLabel(c.admin_state_override.state)}. ${c.admin_state_override.actor||'Administrador'} — ${c.admin_state_override.reason||'sem justificativa adicional'}`,'admin-case-note'));
  if(String(c.state||'')==='RECOVERED'&&Number(c.outstanding_amount||0)>0)section.append(text('p','Classificação de recuperação não cria crédito financeiro. O valor só será reconhecido após conciliação.','admin-case-warning'));
  const form=document.createElement('form');form.className='admin-case-form';
  const action=document.createElement('select');action.name='action';
- const labels={CLOSE_LOSS:'Encerrar como perda',REOPEN:'Reabrir para revisão',MARK_RECOVERED:'Marcar como recuperado',REQUEST_REVIEW:'Solicitar nova análise interna',PREPARE_CONTESTATION:'Preparar contestação (interno)',SET_STATE:'Alterar situação',UPDATE_FIELDS:'Editar dados do caso'};
+ const moneyReconciled=Number(c.expected_reimbursement_amount||0)>0&&Number(c.reconciled_credit_amount||0)>=Number(c.expected_reimbursement_amount||0);
+ const labels={CLOSE_LOSS:'Encerrar como perda',REOPEN:'Reabrir para revisão',MARK_RECOVERED:moneyReconciled?'Confirmar recuperação conciliada':'Registrar indicação de recuperação',REQUEST_REVIEW:'Solicitar nova análise interna',PREPARE_CONTESTATION:'Preparar contestação (interno)',SET_STATE:'Alterar situação',UPDATE_FIELDS:'Editar dados do caso'};
  (data.admin_actions||Object.keys(labels)).forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=labels[v]||v;action.append(o);});
  const actionLabel=text('label','Ação administrativa');actionLabel.append(action);form.append(actionLabel);
  const stateSelect=document.createElement('select');(data.admin_states||[]).forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=stateLabel(v);stateSelect.append(o);});
