@@ -22,12 +22,32 @@ final class SvAmazonReturnsAdminAuth
         session_start();
     }
 
-    public static function verifyCredentials(string $username, string $password, ?array $credentials = null): bool
+    private static function configuredCredential(string $username): ?array
     {
-        $credentials ??= [
+        $usersJson = getenv('AMAZON_RETURNS_ADMIN_USERS_JSON');
+        if (is_string($usersJson) && trim($usersJson) !== '') {
+            try {
+                $users = json_decode($usersJson, true, 32, JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                return null;
+            }
+            if (!is_array($users)) return null;
+            foreach ($users as $canonicalUsername => $hash) {
+                if (!is_string($canonicalUsername) || !is_string($hash)) continue;
+                if (strcasecmp(trim($canonicalUsername), trim($username)) !== 0) continue;
+                return ['username'=>$canonicalUsername, 'password_hash'=>$hash];
+            }
+            return null;
+        }
+        return [
             'username'=>(string)(getenv('AMAZON_RETURNS_ADMIN_USERNAME') ?: ''),
             'password_hash'=>(string)(getenv('AMAZON_RETURNS_ADMIN_PASSWORD_HASH') ?: ''),
         ];
+    }
+
+    public static function verifyCredentials(string $username, string $password, ?array $credentials = null): bool
+    {
+        $credentials ??= self::configuredCredential($username) ?? [];
         $expected = trim((string)($credentials['username'] ?? ''));
         $hash = trim((string)($credentials['password_hash'] ?? ''));
         if ($expected === '' || $hash === '' || trim($username) === '' || $password === '') return false;
@@ -37,10 +57,11 @@ final class SvAmazonReturnsAdminAuth
     public static function login(string $username, string $password): bool
     {
         self::start();
-        if (!self::verifyCredentials($username, $password)) return false;
+        $credential = self::configuredCredential($username);
+        if ($credential === null || !self::verifyCredentials($username, $password, $credential)) return false;
         session_regenerate_id(true);
         $now=time();
-        $canonicalUsername = trim((string)(getenv('AMAZON_RETURNS_ADMIN_USERNAME') ?: $username));
+        $canonicalUsername = trim((string)($credential['username'] ?? $username));
         $_SESSION['amazon_returns_admin'] = [
             'username'=>$canonicalUsername !== '' ? $canonicalUsername : trim($username),
             'authenticated_at'=>$now,

@@ -11,6 +11,25 @@ aaAssert(SvAmazonReturnsAdminAuth::verifyCredentials('Fred','correct horse batte
 aaAssert(!SvAmazonReturnsAdminAuth::verifyCredentials('fred','wrong',$credentials),'Wrong password must fail.');
 aaAssert(!SvAmazonReturnsAdminAuth::verifyCredentials('other','correct horse battery staple',$credentials),'Wrong user must fail.');
 
+putenv('AMAZON_RETURNS_ADMIN_USERNAME=fred');
+putenv('AMAZON_RETURNS_ADMIN_PASSWORD_HASH='.$hash);
+putenv('AMAZON_RETURNS_ADMIN_USERS_JSON='.json_encode([
+    'Fred'=>$hash,
+    'returns-agent'=>password_hash('agent test password',PASSWORD_DEFAULT),
+], JSON_THROW_ON_ERROR));
+aaAssert(SvAmazonReturnsAdminAuth::verifyCredentials('RETURNS-AGENT','agent test password'),'Agent credential lookup must be case-insensitive.');
+aaAssert(!SvAmazonReturnsAdminAuth::verifyCredentials('returns-agent','wrong'),'Agent wrong password must fail.');
+aaAssert(!SvAmazonReturnsAdminAuth::verifyCredentials('unknown','agent test password'),'Unknown user must fail.');
+aaAssert(SvAmazonReturnsAdminAuth::login('RETURNS-AGENT','agent test password'),'Configured agent must log in.');
+aaAssert(SvAmazonReturnsAdminAuth::username()==='returns-agent','Session must store the configured canonical username.');
+SvAmazonReturnsAdminAuth::logout();
+putenv('AMAZON_RETURNS_ADMIN_USERS_JSON={malformed');
+aaAssert(!SvAmazonReturnsAdminAuth::verifyCredentials('fred','correct horse battery staple'),'Malformed users JSON must fail closed without legacy fallback.');
+putenv('AMAZON_RETURNS_ADMIN_USERS_JSON');
+aaAssert(SvAmazonReturnsAdminAuth::verifyCredentials('FRED','correct horse battery staple'),'Legacy single-admin credentials must remain compatible.');
+putenv('AMAZON_RETURNS_ADMIN_USERNAME');
+putenv('AMAZON_RETURNS_ADMIN_PASSWORD_HASH');
+
 SvAmazonReturnsAdminAuth::start();
 $_SESSION['amazon_returns_admin']=['username'=>'fred','authenticated_at'=>time()-43201,'last_seen_at'=>time()-43201];
 aaAssert(!SvAmazonReturnsAdminAuth::loggedIn(),'Admin sessions older than the absolute lifetime must expire.');
