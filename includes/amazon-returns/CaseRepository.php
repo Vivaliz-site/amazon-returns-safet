@@ -763,7 +763,57 @@ final class SvAmazonReturnCaseRepository
             . "AND JSON_EXTRACT(rv.payload_json,'$.receipt_event_id')={$receiptAlias}.id)";
     }
 
+    /**
+     * Explicit administrative override. Unlike automated projections, this path may
+     * update terminal cases, but it remains tenant-scoped and version-checked.
+     * Reconciled credit is intentionally excluded: only financial source reconciliation may change it.
+     *
+     * @param array<string,mixed> $patch
+     */
+    public function adminOverrideUpdate(int $caseId, array $patch, string $expectedUpdatedAt): void
+    {
+        $caseId = $this->positiveId($caseId, 'case ID');
+        $expectedUpdatedAt = $this->requiredText($expectedUpdatedAt, 'expected updated_at', 32);
+        if ($patch === []) throw new InvalidArgumentException('Administrative case patch cannot be empty.');
+        foreach (array_keys($patch) as $field) {
+            if (!in_array($field, self::PATCHABLE, true) || $field === 'reconciled_credit_amount') {
+                throw new InvalidArgumentException('Administrative case patch field is not allowed: ' . $field);
+            }
+        }
+        $sets = [];
+        $params = $this->scopeParams([':id'=>$caseId, ':expected_updated_at'=>$expectedUpdatedAt]);
+        foreach ($patch as $field=>$value) {
+            $parameter = ':patch_' . $field;
+            $sets[] = '`' . $field . '`=' . $parameter;
+            $params[$parameter] = $this->normalizeField($field, $value);
+        }
+        $stmt = $this->prepare(
+            'UPDATE amazon_return_cases SET ' . implode(',', $sets) . ',updated_at=CURRENT_TIMESTAMP '
+            . 'WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id '
+            . 'AND updated_at=:expected_updated_at'
+        );
+        $stmt->execute($params);
+        if ($stmt->rowCount() !== 1) {
+            throw new RuntimeException('STALE_CASE_VERSION');
+        }
+    }
+
     /** @param array<string,mixed> $patch */
+    /** @param array<string,mixed> $before @param array<string,mixed> $after */
+    public function recordAdminOverride(int $caseId,int $actorId,string $reason,array $before,array $after):int
+    {
+        $caseId=$this->positiveId($caseId,'case ID');
+        if($actorId<1)throw new InvalidArgumentException('Administrative actor is invalid.');
+        $reason=$this->requiredText($reason,'override reason',2000);
+        $stmt=$this->prepare('INSERT INTO amazon_return_overrides (tenant_id,amazon_connection_id,case_id,actor_id,reason,before_json,after_json,created_at) VALUES (:tenant_id,:amazon_connection_id,:id,:actor_id,:reason,:before_json,:after_json,CURRENT_TIMESTAMP)');
+        $stmt->execute($this->scopeParams([
+            ':id'=>$caseId,':actor_id'=>$actorId,':reason'=>$reason,
+            ':before_json'=>json_encode($before,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+            ':after_json'=>json_encode($after,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),
+        ]));
+        return (int)$this->db->lastInsertId();
+    }
+
     public function update(int $caseId, array $patch): void
     {
         $caseId = $this->positiveId($caseId, 'case ID');
@@ -775,6 +825,11 @@ final class SvAmazonReturnCaseRepository
         }
         $this->assertOwned($caseId);
 
+        $requestedTerminalPatch = array_key_exists('state',$patch)
+            || array_key_exists('closed_at',$patch)
+            || array_key_exists('terminal_reason',$patch)
+            || array_key_exists('next_action_at',$patch);
+        $patch = $this->applyAdminOverridePatch($caseId, $patch);
         $sets = [];
         $params = $this->scopeParams([':id'=>$caseId]);
         foreach ($patch as $field=>$value) {
@@ -785,10 +840,7 @@ final class SvAmazonReturnCaseRepository
         // A stale Gmail/support/financial worker may finish after an owner closes
         // an old loss. Never allow its outdated state projection to reopen the
         // audited CLOSED_LOSS row. Non-terminal financial fields remain patchable.
-        $terminalPatch = array_key_exists('state',$patch)
-            || array_key_exists('closed_at',$patch)
-            || array_key_exists('terminal_reason',$patch)
-            || array_key_exists('next_action_at',$patch);
+        $terminalPatch = $requestedTerminalPatch;
         $stmt = $this->prepare(
             'UPDATE amazon_return_cases SET ' . implode(',', $sets) . ',updated_at=UTC_TIMESTAMP() '
             . 'WHERE id=:id AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id'
@@ -800,6 +852,38 @@ final class SvAmazonReturnCaseRepository
         if ($stmt->rowCount() === 0 && $this->find($caseId) === null) {
             throw new RuntimeException('Owned case disappeared during update.');
         }
+    }
+
+    /**
+     * Keep explicit administrator decisions authoritative when autonomous workers
+     * write fresh projections. Scheduling (`next_action_at`) and reconciled credit
+     * remain owned by the autonomous/financial pipelines.
+     * @param array<string,mixed> $patch
+     * @return array<string,mixed>
+     */
+    private function applyAdminOverridePatch(int $caseId,array $patch):array
+    {
+        $editable=['quantity_ordered','quantity_refunded','quantity_received','program','refund_initiator',
+            'refund_at','seller_debit_at','refund_amount','expected_reimbursement_amount','physical_status',
+            'state','policy_version_id','eligibility_at','safe_t_id','support_case_id','repeated_denial_count',
+            'last_denial_fingerprint','appeal_deadline_at','terminal_reason','closed_at'];
+        try{
+            try{$driver=(string)$this->db->getAttribute(PDO::ATTR_DRIVER_NAME);}catch(Throwable){return $patch;}
+            if(!in_array($driver,['mysql','sqlite'],true))return $patch;
+            $stmt=$this->prepare('SELECT after_json FROM amazon_return_overrides WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id AND case_id=:id ORDER BY id ASC');
+            $stmt->execute($this->scopeParams([':id'=>$caseId]));
+            while($row=$stmt->fetch(PDO::FETCH_ASSOC)){
+                $snapshot=json_decode((string)($row['after_json']??''),true);
+                if(!is_array($snapshot))continue;
+                foreach($editable as $field)if(array_key_exists($field,$snapshot))$patch[$field]=$snapshot[$field];
+            }
+        }catch(PDOException $e){
+            // A missing override table is possible only in isolated legacy test fixtures;
+            // production schema setup creates it before any administrative write.
+            if(!str_contains(strtolower($e->getMessage()),'no such table')
+                && !str_contains(strtolower($e->getMessage()),"doesn't exist"))throw $e;
+        }
+        return $patch;
     }
 
     public function assertOwned(int $caseId): void

@@ -14,6 +14,7 @@ final class SvAmazonCockpitTimeline
         'review_outcome','review_suggested_action','review_excerpt','promised_date','deadline_at',
         'appeal_deadline_at','state','physical_status','resume_scope','gmail_message_id','gmail_thread_id',
         'return_tracking_id','return_tracking_ids','invoice_number','return_reason','tracking_id','carrier',
+        'actor','actor_id','request_id','override_id','recovery_claim_pending','external_operation','financial_credit_changed','before','after',
     ];
     private const SECRET_KEYS=[
         'access_token','refresh_token','client_secret','password','cookie','authorization','mfa','otp',
@@ -148,6 +149,7 @@ final class SvAmazonCockpitTimeline
         $type=strtoupper($type);$source=strtoupper($source);
         if($type==='SELLER_CENTRAL_ACTION_RESULT' || str_contains($type,'EMAIL_REVIEW_RESPONSE'))return 'AMAZON_RESPONSE';
         if($source==='FINANCES' || str_contains($type,'FINANC') || str_contains($type,'REIMBURSE'))return 'FINANCIAL';
+        if(str_contains($type,'ADMIN_CASE_OVERRIDE'))return 'DECISION';
         if(str_contains($type,'RULE'))return 'RULE';
         if(str_contains($type,'DECISION') || str_contains($type,'HUMAN_REVIEW'))return 'DECISION';
         if(str_contains($type,'ERROR') || str_contains($type,'FAILED') || str_contains($type,'DEAD_LETTER'))return 'ERROR';
@@ -156,6 +158,7 @@ final class SvAmazonCockpitTimeline
     private static function eventTitle(string $type):string
     {
         return match(strtoupper(trim($type))){
+            'ADMIN_CASE_OVERRIDE'=>'Alteração administrativa registrada',
             'SELLER_CENTRAL_ACTION_RESULT'=>'Resposta Amazon / resultado de escrita',
             'SAFE_T_EMAIL_REVIEW_RESPONSE'=>'Resposta Amazon por e-mail',
             'SAFE_T_STATUS_OBSERVED'=>'Status SAFE-T observado',

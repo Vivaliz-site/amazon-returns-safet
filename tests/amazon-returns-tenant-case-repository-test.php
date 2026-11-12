@@ -184,7 +184,7 @@ foreach ($db->executed as $execution) {
 }
 
 $source = (string)file_get_contents(__DIR__ . '/../includes/amazon-returns/CaseRepository.php');
-foreach (['tenant_id','amazon_connection_id','PATCHABLE','FOR UPDATE'] as $needle) {
+foreach (['tenant_id','amazon_connection_id','PATCHABLE','FOR UPDATE','applyAdminOverridePatch'] as $needle) {
     crAssert(str_contains($source, $needle), 'Repository source missing structural guard: ' . $needle);
 }
 

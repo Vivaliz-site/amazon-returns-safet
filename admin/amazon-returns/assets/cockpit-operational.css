@@ -5,3 +5,12 @@
 .operator-glance{display:grid;grid-template-columns:minmax(220px,.7fr) minmax(0,1.3fr);gap:12px;align-items:stretch}.operator-glance .operator-section,.operator-glance .money-headlines{margin:12px 0}.glance-action{display:flex;align-items:center}.glance-action>div{width:100%}.operations-detail{margin:14px 0;border:1px solid #e1e5ea;border-radius:14px;background:#fff;padding:0 14px}.operations-detail>summary{cursor:pointer;min-height:48px;display:flex;align-items:center;font-weight:800}.operations-detail-body{padding:0 0 14px}.case-secondary{padding:0 14px}.case-secondary>summary{cursor:pointer;min-height:48px;display:flex;align-items:center;font-weight:800}.case-secondary[open]{padding-bottom:14px}.case-row-deadline{display:flex;flex-direction:column;gap:3px;min-width:0}.case-row-deadline strong{overflow-wrap:anywhere}@media(max-width:980px){.operator-glance{grid-template-columns:1fr}.operator-glance .operator-section,.operator-glance .money-headlines{margin:8px 0}}
 .case-detail{position:sticky;top:12px;align-self:start;max-height:calc(100vh - 24px);overflow:auto}.case-detail-back{display:none}.operational-case-row.is-selected{outline:2px solid #98a2b3;outline-offset:1px}
 @media(max-width:600px){.workspace>.case-detail{display:none;position:static;max-height:none;overflow:visible}.workspace.mobile-detail-open>section{display:none}.workspace.mobile-detail-open>.case-detail{display:block}.case-detail-back{display:inline-flex;align-items:center;min-height:44px;border:0;border-radius:9px;padding:9px 12px;margin-bottom:10px;background:#eef1f4;color:#17202a;font-weight:800;cursor:pointer}}
+.admin-case-controls{border:1px solid var(--line,#d8dee8);border-radius:12px;padding:14px;margin-top:14px;background:var(--panel,#fff)}
+.admin-case-note,.admin-case-warning{margin:0 0 10px;color:var(--muted,#667085);font-size:.9rem;line-height:1.45}
+.admin-case-warning{color:#8a4b08;background:#fff7e6;border-radius:8px;padding:9px}
+.admin-case-form{display:grid;gap:10px}
+.admin-case-form label{display:grid;gap:5px;font-weight:600;font-size:.9rem}
+.admin-case-form input,.admin-case-form select,.admin-case-form textarea{width:100%;min-width:0;border:1px solid var(--line,#cfd5df);border-radius:8px;padding:9px;background:var(--surface,#fff);color:inherit;font:inherit}
+.admin-case-form [hidden]{display:none!important}
+.admin-case-feedback{min-height:1.3em;color:var(--muted,#667085);font-size:.88rem}
+.admin-case-submit{justify-self:start}

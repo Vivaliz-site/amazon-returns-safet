@@ -7,6 +7,7 @@ $reviewAiCsrf=SvAmazonReturnsCsrf::token('review-ai');
 $reviewPreviewCsrf=SvAmazonReturnsCsrf::token('review-preview');
 $reviewDecisionCsrf=SvAmazonReturnsCsrf::token('review-decision');
 $ruleStatusCsrf=SvAmazonReturnsCsrf::token('rule-status');
+$caseAdminActionCsrf=SvAmazonReturnsCsrf::token('case-admin-action');
 $assetVersion = static function (string $filename): string {
     $hash = hash_file('sha256', __DIR__ . '/assets/' . $filename);
     return is_string($hash) ? substr($hash, 0, 16) : 'unversioned';
@@ -48,6 +49,7 @@ $assetVersion = static function (string $filename): string {
 <input type="hidden" id="review-preview-csrf" value="<?=htmlspecialchars($reviewPreviewCsrf,ENT_QUOTES,'UTF-8')?>">
 <input type="hidden" id="review-decision-csrf" value="<?=htmlspecialchars($reviewDecisionCsrf,ENT_QUOTES,'UTF-8')?>">
 <input type="hidden" id="rule-status-csrf" value="<?=htmlspecialchars($ruleStatusCsrf,ENT_QUOTES,'UTF-8')?>">
+<input type="hidden" id="case-admin-action-csrf" value="<?=htmlspecialchars($caseAdminActionCsrf,ENT_QUOTES,'UTF-8')?>">
 <div id="review-meta"></div><button type="button" id="review-suggest">Gerar recomendação</button><div id="review-suggestion" aria-live="polite"></div>
 <label>O que deseja fazer?<select id="review-final-action"><option value="CHECK_FINANCES">Verificar financeiro</option><option value="SAFE_T_SUBMIT">Solicitar ressarcimento SAFE-T</option><option value="SAFE_T_APPEAL">Recorrer no SAFE-T</option><option value="SAFE_T_EMAIL_REVIEW">Pedir nova análise por e-mail</option><option value="SAFE_T_EMAIL_REPLY">Responder à Amazon por e-mail</option><option value="SELLER_SUPPORT_OPEN">Abrir atendimento com a Amazon</option><option value="SELLER_SUPPORT_UPDATE">Atualizar atendimento com a Amazon</option><option value="WAIT">Aguardar nova informação</option><option value="CLOSE_LOSS">Encerrar como perda</option></select></label>
 <label>Usar qual data?<select id="review-date-binding"><option value="NONE">Nenhuma data específica</option><option value="PROMISED_DATE">Data prometida pela Amazon</option><option value="APPEAL_DEADLINE">Prazo para recurso</option></select></label>
