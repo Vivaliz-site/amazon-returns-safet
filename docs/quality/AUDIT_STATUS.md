@@ -2,6 +2,15 @@
 
 **Status corrente:** NÃO APTO — auditoria extrema V5 em andamento em 2026-09-24.
 
+## 2026-11-12 — #532: cache dos assets e instruções do usuário de agente integrados
+
+- **Achado:** a correção do rótulo `CLOSED_LOSS` e da URL da aba `Revisões` ficou inicialmente fora do `main`; mesmo após a integração, tags estáticas de assets permitiam JavaScript antigo em sessões com cache.
+- **Correção integrada:** PR #667 levou a correção funcional; PR #668 (`827a175`) passou a gerar a versão dos assets a partir do hash SHA-256 do próprio arquivo e documentou o usuário canônico `returns-agent`, sem expor credenciais nem habilitar escritas externas. PR #670 (`8b2cc52`) alinhou o contrato do helper de revisões ao mesmo mecanismo.
+- **Prevenção/regressão:** contratos Node/PHP do cockpit exigem URLs versionadas por conteúdo e rejeitam versões legadas; a reauditoria deve verificar HTML, conteúdo servido e jornada real em nova sessão.
+- **Validação local desta rodada:** 9/9 testes focais do cockpit e contratos PHP relacionados passaram; a suíte Node no host Windows permaneceu 294/297, com as três falhas preexistentes de `seller-central-managed-lock` (2) e `seller-support-hill-expression` (1).
+- **Pendências de aptidão:** deploy imutável do SHA `8b2cc52`, reauditoria visual publicada do #1263 e da aba `Revisões`, reconciliação do runtime e certifier oficial para o mesmo release. Nenhuma escrita Amazon foi executada.
+- **Estado:** NAO_APTO até concluir os gates de deploy, pós-deploy e certificação.
+
 O SHA atualmente implantado é `069fdf712498a5eca81870eeaeee6a4d4a4396ef`. A evidência live de 2026-09-24 mostra health `DEGRADED`, com falha de Gmail OAuth/refund reconciliation e outbox SAFE-T em `UI_DRIFT: SAFE_T_SUBREASON_OPTION_MISSING`. A certificação histórica abaixo não cobre este SHA nem este estado operacional e não pode ser reutilizada como prova de aptidão corrente.
 
 ## Última auditoria historicamente válida
