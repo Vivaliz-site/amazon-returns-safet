@@ -20,15 +20,19 @@ $db->exec('CREATE TABLE amazon_return_cases (
     safe_t_id TEXT
 )');
 $insert = $db->prepare('INSERT INTO amazon_return_cases
-    (id, tenant_id, amazon_connection_id, closed_at, safe_t_id)
-    VALUES (?, ?, ?, ?, ?)');
+    (id, tenant_id, amazon_connection_id, closed_at, safe_t_id, refund_at)
+    VALUES (?, ?, ?, ?, ?, ?)');
+// Discovery requires a known refund date inside 90 days (owner decision 12/11/2026).
+$recentRefund = gmdate('Y-m-d H:i:s', time() - 30 * 86400);
 for ($id = 1; $id <= 311; $id++) {
     $tenant = ($id >= 276 && $id <= 287) ? 2 : 1;
     $connection = ($id >= 288 && $id <= 299) ? 2 : 1;
     $closedAt = ($id >= 300 && $id <= 305) ? '2026-11-01 00:00:00' : null;
     $safeT = $id >= 306 ? 'EXISTING-CLAIM' : null;
-    $insert->execute([$id, $tenant, $connection, $closedAt, $safeT]);
+    $insert->execute([$id, $tenant, $connection, $closedAt, $safeT, $recentRefund]);
 }
+// Cases without a refund date are never discovery candidates.
+$insert->execute([400, 1, 1, null, null, null]);
 
 $repo = new SvAmazonReturnCaseRepository($db, new SvAmazonTenantContext(1, 1));
 $cursor = 0;
