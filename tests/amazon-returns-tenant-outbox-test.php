@@ -215,7 +215,7 @@ $scopeDb = new TenantOutboxMemoryPdo();
 $scopeOutbox = new SvAmazonTenantReturnsOutbox($scopeDb, $context);
 $scopeKey = $scopeOutbox->deterministicKey('SELLER_SUPPORT_UPDATE', 77, 'support-scope-22449931941');
 $scopePayload = ['order_id'=>'702-9207715-8524262','support_case_id'=>'22449931941'];
-$scopeDb->queue(['fetch'=>['id'=>77]]);
+$scopeDb->queue(['fetch'=>['id'=>77,'support_case_id'=>'22449931941']]);
 $scopeDb->queue(['throw'=>outboxDuplicate()]);
 $scopeDb->queue(['fetch'=>[
     'id'=>406,'status'=>'SUPERSEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
@@ -237,6 +237,25 @@ toAssert(!str_contains((string)($scopeReactivation[0]['sql']??''),'payload_json=
 toSame('22449931941',$scopeReactivation[0]['params'][':previous_support_case_id']??null,'Scope recovery must bind the validated previous Seller Support scope.');
 toAssert(str_contains((string)($scopeReactivation[0]['sql']??''),'payload_json=CAST(:previous_payload_json AS JSON)'),'Scope recovery must compare the complete selected JSON payload as a JSON value for full-row CAS.');
 toSame('{"order_id":"702-9207715-8524262","support_case_id":"22449931941"}',$scopeReactivation[0]['params'][':previous_payload_json']??null,'Scope recovery must bind the exact payload read before the guarded update.');
+
+// A previously superseded update cannot be rearmed while the case points at
+// another verified Seller Support thread. The bridge already rejects it as stale.
+$scopeStaleDb = new TenantOutboxMemoryPdo();
+$scopeStaleOutbox = new SvAmazonTenantReturnsOutbox($scopeStaleDb,$context);
+$scopeStaleDb->queue(['fetch'=>['id'=>77,'support_case_id'=>'22449931942']]);
+$scopeStaleDb->queue(['throw'=>outboxDuplicate()]);
+$scopeStaleDb->queue(['fetch'=>[
+    'id'=>409,'status'=>'SUPERSEDED','attempt_count'=>15,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
+    'last_error'=>'SELLER_SUPPORT_SCOPE_SUPERSEDED',
+    'payload_json'=>'{"support_case_id":"22449931941"}',
+]]);
+$scopeStaleDb->queue(['row_count'=>1]);
+$scopeStaleResult=$scopeStaleOutbox->enqueueResult('SELLER_SUPPORT_UPDATE',77,['support_case_id'=>'22449931941'],$scopeKey);
+toSame(false,$scopeStaleResult['enqueued']??null,'Stale scoped update must remain superseded while the actual case points at a different thread.');
+toSame([],array_values(array_filter(
+    $scopeStaleDb->executed,
+    static fn(array $e): bool => str_contains((string)($e['sql']??''),"SET status='PENDING'")
+)),'A stale support reference must not be rearmed only to be superseded again by bridge preflight.');
 
 $scopeMismatchDb = new TenantOutboxMemoryPdo();
 $scopeMismatchOutbox = new SvAmazonTenantReturnsOutbox($scopeMismatchDb,$context);
