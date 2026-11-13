@@ -106,7 +106,7 @@ final class SvAmazonTenantReturnsOutbox
             && ((int)($row['attempt_count'] ?? -1) === 0 || $temporaryDecisionSupersede || $scopeSupersede)
             && (string)($row['kind'] ?? '') === $kind
             && (int)($row['case_id'] ?? 0) === $caseId) {
-            $reactivationGuard="(attempt_count=0 OR last_error LIKE 'SUPERSEDED_BY_CURRENT_DECISION:%'";
+            $reactivationGuard="((attempt_count=0 AND COALESCE(last_error,'')<>'SELLER_SUPPORT_SCOPE_SUPERSEDED') OR last_error LIKE 'SUPERSEDED_BY_CURRENT_DECISION:%'";
             $reactivationParams=[
                 ':id'=>$id,
                 ':payload_json'=>json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
@@ -114,9 +114,10 @@ final class SvAmazonTenantReturnsOutbox
                 ':case_id'=>$caseId,
             ];
             if($scopeSupersede){
-                $reactivationGuard.=" OR (last_error='SELLER_SUPPORT_SCOPE_SUPERSEDED' AND payload_json=CAST(:previous_payload_json AS JSON) AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.support_case_id'))=:previous_support_case_id)";
+                $reactivationGuard.=" OR (last_error='SELLER_SUPPORT_SCOPE_SUPERSEDED' AND payload_json=CAST(:previous_payload_json AS JSON) AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.support_case_id'))=:previous_support_case_id AND EXISTS (SELECT 1 FROM amazon_return_cases c WHERE c.id=amazon_return_outbox.case_id AND c.tenant_id=amazon_return_outbox.tenant_id AND c.amazon_connection_id=amazon_return_outbox.amazon_connection_id AND c.support_case_id=:persisted_support_case_id))";
                 $reactivationParams[':previous_payload_json']=$previousPayloadJson;
                 $reactivationParams[':previous_support_case_id']=$previousScope;
+                $reactivationParams[':persisted_support_case_id']=$previousScope;
             }
             $reactivationGuard.=')';
             $reactivate = $this->prepare(
