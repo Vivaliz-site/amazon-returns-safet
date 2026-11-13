@@ -6,7 +6,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/Config.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
-SvAmazonReturnsAdminAuth::requireLogin(true);
+SvAmazonReturnsAdminAuth::requireLogin(true);SvAmazonReturnsAdminAuth::releaseSessionLock();
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 function sv_amz_rules_reply(array $p,int $s=200):never{http_response_code($s);echo json_encode($p,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);exit;}
 try{

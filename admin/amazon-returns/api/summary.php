@@ -8,7 +8,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitHealth.php';
-SvAmazonReturnsAdminAuth::requireLogin(true);
+SvAmazonReturnsAdminAuth::requireLogin(true);SvAmazonReturnsAdminAuth::releaseSessionLock();
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');

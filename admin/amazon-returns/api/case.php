@@ -16,7 +16,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/SafeTDecisionEngine.php'
 require_once __DIR__.'/../../../includes/amazon-returns/DecisionCoordinator.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CaseConsultation.php';
 require_once __DIR__.'/../../../includes/amazon-returns/ErpSalesReturnPresentation.php';
-SvAmazonReturnsAdminAuth::requireLogin(true);
+SvAmazonReturnsAdminAuth::requireLogin(true);SvAmazonReturnsAdminAuth::releaseSessionLock();
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 function sv_amz_case_reply(array $payload,int $status=200):never{http_response_code($status);echo json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);exit;}
 
