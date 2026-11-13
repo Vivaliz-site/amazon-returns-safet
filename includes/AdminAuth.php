@@ -8,9 +8,11 @@ final class SvAmazonReturnsAdminAuth
     private const IDLE_TIMEOUT_SECONDS = 3600;
     private const ABSOLUTE_TIMEOUT_SECONDS = 43200;
 
+    private static bool $lockReleased = false;
+
     public static function start(): void
     {
-        if (session_status() === PHP_SESSION_ACTIVE) return;
+        if (self::$lockReleased || session_status() === PHP_SESSION_ACTIVE) return;
         session_name('amazon_returns_admin');
         session_set_cookie_params([
             'lifetime'=>0,
@@ -100,6 +102,17 @@ final class SvAmazonReturnsAdminAuth
             echo json_encode(['success'=>false,'error'=>'Authentication required.']); exit;
         }
         header('Location: /login.php', true, 302); exit;
+    }
+
+    /**
+     * Libera a trava da sessão em endpoints somente leitura. A sessão já
+     * autenticada continua legível em $_SESSION, mas não é mais gravada nem
+     * reaberta neste request, então requisições paralelas não ficam em fila.
+     */
+    public static function releaseSessionLock(): void
+    {
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+        self::$lockReleased = true;
     }
 
     public static function username(): string

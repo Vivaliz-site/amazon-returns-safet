@@ -7,7 +7,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/Schema.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/ReviewOperations.php';
-SvAmazonReturnsAdminAuth::requireLogin(true);header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
+SvAmazonReturnsAdminAuth::requireLogin(true);SvAmazonReturnsAdminAuth::releaseSessionLock();header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 function sv_amz_reviews_reply(array $p,int $s=200):never{http_response_code($s);echo json_encode($p,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);exit;}
 try{
  $db=amazon_returns_pdo();if(!$db instanceof PDO)sv_amz_reviews_reply(['success'=>false,'error'=>'Banco indisponível.'],503);SvAmazonReturnsSchema::ensure($db);
