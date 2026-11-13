@@ -286,6 +286,15 @@ function renderOperationalEvidence(c,timeline){
   if(returnInvoiceDisplay(c))details.append(text('p',`Nota fiscal de devolução: ${returnInvoiceDisplay(c)}.`));
   block.append(details);return block;
 }
+function normalizeAdminAmountInput(value){
+ const raw=String(value??'').trim();
+ // Aceitar decimal com ponto, vírgula e agrupamentos BR/EN sem mudar escalas.
+ if(/^-?\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/.test(raw))return raw.replace(/\./g,'').replace(',','.');
+ if(/^-?\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?$/.test(raw))return raw.replace(/,/g,'');
+ if(/^-?\d+(?:,\d{1,2})?$/.test(raw))return raw.replace(',','.');
+ // Não inventar conversão para formatos ambíguos: validação segue no backend.
+ return raw;
+}
 function renderAdminCaseControls(data){
  const c=data.case||{},section=sectionBlock('Ações administrativas','admin-case-controls');
  section.append(text('p','A operação automática continua ativa. Estas alterações são internas e não enviam comandos à Amazon. RECOVERED só encerra o caso após crédito financeiro conciliado.','admin-case-note'));
@@ -308,7 +317,7 @@ function renderAdminCaseControls(data){
  const feedback=text('div','','admin-case-feedback');feedback.setAttribute('role','status');form.append(feedback);
  const submit=button('Salvar alteração',async()=>{
   const chosen=action.value,patch={};if(chosen==='SET_STATE')patch.state=stateSelect.value;
-  if(chosen==='UPDATE_FIELDS'){const raw=value.value.trim();if(!raw){feedback.textContent='Informe o novo valor.';return;}patch[fieldSelect.value]=['quantity_ordered','quantity_refunded','quantity_received'].includes(fieldSelect.value)?Number(raw):(['refund_amount','expected_reimbursement_amount'].includes(fieldSelect.value)?raw.replace(/\./g,'').replace(',','.'):raw);}
+  if(chosen==='UPDATE_FIELDS'){const raw=value.value.trim();if(!raw){feedback.textContent='Informe o novo valor.';return;}patch[fieldSelect.value]=['quantity_ordered','quantity_refunded','quantity_received'].includes(fieldSelect.value)?Number(raw):(['refund_amount','expected_reimbursement_amount'].includes(fieldSelect.value)?normalizeAdminAmountInput(raw):raw);}
   if(!reason.value.trim()){feedback.textContent='A justificativa é obrigatória.';return;}
   if(!window.confirm(`Confirmar ${labels[chosen]} no pedido ${c.amazon_order_id||c.id}? A alteração será registrada e não enviará ação externa à Amazon.`))return;
   submit.disabled=true;feedback.textContent='Salvando…';
