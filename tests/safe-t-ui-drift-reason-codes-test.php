@@ -48,6 +48,10 @@ final class UiDriftReasonStatement extends PDOStatement
             'UI_DRIFT: SAFE_T_EXACT_SEARCH_ABSENCE_UNVERIFIED',
             'UI_DRIFT: SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED',
             'UI_DRIFT: SAFE_T_DISCOVERY_PAGE_LIMIT_REACHED',
+            'UI_DRIFT: SUPPORT_CHAT_POPUP_MISSING',
+            'UI_DRIFT: SUPPORT_CHAT_MESSAGE_NOT_WRITABLE',
+            'UI_DRIFT: SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE',
+            'UI_DRIFT: SUPPORT_WRITE_WITHOUT_READBACK_ID',
             'UI_DRIFT: UNEXPECTED_FUTURE_REASON',
         ];
     }
@@ -61,6 +65,10 @@ $expected = [
     'SAFE_T_EXACT_SEARCH_ABSENCE_UNVERIFIED',
     'SAFE_T_DISCOVERY_LIST_COVERAGE_UNVERIFIED',
     'SAFE_T_DISCOVERY_PAGE_LIMIT_REACHED',
+    'SUPPORT_CHAT_POPUP_MISSING',
+    'SUPPORT_CHAT_MESSAGE_NOT_WRITABLE',
+    'SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE',
+    'SUPPORT_WRITE_WITHOUT_READBACK_ID',
     'OTHER',
 ];
 $actual = $outbox->pendingUiDriftReasonCodes();
@@ -68,6 +76,11 @@ assertDriftReasons($actual === $expected, 'Known reasons must be visible and unk
 
 $submitWorker = (string) file_get_contents(__DIR__.'/../scripts/amazon-returns/seller-central-bridge-worker.mjs');
 assertDriftReasons(str_contains($submitWorker, "reason: 'SAFE_T_QUANTITY_INPUT_MISSING'"), 'Missing submit-worker reason contract.');
+// Diagnostico deve apresentar os codigos emitidos pelo bridge, nao mascarar como OTHER.
+foreach (['SUPPORT_CHAT_POPUP_MISSING','SUPPORT_CHAT_MESSAGE_NOT_WRITABLE','SUPPORT_CASE_LOOKUP_UNAVAILABLE_AFTER_WRITE','SUPPORT_WRITE_WITHOUT_READBACK_ID'] as $code) {
+    assertDriftReasons(str_contains($submitWorker, "reason: '".$code."'"), 'Missing Seller Support emitted reason: '.$code);
+}
+
 $discovery = (string) file_get_contents(__DIR__.'/../scripts/amazon-returns/safe-t-discovery-exact-search.mjs');
 foreach (array_slice($expected, 1, 3) as $code) {
     assertDriftReasons(str_contains($discovery, "reason: '".$code."'"), 'Missing discovery reason contract: '.$code);
