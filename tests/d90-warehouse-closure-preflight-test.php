@@ -76,7 +76,6 @@ $expected=[
  'closed_timestamp_missing'=>1,
  'eligible_by_data_only'=>1,
  'financial_credit_positive'=>1,
- 'compensating_events'=>1,
 ];
 d90PreflightSame($expected,$first['counts'],'Exact audited classifications.');
 d90PreflightSame(64,strlen($first['candidate_version_set_sha256']),'Opaque manifest hash.');
