@@ -113,12 +113,21 @@ function collapsibleCaseBlock(title,className=''){
 function externalWriteSummary(c){
   const write=c?.last_external_write;if(!write)return null;
   const action=actionLabel(write.kind),status=String(write.status||'').toUpperCase(),at=write.updated_at||write.created_at;
-  const when=at?` em ${date(at)}`:'';
-  if(['PENDING','QUEUED'].includes(status))return `Última ação programada: ${action}${when}. Ela ainda aguarda execução.`;
+  const attention=String(write.attention_code||'').toUpperCase(),when=at?` em ${date(at)}`:'';
+  if(['PENDING','QUEUED'].includes(status)){
+    if(attention==='EXTERNAL_ID_UNCONFIRMED')return `A tentativa de ${action.toLowerCase()} ainda aguarda confirmação do identificador oficial${when}. Consulte a Seller Central antes de repetir.`;
+    return `Última ação programada: ${action}${when}. Ela ainda aguarda execução.`;
+  }
   if(status==='PROCESSING')return `Última ação em execução: ${action}${when}.`;
-  if(['FAILED','ERROR','DEAD','CANCELLED'].includes(status))return `A última tentativa de ${action.toLowerCase()} não foi concluída${when}. O sistema deve tentar novamente.`;
-  if(['SUCCEEDED','SUCCESS','ALREADY_EXISTS'].includes(status))return `Última ação concluída: ${action}${when}.`;
-  return `Última ação registrada: ${action}${when}.`;
+  if(['FAILED','ERROR','DEAD','CANCELLED'].includes(status))return `A última tentativa de ${action.toLowerCase()} não teve conclusão confirmada${when}. Verifique o resultado externo antes de repetir.`;
+  if(['SUCCEEDED','SUCCESS','ALREADY_EXISTS'].includes(status))return `O processamento interno de ${action} foi registrado${when}. Esse status, isoladamente, não comprova aceite da Amazon nem crédito financeiro.`;
+  if(status==='SUPERSEDED'){
+    if(attention==='HUMAN_INTERVENTION_REQUIRED')return `A tentativa de ${action.toLowerCase()} exigiu intervenção de operador${when}. Este registro não confirma recebimento pela Amazon; consulte a Seller Central antes de repetir.`;
+    if(attention==='SUPPORT_REFERENCE_CHANGED')return `A atualização de ${action.toLowerCase()} foi descartada porque a referência do chamado mudou${when}. Não representa confirmação de novo envio.`;
+    if(attention==='DECISION_CHANGED')return `A ação programada de ${action} deixou de ser aplicável após nova decisão${when}. Não representa confirmação de envio externo.`;
+    return `A ação programada de ${action} foi substituída no controle interno${when}. Isso não comprova envio à Amazon.`;
+  }
+  return `Última ação registrada: ${action}${when}. O resultado externo ainda deve ser conferido.`;
 }
 function operatorLastAction(c){
   const writeSummary=externalWriteSummary(c);if(writeSummary)return writeSummary;
