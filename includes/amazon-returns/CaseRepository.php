@@ -600,6 +600,28 @@ final class SvAmazonReturnCaseRepository
     }
 
     /** @return array<string,mixed>|null */
+    /**
+     * Read-only preview source for the already approved D+90 warehouse
+     * reconciliation class. This does not lock or alter cases.
+     * @return list<array<string,mixed>>
+     */
+    public function d90WarehouseClosurePreviewCandidates(int $limit=500): array
+    {
+        $limit=max(1,min(500,$limit));
+        $stmt=$this->prepare(
+            "SELECT id,state,terminal_reason,physical_status,quantity_received,"
+            . "refund_at,closed_at,updated_at,reconciled_credit_amount "
+            . "FROM amazon_return_cases WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id "
+            . "AND state='CLOSED_LOSS' "
+            . "AND terminal_reason='RECOVERY_WINDOW_EXPIRED_D90' "
+            . "AND physical_status='RECEIVED_OK' AND quantity_received>0 "
+            . "ORDER BY id LIMIT ".($limit+1)
+        );
+        $stmt->execute($this->scopeParams());
+        return array_values(array_filter($stmt->fetchAll(PDO::FETCH_ASSOC),'is_array'));
+    }
+
     public function lockD90WarehouseLossCandidate(int $caseId): ?array
     {
         $caseId = $this->positiveId($caseId, 'Case ID');
