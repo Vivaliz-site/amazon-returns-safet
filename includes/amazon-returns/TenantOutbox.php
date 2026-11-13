@@ -425,6 +425,20 @@ final class SvAmazonTenantReturnsOutbox
         return max(0,$stmt->rowCount());
     }
 
+    /** Read-only, scoped preflight for pending work; does not acquire a lease. */
+    public function hasPendingProcessingForCase(int $caseId): bool
+    {
+        $stmt=$this->prepare(
+            "SELECT id FROM amazon_return_outbox WHERE tenant_id=:tenant_id "
+            . "AND amazon_connection_id=:amazon_connection_id AND case_id=:case_id "
+            . "AND status IN ('PENDING','PROCESSING') LIMIT 1"
+        );
+        $stmt->execute($this->scopeParams([
+            ':case_id'=>$this->positiveId($caseId,'case ID'),
+        ]));
+        return $stmt->fetchColumn()!==false;
+    }
+
     public function hasActive(int $caseId,string $kind): bool
     {
         $stmt=$this->prepare(
