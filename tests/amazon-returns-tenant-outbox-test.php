@@ -215,13 +215,14 @@ $scopeDb = new TenantOutboxMemoryPdo();
 $scopeOutbox = new SvAmazonTenantReturnsOutbox($scopeDb, $context);
 $scopeKey = $scopeOutbox->deterministicKey('SELLER_SUPPORT_UPDATE', 77, 'support-scope-22449931941');
 $scopePayload = ['order_id'=>'702-9207715-8524262','support_case_id'=>'22449931941'];
-$scopeDb->queue(['fetch'=>['id'=>77,'support_case_id'=>'22449931941']]);
+$scopeDb->queue(['fetch'=>['id'=>77]]);
 $scopeDb->queue(['throw'=>outboxDuplicate()]);
 $scopeDb->queue(['fetch'=>[
     'id'=>406,'status'=>'SUPERSEDED','attempt_count'=>1,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
     'last_error'=>'SELLER_SUPPORT_SCOPE_SUPERSEDED',
     'payload_json'=>'{"order_id":"702-9207715-8524262","support_case_id":"22449931941"}',
 ]]);
+$scopeDb->queue(['fetch'=>['support_case_id'=>'22449931941']]);
 $scopeDb->queue(['row_count'=>1]);
 $scopeRevived = $scopeOutbox->enqueueResult('SELLER_SUPPORT_UPDATE',77,$scopePayload,$scopeKey);
 toSame(406,$scopeRevived['id']??null,'A scope-superseded Seller Support update must keep its original outbox identity.');
@@ -242,13 +243,14 @@ toSame('{"order_id":"702-9207715-8524262","support_case_id":"22449931941"}',$sco
 // another verified Seller Support thread. The bridge already rejects it as stale.
 $scopeStaleDb = new TenantOutboxMemoryPdo();
 $scopeStaleOutbox = new SvAmazonTenantReturnsOutbox($scopeStaleDb,$context);
-$scopeStaleDb->queue(['fetch'=>['id'=>77,'support_case_id'=>'22449931942']]);
+$scopeStaleDb->queue(['fetch'=>['id'=>77]]);
 $scopeStaleDb->queue(['throw'=>outboxDuplicate()]);
 $scopeStaleDb->queue(['fetch'=>[
     'id'=>409,'status'=>'SUPERSEDED','attempt_count'=>15,'kind'=>'SELLER_SUPPORT_UPDATE','case_id'=>77,
     'last_error'=>'SELLER_SUPPORT_SCOPE_SUPERSEDED',
     'payload_json'=>'{"support_case_id":"22449931941"}',
 ]]);
+$scopeStaleDb->queue(['fetch'=>['support_case_id'=>'22449931942']]);
 $scopeStaleDb->queue(['row_count'=>1]);
 $scopeStaleResult=$scopeStaleOutbox->enqueueResult('SELLER_SUPPORT_UPDATE',77,['support_case_id'=>'22449931941'],$scopeKey);
 toSame(false,$scopeStaleResult['enqueued']??null,'Stale scoped update must remain superseded while the actual case points at a different thread.');
