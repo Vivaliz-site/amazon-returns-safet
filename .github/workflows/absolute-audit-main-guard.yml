@@ -26,6 +26,7 @@ jobs:
       - name: Validate Absolute Audit V5 on published main
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           bash scripts/absolute-audit-governance-validate.sh ci
