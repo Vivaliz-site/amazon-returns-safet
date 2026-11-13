@@ -30,36 +30,12 @@ function sv_amazon_d90_warehouse_preview(
     $db->beginTransaction();
     try {
         $p = SvAmazonTenantPersistence::create($db, $scope);
-        $select = $db->prepare(
-            "SELECT id,state,terminal_reason,physical_status,quantity_received,"
-            . "refund_at,closed_at,updated_at,reconciled_credit_amount "
-            . "FROM amazon_return_cases WHERE tenant_id=:tenant_id "
-            . "AND amazon_connection_id=:amazon_connection_id "
-            . "AND state='CLOSED_LOSS' "
-            . "AND terminal_reason='RECOVERY_WINDOW_EXPIRED_D90' "
-            . "AND physical_status='RECEIVED_OK' AND quantity_received>0 "
-            . "ORDER BY id LIMIT 501"
-        );
-        $params = [
-            ':tenant_id'=>$scope->tenantId(),
-            ':amazon_connection_id'=>$scope->amazonConnectionId(),
-        ];
-        $select->execute($params);
-        $cases = $select->fetchAll(PDO::FETCH_ASSOC);
+        // Tenant-scoped SELECTs live in canonical repository classes; the
+        // script never issues table SQL outside those repository contracts.
+        $cases = $p->cases->d90WarehouseClosurePreviewCandidates(500);
         if (count($cases) > 500) {
             throw new RuntimeException('D90 preview exceeds supported batch; no partial verdict.');
         }
-        $pending = $db->prepare(
-            "SELECT id FROM amazon_return_outbox "
-            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
-            . "AND case_id=:case_id AND status IN ('PENDING','PROCESSING') LIMIT 1"
-        );
-        $compensated = $db->prepare(
-            "SELECT COUNT(*) FROM amazon_return_events "
-            . "WHERE tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id "
-            . "AND event_type='CASE_D90_WAREHOUSE_CLOSURE_CORRECTED'"
-        );
-        $compensated->execute($params);
         $counts = [
             'candidate_rows'=>count($cases),
             'warehouse_proof_valid'=>0,
@@ -70,7 +46,6 @@ function sv_amazon_d90_warehouse_preview(
             'closed_timestamp_missing'=>0,
             'eligible_by_data_only'=>0,
             'financial_credit_positive'=>0,
-            'compensating_events'=>(int)$compensated->fetchColumn(),
         ];
         $fingerprints = [];
         foreach ($cases as $case) {
@@ -90,8 +65,7 @@ function sv_amazon_d90_warehouse_preview(
                 $counts['original_admin_closure_present']++;
                 continue;
             }
-            $pending->execute($params + [':case_id'=>$caseId]);
-            if ($pending->fetchColumn() !== false) {
+            if ($p->outbox->hasPendingProcessingForCase($caseId)) {
                 $counts['active_outbox']++;
                 continue;
             }
