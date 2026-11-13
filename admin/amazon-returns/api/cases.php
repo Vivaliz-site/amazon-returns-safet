@@ -11,6 +11,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/CockpitFilters.php';
 require_once __DIR__.'/../../../includes/amazon-returns/ReviewOperations.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CaseReferenceSearch.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitReadFreshness.php';
+require_once __DIR__.'/../../../includes/amazon-returns/ExternalWritePresentation.php';
 require_once __DIR__.'/../../../includes/amazon-returns/GmailApi.php';
 require_once __DIR__.'/../../../includes/amazon-returns/GmailReturnReferenceLookup.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
@@ -84,7 +85,7 @@ try{
             'current_action'=>$decision['action']??'WAIT','current_reason'=>$decision['reason']??null,
             'review_status'=>$currentReview['status']??null,'review_id'=>$currentReview['id']??null,'requires_human_decision'=>$requiresHuman??in_array(strtoupper((string)($decision['action']??'')),['HUMAN_REVIEW','BLOCKED_REVIEW'],true),
             'applied_rule'=>$app?['rule_id'=>(int)($app['rule_id']??0),'version'=>(int)($app['rule_version']??0),'result'=>$app['result']??null,'outcome'=>$app['outcome']??null]:null,
-            'last_external_write'=>$lastWrite?['id'=>(int)$lastWrite['id'],'kind'=>$lastWrite['kind'],'status'=>$lastWrite['status'],'updated_at'=>$lastWrite['updated_at']??null,'created_at'=>$lastWrite['created_at']??null]:null,
+            'last_external_write'=>SvAmazonExternalWritePresentation::fromOutboxRow($lastWrite),
             'last_read_back'=>$lastRead?['id'=>(int)$lastRead['id'],'event_type'=>$lastRead['event_type'],'occurred_at'=>$lastRead['occurred_at']??null,'source'=>$lastRead['source']??null]:null,
             'erp_return'=>$erpReturns[$orderId],
             'closed_at'=>$case['closed_at']??null,'updated_at'=>$case['updated_at']??null,
