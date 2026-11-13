@@ -10,6 +10,7 @@ require_once __DIR__.'/../../../includes/amazon-returns/TenantRegistry.php';
 require_once __DIR__.'/../../../includes/amazon-returns/TenantPersistence.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitTimeline.php';
 require_once __DIR__.'/../../../includes/amazon-returns/CockpitReadFreshness.php';
+require_once __DIR__.'/../../../includes/amazon-returns/ExternalWritePresentation.php';
 require_once __DIR__.'/../../../includes/amazon-returns/Projector.php';
 require_once __DIR__.'/../../../includes/amazon-returns/PolicyEngine.php';
 require_once __DIR__.'/../../../includes/amazon-returns/SafeTDecisionEngine.php';
@@ -47,7 +48,7 @@ try{
             if($amazonDecisionAt===null && $type==='SAFE_T_STATUS_OBSERVED'){$status=strtoupper(trim((string)($payload['claim_status']??$payload['status']??'')));if($status!=='' && !in_array($status,['PENDING','SUBMITTED','IN_PROGRESS','UNKNOWN','AUTH_REQUIRED'],true)){$candidate=trim((string)($event['occurred_at']??''));if($candidate!=='')$amazonDecisionAt=$candidate;}}
             if($lastRead===null && in_array($type,['SAFE_T_STATUS_OBSERVED','SELLER_CENTRAL_ACTION_RESULT','SAFE_T_EMAIL_REVIEW_RESPONSE','FINANCIAL_TRANSACTION_OBSERVED','SAFE_T_REIMBURSEMENT_OBSERVED'],true)){$lastRead=['id'=>(int)($event['id']??0),'event_type'=>$type,'occurred_at'=>$event['occurred_at']??null,'source'=>$event['source']??null];}
         }
-        $lastWrite=null;for($i=count($outbox)-1;$i>=0;$i--){$kind=strtoupper(trim((string)($outbox[$i]['kind']??'')));if(in_array($kind,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){$lastWrite=['id'=>(int)($outbox[$i]['id']??0),'kind'=>$kind,'status'=>$outbox[$i]['status']??null,'created_at'=>$outbox[$i]['created_at']??null,'updated_at'=>$outbox[$i]['updated_at']??null];break;}}
+        $lastWrite=null;for($i=count($outbox)-1;$i>=0;$i--){$kind=strtoupper(trim((string)($outbox[$i]['kind']??'')));if(in_array($kind,['SAFE_T_SUBMIT','SAFE_T_APPEAL','SAFE_T_EMAIL_REVIEW','SAFE_T_EMAIL_REPLY','SELLER_SUPPORT_OPEN','SELLER_SUPPORT_UPDATE'],true)){$lastWrite=SvAmazonExternalWritePresentation::fromOutboxRow($outbox[$i]);break;}}
         $safeTSubmittedAt=null;foreach($outbox as $write){$kind=strtoupper(trim((string)($write['kind']??'')));$status=strtoupper(trim((string)($write['status']??'')));if($kind!=='SAFE_T_SUBMIT'||!in_array($status,['SUCCEEDED','SUCCESS'],true))continue;$candidate=trim((string)($write['updated_at']??$write['created_at']??''));if($candidate!=='' && ($safeTSubmittedAt===null || strcmp($candidate,$safeTSubmittedAt)<0))$safeTSubmittedAt=$candidate;}
         $expected=(float)($case['expected_reimbursement_amount']??0);$refund=(float)($case['refund_amount']??0);$credit=(float)($case['reconciled_credit_amount']??0);
         $returnTracks=array_values(is_array($case['return_tracking_ids']??null)?$case['return_tracking_ids']:[]);
