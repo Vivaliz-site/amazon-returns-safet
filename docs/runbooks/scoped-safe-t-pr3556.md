@@ -1,7 +1,18 @@
 # SAFE-T D+45 / owner grant #3556 — staged one-action profile
 
-Status: **PREPARATION ONLY / NOT ACTIVATED**. This file is not a production
+Status: **SCOPED CANARY PREPARATION ONLY / NOT ACTIVATED**. This file is not a production
 authorization mechanism, an operator, or a replacement for Amazon eligibility.
+
+**Production owner directive — 2026-11-13 (takes precedence over the historical
+kill-switch-ON instructions below):** the owner expressly requested and
+reconfirmed enabling all seven external write actions. PR #695 merged this
+change; the active full-recovery profile is a separate decision, not an
+activation of scoped grant #3556/#3846. **Audits and corrective maintenance
+must not turn the global kill switch ON or disable any of those seven channels
+merely to apply this historical scoped-canary runbook.** Evaluate every actual
+SAFE-T/support/ERP operation with its own eligibility, deduplication,
+authorization, lease/fencing and external readback. The one-use renewed grant
+does not by itself authorize unrelated actions.
 
 The original approved grant is
 `Vivaliz-site/site-shopvivaliz@main:security/owner-approvals/3556.json`.
@@ -19,8 +30,10 @@ The isolated profile at `deploy/write-profile-safe-t-pr3556.json` permits
 **only `SAFE_T_SUBMIT`**; the other six external action types are explicitly
 false. The default full-recovery profile is unchanged. No environment file,
 systemd unit, timer, worker or runtime configuration selects this new profile.
-The global kill switch must remain **ON** until a duly authorized operator
-has passed all preflight guards. Merely deploying this JSON must do nothing.
+This staged scoped-profile file does not itself change the **current production
+write configuration**, which was enabled at the owner's request. Do not select
+it or change the global kill switch merely because it exists. Only a separate
+operator with approved scope and preflight guards can activate this canary.
 
 The renewed, one-use scope is limited to host `marina-a1-4c24g`, principal
 `amazon-returns-safet-service`, tenant 1, connection 1, case IDs
@@ -41,11 +54,13 @@ cases, duplicate claims or reprocess outbox without current external readback.
 The presence of grant #3846 does **not** certify an executable
 `activate_scoped_safe_t_opening` operator or prove that its one-use entitlement
 remains unconsumed. Until an effective service-principal operator is verified
-with lease and all existing guards, leave the kill switch ON and do not activate
-this profile. On an authorized canary, any temporary relaxation must be
-restricted to SAFE_T_SUBMIT only and must restore kill switch ON
-immediately after the attempt, even on error or interruption. An Amazon
-ineligibility decision must be recorded, not bypassed.
+with lease and all existing guards, do not activate
+this scoped profile or change the owner's separate full-recovery write mode.
+For a future expressly authorized temporary scoped canary, the operator must
+preserve the agreed preflight/rollback for that operation and restore the
+owner-approved **pre-operation production state**, including on interruption,
+without silently disabling the current authorized seven-channel mode.
+An Amazon ineligibility decision must be recorded, not bypassed.
 
 The synthetic regression
 `php tests/scoped-safe-t-pr3556-profile-test.php` verifies the seven
