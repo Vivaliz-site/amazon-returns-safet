@@ -150,7 +150,10 @@ function operationalTimelineTitle(item){
 function condenseTimeline(items){
   const result=[],groups=new Map();
   for(const item of items||[]){
-    const title=operationalTimelineTitle(item);const repeatable=title==='Pedido sincronizado'||title==='Movimentação financeira identificada';
+    const title=operationalTimelineTitle(item);
+    // Verificações periódicas (gravadas a cada ciclo) viram um marco por dia; escritas e respostas nunca são agrupadas.
+    const rawTitle=String(item?.title||item?.category||'').toUpperCase().replace(/[^A-Z0-9]+/g,'_');
+    const repeatable=title==='Pedido sincronizado'||title==='Movimentação financeira identificada'||rawTitle.includes('FINANCIAL_REFRESH')||rawTitle.includes('FINANCIAL_RECONCILIATION');
     if(!repeatable){result.push({...item,operational_title:title,repeat_count:1});continue;}
     const day=String(item.occurred_at||'').slice(0,10),key=`${title}|${day}`;
     const current=groups.get(key);
@@ -163,7 +166,12 @@ function renderCondensedTimeline(items){
   const all=items||[],condensed=condenseTimeline(all);const details=document.createElement('details');details.className='case-history-toggle';
   const summary=text('summary',`Ver histórico completo (${condensed.length} marcos relevantes de ${all.length} eventos)`);details.append(summary);
   const timeline=text('section','', 'timeline compact-timeline');
+  // Monta os cartões só quando o histórico é aberto: casos antigos têm milhares de eventos.
+  let rendered=false;
+  details.addEventListener('toggle',()=>{
+    if(!details.open||rendered)return;rendered=true;
   for(const item of condensed){const card=text('article','', 'timeline-item');const label=item.repeat_count>1?`${item.operational_title} · ${item.repeat_count} verificações`:item.operational_title;const source=sourceLabel(item.source),meta=[date(item.occurred_at)];if(source&&source!=='—'&&source!=='Informação não disponível')meta.push(source);card.append(text('h4',label),text('div',meta.join(' · '),'muted'));const content=item.content||{};const body=content.narrative||content.message?.body||content.review_excerpt;if(body)card.append(text('p',humanText(body)));timeline.append(card);}
+  });
   details.append(timeline);return details;
 }
 function caseMessageItems(items){
