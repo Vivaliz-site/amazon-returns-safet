@@ -44,7 +44,7 @@ final class SvAmazonTenantReturnsOutbox
         $caseId = $this->positiveId($caseId, 'case ID');
         $idempotencyKey = $this->idempotencyKey($idempotencyKey);
         self::assertNoSecrets($payload);
-        $ownedCase=$this->assertOwnedCase($caseId);
+        $this->assertOwnedCase($caseId);
         $stmt = $this->prepare(
             "INSERT INTO amazon_return_outbox "
             . "(tenant_id,amazon_connection_id,case_id,kind,idempotency_key,payload_json,status,attempt_count,available_at,created_at,updated_at) "
@@ -98,15 +98,24 @@ final class SvAmazonTenantReturnsOutbox
             $previousPayload=json_decode($previousPayloadJson,true);
             $previousScope=is_array($previousPayload)?trim((string)($previousPayload['support_case_id']??'')):'';
             $currentScope=trim((string)($payload['support_case_id']??''));
-            // The same payload alone does not prove the case still uses this
-            // thread. Avoid rearming an already-attempted stale update that
-            // the bridge would immediately supersede again.
-            $actualScope=trim((string)($ownedCase['support_case_id']??''));
             $scopeSupersede=preg_match('/^\d{8,14}$/D',$previousScope)===1
                 && preg_match('/^\d{8,14}$/D',$currentScope)===1
-                && preg_match('/^\d{8,14}$/D',$actualScope)===1
-                && hash_equals($previousScope,$currentScope)
-                && hash_equals($currentScope,$actualScope);
+                && hash_equals($previousScope,$currentScope);
+            if($scopeSupersede){
+                // A matching historical payload does not prove the case is
+                // still linked to this support thread. Match the bridge's
+                // existing stale-scope invariant before rearming the job.
+                $currentCase=$this->prepare(
+                    'SELECT support_case_id FROM amazon_return_cases WHERE id=:case_id '
+                    . 'AND tenant_id=:tenant_id AND amazon_connection_id=:amazon_connection_id LIMIT 1'
+                );
+                $currentCase->execute($this->scopeParams([':case_id'=>$caseId]));
+                $currentCaseRow=$currentCase->fetch(PDO::FETCH_ASSOC);
+                $actualScope=is_array($currentCaseRow)
+                    ?trim((string)($currentCaseRow['support_case_id']??'')):'';
+                $scopeSupersede=preg_match('/^\d{8,14}$/D',$actualScope)===1
+                    && hash_equals($currentScope,$actualScope);
+            }
         }
         if ((string)($row['status'] ?? '') === 'SUPERSEDED'
             && ((int)($row['attempt_count'] ?? -1) === 0 || $temporaryDecisionSupersede || $scopeSupersede)
@@ -702,19 +711,16 @@ final class SvAmazonTenantReturnsOutbox
         return ($now->setTimezone(new DateTimeZone('UTC'))->getTimestamp() - $locked->getTimestamp()) >= self::LEASE_SECONDS;
     }
 
-    /** @return array<string,mixed> */
-    private function assertOwnedCase(int $caseId): array
+    private function assertOwnedCase(int $caseId): void
     {
         $stmt = $this->prepare(
-            'SELECT id,support_case_id FROM amazon_return_cases WHERE id=:case_id AND tenant_id=:tenant_id '
+            'SELECT id FROM amazon_return_cases WHERE id=:case_id AND tenant_id=:tenant_id '
             . 'AND amazon_connection_id=:amazon_connection_id LIMIT 1'
         );
         $stmt->execute($this->scopeParams([':case_id'=>$caseId]));
-        $ownedCase=$stmt->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($ownedCase)) {
+        if (!is_array($stmt->fetch(PDO::FETCH_ASSOC))) {
             throw new RuntimeException('Outbox case is not owned by the current tenant connection.');
         }
-        return $ownedCase;
     }
     /** @param array<string,mixed> $row */
     private function assertOwnedRow(array $row): void
