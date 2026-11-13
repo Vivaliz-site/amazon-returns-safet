@@ -405,3 +405,12 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Convivencia: #630 permanece dependente de P2/lease para 97 registros e nao foi tocado; nenhum claim/SAFE-T/suporte foi enviado. Mercado Livre Returns Recovery permanece intocado/pausado. Solange P2 #343 e tecnica #345 tem outros executores e nao foram editadas.
 - Estado deste registro: correcao de codigo testada; **CI oficial, merge, release implantada e readback operacional ainda exigem prova fresca**. O checkpoint do controlador foi recusado sem `conversation_id` verificado na automacao; evidencias ficam neste ledger sem declarar `APTO`/ `CONCLUIDO` global.
 <!-- /AUDIT_DELTA_V1 -->
+
+## 2026-11-13 — [GPT] Paginação acessível na lista do cockpit (#532)
+
+- Base SHA: `2a267808e10acc2563d11abf7188cb607361e1df`.
+- Impacto: botões Anterior/Próxima permaneciam ativáveis sem destino nas extremidades, sem rótulo programático da página de destino; o indicador era atualizado sem anúncio vivo. A UI foi ajustada para expor os limites já existentes, anunciar paginação via região viva estável e identificar o destino em leitor de tela. Nenhum caso, ação externa, regra de elegibilidade ou controle de autorização foi alterado.
+- Testes: RED real 3/3 falhas no código original (task `d6f3318c-ccf8-4ddf-9eac-1476952850ad`); GREEN 13/13 após reparo, incluindo quatro suites de regressão; `node --check`, `php -l` e `git diff --check` aprovados (task `3c82306d-2d01-46c0-b60a-ac05f7ee25f0`, audit `573b2810-00af-4c7d-be8f-0e67fb021885`).
+- Evidencias: teste `tests/cockpit-pager-a11y.test.mjs` executado em checkout isolado do backend, com primeira/última página, lista vazia, destino, atualização de página e marcação HTML. O cabeçalho `index.php` usa versão de asset baseada em conteúdo, preservando cache busting.
+- Pendencias: CI e merge da PR técnica, deploy imutável, comparação do SHA publicado com main e inspeção visual em navegador backend autenticado; esta melhoria isolada não certifica Seller Central, crédito, casos históricos ou auditoria V5.
+- Estado: NAO_APTO.
