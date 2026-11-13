@@ -26,11 +26,13 @@ final class SvAmazonErpSalesReturnTask
         $skippedProcessed=count($allOrders)-count($orders);
         if($orders===[]){
             if($resumeCursor!==null)$p->cursors->clear(self::RESUME_SOURCE,self::RESUME_KEY);
-            $result=self::result([],false,false);
-            $result['resumed']=$resumeCursor!==null;
-            $result['skipped_processed']=$skippedProcessed;
-            $result['resume_pending']=false;
-            return $result;
+            // O lote atual pode estar vazio enquanto devolucoes anteriores seguem pendentes.
+            return self::summarizeEmptyBatch(
+                $p->erpSalesReturns->countIncomplete(),
+                $p->erpSalesReturns->incompleteAuditRows(),
+                $resumeCursor!==null,
+                $skippedProcessed
+            );
         }
 
         $credentialPath=$config->get('AMAZON_RETURNS_ERP_ENV_FILE',SvAmazonErpInvoiceLookup::defaultCredentialPath());
@@ -380,6 +382,25 @@ final class SvAmazonErpSalesReturnTask
             $error instanceof RuntimeException=>'ERP_RUNTIME_EXCEPTION',
             default=>'ERP_'.strtoupper(preg_replace('/[^A-Za-z0-9]+/','_',basename(str_replace('\\','/',$error::class))) ?: 'ERROR'),
         };
+    }
+
+    /**
+     * Reaplica no lote vazio a mesma reconciliacao de pendencias usada no lote normal.
+     * Nao consulta ERP, nao cria devolucao e nao altera o estado dos workflows.
+     *
+     * @param list<array<string,mixed>> $incompleteDetails
+     * @return array<string,mixed>
+     */
+    public static function summarizeEmptyBatch(int $incompleteWorkflows,array $incompleteDetails,bool $resumed,int $skippedProcessed): array
+    {
+        $result=self::result([],false,false);
+        $result['resumed']=$resumed;
+        $result['skipped_processed']=$skippedProcessed;
+        $result['resume_pending']=false;
+        $result['incomplete_workflows']=max(0,$incompleteWorkflows);
+        $result['incomplete_workflows_detail']=$incompleteDetails;
+        if($incompleteWorkflows>0)$result['status']='PARTIAL';
+        return $result;
     }
 
     /** @param list<array<string,mixed>> $rows @return array<string,mixed> */
