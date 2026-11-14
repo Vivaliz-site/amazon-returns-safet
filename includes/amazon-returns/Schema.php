@@ -5,13 +5,37 @@ final class SvAmazonReturnsSchema
 {
     public static function ensure(PDO $db): void
     {
-        foreach (self::statements() as $statement) $db->exec($statement);
+        $statements = self::statements();
+        // Every API call runs ensure(); replaying 16 CREATE TABLE IF NOT EXISTS on each request costs
+        // metadata locks for nothing once the schema exists. CREATE ... IF NOT EXISTS never alters an
+        // existing table, so skipping it when all tables are present is equivalent.
+        if (!self::allTablesExist($db, $statements)) {
+            foreach ($statements as $statement) $db->exec($statement);
+        }
         self::ensureColumn(
             $db,
             'amazon_return_erp_sales_returns',
             'reconciled_quantity_refunded',
             'ALTER TABLE `amazon_return_erp_sales_returns` ADD COLUMN `reconciled_quantity_refunded` INT UNSIGNED NULL AFTER `return_invoice_issued_at`'
         );
+    }
+
+    /** @param list<string> $statements */
+    private static function allTablesExist(PDO $db, array $statements): bool
+    {
+        $names = [];
+        foreach ($statements as $statement) {
+            if (preg_match('/^\s*CREATE TABLE IF NOT EXISTS\s+`([A-Za-z0-9_]+)`/i', $statement, $m) !== 1) return false;
+            $names[] = $m[1];
+        }
+        $names = array_values(array_unique($names));
+        if ($names === []) return false;
+        $stmt = $db->prepare(
+            'SELECT COUNT(DISTINCT table_name) FROM information_schema.tables '
+            . 'WHERE table_schema=DATABASE() AND table_name IN (' . implode(',', array_fill(0, count($names), '?')) . ')'
+        );
+        $stmt->execute($names);
+        return (int)$stmt->fetchColumn() === count($names);
     }
 
     private static function ensureColumn(PDO $db,string $table,string $column,string $alterStatement): void
