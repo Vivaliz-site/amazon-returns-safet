@@ -81,6 +81,36 @@ final class SvAmazonErpReturnInvoiceLookup
         return $matches[0];
     }
 
+    /**
+     * Read-only lookup of one known return NF (entrada, finalidade 4) by its ERP ID.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findById(string $invoiceId): ?array
+    {
+        $invoiceId=trim($invoiceId);
+        if(preg_match('/^[1-9][0-9]*$/D',$invoiceId)!==1)throw new InvalidArgumentException('ERP return invoice ID is invalid.');
+        $response=($this->http)(
+            'GET',$this->apiBase.'/notas/'.rawurlencode($invoiceId),
+            ['Authorization'=>'Bearer '.$this->accessToken(),'Accept'=>'application/json'],null
+        );
+        $status=(int)($response['status']??0);
+        if($status===404)return null;
+        if($status!==200)throw new RuntimeException('ERP return invoice detail lookup failed with HTTP '.$status.'.');
+        $detail=is_array($response['json']??null)?$response['json']:[];
+        if(strtoupper(trim((string)($detail['tipo']??'')))!=='E'||(int)($detail['finalidade']??0)!==4)return null;
+        return [
+            'source'=>'ERP_OLIST_RETURN_INVOICE_DETAIL',
+            'invoice_id'=>(string)($detail['id']??$invoiceId),
+            'invoice_number'=>self::nullable($detail['numero']??null),
+            'series'=>self::nullable($detail['serie']??null),
+            'access_key'=>self::nullable($detail['chaveAcesso']??null),
+            'status'=>self::nullable($detail['situacao']??null),
+            'purpose'=>4,
+            'issued_at'=>self::nullable($detail['dataEmissao']??null),
+        ];
+    }
+
     private function accessToken(): string
     {
         foreach(['TINY_ACCESS_TOKEN','OLIST_ACCESS_TOKEN'] as $key){

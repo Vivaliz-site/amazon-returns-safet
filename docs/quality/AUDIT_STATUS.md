@@ -417,3 +417,6 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 
 ## 2026-11-13 [Claude] Clamp de timestamp futuro na frescor de leitura (#532)
 Revisao contraditoria (Gemini) apontou borda: relogio adiantado adiaria o aviso de dados desatualizados. RED/GREEN em tests/cockpit-read-freshness-test.php; tolerancia 300 s.
+
+## 2026-11-14 [Claude] Nota de devolucao do ERP: capturar numero/chave/status/emissao da NF (#532)
+Achado no readback ERP da auditoria: 123/123 RETURN_INVOICE_EXISTS sem return_invoice_number/key e status da devolucao gravado como status da NF (2 vs 7 no ERP). Causa: o readback da devolucao so traz idNotaFiscalEntrada; numero/chave vinham de campos inexistentes. RED/GREEN em tests/erp-sales-return-workflow-test.php e tests/erp-return-invoice-find-by-id-test.php; leitura somente por GET /notas/{id}. Backfill das 123 linhas existentes NAO incluido (escrita em dados reais; pede autorizacao).

@@ -87,7 +87,11 @@ final class SvAmazonErpSalesReturnTask
                         $limiter->beforeRequest();
                         return $returnLookup->findForOrder($candidateOrderId);
                     },
-                    $config->erpSalesReturnCreateEnabled() && self::writeAllowedForOrderCases($config,$cases)
+                    $config->erpSalesReturnCreateEnabled() && self::writeAllowedForOrderCases($config,$cases),
+                    static function(string $invoiceId) use ($limiter,$returnLookup): ?array {
+                        $limiter->beforeRequest();
+                        return $returnLookup->findById($invoiceId);
+                    }
                 );
                 $row=$service->reconcileOrder($orderId);
                 $rows[]=['order_id'=>$orderId,'status'=>(string)($row['status']??'UNKNOWN')];

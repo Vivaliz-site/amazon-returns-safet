@@ -174,7 +174,8 @@ try{
         $p->erpSalesReturns,$browserGateway,
         static fn(string $id):array=>$p->cases->forOrder($id),
         static fn(string $id):?array=>$saleLookup->findSaleForOrder($id),
-        static fn(string $id):?array=>$returnLookup->findForOrder($id),true
+        static fn(string $id):?array=>$returnLookup->findForOrder($id),true,
+        static fn(string $id):?array=>$returnLookup->findById($id)
     );
     $first=$service->reconcileOrder($orderId);
     if(strtoupper(trim((string)($first['status']??'')))!=='RETURN_CREATED_WAITING_INVOICE'){

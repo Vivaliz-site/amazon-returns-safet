@@ -42,7 +42,7 @@ final class FakeErpSalesReturnStore implements SvAmazonErpSalesReturnStore
     }
     public function markReady(string $orderId): array { $this->rows[$orderId]['status']='READY_TO_CREATE'; return $this->rows[$orderId]; }
     public function markReturnCreated(string $orderId,string $erpSalesReturnId): array { $this->rows[$orderId]['status']='RETURN_CREATED_WAITING_INVOICE';$this->rows[$orderId]['erp_sales_return_id']=$erpSalesReturnId;return $this->rows[$orderId]; }
-    public function linkReturnInvoice(string $orderId,array $invoice): array { $this->rows[$orderId]['status']='RETURN_INVOICE_EXISTS';$this->rows[$orderId]['return_invoice_id']=$invoice['invoice_id']??null;$this->rows[$orderId]['return_invoice_number']=$invoice['invoice_number']??null;return $this->rows[$orderId]; }
+    public function linkReturnInvoice(string $orderId,array $invoice): array { $this->rows[$orderId]['status']='RETURN_INVOICE_EXISTS';$this->rows[$orderId]['return_invoice_id']=$invoice['invoice_id']??null;$this->rows[$orderId]['return_invoice_number']=$invoice['invoice_number']??null;$this->rows[$orderId]['return_invoice_key']=$invoice['access_key']??null;$this->rows[$orderId]['return_invoice_status']=$invoice['status']??null;$this->rows[$orderId]['return_invoice_issued_at']=$invoice['issued_at']??null;return $this->rows[$orderId]; }
     public function markBlocked(string $orderId,string $code,string $message): array { $this->rows[$orderId]['status']='BLOCKED';$this->rows[$orderId]['last_error_code']=$code;$this->rows[$orderId]['last_error_message']=$message;return $this->rows[$orderId]; }
     public function recordReconciledQuantity(string $orderId,int $quantity): array { $this->rows[$orderId]['reconciled_quantity_refunded']=$quantity;return $this->rows[$orderId]; }
 }
@@ -74,14 +74,14 @@ function workflowSale(string $orderId): array {
     return ['invoice_id'=>'500','invoice_number'=>'1001','access_key'=>'SALEKEY1001','order_id'=>$orderId];
 }
 /** @param list<array<string,mixed>|null> $queue */
-function makeWorkflowService(FakeErpSalesReturnStore $store,FakeErpSalesReturnGateway $gateway,array &$queue,bool $writeEnabled,int &$lookupCalls): SvAmazonErpSalesReturnService {
+function makeWorkflowService(FakeErpSalesReturnStore $store,FakeErpSalesReturnGateway $gateway,array &$queue,bool $writeEnabled,int &$lookupCalls,?callable $detailLookup=null): SvAmazonErpSalesReturnService {
     $cases=static fn(string $orderId): array=>workflowCases($orderId);
     $sale=static fn(string $orderId): ?array=>workflowSale($orderId);
     $returnLookup=static function(string $orderId) use (&$queue,&$lookupCalls): ?array {
         $lookupCalls++;
         return array_shift($queue);
     };
-    return new SvAmazonErpSalesReturnService($store,$gateway,$cases,$sale,$returnLookup,$writeEnabled);
+    return new SvAmazonErpSalesReturnService($store,$gateway,$cases,$sale,$returnLookup,$writeEnabled,$detailLookup);
 }
 
 $order='702-1111111-2222222';
@@ -157,6 +157,35 @@ erpWorkflowSame('901',$result['return_invoice_id']??null,'Readback-linked return
 erpWorkflowSame(1,$lookupCalls,'API return-invoice lookup must remain the first read path.');
 erpWorkflowSame(1,$gateway->readBackCalls,'Browser readback fallback must run exactly once after the API miss.');
 erpWorkflowSame(0,$gateway->createCalls,'Readback-linked return invoice must never trigger another ERP return write.');
+
+// Readback exposes only the invoice ID and the SALES-RETURN status; the number, access key,
+// invoice status and issue date must come from the NF itself (GET /notas/{id}).
+$mkStore=static function() use ($order): FakeErpSalesReturnStore {
+    $st=new FakeErpSalesReturnStore();
+    $st->rows[$order]=['amazon_order_id'=>$order,'status'=>'RETURN_CREATED_WAITING_INVOICE','original_invoice_id'=>'500','original_invoice_number'=>'1001','original_invoice_key'=>'SALEKEY1001','erp_sales_return_id'=>'991','return_invoice_id'=>null,'reconciled_quantity_refunded'=>1,'last_error_code'=>null,'last_error_message'=>null];
+    return $st;
+};
+$readBackShape=['id'=>'991','idNotaFiscal'=>'500','idNotaFiscalEntrada'=>'901','situacao'=>'2','dataDevolucao'=>'2026-09-12'];
+$detailCalls=[];
+$detail=static function(string $invoiceId) use (&$detailCalls): ?array {
+    $detailCalls[]=$invoiceId;
+    return ['invoice_id'=>$invoiceId,'invoice_number'=>'301','series'=>'1','access_key'=>'RETKEY301','status'=>'7','issued_at'=>'2026-09-12T13:00:00-03:00'];
+};
+$store=$mkStore();$gateway=new FakeErpSalesReturnGateway(['ok'=>true,'id'=>'X'],$readBackShape);$queue=[null];$lookupCalls=0;
+$result=makeWorkflowService($store,$gateway,$queue,true,$lookupCalls,$detail)->reconcileOrder($order);
+erpWorkflowSame('301',$result['return_invoice_number']??null,'Return NF number must be captured from the NF detail.');
+erpWorkflowSame('RETKEY301',$result['return_invoice_key']??null,'Return NF access key must be captured from the NF detail.');
+erpWorkflowSame('7',$result['return_invoice_status']??null,'Return NF status must be the NF status, not the sales-return status.');
+erpWorkflowSame('2026-09-12T13:00:00-03:00',$result['return_invoice_issued_at']??null,'Return NF issue date must come from the NF detail.');
+erpWorkflowSame(['901'],$detailCalls,'NF detail must be read exactly once, by the linked invoice ID.');
+erpWorkflowSame(0,$gateway->createCalls,'Enrichment must never trigger an ERP write.');
+// A failing or empty detail read must not break reconciliation nor lose the linked ID.
+foreach([static fn(string $i): ?array=>null,static function(string $i): ?array{ throw new RuntimeException('ERP down'); }] as $badDetail){
+    $store=$mkStore();$gateway=new FakeErpSalesReturnGateway(['ok'=>true,'id'=>'X'],$readBackShape);$queue=[null];$lookupCalls=0;
+    $result=makeWorkflowService($store,$gateway,$queue,true,$lookupCalls,$badDetail)->reconcileOrder($order);
+    erpWorkflowSame('RETURN_INVOICE_EXISTS',$result['status']??null,'Detail failure must not block the linked workflow.');
+    erpWorkflowSame('901',$result['return_invoice_id']??null,'Detail failure must keep the linked invoice ID.');
+}
 
 // Safe pre-write blockers must resume after the browser writer becomes available.
 $store=new FakeErpSalesReturnStore();
