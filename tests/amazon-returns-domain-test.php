@@ -107,6 +107,12 @@ final class AmazonReturnsMemoryStatement extends PDOStatement
             return true;
         }
 
+        if (str_contains($normalized, 'INFORMATION_SCHEMA.TABLES')) {
+            // This in-memory seam has no tables: ensure() must therefore replay the full idempotent DDL.
+            $this->result = [[0 => 0]];
+            return true;
+        }
+
         if (str_contains($normalized, 'INFORMATION_SCHEMA.COLUMNS')) {
             $this->result = [[0 => 0]];
             return true;

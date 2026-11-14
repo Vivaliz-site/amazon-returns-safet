@@ -423,3 +423,6 @@ Achado no readback ERP da auditoria: 123/123 RETURN_INVOICE_EXISTS sem return_in
 
 ## 2026-11-14 [Claude] Favicon: evitar 404 e erro de console em carga a frio (#532)
 Jornada ui-clean-context-login (contexto novo, sem cache) registrou 1 erro de console "404" por carga: /favicon.ico respondia 404 e nenhuma pagina declarava icone. RED/GREEN em tests/page-favicon-test.php; login, cockpit e intake passam a declarar <link rel="icon" href="data:,">.
+
+## 2026-11-14 [Claude] Schema::ensure() sem DDL por requisicao quando o esquema ja existe (#532)
+Analise de api/cases.php: ensure() reexecutava 16 CREATE TABLE IF NOT EXISTS + consulta a information_schema em cada chamada de API. Agora uma consulta conta as 16 tabelas e o DDL so roda se faltar alguma (equivalente: IF NOT EXISTS nao altera tabela existente). RED/GREEN em tests/schema-ensure-skips-ddl-when-present-test.php; o teste existente de 34 DDL permanece e agora cobre o caso esquema ausente (o dublê passou a responder a consulta nova). Ganho NAO medido em producao.
