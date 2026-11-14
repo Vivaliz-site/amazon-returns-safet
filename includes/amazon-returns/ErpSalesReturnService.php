@@ -12,6 +12,8 @@ final class SvAmazonErpSalesReturnService
     private $saleResolver;
     /** @var callable(string):?array<string,mixed> */
     private $returnInvoiceLookup;
+    /** @var (callable(string):?array<string,mixed>)|null */
+    private $returnInvoiceDetailLookup;
 
     public function __construct(
         private SvAmazonErpSalesReturnStore $store,
@@ -19,8 +21,10 @@ final class SvAmazonErpSalesReturnService
         callable $casesForOrder,
         callable $saleResolver,
         callable $returnInvoiceLookup,
-        private bool $writeEnabled=false
+        private bool $writeEnabled=false,
+        ?callable $returnInvoiceDetailLookup=null
     ) {
+        $this->returnInvoiceDetailLookup=$returnInvoiceDetailLookup;
         $this->casesForOrder=$casesForOrder;
         $this->saleResolver=$saleResolver;
         $this->returnInvoiceLookup=$returnInvoiceLookup;
@@ -230,7 +234,7 @@ final class SvAmazonErpSalesReturnService
         $returnInvoiceId=trim((string)($readBack['idNotaFiscalEntrada']??''));
         if(preg_match('/^[1-9][0-9]*$/D',$returnInvoiceId)!==1)return null;
 
-        return [
+        $invoice=[
             'source'=>'ERP_OLIST_SALES_RETURN_READBACK',
             'invoice_id'=>$returnInvoiceId,
             'invoice_number'=>self::nullable($readBack['numeroNotaFiscalEntrada']??null),
@@ -241,6 +245,32 @@ final class SvAmazonErpSalesReturnService
             'order_id'=>$orderId,
             'issued_at'=>self::nullable($readBack['dataDevolucao']??null),
         ];
+        return $this->enrichFromInvoiceDetail($invoice);
+    }
+
+    /**
+     * The sales-return read-back only carries the invoice ID; its `situacao` is the sales-return status.
+     * The NF itself is the source of truth for number, series, access key, status and issue date.
+     * Read-only; a failed or mismatching detail read keeps the linked ID untouched.
+     *
+     * @param array<string,mixed> $invoice
+     * @return array<string,mixed>
+     */
+    private function enrichFromInvoiceDetail(array $invoice): array
+    {
+        if($this->returnInvoiceDetailLookup===null)return $invoice;
+        try{
+            $detail=($this->returnInvoiceDetailLookup)((string)$invoice['invoice_id']);
+        }catch(Throwable){
+            return $invoice;
+        }
+        if(!is_array($detail)||trim((string)($detail['invoice_id']??''))!==(string)$invoice['invoice_id'])return $invoice;
+        foreach(['invoice_number','series','access_key','status','issued_at'] as $field){
+            $value=self::nullable($detail[$field]??null);
+            if($value!==null)$invoice[$field]=$value;
+        }
+        $invoice['source']='ERP_OLIST_SALES_RETURN_READBACK+NF_DETAIL';
+        return $invoice;
     }
 
     /** @param array<string,mixed> $workflow @return array<string,mixed>|null */
