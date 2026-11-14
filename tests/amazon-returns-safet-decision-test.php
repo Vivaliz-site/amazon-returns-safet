@@ -110,6 +110,7 @@ $appealDenied = eligibleCase([
 ]);
 $emailReview = $engine->nextAction($appealDenied, $timeline, ['eligible'=>false,'state'=>'POLICY_REVIEW_REQUIRED']);
 sdSame('SAFE_T_EMAIL_REVIEW', $emailReview['action'], 'Denied SAFE-T appeal must escalate to detailed review email, not another appeal or Help loop.');
+sdAssert($emailReview['action'] !== 'SAFE_T_APPEAL', 'A final appeal denial must never reopen SAFE-T appeal, even if another agent changes the surrounding denial routing.');
 sdAssert(preg_match('/^[a-f0-9]{64}$/', (string)($emailReview['idempotency_key'] ?? '')) === 1, 'Email review must have deterministic idempotency key.');
 $emailDenied = $appealDenied;
 $emailDenied['state'] = 'SUPPORT_ESCALATION';
