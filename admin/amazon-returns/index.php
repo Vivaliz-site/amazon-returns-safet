@@ -15,7 +15,7 @@ $assetVersion = static function (string $filename): string {
 ?>
 <!doctype html>
 <html lang="pt-BR"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,">
 <title>Devoluções Amazon</title>
 <link rel="stylesheet" href="/admin/amazon-returns/assets/cockpit.css?v=<?=$assetVersion('cockpit.css')?>">
 <link rel="stylesheet" href="/admin/amazon-returns/assets/cockpit-operational.css?v=<?=$assetVersion('cockpit-operational.css')?>">

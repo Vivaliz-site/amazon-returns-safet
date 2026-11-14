@@ -420,3 +420,6 @@ Revisao contraditoria (Gemini) apontou borda: relogio adiantado adiaria o aviso 
 
 ## 2026-11-14 [Claude] Nota de devolucao do ERP: capturar numero/chave/status/emissao da NF (#532)
 Achado no readback ERP da auditoria: 123/123 RETURN_INVOICE_EXISTS sem return_invoice_number/key e status da devolucao gravado como status da NF (2 vs 7 no ERP). Causa: o readback da devolucao so traz idNotaFiscalEntrada; numero/chave vinham de campos inexistentes. RED/GREEN em tests/erp-sales-return-workflow-test.php e tests/erp-return-invoice-find-by-id-test.php; leitura somente por GET /notas/{id}. Backfill das 123 linhas existentes NAO incluido (escrita em dados reais; pede autorizacao).
+
+## 2026-11-14 [Claude] Favicon: evitar 404 e erro de console em carga a frio (#532)
+Jornada ui-clean-context-login (contexto novo, sem cache) registrou 1 erro de console "404" por carga: /favicon.ico respondia 404 e nenhuma pagina declarava icone. RED/GREEN em tests/page-favicon-test.php; login, cockpit e intake passam a declarar <link rel="icon" href="data:,">.
