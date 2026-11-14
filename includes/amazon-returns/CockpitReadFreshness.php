@@ -12,6 +12,7 @@ final class SvAmazonCockpitReadFreshness
         'SAFE_T_STATUS_OBSERVED','SELLER_CENTRAL_ACTION_RESULT','SAFE_T_EMAIL_REVIEW_RESPONSE',
         'FINANCIAL_TRANSACTION_OBSERVED','SAFE_T_REIMBURSEMENT_OBSERVED',
     ];
+    private const MAX_FUTURE_SKEW_SECONDS=300;
     private const READ_JOBS=['SAFE_T_READ','SAFE_T_DISCOVERY','SELLER_SUPPORT_READ','ORDER_DELIVERY_READ'];
 
     /**
@@ -50,6 +51,9 @@ final class SvAmazonCockpitReadFreshness
         $normalized=str_replace('T',' ',$text);
         $parsed=DateTimeImmutable::createFromFormat('Y-m-d H:i:s',$normalized,new DateTimeZone('UTC'));
         // createFromFormat() silently rolls over impossible dates (month 13, hour 99); reject them.
-        return $parsed instanceof DateTimeImmutable&&$parsed->format('Y-m-d H:i:s')===$normalized?$parsed->getTimestamp():null;
+        if(!$parsed instanceof DateTimeImmutable||$parsed->format('Y-m-d H:i:s')!==$normalized)return null;
+        // A clock-skewed future timestamp would hide stale data indefinitely; tolerate only small skew.
+        $ts=$parsed->getTimestamp();
+        return $ts>time()+self::MAX_FUTURE_SKEW_SECONDS?null:$ts;
     }
 }
