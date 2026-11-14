@@ -37,6 +37,8 @@ Existing D+45 opening, external eligibility and writing controls remain unchange
 Use SAFE-T only for applicable seller-fulfilled claims. Lost/damaged shipment, standard FBA, physical damage, existing appeal, active support and email reply each require their appropriate channel and evidence; D+45 alone is not authorization to use the wrong channel.
 An existing claim is resumed, not submitted as a new duplicate. A valid appeal window is required. If Amazon asks the seller to wait beyond the official internal SAFE-T appeal deadline, the internal appeal deadline preempts that wait and the existing SAFE-T is appealed while the window is still open. If that deadline is missing, fail closed to human review; if it already expired during the conflicting wait, record the missed-window conflict instead of pretending an internal appeal is still available.
 The automatic second-stage review email is allowed only after the internal SAFE-T appeal was actually denied (`APPEAL_DENIED_FINAL` or equivalent explicit appeal-denied evidence). A historical case that simply missed the internal appeal window is human review, not an automatic second-stage email. A review-email response uses its existing thread. An existing support case is updated instead of opening another.
+
+Regression invariant: `APPEAL_DENIED_FINAL` must never route back to `SAFE_T_APPEAL`. The decision test asserts the final-denial route remains `SAFE_T_EMAIL_REVIEW`; any agent change that reopens the SAFE-T appeal fails validation before deployment.
 No date, approval, rejection, email promise or successful request is proof of recovered money. Only reconciled real financial credit closes financial recovery.
 
 ## Storage and acceptance
