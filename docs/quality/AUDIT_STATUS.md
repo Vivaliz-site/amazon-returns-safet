@@ -414,3 +414,6 @@ Esta certificação cobre exatamente o SHA `0c37b423eec3a67f2b00f1a52e811537edaf
 - Evidencias: teste `tests/cockpit-pager-a11y.test.mjs` executado em checkout isolado do backend, com primeira/última página, lista vazia, destino, atualização de página e marcação HTML. O cabeçalho `index.php` usa versão de asset baseada em conteúdo, preservando cache busting.
 - Pendencias: CI e merge da PR técnica, deploy imutável, comparação do SHA publicado com main e inspeção visual em navegador backend autenticado; esta melhoria isolada não certifica Seller Central, crédito, casos históricos ou auditoria V5.
 - Estado: NAO_APTO.
+
+## 2026-11-13 [Claude] Clamp de timestamp futuro na frescor de leitura (#532)
+Revisao contraditoria (Gemini) apontou borda: relogio adiantado adiaria o aviso de dados desatualizados. RED/GREEN em tests/cockpit-read-freshness-test.php; tolerancia 300 s.

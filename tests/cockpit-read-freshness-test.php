@@ -33,6 +33,15 @@ foreach(['', 'not-a-date','2026-13-45 99:99:99',null] as $badAt){
 }
 crfAssert(SvAmazonCockpitReadFreshness::latest([],[])===null,'No evidence means no verification.');
 
+// A clock-skewed future timestamp must never mask staleness (review Gemini, #532).
+$future=$job;$future['updated_at']=gmdate('Y-m-d H:i:s',time()+86400);
+crfAssert(SvAmazonCockpitReadFreshness::latest([],[$future])===null,'A future-dated read job must be ignored.');
+crfAssert((SvAmazonCockpitReadFreshness::latest([$event],[$future])['id']??0)===7,'A future-dated job must not beat a real event.');
+$futureEvent=$event;$futureEvent['occurred_at']=gmdate('Y-m-d H:i:s',time()+86400);
+crfAssert(SvAmazonCockpitReadFreshness::latest([$futureEvent],[])===null,'A future-dated event must be ignored.');
+$nearNow=$job;$nearNow['updated_at']=gmdate('Y-m-d H:i:s',time()+60);
+crfAssert(SvAmazonCockpitReadFreshness::latest([],[$nearNow])!==null,'Small clock skew (<=5 min) is tolerated.');
+
 // Discovery, support and delivery reads also prove the case was re-read.
 foreach(['SAFE_T_DISCOVERY','SELLER_SUPPORT_READ','ORDER_DELIVERY_READ'] as $kind){
     $other=$job;$other['kind']=$kind;
